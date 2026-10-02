@@ -18,6 +18,7 @@
 Seluruh dokumen teknis dan panduan pengerjaan telah disusun rapi di folder `docs/`:
 * 🏆 [**`docs/COMPETITION_GUIDE.md`**](docs/COMPETITION_GUIDE.md) — Aturan resmi hackathon, rubrik 5 kriteria juri Kaggle, hadiah $35.000, batas 3.000 kata, dan topik resmi (Code Comprehension, Graph Reasoning, Tuning & Optimization).
 * 🔬 [**`docs/RESEARCH_SPEC.md`**](docs/RESEARCH_SPEC.md) — Spesifikasi teknis arsitektur model, formula matematika bridge $\tanh(g)$, bukti penghematan KV-cache konteks panjang (>95%), dan tabel VRAM 16-bit.
+* 🏛️ [**`docs/GEMMA4_EDGE_ARCHITECTURE.md`**](docs/GEMMA4_EDGE_ARCHITECTURE.md) — Analisis arsitektur lengkap Gemma 4 E2B & E4B hasil verifikasi langsung dari Hugging Face Hub dan Transformers config.
 * 👥 [**`docs/TEAM_PLAYBOOK.md`**](docs/TEAM_PLAYBOOK.md) — Pembagian peran 2 anggota tim, roadmap mingguan menuju deadline 12 Nov 2026, serta SOP pengodingan bersama menggunakan `ty` dan `ruff`.
 
 ---
