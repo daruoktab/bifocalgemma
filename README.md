@@ -92,8 +92,8 @@ python -c "from janus.evaluation import print_comparison_table; print_comparison
 
 ## 👥 Tim Peneliti & Pengembang (Contributors)
 
-* **Daru Oktavian** ([@daruoktab](https://github.com/daruoktab))
-* **Atta Muhammad** ([@attmhd](https://github.com/attmhd))
+* [@daruoktab](https://github.com/daruoktab)
+* [@attmhd](https://github.com/attmhd)
 
 ---
 

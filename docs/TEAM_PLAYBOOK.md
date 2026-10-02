@@ -8,13 +8,13 @@
 
 Agar pengerjaan efisien dan tidak tumpang tindih:
 
-### 👤 Anggota A: Daru Oktavian ([@daruoktab](https://github.com/daruoktab)) — *Lead Model Architect & Training Engineer*
+### 👤 Anggota A: [@daruoktab](https://github.com/daruoktab) — *Lead Model Architect & Training Engineer*
 * Integrasi arsitektur `GatedCrossAttentionBridge` dan `ASTGraphProjector` dengan backbone Hugging Face `google/gemma-4-E2B-it` dan `google/gemma-4-E4B-it`.
 * Implementasi pipeline pelatihan (LoRA / adapter tuning) dengan presisi 16-bit (BF16) dan optimizer 8-bit AdamW.
 * Manajemen komputasi GPU (GPU 24GB lokal dan Kaggle 2x T4).
 * Penyimpanan checkpoint model untuk evaluasi matriks $2 \times 2$.
 
-### 👤 Anggota B: Atta Muhammad ([@attmhd](https://github.com/attmhd)) — *Lead Evaluation, Data Curator & Paper Writer*
+### 👤 Anggota B: [@attmhd](https://github.com/attmhd) — *Lead Evaluation, Data Curator & Paper Writer*
 * Kurasi dataset niche software engineering berkonten panjang (CommitPackFT, repositori open-source Python, SWE-bench Lite) menggunakan `tree-sitter` untuk ekstraksi AST.
 * Eksekusi benchmark instan (`evalplus` HumanEval/MBPP, HumanEval-Infilling, SWE-bench Lite) dan pembuatan tabel/grafik perbandingan vs baseline Google.
 * Penyusunan draf naskah riset (Kaggle Writeup & LaTeX preprint berstandar 3.000 kata).
