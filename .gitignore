@@ -1,0 +1,44 @@
+# Environments & Secrets
+.venv/
+project-finetuning/
+.env
+.env.*
+*.env
+
+# Python & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Model Checkpoints & Weights
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+checkpoints/
+outputs/
+weights/
+
+# Data & Large Artifacts
+data/
+datasets/
+*.parquet
+*.arrow
+*.tar.gz
+*.zip
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs & Wandb
+wandb/
+*.log
