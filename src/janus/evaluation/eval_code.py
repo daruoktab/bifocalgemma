@@ -22,8 +22,12 @@ class BaselineScores:
 
 OFFICIAL_BASELINES: Dict[str, BaselineScores] = {
     # Gemma 4 Technical Report (Table 5) & Gemma 3 (Table 18)
-    "Gemma-4-E2B-IT": BaselineScores("Gemma-4-E2B-IT", humaneval_pass1=44.0, mbpp_pass1=38.0, livecodebench_v6=44.0),
-    "Gemma-4-E4B-IT": BaselineScores("Gemma-4-E4B-IT", humaneval_pass1=54.5, mbpp_pass1=44.0, livecodebench_v6=52.0),
+    "Gemma-4-E2B-IT": BaselineScores(
+        "Gemma-4-E2B-IT", humaneval_pass1=44.0, mbpp_pass1=38.0, livecodebench_v6=44.0
+    ),
+    "Gemma-4-E4B-IT": BaselineScores(
+        "Gemma-4-E4B-IT", humaneval_pass1=54.5, mbpp_pass1=44.0, livecodebench_v6=52.0
+    ),
     "Gemma-3-1B-IT": BaselineScores("Gemma-3-1B-IT", humaneval_pass1=41.5, mbpp_pass1=35.2),
     "Gemma-3-4B-IT": BaselineScores("Gemma-3-4B-IT", humaneval_pass1=71.3, mbpp_pass1=63.2),
     # T5Gemma 2 Technical Report (Table 5)

@@ -1,12 +1,12 @@
-"""Unit tests for JANUS-4 architectural modules and 2x2 model matrix."""
+"""Unit tests for JANUS-4 architectural modules and 2x2 model matrix for long-context code."""
 
 import unittest
 
 import torch
 
 from janus.models.bridge import GatedCrossAttentionBridge
-from janus.models.patch_projector import LinearPatchProjector
-from janus.models.routing import MultimodalTokenRouter
+from janus.models.code_graph_projector import ASTGraphProjector
+from janus.models.routing import RepoContextRouter
 
 
 class TestJanusArchitecture(unittest.TestCase):
@@ -53,44 +53,52 @@ class TestJanusArchitecture(unittest.TestCase):
         self._run_bridge_test(enc_dim=384, dec_dim=384)
 
     def test_asymmetric_e4b_enc_e2b_dec(self):
-        """Asymmetric E4B Encoder + E2B Decoder (~6.8B: Heavy Reader, Agile Writer)."""
+        """Asymmetric E4B Encoder + E2B Decoder (~6.8B: Heavy Reader, Agile Coder)."""
         self._run_bridge_test(enc_dim=384, dec_dim=256)
 
     def test_asymmetric_e2b_enc_e4b_dec(self):
         """Asymmetric E2B Encoder + E4B Decoder (~6.8B: Agile Reader, Deep Reasoner)."""
         self._run_bridge_test(enc_dim=256, dec_dim=384)
 
-    def test_linear_patch_projector(self):
+    def test_ast_graph_projector(self):
+        """Tests AST node type and syntax depth embedding projection."""
         batch_size = 2
-        num_patches = 576  # 24 x 24 grid
-        patch_size = 48
-        in_channels = 3
-        patch_dim = patch_size * patch_size * in_channels
-        embed_dim = 512
+        seq_len = 128
+        embed_dim = 256
 
-        projector = LinearPatchProjector(
-            patch_size=patch_size,
-            in_channels=in_channels,
+        projector = ASTGraphProjector(
+            num_node_types=100,
+            max_depth=32,
             embed_dim=embed_dim,
-            max_patches_h=24,
-            max_patches_w=24,
         )
 
-        dummy_patches = torch.randn(batch_size, num_patches, patch_dim)
-        embeddings = projector(dummy_patches, grid_shape=(24, 24))
+        dummy_node_types = torch.randint(0, 100, (batch_size, seq_len))
+        dummy_depths = torch.randint(0, 32, (batch_size, seq_len))
 
-        self.assertEqual(embeddings.shape, (batch_size, num_patches, embed_dim))
+        embeddings = projector(dummy_node_types, depths=dummy_depths)
+        self.assertEqual(embeddings.shape, (batch_size, seq_len, embed_dim))
 
-    def test_token_router_kv_savings(self):
-        savings = MultimodalTokenRouter.calculate_kv_cache_savings(
-            num_images=3,
-            patches_per_image=576,
+    def test_long_context_kv_savings(self):
+        """Tests KV-cache memory calculation for 16k context vs 512 gen tokens."""
+        savings = RepoContextRouter.calculate_long_context_kv_savings(
+            prompt_len=16384,
+            gen_len=512,
             num_layers=32,
             num_kv_heads=8,
             head_dim=256,
             bytes_per_param=2,
         )
-        self.assertGreater(savings, 200.0)
+        self.assertGreater(savings["saved_mb"], 1000.0)
+        self.assertGreater(savings["reduction_percentage"], 95.0)
+
+    def test_bidirectional_repo_mask(self):
+        """Tests bidirectional mask construction for repository context."""
+        mask = RepoContextRouter.create_bidirectional_repo_mask(
+            seq_len=2048,
+            device=torch.device("cpu"),
+        )
+        self.assertEqual(mask.shape, (1, 2048))
+        self.assertTrue(torch.all(mask))
 
 
 if __name__ == "__main__":

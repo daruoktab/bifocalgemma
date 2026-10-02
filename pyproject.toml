@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "janus-4"
 version = "0.1.0"
-description = "JANUS-4: Asymmetric Bidirectional Encoding & Causal Generation with Encoder-Free Gemma 4 for Multimodal Developer Agents"
+description = "JANUS-4: Asymmetric Bidirectional Encoding & Causal Generation with Gemma 4 for Long-Context Developer Agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "daruoktab" }
 ]
-keywords = ["gemma4", "multimodal", "developer-agent", "encoder-decoder", "swe-bench", "kaggle"]
+keywords = ["gemma4", "coding-agent", "long-context", "encoder-decoder", "swe-bench", "kaggle", "code-comprehension"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
