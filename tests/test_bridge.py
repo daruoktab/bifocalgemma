@@ -1,4 +1,4 @@
-"""Unit tests for JANUS-4 architectural modules."""
+"""Unit tests for JANUS-4 architectural modules and 2x2 model matrix."""
 
 import unittest
 
@@ -10,27 +10,25 @@ from janus.models.routing import MultimodalTokenRouter
 
 
 class TestJanusArchitecture(unittest.TestCase):
-    def test_gated_cross_attention_forward_backward(self):
+    def _run_bridge_test(self, enc_dim: int, dec_dim: int):
         batch_size = 2
         dec_len = 16
         enc_len = 64
-        decoder_dim = 256  # Scaled down for unit testing
-        encoder_dim = 384
 
         bridge = GatedCrossAttentionBridge(
-            decoder_dim=decoder_dim,
-            encoder_dim=encoder_dim,
+            decoder_dim=dec_dim,
+            encoder_dim=enc_dim,
             num_heads=4,
             head_dim=64,
             initial_gate_val=0.05,
             use_qk_norm=True,
         )
 
-        dec_states = torch.randn(batch_size, dec_len, decoder_dim, requires_grad=True)
-        enc_states = torch.randn(batch_size, enc_len, encoder_dim, requires_grad=True)
+        dec_states = torch.randn(batch_size, dec_len, dec_dim, requires_grad=True)
+        enc_states = torch.randn(batch_size, enc_len, enc_dim, requires_grad=True)
 
         out = bridge(dec_states, enc_states)
-        self.assertEqual(out.shape, (batch_size, dec_len, decoder_dim))
+        self.assertEqual(out.shape, (batch_size, dec_len, dec_dim))
 
         loss = out.sum()
         loss.backward()
@@ -45,6 +43,22 @@ class TestJanusArchitecture(unittest.TestCase):
         self.assertIsNotNone(bridge.gate.grad)
         assert bridge.gate.grad is not None
         self.assertGreater(torch.abs(bridge.gate.grad).item(), 0.0)
+
+    def test_symmetric_e2b_e2b(self):
+        """Symmetric E2B Encoder + E2B Decoder (~4.6B Effective)."""
+        self._run_bridge_test(enc_dim=256, dec_dim=256)
+
+    def test_symmetric_e4b_e4b(self):
+        """Symmetric E4B Encoder + E4B Decoder (~9.0B Effective)."""
+        self._run_bridge_test(enc_dim=384, dec_dim=384)
+
+    def test_asymmetric_e4b_enc_e2b_dec(self):
+        """Asymmetric E4B Encoder + E2B Decoder (~6.8B: Heavy Reader, Agile Writer)."""
+        self._run_bridge_test(enc_dim=384, dec_dim=256)
+
+    def test_asymmetric_e2b_enc_e4b_dec(self):
+        """Asymmetric E2B Encoder + E4B Decoder (~6.8B: Agile Reader, Deep Reasoner)."""
+        self._run_bridge_test(enc_dim=256, dec_dim=384)
 
     def test_linear_patch_projector(self):
         batch_size = 2
