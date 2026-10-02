@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "daruoktab" }
+    { name = "daruoktab" },
+    { name = "attmhd" }
 ]
 keywords = ["gemma4", "coding-agent", "long-context", "encoder-decoder", "swe-bench", "kaggle", "code-comprehension"]
 classifiers = [

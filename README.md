@@ -90,6 +90,13 @@ python -c "from janus.evaluation import print_comparison_table; print_comparison
 
 ---
 
+## 👥 Tim Peneliti & Pengembang (Contributors)
+
+* **Daru Oktavian** ([@daruoktab](https://github.com/daruoktab))
+* **Atta Muhammad** ([@attmhd](https://github.com/attmhd))
+
+---
+
 ## 📄 Lisensi Resmi
 
 Seluruh kode dan aset pada repositori ini dilisensikan di bawah [Apache License 2.0](LICENSE) sesuai kewajiban aturan resmi Google Gemma 4 Developer Agent Paper Track.
