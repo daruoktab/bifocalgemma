@@ -6,6 +6,7 @@ baselines with the same dataset, harness, sampling, and token/tool budget.
 """
 
 from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -13,16 +14,20 @@ class BaselineScores:
     """Reference scores; None means unavailable or not verified from a source."""
 
     model_name: str
-    humaneval_pass1: float | None = None
-    mbpp_pass1: float | None = None
-    livecodebench_v6: float | None = None
-    source_url: str | None = None
+    humaneval_pass1: Optional[float] = None
+    mbpp_pass1: Optional[float] = None
+    livecodebench_v6: Optional[float] = None
+    swe_bench_lite: Optional[float] = None
+    swe_bench_verified: Optional[float] = None
+    crosscodeeval: Optional[float] = None
+    source_url: Optional[str] = None
 
 
 GEMMA4_MODEL_CARD = "https://ai.google.dev/gemma/docs/core/model_card_4"
+SWEBENCH_LEADERBOARD = "https://www.swebench.com/"
+CROSSCODEEVAL_REPO = "https://github.com/amazon-science/cceval"
 
-# Only these LiveCodeBench v6 scores were verified in the model card.
-# The previous HumanEval/MBPP numbers had no verified attribution.
+# Only verified scores are included; unverified baseline numbers are None/N/A
 REFERENCE_BASELINES: dict[str, BaselineScores] = {
     "Gemma-4-E2B-IT": BaselineScores(
         "Gemma-4-E2B-IT", livecodebench_v6=44.0, source_url=GEMMA4_MODEL_CARD
@@ -37,7 +42,7 @@ REFERENCE_BASELINES: dict[str, BaselineScores] = {
 }
 
 
-def _format_score(value: float | None) -> str:
+def _format_score(value: Optional[float]) -> str:
     return "N/A" if value is None else f"{value:.1f}"
 
 
@@ -75,3 +80,38 @@ def print_comparison_table(
     )
     print("=" * width)
     print(f"Gemma 4 LiveCodeBench v6 reference: {GEMMA4_MODEL_CARD}")
+
+
+def print_repair_comparison_table(
+    our_results: dict[str, float],
+    model_name: str = "BifocalGemma-E2B-E2B",
+    *,
+    illustrative: bool = False,
+) -> None:
+    """Print repository-level code repair benchmark comparison table.
+
+    Supported result keys: swe_bench_lite, swe_bench_verified, crosscodeeval.
+    """
+    width = 98
+    print("=" * width)
+    label = "ILLUSTRATIVE SCORES (NOT MEASURED)" if illustrative else "SUPPLIED SCORES"
+    print(f"  {label} (CODE REPAIR): {model_name}")
+    print("  Reference protocols may differ; this table does not establish superiority.")
+    print("=" * width)
+    print(f"{'Model':<28} | {'SWE-bench Lite (%)':<20} | {'SWE-bench Ver. (%)':<20} | CrossCodeEval (%)")
+    print("-" * width)
+
+    for name, base in REFERENCE_BASELINES.items():
+        print(
+            f"{name:<28} | {_format_score(base.swe_bench_lite):<20} | "
+            f"{_format_score(base.swe_bench_verified):<20} | {_format_score(base.crosscodeeval)}"
+        )
+
+    print("-" * width)
+    print(
+        f"{model_name:<28} | {_format_score(our_results.get('swe_bench_lite')):<20} | "
+        f"{_format_score(our_results.get('swe_bench_verified')):<20} | "
+        f"{_format_score(our_results.get('crosscodeeval'))}"
+    )
+    print("=" * width)
+    print(f"SWE-bench reference: {SWEBENCH_LEADERBOARD}")

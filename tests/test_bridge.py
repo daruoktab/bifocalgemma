@@ -1,12 +1,19 @@
 """Synthetic module tests for BifocalGemma; no Gemma weights or GPU are required."""
 
+import sys
 import unittest
+from pathlib import Path
 
-import torch
+# Ensure src/ is on sys.path for direct test discovery without requiring external PYTHONPATH
+_SRC_DIR = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
 
-from bifocalgemma.models.bridge import GatedCrossAttentionBridge
-from bifocalgemma.models.code_graph_projector import ASTGraphProjector
-from bifocalgemma.models.routing import RepoContextRouter
+import torch  # noqa: E402
+
+from bifocalgemma.models.bridge import GatedCrossAttentionBridge  # noqa: E402
+from bifocalgemma.models.code_graph_projector import ASTGraphProjector  # noqa: E402
+from bifocalgemma.models.routing import RepoContextRouter  # noqa: E402
 
 
 class TestBifocalGemmaArchitecture(unittest.TestCase):
@@ -93,6 +100,7 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
             self.skipTest("transformers with Gemma4 support not available")
 
         # Fast synthetic configuration with 2 layers and compact vocab for unit test speed
+        # The encoder explicitly enables bidirectional attention across all repository tokens
         enc_config = Gemma4TextConfig(
             vocab_size=1000,
             hidden_size=1536,
@@ -101,6 +109,7 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
             num_attention_heads=8,
             num_key_value_heads=1,
             head_dim=256,
+            use_bidirectional_attention="all",
         )
         dec_config = Gemma4TextConfig(
             vocab_size=1000,
@@ -141,6 +150,60 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
         self.assertIsNotNone(enc_param.grad)
         self.assertIsNotNone(dec_param.grad)
         self.assertIsNotNone(bridge.gate.grad)
+
+    def test_gemma4_bidirectional_attention_mechanism(self):
+        """Verify that Gemma4TextModel with use_bidirectional_attention='all' allows
+        later repository tokens to influence earlier token representations (bidirectional flow),
+        unlike causal generation where token 0 is strictly invariant to future tokens.
+        """
+        try:
+            from transformers import Gemma4TextConfig, Gemma4TextModel
+        except ImportError:
+            self.skipTest("transformers with Gemma4 support not available")
+
+        # Causal baseline configuration
+        causal_config = Gemma4TextConfig(
+            vocab_size=100,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            head_dim=32,
+            use_bidirectional_attention=None,
+        )
+        causal_model = Gemma4TextModel(causal_config)
+        causal_model.eval()
+
+        # Bidirectional encoder configuration
+        bidi_config = Gemma4TextConfig(
+            vocab_size=100,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            head_dim=32,
+            use_bidirectional_attention="all",
+        )
+        bidi_model = Gemma4TextModel(bidi_config)
+        bidi_model.eval()
+
+        tokens_a = torch.tensor([[1, 2, 3, 4, 5]])
+        tokens_b = torch.tensor([[1, 2, 3, 4, 99]])  # only last token is altered
+
+        with torch.no_grad():
+            # In causal model, token 0 hidden state must be invariant to subsequent tokens
+            causal_out_a = causal_model(tokens_a).last_hidden_state
+            causal_out_b = causal_model(tokens_b).last_hidden_state
+            causal_token0_diff = (causal_out_a[0, 0] - causal_out_b[0, 0]).abs().sum().item()
+            self.assertAlmostEqual(causal_token0_diff, 0.0, places=4)
+
+            # In bidirectional model, token 0 hidden state must change due to full bidirectional attention
+            bidi_out_a = bidi_model(tokens_a).last_hidden_state
+            bidi_out_b = bidi_model(tokens_b).last_hidden_state
+            bidi_token0_diff = (bidi_out_a[0, 0] - bidi_out_b[0, 0]).abs().sum().item()
+            self.assertGreater(bidi_token0_diff, 1e-3)
 
     def test_ast_graph_projector(self):
         """Tests AST node type and syntax depth embedding projection."""

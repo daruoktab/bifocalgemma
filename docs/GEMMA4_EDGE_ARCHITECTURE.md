@@ -27,17 +27,18 @@ saat eksperimen, pin revision checkpoint dan simpan config yang benar-benar digu
 | `use_double_wide_mlp` | `true` | `false` |
 | `max_position_embeddings` | 131072 | 131072 |
 | `vocab_size` | 262144 | 262144 |
-| `use_bidirectional_attention` | `null` | `null` |
+| `use_bidirectional_attention` | `null` (default causal) | `null` (default causal) |
+
+`Gemma4TextConfig` natively supports `use_bidirectional_attention="all"`. Pada checkpoint default HF, nilainya `null` (kausal). Untuk encoder repositori BifocalGemma, parameter ini disetel ke `"all"` sehingga seluruh token kode saling memperhatikan secara dua arah tanpa membutuhkan modifikasi kernel kustom.
 
 `text_config.rope_parameters` memakai default RoPE untuk sliding layers dan
 proportional RoPE untuk global layers dengan `partial_rotary_factor=0.25`.
 Nilai konfigurasi itu sendiri tidak membuktikan persentase penghematan KV-cache.
 Perilaku attention dan KV sharing harus diperiksa pada versi backend yang dipakai.
 
-Config checkpoint mencatat `transformers_version=5.5.0.dev0`. Batas dependensi
-`transformers>=4.48.0` di paket bukan jaminan dukungan Gemma 4. Tahap integrasi
-harus memilih dan pin versi yang menyediakan kelas serta perilaku yang dibutuhkan.
-Modul BifocalGemma sekarang belum memuat Transformers atau bobot Gemma.
+Config checkpoint mencatat `transformers_version=5.5.0.dev0`. Modul BifocalGemma
+telah memverifikasi integritas struktural dimensi hidden E2B (1536) dan E4B (2560)
+secara sintetis dengan `Gemma4TextModel` dan `GatedCrossAttentionBridge`.
 
 ## Parameter, checkpoint, dan memori
 
@@ -65,8 +66,7 @@ otomatis menjadi satu ruang alamat; metode pembagian bobot dan aktivasi perlu di
 
 ## Implikasi integrasi BifocalGemma
 
-- Encoder yang diadaptasi membutuhkan perubahan attention dan training yang sesuai;
-  mask all-valid pada [routing](../src/bifocalgemma/models/routing.py) belum melakukan itu.
+- Encoder yang diadaptasi dapat mengaktifkan bidirectional attention secara native via `Gemma4TextConfig(use_bidirectional_attention="all")`, yang telah diverifikasi mengalirkan konteks global ke token awal dan menghubungkan gradien ke bridge.
 - [Bridge](../src/bifocalgemma/models/bridge.py) dapat menerima dimensi berbeda,
   tetapi kompatibilitas residual, normalization, posisi layer, dan cache masih harus diuji.
 - [AST projector](../src/bifocalgemma/models/code_graph_projector.py) menerima ID
