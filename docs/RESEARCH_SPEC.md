@@ -1,101 +1,124 @@
-# 🔬 Spesifikasi Teknis Riset: JANUS-4
+# BifocalGemma: Spesifikasi Teknis Riset
 
-> Dokumen spesifikasi teknis arsitektur model, formulasi matematika efisiensi konteks panjang, dan anggaran komputasi 16-bit untuk tim pengembang.
+**Judul:** *BifocalGemma: Evaluating Bidirectional Repository Encoding for Local Code Repair*
 
----
+Dokumen ini memisahkan utilitas yang sudah tersedia dari arsitektur dan eksperimen
+yang direncanakan. Tidak ada hasil training atau benchmark BifocalGemma saat ini.
 
-## 🏛️ 1. Matriks Faktorial 2×2 Arsitektur Gemma 4 Edge
+## Modul yang tersedia
 
-Kami mengeksplorasi seluruh kombinasi pasangan Encoder (Bidirectional) dan Decoder (Causal IT) dari keluarga Gemma 4 Edge:
+- [Bridge](../src/bifocalgemma/models/bridge.py): Q/K/V projection, QK normalization,
+  attention, dan gated residual dengan lebar encoder/decoder yang dapat berbeda.
+- [AST projector](../src/bifocalgemma/models/code_graph_projector.py): embedding dari
+  ID tipe node dan kedalaman yang disuplai. Belum mengekstrak AST atau memproses edge graf.
+- [Routing](../src/bifocalgemma/models/routing.py): tensor split, mask validitas token,
+  dan ilustrasi decoder self-attention KV.
+- [Pelaporan](../src/bifocalgemma/evaluation/eval_code.py): tabel skor masukan dan
+  referensi. Modul ini belum menjalankan benchmark.
 
-$$\begin{pmatrix} \text{JANUS-E2B-E2B} & \text{JANUS-E2B-E4B} \\ \text{JANUS-E4B-E2B} & \text{JANUS-E4B-E4B} \end{pmatrix}$$
+`create_bidirectional_repo_mask` mengembalikan mask boolean `(1, seq_len)` semua-valid.
+Nama helper menunjukkan tujuan pemakaian encoder; mask itu belum mengubah causal
+mask atau sliding-window behavior pada Gemma. Integrasi backbone harus mengatur
+attention yang benar dan menguji dependensi token di kedua arah.
 
-```
-                                  KAPASITAS DECODER (Causal IT)
-                         E2B IT (~2.3B)                    E4B IT (~4.5B)
-                  ┌───────────────────────────────┬───────────────────────────────┐
-   E2B (~2.3B)    │        JANUS-E2B-E2B          │        JANUS-E2B-E4B          │
-                  │   • Parameter: ~4.6B          │   • Parameter: ~6.8B          │
-KAPASITAS         │   • Bobot 16-bit: ~9.2 GB     │   • Bobot 16-bit: ~13.6 GB    │
-ENCODER           │   • Headline: Iso-Parameter   │   • Vibe: "Agile Reader,      │
-(Bidirectional)   │     Head-to-Head vs Base E4B  │            Deep Reasoner"     │
-                  ├───────────────────────────────┼───────────────────────────────┤
-   E4B (~4.5B)    │        JANUS-E4B-E2B          │        JANUS-E4B-E4B          │
-                  │   • Parameter: ~6.8B          │   • Parameter: ~9.0B          │
-                  │   • Bobot 16-bit: ~13.6 GB    │   • Bobot 16-bit: ~18.0 GB    │
-                  │   • Vibe: "Heavy Reader,      │   • Headline: Flagship SOTA   │
-                  │            Agile Coder"       │     Agent Rivaling 27B-31B    │
-                  └───────────────────────────────┴───────────────────────────────┘
-```
+## Bridge dan batas interpretasi gate
 
-### Hipotesis Ilmiah & Pertanyaan Riset Utama:
-1. **RQ1 (Uji Iso-Parameter 4.6B vs 4.5B)**:
-   * *Hipotesis*: `JANUS-E2B-E2B` (~4.6B) akan mengungguli model decoder-only `Gemma 4 E4B` (4.5B) pada tugas rekayasa perangkat lunak berkonten panjang karena encoder bidirectional membaca relasi dan dependensi repositori secara utuh tanpa terhambat batasan sliding-window atau causal masking.
-2. **RQ2 (Duel Asimetris 6.8B: Heavy Reader vs Deep Reasoner)**:
-   * *Hipotesis*: Pada anggaran parameter identik (~6.8B), kita menguji apakah developer agent lebih diuntungkan oleh pemahaman repositori yang dalam (`E4B-E2B`) atau kapasitas penalaran deliberatif (*Thinking Mode*) saat menghasilkan patch perbaikan (`E2B-E4B`).
-3. **RQ3 (Batas Skalabilitas Model 9B)**:
-   * *Hipotesis*: `JANUS-E4B-E4B` (~9.0B) mampu menyaingi performa model raksasa 27B–31B pada SWE-bench Lite dengan efisiensi memori inferensi yang jauh lebih unggul di hardware konsumen.
+$$z = X + \tanh(g)\,\mathrm{CrossAttention}(X, H_{enc})$$
 
----
+Default `g = atanh(0.05)` memberi koefisien residual tambahan `0.05`.
+Jalur residual `X` tetap berkoefisien satu. Tidak ada jaminan persentase identitas
+perilaku decoder atau persentase gradien; besarnya bergantung pada aktivasi,
+bobot proyeksi, dan loss. Bridge belum diverifikasi sebagai pengganti layer Gemma.
 
-## ⚡ 2. Efisiensi Arsitektur pada Konteks Repositori Panjang (Long Context)
+## Ilustrasi decoder self-attention KV
 
-Pada tugas rekayasa perangkat lunak nyata (SWE-bench, navigasi repositori, refactoring), konteks masukan model terdiri atas pohon berkas, dependensi lintas modul, definisi kelas, dan log pengujian yang mencapai **16.000 hingga 32.000+ token**.
+Helper `RepoContextRouter.calculate_decoder_self_kv_savings` mengasumsikan semua
+layer memakai full attention, jumlah KV head seragam, serta K dan V terpisah:
 
-### Masalah Mendasar Model Decoder-Only pada Konteks Panjang:
-1. **Kebutaan Kausal (Causal Blindness)**: Model decoder-only memproses token secara sekuensial dari kiri ke kanan. Definisi fungsi atau import di baris 50 tidak dapat melihat pemanggil (*caller*) di baris 2.500 saat token awal diproses.
-2. **Ledakan Memori Dynamic KV-Cache saat Generasi**:
-   Selama proses pembuatan patch (misalnya $L_{\text{gen}} = 512$ token), model decoder-only harus menyimpan seluruh representasi Key-Value dari *prompt* ($L_{\text{prompt}} = 16.384$ atau $32.768$ token) di VRAM:
-   $$\text{Mem}_{\text{dec-only}} = (L_{\text{prompt}} + L_{\text{gen}}) \times 2 \times N_{\text{layers}} \times N_{\text{kv\_heads}} \times D_{\text{head}} \times \text{bytes}$$
-   Pada model 4B dengan $L_{\text{prompt}} = 32\text{k}$, alokasi KV-cache dinamis ini menghabiskan lebih dari 4–8 GB VRAM tambahan dan memperlambat throughput inferensi karena *memory bandwidth starvation*.
+$$C = 2N_{layers}N_{kv\_heads}D_{head}b$$
+$$M_{baseline,self} = (L_{prompt}+L_{gen})C,\qquad M_{split,self}=L_{gen}C$$
 
-### Solusi JANUS-4 (Asymmetric Encoder-Decoder):
-1. **Representasi Konteks Utuh Sekali Hitung**:
-   Encoder bidirectional memproses seluruh konteks repositori $L_{\text{prompt}}$ secara paralel dalam satu kali forward pass. Hasil representasi $H_{\text{enc}} \in \mathbb{R}^{B \times L_{\text{prompt}} \times D_{\text{enc}}}$ bersifat statis.
-2. **Pengurangan KV-Cache Dinamis hingga >95%**:
-   Decoder kausal **hanya** menghasilkan kode patch perbaikan. Dynamic autoregressive KV-cache decoder **hanya dialokasikan untuk token patch yang digenerate**:
-   $$\text{Mem}_{\text{janus-dec}} = L_{\text{gen}} \times 2 \times N_{\text{layers}} \times N_{\text{kv\_heads}} \times D_{\text{head}} \times \text{bytes}$$
-   $$\text{Penghematan} = 1 - \frac{L_{\text{gen}}}{L_{\text{prompt}} + L_{\text{gen}}} = \frac{16.384}{16.896} \approx \mathbf{96.97\%}$$
+Konversi ke MiB membagi byte dengan `1024**2`. Key API memakai suffix `_mb`:
 
-| Panjang Prompt ($L_{\text{prompt}}$) | Panjang Patch ($L_{\text{gen}}$) | KV-Cache Decoder-Only | KV-Cache Decoder JANUS | Penghematan Memori Dinamis |
-| :--- | :--- | :--- | :--- | :--- |
-| **8.192 token** | 512 token | ~1.14 GB | ~0.07 GB | **94.1%** |
-| **16.384 token** | 512 token | ~2.21 GB | ~0.07 GB | **96.9%** |
-| **32.768 token** | 512 token | ~4.36 GB | ~0.07 GB | **98.4%** |
+| Key hasil | Arti |
+| --- | --- |
+| `decoder_only_self_kv_mb` | Self-KV prompt dan generasi pada ilustrasi baseline |
+| `bifocalgemma_decoder_self_kv_mb` | Self-KV generasi pada ilustrasi arsitektur split |
+| `self_kv_saved_mb` | Selisih dua ukuran self-KV tersebut |
+| `self_kv_reduction_percentage` | Persentase selisih terhadap self-KV baseline |
 
----
+Dengan default `Lprompt=16384`, `Lgen=512`, 32 layer, 8 KV head, dimensi 256,
+dan 2 byte/elemen, ukuran ilustratifnya 4224 MiB versus 128 MiB. Angka ini
+**bukan konfigurasi Gemma** dan **bukan penghematan total VRAM**. Tanpa prompt,
+selisihnya nol; tanpa generasi, self-KV split nol; dua panjang nol menghasilkan
+semua nilai nol. Panjang negatif dan ukuran layer/head/elemen nonpositif ditolak.
 
-## 🔬 3. Modul Gated Cross-Attention Bridge
+Total biaya sistem mencakup bobot yang resident, encoder states, cross-attention
+K/V yang disimpan, decoder self-KV, aktivasi/workspace, dan overhead allocator.
+Jika proyeksi K/V cross-attention dihitung ulang, biaya komputasi itu juga dilaporkan.
+Gemma memakai hybrid attention dan KV sharing; estimasi seragam ini tidak memodelkannya.
 
-Terletak di [`src/janus/models/bridge.py`](file:///c:/Users/HYPE%20AMD/Documents/Coding/project-hackhaton-gemma/src/janus/models/bridge.py):
+## Protokol eksperimen awal
 
-$$\mathbf{z} = \mathbf{X} + \tanh(g) \cdot \text{CrossAttn}(\mathbf{X}, \mathbf{H}_{\text{enc}})$$
+Kandidat pertama **BifocalGemma-E2B-E2B**, dengan kelayakan yang ditentukan melalui
+profiling. Perbandingan dengan E4B tidak boleh disebut iso-parameter/iso-memory
+hanya karena jumlah parameter efektif berdekatan; bobot fisik, bridge, precision,
+offloading, parameter trainable, dan budget training harus dilaporkan.
 
-* **Mitigasi Gradient Deadlock**: Parameter gate $g$ diinisialisasi pada $g_0 = \text{atanh}(0.05) \approx 0.05004$.
-* **Keunggulan Matematis**:
-  * Mempertahankan **95% identitas bobot asli Gemma 4 IT Decoder** pada langkah awal training ($t=0$).
-  * Mengalirkan **5% gradien aktif** langsung ke modul encoder sejak langkah pertama untuk mencegah fenomena *gradient starvation*.
-  * Dilengkapi **QK-Norm (RMSNorm)** sebelum perkalian skalar untuk menstabilkan logit attention sink saat konteks repositori sangat panjang.
+Baseline decoder-only memakai data, konteks, sampling, serta token/tool budget
+sebanding dan prefix caching bila didukung. Encoder bidirectional dapat mengubah
+representasi token konteks; itu bukan bukti bahwa decoder-only tidak mampu membaca
+relasi lintas file atau harus menghitung seluruh prefix pada setiap giliran.
 
----
+Ukur task repair success, ketepatan lokalisasi, latensi encoding/TTFT/end-to-end,
+throughput, dan peak VRAM total pada cold/warm cache. Benchmark tidak boleh
+menganggap skor dari protokol publik yang berbeda sebagai kemenangan head-to-head.
 
-## 💻 4. Anggaran Memori Pelatihan Full Presisi 16-Bit (BF16)
+Snapshot penuh di-encode ulang setelah edit. Partial re-encoding satu hop ditunda
+karena full bidirectional attention dapat menyebarkan perubahan ke seluruh snapshot.
+Tunda matriks empat model dan multimodal sampai eksperimen dasar dapat direproduksi.
 
-Semua konfigurasi dirancang agar dapat dilatih di hardware konsumen (GPU 24GB lokal atau Kaggle 2x T4 32GB total):
+## Dataset Training untuk Code Repair & Agent
 
-| Konfigurasi Model | Bobot Model (16-bit) | VRAM Training: LoRA (r=16) + 8-bit AdamW | VRAM Training: Bridge/Adapter Tuning | Kelayakan Eksekusi |
-| :--- | :--- | :--- | :--- | :--- |
-| **E2B-E2B (~4.6B)** | **~9.2 GB** | **~11.5 – 13.0 GB** | **~14.5 – 16.5 GB** | Sangat lega di GPU 24GB Lokal & Kaggle Dual T4 |
-| **E4B-E2B (~6.8B)** | **~13.6 GB** | **~15.5 – 17.5 GB** | **~18.5 – 20.0 GB** | GPU 24GB Lokal (Headroom ~5 GB) & Kaggle Dual T4 |
-| **E2B-E4B (~6.8B)** | **~13.6 GB** | **~15.5 – 17.5 GB** | **~18.5 – 20.0 GB** | GPU 24GB Lokal (Headroom ~5 GB) & Kaggle Dual T4 |
-| **E4B-E4B (~9.0B)** | **~18.0 GB** | **~20.5 – 22.5 GB** | **~23.5 – 25.5 GB** | Kaggle Dual T4 (16GB+16GB via Pipeline Parallel) |
+Untuk melatih kemampuan repository encoding dan code repair lintas file, kandidat data training mencakup:
 
----
+1. **SWE-smith** (Princeton / Cognition):
+   - Pipeline otomatisasi sintesis bug pada repositori riil (>50.000 task instances pada 128+ repositori open-source).
+   - Menghasilkan bug melalui mutasi kode prosedural dan pembalikan pull request (PR mirroring) yang diuji merusak unit test yang sebelumnya lulus.
+   - Dilengkapi lingkungan Docker terisolasi dan issue description yang disintesis, ideal untuk Supervised Fine-Tuning (SFT) dan Reinforcement Learning (RL) agent software engineering.
+2. **CommitPackFT** (BigCode / OctoPack):
+   - Subset terkurasi 2 GB dari 4 TB koleksi commit GitHub pada 350+ bahasa pemrograman.
+   - Difilter khusus untuk pesan commit berbentuk instruksi imperatif yang dipasangkan dengan patch diff.
+   - Ablasi riset OctoPack menunjukkan bahwa fine-tuning pada CommitPackFT merupakan faktor penentu keberhasilan model dalam tugas perbaikan bug nyata (bug repair).
+3. **CanItEdit / Refactoring Instruction Datasets**:
+   - Dataset instruksi multi-turn untuk refactoring kode repositori dan perbaikan kode terarah instruksi pengguna.
 
-## 🌳 5. Modul Pemahaman Struktur AST & Graf Kode
+## Benchmark Evaluasi untuk Repository-Level Code Repair
 
-Terletak di [`src/janus/models/code_graph_projector.py`](file:///c:/Users/HYPE%20AMD/Documents/Coding/project-hackhaton-gemma/src/janus/models/code_graph_projector.py):
+Evaluasi difokuskan pada pemahaman dependensi lintas file dan kebenaran patch:
 
-* **AST Node Categorical Embedding**: Memetakan tipe simpul AST (misalnya `function_definition`, `call_expression`, `class_definition` dari Tree-sitter) ke ruang embedding vektor.
-* **Hierarchical Scope Depth**: Menginjeksi kedalaman nesting sintaksis dan blok indentasi secara eksplisit.
-* **Graph-UL2 Denoising**: Memadukan infilling badan fungsi (Function Body Infilling) dan pemecahan titik pemanggil lintas berkas (Cross-File Call-Site Resolution) pada pra-pelatihan encoder-decoder.
+1. **SWE-bench (Verified & Lite)**:
+   - Standar utama evaluasi perbaikan bug level repositori end-to-end berbasis issue GitHub riil.
+   - **SWE-bench Verified** (500 instance): Divalidasi oleh engineer manusia untuk menjamin deskripsi tidak ambigu dan unit test dapat diselesaikan.
+   - **SWE-bench Lite** (300 instance): Subset terpilih dari 12 repositori Python populer untuk evaluasi yang lebih cepat dan efisien biaya.
+   - Metrik utama: Tingkat resolusi patch (seluruh test `FAIL_TO_PASS` menjadi lulus dan tidak ada regresi pada test `PASS_TO_PASS`).
+2. **CrossCodeEval** (Amazon Science):
+   - Benchmark multi-bahasa (Python, Java, TypeScript, C#) yang dirancang khusus untuk mengukur kemampuan model dalam memanfaatkan dependensi lintas file (cross-file context).
+   - Menggunakan analisis statis untuk memastikan bahwa tugas secara ketat membutuhkan konteks di luar file yang sedang diedit.
+3. **RepoBench** (RepoBench-R, RepoBench-C, RepoBench-P):
+   - Mengevaluasi pipeline repositori multi-file: retrieval snippet lintas file (RepoBench-R), code completion dengan in-file dan cross-file context (RepoBench-C), dan pipeline end-to-end (RepoBench-P).
+4. **HumanEval-Fix & HumanEvalPack** (BigCode):
+   - Ekstensi HumanEval untuk tugas perbaikan bug tingkat fungsi terisolasi (single-file / unit-level) pada 6 bahasa pemrograman dengan eksekusi unit test.
+5. **Defects4J**:
+   - Benchmark klasik berbasis commit bug riil pada proyek open-source Java dengan test suite regresi lengkap.
+
+## Referensi
+
+- [Spesifikasi backbone dan parameter](GEMMA4_EDGE_ARCHITECTURE.md)
+- [T5Gemma: adaptation dan encoder-decoder asimetris](https://developers.googleblog.com/en/t5gemma/)
+- [vLLM automatic prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/)
+- [SWE-smith: Automated SWE Agent Data Synthesis](https://github.com/SWE-bench/SWE-smith)
+- [SWE-bench: Resolving Real-World GitHub Issues](https://www.swebench.com/)
+- [OctoPack & CommitPackFT (BigCode)](https://github.com/bigcode-project/octopack)
+- [CrossCodeEval: Cross-File Code Completion Benchmark](https://github.com/amazon-science/cceval)
+- [RepoBench: Repository-Level Code Completion](https://github.com/Leolty/repobench)

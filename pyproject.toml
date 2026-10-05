@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "janus-4"
+name = "bifocalgemma"
 version = "0.1.0"
-description = "JANUS-4: Asymmetric Bidirectional Encoding & Causal Generation with Gemma 4 for Long-Context Developer Agents"
+description = "BifocalGemma: Evaluating Bidirectional Repository Encoding for Local Code Repair"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -34,6 +34,15 @@ dev = [
     "pytest>=8.0.0",
     "ruff>=0.9.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/daruoktab/bifocalgemma"
+Repository = "https://github.com/daruoktab/bifocalgemma"
+Issues = "https://github.com/daruoktab/bifocalgemma/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["bifocalgemma*"]
 
 [tool.ruff]
 line-length = 100

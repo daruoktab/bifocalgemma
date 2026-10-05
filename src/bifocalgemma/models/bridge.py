@@ -1,8 +1,8 @@
 """Gated Cross-Attention Bridge for Asymmetric Encoder-Decoder Coupling.
 
-Mitigates zero-gradient deadlock by initializing gate parameter g = atanh(0.05) ~ 0.05,
-allowing 95% causal decoder pass-through while immediately streaming active gradients
-back to the bidirectional encoder and multimodal patch projection modules.
+Initializes g = atanh(0.05), scaling the cross-attention residual by 0.05.
+The input residual is unchanged; this coefficient is not a percentage of preserved
+decoder behavior or encoder gradients. Real Gemma integration is not implemented.
 """
 
 import math
@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 
 class RMSNorm(nn.Module):
-    """Simple RMS Normalization layer matching Gemma standard."""
+    """RMS normalization used by this bridge; not a verified Gemma layer replacement."""
 
     def __init__(self, dim: int, eps: float = 1e-6):
         super().__init__()
@@ -31,12 +31,13 @@ class GatedCrossAttentionBridge(nn.Module):
 
     Args:
         decoder_dim: Hidden dimension of the causal decoder (e.g., Gemma 4 E4B).
-        encoder_dim: Hidden dimension of the bidirectional encoder (e.g., Gemma 4 12B).
+        encoder_dim: Hidden dimension of the proposed encoder (e.g., Gemma 4 E2B).
         num_heads: Number of attention heads.
         head_dim: Dimension per head. If None, defaults to decoder_dim // num_heads.
         dropout: Attention dropout probability.
         initial_gate_val: Initial tanh gate factor. Default is 0.05 (atanh(0.05) ~ 0.05004),
-            avoiding gradient deadlock while preserving 95% decoder identity at step 0.
+            scaling the added residual and allowing gradients into nonzero bridge projections.
+            This does not guarantee a fixed percentage of preserved behavior or gradients.
         use_qk_norm: Whether to apply RMSNorm on Q and K before dot-product.
     """
 

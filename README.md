@@ -1,102 +1,100 @@
-# 🏆 JANUS-4: Long-Context Developer Agent Architecture
+# BifocalGemma: Local Code Repair Research
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue)](https://www.python.org/)
-[![Target Competition](https://img.shields.io/badge/Kaggle-Gemma_4_Developer_Agent_Paper_Track-orange)](https://www.kaggle.com/competitions/gemma-4-developer-agent-paper)
-[![GitHub Repo](https://img.shields.io/badge/GitHub-janus--4-green)](https://github.com/daruoktab/janus-4)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](pyproject.toml)
+[![GitHub](https://img.shields.io/badge/GitHub-bifocalgemma-green)](https://github.com/daruoktab/bifocalgemma)
 
-**Paper Title:**  
-*JANUS-4: Looking Both Ways—Complete 2×2 Factorial Analysis of Symmetric and Asymmetric Encoder-Decoder Gemma 4 for Long-Context Developer Agents*
+**Paper title:** *BifocalGemma: Evaluating Bidirectional Repository Encoding for Local Code Repair*
 
-> **Misi Utama Google DeepMind:**  
-> *"Today’s best coding agents rely on massive API models running in the cloud. What if every developer could rely on an autonomous agent equally capable offline, on consumer hardware? Post-train an open model into a reliable agent that navigates complex codebases and drafts fixes for real software issues, accelerating developer workflows on everyday hardware."*
+BifocalGemma meneliti apakah representasi repositori bidirectional dapat membantu model
+lokal memperbaiki bug lintas file pada anggaran komputasi terbatas. Encoder direncanakan
+untuk memahami kode, sedangkan decoder kausal menghasilkan patch melalui cross-attention.
+Keunggulan kualitas, latensi, dan memori masih merupakan hipotesis yang perlu diuji.
 
----
+## Status implementasi
 
-## 📚 Panduan Kolaborasi Tim (Quick Navigation)
+| Bagian | Yang tersedia sekarang | Tahap berikutnya |
+| --- | --- | --- |
+| Cross-attention bridge | Proyeksi Q/K/V, normalisasi, gated residual | Integrasi layer Gemma dan generasi |
+| Fitur AST | Embedding tipe node dan kedalaman dari ID masukan | Ekstraksi Tree-sitter dan pemetaan ke token |
+| Routing | Pemisahan tensor konteks/target dan mask validitas token | Pengaturan attention encoder bidirectional |
+| Estimasi self-KV | Ilustrasi layer full-attention seragam | Pengukuran memori sistem sebenarnya |
+| Pelaporan skor | Tabel skor masukan dan referensi bersumber | Harness benchmark dan agent loop |
 
-Seluruh dokumen teknis dan panduan pengerjaan telah disusun rapi di folder `docs/`:
-* 🏆 [**`docs/COMPETITION_GUIDE.md`**](docs/COMPETITION_GUIDE.md) — Aturan resmi hackathon, rubrik 5 kriteria juri Kaggle, hadiah $35.000, batas 3.000 kata, dan topik resmi (Code Comprehension, Graph Reasoning, Tuning & Optimization).
-* 🔬 [**`docs/RESEARCH_SPEC.md`**](docs/RESEARCH_SPEC.md) — Spesifikasi teknis arsitektur model, formula matematika bridge $\tanh(g)$, bukti penghematan KV-cache konteks panjang (>95%), dan tabel VRAM 16-bit.
-* 🏛️ [**`docs/GEMMA4_EDGE_ARCHITECTURE.md`**](docs/GEMMA4_EDGE_ARCHITECTURE.md) — Analisis arsitektur lengkap Gemma 4 E2B & E4B hasil verifikasi langsung dari Hugging Face Hub dan Transformers config.
-* 👥 [**`docs/TEAM_PLAYBOOK.md`**](docs/TEAM_PLAYBOOK.md) — Pembagian peran 2 anggota tim, roadmap mingguan menuju deadline 12 Nov 2026, serta SOP pengodingan bersama menggunakan `ty` dan `ruff`.
+Tes yang tersedia memakai tensor sintetis kecil. Belum ada backbone Gemma terintegrasi,
+training pipeline, checkpoint BifocalGemma, repository cache, atau hasil benchmark proyek.
+Mask token semua-valid tidak otomatis menghapus causal mask atau sliding window backbone.
 
----
+## Fokus eksperimen
 
-## 🏛️ Matriks Faktorial 2×2 Model Gemma 4 Edge
+Eksperimen pertama memakai kandidat **BifocalGemma-E2B-E2B**, setelah kebutuhan memori
+dan kelayakan integrasinya diukur. Fokusnya adalah pemahaman dependensi lintas file,
+lokasi bug, dan patch yang lolos tes. Baseline decoder-only harus dijalankan dengan
+data, konteks, sampling, token/tool budget, dan harness yang sebanding, termasuk prefix
+caching jika didukung. Ukur kualitas perbaikan, latensi cold/warm cache, throughput,
+dan peak VRAM total; HumanEval/MBPP hanya evaluasi tambahan, bukan bukti utama.
 
-Kami mengeksplorasi seluruh pasangan Encoder (Bidirectional) dan Decoder (Causal IT) dari keluarga Gemma 4 Edge untuk tugas rekayasa perangkat lunak berkonten panjang:
+Konfigurasi **BifocalGemma-E4B-E2B**, **BifocalGemma-E2B-E4B**, dan
+**BifocalGemma-E4B-E4B** merupakan eksperimen lanjutan. Perbandingan kapasitas encoder
+versus decoder membutuhkan kedua konfigurasi asimetris. Multimodal dan pembaruan
+cache satu hop juga ditunda sampai eksperimen dasar dapat direproduksi.
 
-$$\begin{pmatrix} \text{\textbf{JANUS-E2B-E2B}} & \text{\textbf{JANUS-E2B-E4B}} \\ \text{\textbf{JANUS-E4B-E2B}} & \text{\textbf{JANUS-E4B-E4B}} \end{pmatrix}$$
+## Dasar ilmiah dan batas klaim
 
-| Konfigurasi Model | Encoder | Decoder (IT) | Parameter Efektif | Bobot 16-bit | Peran & Nilai Ilmiah Utama |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **JANUS-E2B-E2B** | Gemma 4 E2B | Gemma 4 E2B IT | **~4.6B** | **~9.2 GB** | **Core Iso-Parameter Test**: Perbandingan langsung *head-to-head* melawan **Base E4B (4.5B Decoder-Only)** pada pemahaman repositori. |
-| **JANUS-E4B-E2B** | Gemma 4 E4B | Gemma 4 E2B IT | **~6.8B** | **~13.6 GB** | **"Heavy Reader, Agile Coder"**: Encoder 4.5B bidirectional menyerap 16k–32k repositori/AST; Decoder 2.3B menghasilkan patch kode dengan kecepatan inferensi maksimal. |
-| **JANUS-E2B-E4B** | Gemma 4 E2B | Gemma 4 E4B IT | **~6.8B** | **~13.6 GB** | **"Agile Reader, Deep Reasoner"**: Prefill repositori lincah; memanfaatkan *Thinking Mode* E4B untuk penalaran perbaikan bug yang rumit. |
-| **JANUS-E4B-E4B** | Gemma 4 E4B | Gemma 4 E4B IT | **~9.0B** | **~18.0 GB** | **Flagship SOTA Agent**: Menyaingi model raksasa 27B–31B pada SWE-bench Lite dengan jejak memori yang jauh lebih hemat. |
+[T5Gemma](https://developers.googleblog.com/en/t5gemma/) sudah mengadaptasi model
+decoder-only menjadi encoder-decoder, termasuk konfigurasi asimetris. Kontribusi
+BifocalGemma harus dibuktikan melalui metode atau hasil khusus perbaikan kode.
+Dalam causal attention, representasi token awal tidak melihat token sesudahnya,
+tetapi token jawaban dapat mengakses konteks sebelumnya; decoder-only tetap dapat
+memahami dependensi lintas file. [Prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/)
+juga dapat menggunakan kembali komputasi prefix yang sama pada baseline.
 
----
+Pengurangan decoder **self-attention KV** tidak sama dengan pengurangan total VRAM.
+Encoder states, cross-attention K/V, bobot, aktivasi, dan overhead tetap harus dihitung.
+Parameter efektif juga berbeda dari jumlah parameter fisik dan ukuran checkpoint;
+lihat [referensi backbone](docs/GEMMA4_EDGE_ARCHITECTURE.md).
 
-## ⚡ 5 Inovasi Inti Rekayasa Perangkat Lunak Konteks Panjang
+## Setup
 
-1. **Bidirectional Long-Context Repository Encoding**: Ingesti repositori multi-file (16k–32k token) secara utuh. Tidak ada batasan *left-to-right causal blindness* maupun *sliding window* 1024 token—setiap fungsi dapat melihat pemanggil (*callers*) dan definisi (*callees*) di masa depan secara simultan.
-2. **Asymmetric KV-Cache Decoupling (>95% Memory Reduction)**: Representasi konteks repositori di-encode **sekali** oleh encoder ($H_{\text{enc}}$). Selama generasi kode autoregresif, KV-cache dinamis decoder hanya dialokasikan untuk token patch yang dihasilkan ($L_{\text{gen}} \ll L_{\text{prompt}}$), mengeliminasi lonjakan VRAM saat konteks sangat panjang.
-3. **AST-Guided Infilling (Graph-UL2)**: Denoising pre-training berbasis pohon sintaksis Tree-sitter (Function Body Infilling, Cross-File Dependency Infilling, dan Call-Site Resolution).
-4. **Multi-Positive Contrastive Localization Loss**: Mengidentifikasi titik perbaikan bug di beberapa file sekaligus dalam satu pull request tanpa mendiskriminasi file yang saling terkait.
-5. **Latent Repository Memory dengan 1-Hop Invalidation**: State representasi repositori di-cache di VRAM; saat model menjalankan tool edit file, hanya file yang diedit dan dependensi 1-hop yang di-encode ulang (latensi multi-turn turun hingga 8x).
-
----
-
-## 📊 Suite Evaluasi Coding (Ringan, Cepat & Tanpa Docker Berat)
-
-Kami menyediakan evaluasi berjenjang yang dapat dijalankan secara instan:
-1. **Tier 1 (Instant Algorithmic Synthesis)**: **HumanEval / HumanEval+** & **MBPP / MBPP+** via `evalplus` (selesai dalam ~2 menit di GPU/CPU lokal).
-2. **Tier 2 (Long-Context Repository Infilling)**: **HumanEval-Infilling** & **CrossCodeEval** (membuktikan keunggulan natif arsitektur Encoder-Decoder dibanding trik FIM pada decoder-only).
-3. **Tier 3 (Real-World Software Engineering)**: **SWE-bench Lite** (subset 300 tugas perbaikan bug nyata dari repositori open-source GitHub).
-
----
-
-## 🚀 Setup & Standar Pengodingan Tim (Universal & Portabel)
-
-Kedua anggota tim menggunakan alur kerja yang seragam agar hasil linter, formatter, dan type-checker selalu sama:
-
-### 1. Setup Environment Awal
 ```powershell
-uv venv
-.venv\Scripts\Activate.ps1
-uv pip install -e ".[dev]"
+git clone https://github.com/daruoktab/bifocalgemma.git
+cd bifocalgemma
+conda create -n ai python=3.12
+conda activate ai
+python -m pip install -e ".[dev]"
 ```
 
-### 2. Standar Pemeriksaan Wajib Sebelum Commit
+Jika environment `ai` sudah ada, cukup aktifkan environment tersebut. Instalasi ini
+memasang dependensi library; tidak mengunduh bobot Gemma. Versi Transformers yang
+mendukung backbone sebenarnya harus diverifikasi saat tahap integrasi.
+
+## Pemeriksaan modul
+
 ```powershell
-# Jalankan seluruh unit test matriks 2x2
-$env:PYTHONPATH = "src"
-python -m unittest discover tests
-
-# Format & linter otomatis (Ruff)
-ruff format .
-ruff check --fix .
-
-# Cek type-safety LSP (Ty — otomatis mendeteksi venv aktif)
+python -m unittest discover -s tests
+ruff check .
+ruff format --check .
 ty check .
 ```
 
-### 3. Eksekusi Evaluasi Cepat
+Unit test tidak memerlukan GPU atau bobot model, tetapi memerlukan PyTorch.
+Lulus pemeriksaan modul bukan bukti keberhasilan agen atau kualitas patch.
+
+Contoh berikut hanya menunjukkan format pelaporan; angka **ilustratif, bukan hasil eksperimen**:
+
 ```powershell
-# Cetak tabel perbandingan resmi vs baseline Google
-python -c "from janus.evaluation import print_comparison_table; print_comparison_table({'humaneval': 63.4, 'mbpp': 56.1}, 'JANUS-E2B-E2B')"
+python -c "from bifocalgemma.evaluation import print_comparison_table; print_comparison_table({'humaneval': 63.4, 'mbpp': 56.1}, illustrative=True)"
 ```
 
----
+Skor yang belum terverifikasi atau belum diukur ditampilkan sebagai `N/A`, bukan nol.
 
-## 👥 Tim Peneliti & Pengembang (Contributors)
+## Dokumen dan kontributor
 
-* [@daruoktab](https://github.com/daruoktab)
-* [@attmhd](https://github.com/attmhd)
+- [Proposal riset](docs/proposal.md)
+- [Spesifikasi teknis dan batas estimasi memori](docs/RESEARCH_SPEC.md)
+- [Referensi arsitektur Gemma 4](docs/GEMMA4_EDGE_ARCHITECTURE.md)
+- [Panduan tim](docs/TEAM_PLAYBOOK.md)
+- [Catatan kompetisi dan status verifikasi](docs/COMPETITION_GUIDE.md)
 
----
-
-## 📄 Lisensi Resmi
-
-Seluruh kode dan aset pada repositori ini dilisensikan di bawah [Apache License 2.0](LICENSE) sesuai kewajiban aturan resmi Google Gemma 4 Developer Agent Paper Track.
+Kontributor: [daruoktab](https://github.com/daruoktab) dan [attmhd](https://github.com/attmhd).
+Kode proyek menggunakan [Apache License 2.0](LICENSE).

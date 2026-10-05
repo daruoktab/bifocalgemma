@@ -1,8 +1,7 @@
 """AST & Code Structure Projection Module for Long-Context Code Comprehension.
 
-Projects hierarchical code structural features (AST node types, syntactic depth,
-and scope coordinates) directly into the LLM embedding space to empower deep
-bidirectional repository reasoning.
+Projects supplied AST node type IDs and syntax depth into an embedding space.
+Tree-sitter extraction, dependency edges, and Gemma integration are not implemented.
 """
 
 from typing import Optional
@@ -12,12 +11,12 @@ import torch.nn as nn
 
 
 class ASTGraphProjector(nn.Module):
-    """Projects hierarchical AST syntactic features and code graph coordinates into LLM embedding space.
+    """Projects supplied AST node types and syntax depth into an embedding space.
 
     Args:
         num_node_types: Number of distinct AST node types (from tree-sitter vocabulary).
         max_depth: Maximum syntactic tree depth to embed.
-        embed_dim: Target LLM embedding dimension (e.g., 2048 for E2B, 2560 for E4B).
+        embed_dim: Projection dimension; set to 1536 for E2B or 2560 for E4B integration.
         dropout: Dropout probability.
     """
 

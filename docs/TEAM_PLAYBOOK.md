@@ -1,102 +1,79 @@
-# 👥 Team Playbook & Panduan Standar Kolaborasi (2 Anggota)
+# BifocalGemma: Panduan Tim
 
-> Panduan kolaborasi taktis untuk tim beranggotakan 2 orang agar standar koding, linter, type-safety, dan eksekusi riset **100% identik di laptop masing-masing**, siap sebelum deadline **12 November 2026**.
+**Tujuan:** eksperimen perbaikan bug lintas file yang dapat direproduksi, dengan
+laporan kualitas dan biaya komputasi. Jadwal submission mengikuti ketentuan yang
+telah diverifikasi dari [halaman kompetisi](COMPETITION_GUIDE.md).
 
----
+## Pembagian kerja
 
-## 🎯 1. Pembagian Peran & Tanggung Jawab
+| Anggota | Tanggung jawab |
+| --- | --- |
+| [daruoktab](https://github.com/daruoktab) | Audit bobot/memori, integrasi backbone dan bridge, konfigurasi adaptasi serta checkpoint |
+| [attmhd](https://github.com/attmhd) | Kurasi data, baseline dan harness, analisis hasil, reproduksi serta penulisan paper |
 
-Agar pengerjaan efisien dan tidak tumpang tindih:
-
-### 👤 Anggota A: [@daruoktab](https://github.com/daruoktab) — *Lead Model Architect & Training Engineer*
-* Integrasi arsitektur `GatedCrossAttentionBridge` dan `ASTGraphProjector` dengan backbone Hugging Face `google/gemma-4-E2B-it` dan `google/gemma-4-E4B-it`.
-* Implementasi pipeline pelatihan (LoRA / adapter tuning) dengan presisi 16-bit (BF16) dan optimizer 8-bit AdamW.
-* Manajemen komputasi GPU (GPU 24GB lokal dan Kaggle 2x T4).
-* Penyimpanan checkpoint model untuk evaluasi matriks $2 \times 2$.
-
-### 👤 Anggota B: [@attmhd](https://github.com/attmhd) — *Lead Evaluation, Data Curator & Paper Writer*
-* Kurasi dataset niche software engineering berkonten panjang (CommitPackFT, repositori open-source Python, SWE-bench Lite) menggunakan `tree-sitter` untuk ekstraksi AST.
-* Eksekusi benchmark instan (`evalplus` HumanEval/MBPP, HumanEval-Infilling, SWE-bench Lite) dan pembuatan tabel/grafik perbandingan vs baseline Google.
-* Penyusunan draf naskah riset (Kaggle Writeup & LaTeX preprint berstandar 3.000 kata).
-* Pembuatan Kaggle Public Demo Notebook untuk lampiran submission.
-
----
-
-## ⚙️ 2. Standar Setup Environment (Bebas Masalah Folder Berbeda)
-
-Kedua anggota tim menggunakan standar tool modern yang sama (`uv`, `ruff`, dan `ty`) sehingga konfigurasi project sepenuhnya portabel:
+## Setup dan pemeriksaan
 
 ```powershell
-# 1. Clone repositori
-git clone https://github.com/daruoktab/janus-4.git
-cd janus-4
-
-# 2. Buat virtual environment lokal masing-masing
-uv venv
-.venv\Scripts\Activate.ps1
-
-# 3. Install seluruh dependensi dan modul lokal dalam mode editable
-uv pip install -e ".[dev]"
+git clone https://github.com/daruoktab/bifocalgemma.git
+cd bifocalgemma
+conda create -n ai python=3.12
+conda activate ai
+python -m pip install -e ".[dev]"
 ```
 
----
-
-## ⚡ 3. SOP Pengodingan Bersama (Cheat Sheet Wajib Sebelum Commit)
-
-Sebelum melakukan `git push`, kedua anggota **wajib menjalankan 3 perintah inti ini** agar hasil koding, formatting, dan type-checking selalu seragam:
+Environment `ai` yang sudah ada cukup diaktifkan. Pilih build PyTorch sesuai
+hardware; tes modul memakai CPU dan tensor sintetis, tanpa bobot Gemma.
+Pin versi Transformers yang mendukung Gemma 4 saat tahap integrasi backbone.
 
 ```powershell
-# 1. Pastikan modul src terbaca dan jalankan seluruh Unit Test Matriks 2x2
-$env:PYTHONPATH = "src"
-python -m unittest discover tests
-
-# 2. Format kode & cek linter otomatis (Ruff)
-ruff format .
-ruff check --fix .
-
-# 3. Validasi Type-Safety LSP (Ty) — otomatis mendeteksi venv aktif
+python -m unittest discover -s tests
+ruff check .
+ruff format --check .
 ty check .
+git diff --check
 ```
 
-*Jika ketiga perintah di atas menampilkan **"All checks passed!"**, maka kode dijamin bebas bug sintaksis dan aman di-push ke GitHub.*
+Lulus checks hanya memberi bukti pada hal yang diperiksa. Itu tidak menjamin
+proyek bebas bug, agen berfungsi, ataupun kualitas patch. `ruff format .` dapat
+digunakan untuk memperbaiki format sebelum menjalankan pemeriksaan ulang.
 
----
+## Milestone berdasarkan bukti
 
-## 📅 4. Jadwal & Milestone Taktis Menuju Deadline (12 Nov 2026)
+| Tahap | Hasil yang harus tersedia sebelum lanjut |
+| --- | --- |
+| 1. Fondasi | Modul bridge, AST embedding, routing, dan laporan skor; cakupan tes sintetis dijelaskan |
+| 2. Audit biaya | Parameter fisik/trainable, ukuran checkpoint, precision, offloading, peak VRAM dan latensi baseline |
+| 3. Integrasi | Satu kandidat BifocalGemma-E2B-E2B terhubung ke bobot asli; attention, forward/generasi, serta checkpoint dapat direproduksi |
+| 4. Adaptasi | Split data tanpa leakage (CommitPackFT, SWE-smith), konfigurasi training sesuai profiling, log dan checkpoint yang terlacak |
+| 5. Evaluasi | Perbaikan lintas file pada held-out tasks (SWE-bench Lite/Verified, CrossCodeEval), baseline sebanding, cold/warm caching, ablation dan analisis kegagalan |
+| 6. Paper/demo | Metode, sumber, hasil terukur dan batasan; demo issue → file terkait → patch → tes |
 
-```
-TIMELINE PENGERJAAN:
-┌─────────────────────┬────────────────────────────────────────────────────────┐
-│ Periode             │ Target & Deliverable                                   │
-├─────────────────────┼────────────────────────────────────────────────────────┤
-│ Minggu 1 (Sekarang) │ • Setup repo & modul dasar (SELESAI ✅)                │
-│                     │ • Uji forward/backward pass matriks 2x2 (SELESAI ✅)   │
-│                     │ • Persiapan dataset kurikulum infilling AST (<350M tok)│
-├─────────────────────┼────────────────────────────────────────────────────────┤
-│ Minggu 2 (Okt 2026) │ • Pelatihan varian utama: JANUS-E2B-E2B (~4.6B)        │
-│                     │ • Evaluasi head-to-head vs Base E4B (RQ1 selesai)      │
-│                     │ • Kerangka draf naskah paper (Introduction & Methods)  │
-├─────────────────────┼────────────────────────────────────────────────────────┤
-│ Minggu 3 (Okt 2026) │ • Pelatihan varian asimetris: E4B-E2B & E2B-E4B (RQ2)  │
-│                     │ • Analisis trade-off kapasitas pemahaman vs generasi   │
-│                     │ • Pelatihan varian flagship: JANUS-E4B-E4B (RQ3)       │
-├─────────────────────┼────────────────────────────────────────────────────────┤
-│ Minggu 4 (Awal Nov) │ • Pengujian lengkap HumanEval-Infilling & SWE-bench    │
-│                     │ • Finalisasi naskah paper 3.000 kata (Kaggle Writeup)  │
-│                     │ • Pembuatan Kaggle Public Demo Notebook                │
-├─────────────────────┼────────────────────────────────────────────────────────┤
-│ 8 - 10 Nov 2026     │ • Internal Review & Freeze Submission                  │
-│                     │ • Submit lebih awal ke Kaggle (Tie-breaker advantage!) │
-└─────────────────────┴────────────────────────────────────────────────────────┘
-```
+Tahap pertama memiliki kode dan tes yang tersedia; status lulus tes harus dicatat
+dari eksekusi sebenarnya. Tahap berikutnya merupakan rencana, bukan pekerjaan yang
+otomatis selesai karena unit test bridge lulus. Jangan mengunci ukuran data atau
+menjanjikan semua konfigurasi sebelum profiling komputasi.
 
----
+## Protokol bersama
 
-## 🔄 5. Sinkronisasi Git Harian
+- Gunakan dataset/split, konteks, sampling, token/tool budget, dan harness sebanding
+  untuk baseline; berikan prefix caching jika backend mendukungnya.
+- Pisahkan skor referensi publik dari pengukuran sendiri. Nilai belum tersedia
+  memakai `N/A`; angka demonstrasi harus diberi label ilustrasi.
+- Catat hardware, environment, revision model, seed, precision, peak VRAM, dan log
+  kegagalan. HumanEval/MBPP bukan pengganti evaluasi repositori lintas file.
+- Re-encode snapshot penuh setelah edit untuk eksperimen awal. Partial invalidation,
+  multimodal, matriks lengkap, dan klaim encoder-versus-decoder merupakan tahap lanjutan.
+
+## Sinkronisasi Git
 
 ```powershell
-git pull origin main
-git add .
-git commit -m "feat/eval/docs: deskripsi perubahan"
-git push origin main
+git pull --ff-only origin main
+git switch -c codex/deskripsi-perubahan
+git add <file-yang-diubah>
+git commit -m "docs: jelaskan perubahan"
+git push -u origin HEAD
 ```
+
+Gunakan branch baru untuk pekerjaan terpisah dan tinjau diff sebelum commit.
+Koordinasikan perubahan antarmuka paket dan config eksperimen agar baseline tetap
+dapat direproduksi. Jadwal paper ditetapkan ulang setelah deadline resmi dikonfirmasi.
