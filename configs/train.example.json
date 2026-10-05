@@ -1,0 +1,15 @@
+{
+  "status": "placeholder_requires_profiling",
+  "training_recipe": "direct_sft",
+  "teacher_required": false,
+  "distillation": false,
+  "learning_rate": null,
+  "micro_batch_size": null,
+  "gradient_accumulation_steps": null,
+  "max_steps": null,
+  "precision": null,
+  "peft_strategy": null,
+  "data_manifest": "data/manifest.jsonl",
+  "output_dir": "outputs",
+  "documentation": "docs/TRAINING.md"
+}

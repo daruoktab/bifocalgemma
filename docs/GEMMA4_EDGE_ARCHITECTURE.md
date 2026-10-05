@@ -138,3 +138,11 @@ ada di [audit JSON](GEMMA4_JSON_AUDIT.md).
 
 [Desain eksperimen](EXPERIMENT_DESIGN.md) mengatur matriks dan pembanding enam
 model; prior art T5Gemma tetap dipakai untuk menilai batas kontribusi.
+
+## Hubungan dengan rancangan aktif
+
+Audit/native-meta di atas memberi fakta backbone dan hasil validasi awal. Rancangan
+aktif [ARCHITECTURE](ARCHITECTURE.md) dibangun merged dari initialization, direct
+SFT, dengan word tying simetris dari IT; PLE terpisah. Bridge terpisah adalah
+reference optional, bukan decoder target. Lihat [VALIDATION](VALIDATION.md) untuk
+checks scaffold terbaru dan gap native integration yang belum selesai.

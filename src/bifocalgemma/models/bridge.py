@@ -1,4 +1,6 @@
-"""Gated Cross-Attention Bridge for Asymmetric Encoder-Decoder Coupling.
+"""Optional separated-attention reference for ablations, not the default architecture.
+
+The direct-SFT target uses merged attention from initialization (see docs/ARCHITECTURE.md).
 
 Initializes g = atanh(0.05), scaling the cross-attention residual by 0.05.
 The input residual is unchanged; this coefficient is not a percentage of preserved

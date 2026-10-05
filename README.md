@@ -1,74 +1,79 @@
-# BifocalGemma: Local Code Repair Research
+# BifocalGemma: Research Scaffold for Local Code Repair
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](pyproject.toml)
 [![GitHub](https://img.shields.io/badge/GitHub-bifocalgemma-green)](https://github.com/daruoktab/bifocalgemma)
 
-**Paper title:** *BifocalGemma: Evaluating Bidirectional Repository Encoding for Local Code Repair*
+**Paper:** *BifocalGemma: Evaluating Bidirectional Repository Encoding for Local Code Repair*
 
-BifocalGemma meneliti apakah representasi repositori bidirectional dapat membantu model
-lokal memperbaiki bug lintas file pada anggaran komputasi terbatas. Encoder direncanakan
-untuk memahami kode, sedangkan decoder kausal menghasilkan patch melalui cross-attention.
-Keunggulan kualitas, latensi, dan memori masih merupakan hipotesis yang perlu diuji.
+BifocalGemma meneliti bagaimana kapasitas reader dan generator memengaruhi pemahaman
+codebase serta perbaikan bug lintas file. Rancangan aktif memakai **encoder Gemma 4
+base + decoder Gemma 4 IT**, langsung dibangun dengan merged attention, lalu
+supervised fine-tuning. Teacher network dan distillation bersifat opsional.
 
-## Status implementasi
+## Matriks penelitian
 
-| Bagian | Yang tersedia sekarang | Tahap berikutnya |
+| Pasangan | Encoder | Decoder | Ordinary word embeddings lintas komponen |
+| --- | --- | --- | --- |
+| E2B–E2B IT | E2B base | E2B IT | Tied dari initialization, anchor decoder IT |
+| E4B–E4B IT | E4B base | E4B IT | Tied dari initialization, anchor decoder IT |
+| E2B–E4B IT | E2B base | E4B IT | Terpisah |
+| E4B–E2B IT | E4B base | E2B IT | Terpisah |
+
+Dua baseline utama adalah **E2B-IT dan E4B-IT decoder-only**. Decoder input/LM head
+tetap tied internal; PLE antar encoder/decoder terpisah. T5Gemma/T5Gemma 2 menjadi
+related work, dengan benchmark utama dibatasi pada enam model ini.
+
+Kontribusi yang ditargetkan: adaptasi encoder-decoder Edge untuk codebase understanding/
+repair, mixed initialization base/IT, serta studi alokasi kapasitas. Keunggulan kualitas
+atau memori belum menjadi hasil eksperimen. [Desain studi](docs/EXPERIMENT_DESIGN.md)
+menjelaskan kontrol dan confound symmetric-only tying.
+
+## Susunan blok saat ini
+
+| Tingkat | Yang tersedia | Makna |
 | --- | --- | --- |
-| Cross-attention bridge | Proyeksi Q/K/V, normalisasi, gated residual | Integrasi layer Gemma dan generasi |
-| Fitur AST | Embedding tipe node dan kedalaman dari ID masukan | Ekstraksi Tree-sitter dan pemetaan ke token |
-| Routing | Pemisahan tensor konteks/target dan mask validitas token | Pengaturan attention encoder bidirectional |
-| Estimasi self-KV | Ilustrasi layer full-attention seragam | Pengukuran memori sistem sebenarnya |
-| Pelaporan skor | Tabel skor masukan dan referensi bersumber | Harness benchmark dan agent loop |
+| Implemented | Registry/config, data contracts, collator, word tying, CE, JSONL serializer | Utilitas dapat dipakai sesuai kontraknya |
+| Reference | Joint-softmax merged attention, GQA, asymmetric projection, tiny assembly | Prototipe numerik kecil; bukan full Gemma integration |
+| Placeholder | Native weight/layer/cache integration, tokenizer/dataset/AST, trainer, generation, agent, harness, checkpoint | Signature dan acceptance criteria ada; fail secara eksplisit |
+| Optional | Separated gated bridge dan distillation slot | Bukan recipe training default |
 
-Tes memakai tensor sintetis, bridge dengan lebar hidden asli, serta kelas Gemma 4
-dengan bobot acak. Struktur penuh diperiksa pada meta; runtime full-depth memakai
-width dan vocabulary kecil. Tidak ada bobot pretrained dimuat. Belum ada backbone Gemma terintegrasi,
-training pipeline, checkpoint BifocalGemma, repository cache, atau hasil benchmark proyek.
-Mask token semua-valid tidak otomatis menghapus causal mask atau sliding window backbone.
+Tidak ada checkpoint BifocalGemma pretrained, training data besar, atau hasil code
+repair yang disertakan. Model full-size diperiksa pada meta; tes native memakai
+bobot acak yang diperkecil. CLI smoke merakit model reference yang lebih sederhana
+lagi dan selalu menyatakan mode synthetic, bukan benchmark score.
 
-## Fokus eksperimen
+## Mulai dari blok kecil
 
-Studi utama memakai empat pasangan encoder base / decoder IT:
-**E2B–E2B IT**, **E4B–E4B IT**, **E2B–E4B IT**, dan **E4B–E2B IT**.
-Dua baseline decoder-only adalah **Gemma 4 E2B-IT** dan **Gemma 4 E4B-IT**.
-T5Gemma/T5Gemma 2 tetap menjadi related work; pembanding benchmark utama dibatasi
-pada enam model tersebut.
+```powershell
+conda activate ai
+$env:PYTHONPATH = 'src'
+$env:HF_HUB_OFFLINE = '1'
+$env:TRANSFORMERS_OFFLINE = '1'
+$env:OMP_NUM_THREADS = '4'
 
-Target word-embedding sharing: **tied pada E2B–E2B IT dan E4B–E4B IT**,
-serta **untied pada E2B–E4B IT dan E4B–E2B IT**. Rencana training bertahap
-menyimpan teacher dengan attention/embedding terpisah, lalu melakukan konversi
-merged attention, tying simetris dan continued adaptation. Pipeline konversi
-belum tersedia; sharing word embeddings tidak otomatis menyatukan PLE.
+python -m bifocalgemma inspect --experiment BifocalGemma-E4B-E2B
+python -m bifocalgemma validate-config --config configs/experiments.json
+python -m bifocalgemma smoke --experiment all --device cpu
+python -m unittest discover -s tests
+ruff check .
+ruff format --check .
+ty check .
+```
 
+Perintah tersebut tidak mengunduh bobot model. smoke melakukan satu synthetic
+forward/backward per pasangan, tanpa optimizer/training riil. CUDA dapat dipilih
+untuk reference jika tersedia; ia tidak memuat model E2B/E4B asli.
 
-Kontribusi yang ditargetkan: adaptasi kelas Edge untuk memahami codebase dan repair,
-inisialisasi campuran base encoder + IT decoder, serta studi pengaruh kapasitas
-encoder/decoder melalui matriks 2×2, dengan kebijakan embedding tiap tahap
-dicatat agar efek kapasitas dan sharing tidak tercampur. Lihat [desain eksperimen](docs/EXPERIMENT_DESIGN.md)
-untuk peran checkpoint, pertanyaan riset, dan batas klaim.
+```powershell
+python -m bifocalgemma train --experiment BifocalGemma-E2B-E2B
+python -m bifocalgemma evaluate --predictions outputs/predictions.jsonl
+```
 
-E2B–E2B menjadi pilot integrasi, lalu keempat pasangan dijalankan bertahap sesuai
-hasil profiling. Ukur kualitas patch/lokalisasi, latensi, throughput dan peak VRAM.
-Baseline memakai protokol data/context/tool budget yang sebanding dan prefix caching
-bila didukung. Multimodal dan partial cache invalidation adalah pekerjaan lanjutan.
+train/evaluate sengaja exit 2 dan menyebut blok yang belum terintegrasi serta
+tautan docs. Placeholder tidak menghasilkan checkpoint atau skor palsu.
 
-## Dasar ilmiah dan batas klaim
-
-[T5Gemma](https://developers.googleblog.com/en/t5gemma/) sudah mengadaptasi model
-decoder-only menjadi encoder-decoder, termasuk konfigurasi asimetris. Kontribusi
-BifocalGemma harus dibuktikan melalui metode atau hasil khusus perbaikan kode.
-Dalam causal attention, representasi token awal tidak melihat token sesudahnya,
-tetapi token jawaban dapat mengakses konteks sebelumnya; decoder-only tetap dapat
-memahami dependensi lintas file. [Prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/)
-juga dapat menggunakan kembali komputasi prefix yang sama pada baseline.
-
-Pengurangan decoder **self-attention KV** tidak sama dengan pengurangan total VRAM.
-Encoder states, cross-attention K/V, bobot, aktivasi, dan overhead tetap harus dihitung.
-Parameter efektif juga berbeda dari jumlah parameter fisik dan ukuran checkpoint;
-lihat [referensi backbone](docs/GEMMA4_EDGE_ARCHITECTURE.md).
-
-## Setup
+## Setup dari checkout baru
 
 ```powershell
 git clone https://github.com/daruoktab/bifocalgemma.git
@@ -78,47 +83,26 @@ conda activate ai
 python -m pip install -e ".[dev]"
 ```
 
-Jika environment `ai` sudah ada, cukup aktifkan environment tersebut. Instalasi ini
-memasang dependensi library; tidak mengunduh bobot Gemma. Versi Transformers yang
-mendukung backbone sebenarnya harus diverifikasi saat tahap integrasi.
+Jika ai sudah ada, cukup aktifkan environment itu. Dependency installation berbeda
+dari download bobot. Untuk source checkout tanpa editable install, gunakan PYTHONPATH
+seperti contoh di atas. [Config training](configs/train.example.json) menunggu
+profiling untuk hyperparameters; teacher_required=false.
 
-## Pemeriksaan modul
+## Jalur membaca dan membangun
 
-```powershell
-python -m unittest discover -s tests
-ruff check .
-ruff format --check .
-ty check .
-```
+Mulai dari [index docs](docs/README.md), kemudian:
 
-Unit test tidak memerlukan GPU atau bobot model, tetapi memerlukan PyTorch.
-Lulus pemeriksaan modul bukan bukti keberhasilan agen atau kualitas patch.
+1. [Proposal](docs/proposal.md) dan [desain eksperimen](docs/EXPERIMENT_DESIGN.md).
+2. [Arsitektur/tensor contracts](docs/ARCHITECTURE.md).
+3. [Build guide: tiap blok dan acceptance criteria](docs/BUILD_GUIDE.md).
+4. [Data](docs/DATA_PIPELINE.md), [training](docs/TRAINING.md), [evaluasi](docs/EVALUATION.md).
+5. [Audit seluruh JSON](docs/GEMMA4_JSON_AUDIT.md) dan [referensi backbone](docs/GEMMA4_EDGE_ARCHITECTURE.md).
+6. [Log riset](docs/RESEARCH_LOG.md), [hasil validasi](docs/VALIDATION.md), dan [panduan tim](docs/TEAM_PLAYBOOK.md).
 
-Contoh berikut hanya menunjukkan format pelaporan; angka **ilustratif, bukan hasil eksperimen**:
-
-```powershell
-python -c "from bifocalgemma.evaluation import print_comparison_table; print_comparison_table({'humaneval': 63.4, 'mbpp': 56.1}, illustrative=True)"
-```
-
-Skor yang belum terverifikasi atau belum diukur ditampilkan sebagai `N/A`, bukan nol.
-
-Tabel studi repair lengkap memakai enam baris tetap. Contoh berikut belum berisi hasil:
-
-```powershell
-python -c "from bifocalgemma.evaluation import print_repair_experiment_table; print_repair_experiment_table({}, illustrative=True)"
-```
-
-
-## Dokumen dan kontributor
-
-- [Proposal riset](docs/proposal.md)
-- [Desain empat pasangan dan dua baseline](docs/EXPERIMENT_DESIGN.md)
-- [Spesifikasi teknis dan batas estimasi memori](docs/RESEARCH_SPEC.md)
-- [Referensi arsitektur Gemma 4](docs/GEMMA4_EDGE_ARCHITECTURE.md)
-- [Audit seluruh JSON base/IT dan dampak pada integrasi](docs/GEMMA4_JSON_AUDIT.md)
-- [Riset dataset training dan benchmark repair](docs/DATASETS_AND_BENCHMARKS.md)
-- [Panduan tim](docs/TEAM_PLAYBOOK.md)
-- [Catatan kompetisi dan status verifikasi](docs/COMPETITION_GUIDE.md)
+Parameter efektif berbeda dari storage fisik. Word tying tidak menyatukan PLE,
+dan pengurangan self-KV bukan pengurangan total VRAM. Dataset, waktu/hardware
+dan hasil benchmark harus diukur serta diulang melalui harness.
 
 Kontributor: [daruoktab](https://github.com/daruoktab) dan [attmhd](https://github.com/attmhd).
-Kode proyek menggunakan [Apache License 2.0](LICENSE).
+Kode memakai [Apache License 2.0](LICENSE). [Ketentuan kompetisi](docs/COMPETITION_GUIDE.md)
+yang belum terverifikasi tetap diberi status demikian.

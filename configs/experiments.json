@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "training_recipe": "direct_sft",
+  "distillation": false,
+  "experiments": [
+    {
+      "name": "BifocalGemma-E2B-E2B",
+      "encoder": {
+        "model_id": "google/gemma-4-E2B",
+        "revision": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
+        "size": "E2B",
+        "role": "encoder_base"
+      },
+      "decoder": {
+        "model_id": "google/gemma-4-E2B-it",
+        "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        "size": "E2B",
+        "role": "decoder_it"
+      },
+      "attention_mode": "merged",
+      "tie_encoder_decoder_words": true,
+      "training_recipe": "direct_sft",
+      "distillation": false,
+      "share_ple": false
+    },
+    {
+      "name": "BifocalGemma-E4B-E4B",
+      "encoder": {
+        "model_id": "google/gemma-4-E4B",
+        "revision": "411aa17b749aa952df1359d2dcea73917a544d9a",
+        "size": "E4B",
+        "role": "encoder_base"
+      },
+      "decoder": {
+        "model_id": "google/gemma-4-E4B-it",
+        "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+        "size": "E4B",
+        "role": "decoder_it"
+      },
+      "attention_mode": "merged",
+      "tie_encoder_decoder_words": true,
+      "training_recipe": "direct_sft",
+      "distillation": false,
+      "share_ple": false
+    },
+    {
+      "name": "BifocalGemma-E2B-E4B",
+      "encoder": {
+        "model_id": "google/gemma-4-E2B",
+        "revision": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
+        "size": "E2B",
+        "role": "encoder_base"
+      },
+      "decoder": {
+        "model_id": "google/gemma-4-E4B-it",
+        "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+        "size": "E4B",
+        "role": "decoder_it"
+      },
+      "attention_mode": "merged",
+      "tie_encoder_decoder_words": false,
+      "training_recipe": "direct_sft",
+      "distillation": false,
+      "share_ple": false
+    },
+    {
+      "name": "BifocalGemma-E4B-E2B",
+      "encoder": {
+        "model_id": "google/gemma-4-E4B",
+        "revision": "411aa17b749aa952df1359d2dcea73917a544d9a",
+        "size": "E4B",
+        "role": "encoder_base"
+      },
+      "decoder": {
+        "model_id": "google/gemma-4-E2B-it",
+        "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        "size": "E2B",
+        "role": "decoder_it"
+      },
+      "attention_mode": "merged",
+      "tie_encoder_decoder_words": false,
+      "training_recipe": "direct_sft",
+      "distillation": false,
+      "share_ple": false
+    },
+    {
+      "name": "Gemma-4-E2B-IT",
+      "encoder": null,
+      "decoder": {
+        "model_id": "google/gemma-4-E2B-it",
+        "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        "size": "E2B",
+        "role": "decoder_it"
+      },
+      "attention_mode": "causal",
+      "tie_encoder_decoder_words": false,
+      "training_recipe": "direct_sft",
+      "distillation": false,
+      "share_ple": false
+    },
+    {
+      "name": "Gemma-4-E4B-IT",
+      "encoder": null,
+      "decoder": {
+        "model_id": "google/gemma-4-E4B-it",
+        "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+        "size": "E4B",
+        "role": "decoder_it"
+      },
+      "attention_mode": "causal",
+      "tie_encoder_decoder_words": false,
+      "training_recipe": "direct_sft",
+      "distillation": false,
+      "share_ple": false
+    }
+  ]
+}

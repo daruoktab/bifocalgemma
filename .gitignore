@@ -26,8 +26,8 @@ outputs/
 weights/
 
 # Data & Large Artifacts
-data/
-datasets/
+/data/
+/datasets/
 *.parquet
 *.arrow
 *.tar.gz

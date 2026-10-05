@@ -162,3 +162,12 @@ Seluruh 24 unit test lulus tanpa skip setelah penambahan pemeriksaan kesetaraan
 text config base/IT, stopping policy, dan lebar MLP per layer pada meta. Ruff,
 format, type checking, serta tautan lokal juga diperiksa. Tokenizer runtime
 memverifikasi 12 round-trip sampel total (3 pada masing-masing 4 varian).
+
+## Pemakaian audit pada scaffold aktif
+
+[Registry C01](../src/bifocalgemma/config.py) menggunakan revisions audit ini.
+Factory M04/M05 masih placeholder; direct merged architecture dan SFT sekarang
+menjadi target. Word tying simetris dilakukan pada initialization dengan anchor
+IT, PLE separate, tanpa teacher wajib. Angka bobot untied di audit adalah baseline
+aritmetis yang tetap berlaku untuk asumsi tanpa sharing; model akhir perlu diukur
+melalui [profiling](TRAINING.md). Latest checks ada di [VALIDATION](VALIDATION.md).

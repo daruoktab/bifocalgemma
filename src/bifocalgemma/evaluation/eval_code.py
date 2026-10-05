@@ -8,6 +8,8 @@ baselines with the same dataset, harness, sampling, and token/tool budget.
 from dataclasses import dataclass
 from typing import Optional
 
+from bifocalgemma.config import EXPERIMENT_NAMES
+
 
 @dataclass
 class BaselineScores:
@@ -38,15 +40,8 @@ REFERENCE_BASELINES: dict[str, BaselineScores] = {
 }
 
 
-# Each BifocalGemma pair means base encoder + instruction-tuned decoder.
-EXPERIMENT_MODELS: tuple[str, ...] = (
-    "BifocalGemma-E2B-E2B",
-    "BifocalGemma-E4B-E4B",
-    "BifocalGemma-E2B-E4B",
-    "BifocalGemma-E4B-E2B",
-    "Gemma-4-E2B-IT",
-    "Gemma-4-E4B-IT",
-)
+# Canonical registry shared with configuration and the CLI.
+EXPERIMENT_MODELS = EXPERIMENT_NAMES
 
 
 def _format_score(value: Optional[float]) -> str:

@@ -1,0 +1,13 @@
+{
+  "status": "synthetic_contract_example_not_training_data",
+  "instance_id": "synthetic-example",
+  "source": "local/toy",
+  "split": "train",
+  "snapshot": {
+    "repo": "local/toy",
+    "base_commit": "synthetic",
+    "files": [{"path": "main.py", "content": "def answer():\n    return 0\n"}]
+  },
+  "issue": "Return 1 from answer().",
+  "target_patch": "diff --git a/main.py b/main.py\n--- a/main.py\n+++ b/main.py\n@@ -1,2 +1,2 @@\n def answer():\n-    return 0\n+    return 1\n"
+}

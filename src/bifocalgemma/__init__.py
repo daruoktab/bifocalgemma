@@ -1,3 +1,3 @@
-"""BifocalGemma: architectural foundations for local code repair with Gemma 4."""
+"""BifocalGemma construction scaffold: direct-SFT merged code-repair research."""
 
 __version__ = "0.1.0"
