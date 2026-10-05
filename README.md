@@ -95,6 +95,7 @@ Skor yang belum terverifikasi atau belum diukur ditampilkan sebagai `N/A`, bukan
 - [Proposal riset](docs/proposal.md)
 - [Spesifikasi teknis dan batas estimasi memori](docs/RESEARCH_SPEC.md)
 - [Referensi arsitektur Gemma 4](docs/GEMMA4_EDGE_ARCHITECTURE.md)
+- [Audit seluruh JSON base/IT dan dampak pada integrasi](docs/GEMMA4_JSON_AUDIT.md)
 - [Riset dataset training dan benchmark repair](docs/DATASETS_AND_BENCHMARKS.md)
 - [Panduan tim](docs/TEAM_PLAYBOOK.md)
 - [Catatan kompetisi dan status verifikasi](docs/COMPETITION_GUIDE.md)

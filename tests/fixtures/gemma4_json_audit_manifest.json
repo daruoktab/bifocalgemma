@@ -1,0 +1,1918 @@
+{
+  "verified_on": "2026-10-05",
+  "coverage": {
+    "requested_base_json_files": 10,
+    "comparison_it_json_files": 10,
+    "weight_files_downloaded": 0
+  },
+  "implementation": {
+    "transformers": "5.18.0",
+    "torch": "2.14.1+cu130",
+    "parameter_counting_device": "meta"
+  },
+  "models": {
+    "google/gemma-4-E2B": {
+      "revision": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
+      "json_assets": {
+        "config.json": {
+          "bytes": 4914,
+          "sha256": "e5faef0dd1a8f2437f6010721146b85433eaa90e679ef011e803c7ffefae73b8",
+          "top_level_keys": [
+            "architectures",
+            "audio_config",
+            "audio_token_id",
+            "boa_token_id",
+            "boi_token_id",
+            "dtype",
+            "eoa_token_id",
+            "eoa_token_index",
+            "eoi_token_id",
+            "image_token_id",
+            "initializer_range",
+            "model_type",
+            "text_config",
+            "tie_word_embeddings",
+            "transformers_version",
+            "video_token_id",
+            "vision_config",
+            "vision_soft_tokens_per_image"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B/resolve/d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f/config.json"
+        },
+        "generation_config.json": {
+          "bytes": 181,
+          "sha256": "de16fa1d777387d5fe6df54a9565d9c0f1213f7b31f2a2cf44805e27686d9c7c",
+          "top_level_keys": [
+            "bos_token_id",
+            "do_sample",
+            "eos_token_id",
+            "pad_token_id",
+            "temperature",
+            "top_k",
+            "top_p",
+            "transformers_version"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B/resolve/d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f/generation_config.json"
+        },
+        "processor_config.json": {
+          "bytes": 1689,
+          "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c",
+          "top_level_keys": [
+            "audio_ms_per_token",
+            "audio_seq_length",
+            "feature_extractor",
+            "image_processor",
+            "image_seq_length",
+            "processor_class",
+            "video_processor"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B/resolve/d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f/processor_config.json"
+        },
+        "tokenizer.json": {
+          "bytes": 32170070,
+          "sha256": "12bac982b793c44b03d52a250a9f0d0b666813da566b910c24a6da0695fd11e6",
+          "top_level_keys": [
+            "version",
+            "truncation",
+            "padding",
+            "added_tokens",
+            "normalizer",
+            "pre_tokenizer",
+            "post_processor",
+            "decoder",
+            "model"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B/resolve/d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f/tokenizer.json"
+        },
+        "tokenizer_config.json": {
+          "bytes": 906,
+          "sha256": "12754e3442e47c1a1c55d550b617fc47ae227e8156ed1b1de0d8428195768b5c",
+          "top_level_keys": [
+            "add_bos_token",
+            "audio_token",
+            "backend",
+            "boa_token",
+            "boi_token",
+            "bos_token",
+            "eoa_token",
+            "eoc_token",
+            "eoi_token",
+            "eos_token",
+            "eot_token",
+            "escape_token",
+            "etc_token",
+            "etd_token",
+            "etr_token",
+            "extra_special_tokens",
+            "image_token",
+            "mask_token",
+            "model_max_length",
+            "pad_token",
+            "padding_side",
+            "processor_class",
+            "soc_token",
+            "sot_token",
+            "stc_token",
+            "std_token",
+            "str_token",
+            "think_token",
+            "tokenizer_class",
+            "unk_token"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B/resolve/d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f/tokenizer_config.json"
+        }
+      },
+      "generation_config": {
+        "bos_token_id": 2,
+        "do_sample": true,
+        "eos_token_id": 1,
+        "pad_token_id": 0,
+        "temperature": 1.0,
+        "top_k": 64,
+        "top_p": 0.95,
+        "transformers_version": "5.5.0.dev0"
+      },
+      "tokenizer_summary": {
+        "model_settings": {
+          "type": "BPE",
+          "dropout": null,
+          "unk_token": "<unk>",
+          "continuing_subword_prefix": null,
+          "end_of_word_suffix": null,
+          "fuse_unk": true,
+          "byte_fallback": true,
+          "ignore_merges": false
+        },
+        "vocab_entries": 262144,
+        "merges": 514906,
+        "added_tokens": [
+          {
+            "id": 0,
+            "content": "<pad>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 1,
+            "content": "<eos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 2,
+            "content": "<bos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 3,
+            "content": "<unk>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 4,
+            "content": "<mask>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 46,
+            "content": "<|tool>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 47,
+            "content": "<tool|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 48,
+            "content": "<|tool_call>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 49,
+            "content": "<tool_call|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 50,
+            "content": "<|tool_response>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 51,
+            "content": "<tool_response|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 52,
+            "content": "<|\"|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 98,
+            "content": "<|think|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 100,
+            "content": "<|channel>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 101,
+            "content": "<channel|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 105,
+            "content": "<|turn>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 106,
+            "content": "<turn|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 255999,
+            "content": "<|image>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 256000,
+            "content": "<|audio>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258880,
+            "content": "<|image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258881,
+            "content": "<|audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258882,
+            "content": "<image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258883,
+            "content": "<audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258884,
+            "content": "<|video|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          }
+        ],
+        "normalizer": {
+          "type": "Replace",
+          "pattern": {
+            "String": " "
+          },
+          "content": "▁"
+        },
+        "pre_tokenizer": {
+          "type": "Split",
+          "pattern": {
+            "String": " "
+          },
+          "behavior": "MergedWithPrevious",
+          "invert": false
+        },
+        "post_processor": {
+          "type": "TemplateProcessing",
+          "single": [
+            {
+              "SpecialToken": {
+                "id": "<bos>",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            }
+          ],
+          "pair": [
+            {
+              "SpecialToken": {
+                "id": "<bos>",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            },
+            {
+              "SpecialToken": {
+                "id": "<bos>",
+                "type_id": 1
+              }
+            },
+            {
+              "Sequence": {
+                "id": "B",
+                "type_id": 1
+              }
+            }
+          ],
+          "special_tokens": {
+            "<bos>": {
+              "id": "<bos>",
+              "ids": [
+                2
+              ],
+              "tokens": [
+                "<bos>"
+              ]
+            }
+          }
+        },
+        "decoder": {
+          "type": "Sequence",
+          "decoders": [
+            {
+              "type": "Replace",
+              "pattern": {
+                "String": "▁"
+              },
+              "content": " "
+            },
+            {
+              "type": "ByteFallback"
+            },
+            {
+              "type": "Fuse"
+            }
+          ]
+        },
+        "truncation": null,
+        "padding": null
+      },
+      "has_jinja_template": false,
+      "jinja_sha256": null
+    },
+    "google/gemma-4-E4B": {
+      "revision": "411aa17b749aa952df1359d2dcea73917a544d9a",
+      "json_assets": {
+        "config.json": {
+          "bytes": 5105,
+          "sha256": "f27a045f32c39fb9cd930204920de6b0962810cf09929a8810901ffaec780f20",
+          "top_level_keys": [
+            "architectures",
+            "audio_config",
+            "audio_token_id",
+            "boa_token_id",
+            "boi_token_id",
+            "dtype",
+            "eoa_token_id",
+            "eoa_token_index",
+            "eoi_token_id",
+            "image_token_id",
+            "initializer_range",
+            "model_type",
+            "text_config",
+            "tie_word_embeddings",
+            "transformers_version",
+            "video_token_id",
+            "vision_config",
+            "vision_soft_tokens_per_image"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B/resolve/411aa17b749aa952df1359d2dcea73917a544d9a/config.json"
+        },
+        "generation_config.json": {
+          "bytes": 181,
+          "sha256": "de16fa1d777387d5fe6df54a9565d9c0f1213f7b31f2a2cf44805e27686d9c7c",
+          "top_level_keys": [
+            "bos_token_id",
+            "do_sample",
+            "eos_token_id",
+            "pad_token_id",
+            "temperature",
+            "top_k",
+            "top_p",
+            "transformers_version"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B/resolve/411aa17b749aa952df1359d2dcea73917a544d9a/generation_config.json"
+        },
+        "processor_config.json": {
+          "bytes": 1689,
+          "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c",
+          "top_level_keys": [
+            "audio_ms_per_token",
+            "audio_seq_length",
+            "feature_extractor",
+            "image_processor",
+            "image_seq_length",
+            "processor_class",
+            "video_processor"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B/resolve/411aa17b749aa952df1359d2dcea73917a544d9a/processor_config.json"
+        },
+        "tokenizer.json": {
+          "bytes": 32170070,
+          "sha256": "12bac982b793c44b03d52a250a9f0d0b666813da566b910c24a6da0695fd11e6",
+          "top_level_keys": [
+            "version",
+            "truncation",
+            "padding",
+            "added_tokens",
+            "normalizer",
+            "pre_tokenizer",
+            "post_processor",
+            "decoder",
+            "model"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B/resolve/411aa17b749aa952df1359d2dcea73917a544d9a/tokenizer.json"
+        },
+        "tokenizer_config.json": {
+          "bytes": 881,
+          "sha256": "6a9383197f000d2723684efd2210f5bf217bc29fa2cf360ae1574201b47af060",
+          "top_level_keys": [
+            "audio_token",
+            "backend",
+            "boa_token",
+            "boi_token",
+            "bos_token",
+            "eoa_token",
+            "eoc_token",
+            "eoi_token",
+            "eos_token",
+            "eot_token",
+            "escape_token",
+            "etc_token",
+            "etd_token",
+            "etr_token",
+            "extra_special_tokens",
+            "image_token",
+            "mask_token",
+            "model_max_length",
+            "pad_token",
+            "padding_side",
+            "processor_class",
+            "soc_token",
+            "sot_token",
+            "stc_token",
+            "std_token",
+            "str_token",
+            "think_token",
+            "tokenizer_class",
+            "unk_token"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B/resolve/411aa17b749aa952df1359d2dcea73917a544d9a/tokenizer_config.json"
+        }
+      },
+      "generation_config": {
+        "bos_token_id": 2,
+        "do_sample": true,
+        "eos_token_id": 1,
+        "pad_token_id": 0,
+        "temperature": 1.0,
+        "top_k": 64,
+        "top_p": 0.95,
+        "transformers_version": "5.5.0.dev0"
+      },
+      "tokenizer_summary": {
+        "model_settings": {
+          "type": "BPE",
+          "dropout": null,
+          "unk_token": "<unk>",
+          "continuing_subword_prefix": null,
+          "end_of_word_suffix": null,
+          "fuse_unk": true,
+          "byte_fallback": true,
+          "ignore_merges": false
+        },
+        "vocab_entries": 262144,
+        "merges": 514906,
+        "added_tokens": [
+          {
+            "id": 0,
+            "content": "<pad>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 1,
+            "content": "<eos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 2,
+            "content": "<bos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 3,
+            "content": "<unk>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 4,
+            "content": "<mask>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 46,
+            "content": "<|tool>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 47,
+            "content": "<tool|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 48,
+            "content": "<|tool_call>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 49,
+            "content": "<tool_call|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 50,
+            "content": "<|tool_response>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 51,
+            "content": "<tool_response|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 52,
+            "content": "<|\"|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 98,
+            "content": "<|think|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 100,
+            "content": "<|channel>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 101,
+            "content": "<channel|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 105,
+            "content": "<|turn>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 106,
+            "content": "<turn|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 255999,
+            "content": "<|image>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 256000,
+            "content": "<|audio>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258880,
+            "content": "<|image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258881,
+            "content": "<|audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258882,
+            "content": "<image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258883,
+            "content": "<audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258884,
+            "content": "<|video|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          }
+        ],
+        "normalizer": {
+          "type": "Replace",
+          "pattern": {
+            "String": " "
+          },
+          "content": "▁"
+        },
+        "pre_tokenizer": {
+          "type": "Split",
+          "pattern": {
+            "String": " "
+          },
+          "behavior": "MergedWithPrevious",
+          "invert": false
+        },
+        "post_processor": {
+          "type": "TemplateProcessing",
+          "single": [
+            {
+              "SpecialToken": {
+                "id": "<bos>",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            }
+          ],
+          "pair": [
+            {
+              "SpecialToken": {
+                "id": "<bos>",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            },
+            {
+              "SpecialToken": {
+                "id": "<bos>",
+                "type_id": 1
+              }
+            },
+            {
+              "Sequence": {
+                "id": "B",
+                "type_id": 1
+              }
+            }
+          ],
+          "special_tokens": {
+            "<bos>": {
+              "id": "<bos>",
+              "ids": [
+                2
+              ],
+              "tokens": [
+                "<bos>"
+              ]
+            }
+          }
+        },
+        "decoder": {
+          "type": "Sequence",
+          "decoders": [
+            {
+              "type": "Replace",
+              "pattern": {
+                "String": "▁"
+              },
+              "content": " "
+            },
+            {
+              "type": "ByteFallback"
+            },
+            {
+              "type": "Fuse"
+            }
+          ]
+        },
+        "truncation": null,
+        "padding": null
+      },
+      "has_jinja_template": false,
+      "jinja_sha256": null
+    },
+    "google/gemma-4-E2B-it": {
+      "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+      "json_assets": {
+        "config.json": {
+          "bytes": 4954,
+          "sha256": "1b28f3d2c3100f6c594754b81107428bd7b822a7f48272ca681dae9d2ec38330",
+          "top_level_keys": [
+            "architectures",
+            "audio_config",
+            "audio_token_id",
+            "boa_token_id",
+            "boi_token_id",
+            "dtype",
+            "eoa_token_id",
+            "eoa_token_index",
+            "eoi_token_id",
+            "eos_token_id",
+            "image_token_id",
+            "initializer_range",
+            "model_type",
+            "text_config",
+            "tie_word_embeddings",
+            "transformers_version",
+            "video_token_id",
+            "vision_config",
+            "vision_soft_tokens_per_image"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/config.json"
+        },
+        "generation_config.json": {
+          "bytes": 208,
+          "sha256": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+          "top_level_keys": [
+            "bos_token_id",
+            "do_sample",
+            "eos_token_id",
+            "pad_token_id",
+            "temperature",
+            "top_k",
+            "top_p",
+            "transformers_version"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/generation_config.json"
+        },
+        "processor_config.json": {
+          "bytes": 1689,
+          "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c",
+          "top_level_keys": [
+            "audio_ms_per_token",
+            "audio_seq_length",
+            "feature_extractor",
+            "image_processor",
+            "image_seq_length",
+            "processor_class",
+            "video_processor"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/processor_config.json"
+        },
+        "tokenizer.json": {
+          "bytes": 32169626,
+          "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+          "top_level_keys": [
+            "version",
+            "truncation",
+            "padding",
+            "added_tokens",
+            "normalizer",
+            "pre_tokenizer",
+            "post_processor",
+            "decoder",
+            "model"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/tokenizer.json"
+        },
+        "tokenizer_config.json": {
+          "bytes": 3082,
+          "sha256": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633",
+          "top_level_keys": [
+            "audio_token",
+            "backend",
+            "boa_token",
+            "boi_token",
+            "bos_token",
+            "eoa_token",
+            "eoc_token",
+            "eoi_token",
+            "eos_token",
+            "eot_token",
+            "escape_token",
+            "etc_token",
+            "etd_token",
+            "etr_token",
+            "extra_special_tokens",
+            "image_token",
+            "mask_token",
+            "model_max_length",
+            "pad_token",
+            "padding_side",
+            "processor_class",
+            "response_schema",
+            "response_template",
+            "soc_token",
+            "sot_token",
+            "stc_token",
+            "std_token",
+            "str_token",
+            "think_token",
+            "tokenizer_class",
+            "unk_token"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/tokenizer_config.json"
+        }
+      },
+      "generation_config": {
+        "bos_token_id": 2,
+        "do_sample": true,
+        "eos_token_id": [
+          1,
+          106,
+          50
+        ],
+        "pad_token_id": 0,
+        "temperature": 1.0,
+        "top_k": 64,
+        "top_p": 0.95,
+        "transformers_version": "5.5.0.dev0"
+      },
+      "tokenizer_summary": {
+        "model_settings": {
+          "type": "BPE",
+          "dropout": null,
+          "unk_token": "<unk>",
+          "continuing_subword_prefix": null,
+          "end_of_word_suffix": null,
+          "fuse_unk": true,
+          "byte_fallback": true,
+          "ignore_merges": false
+        },
+        "vocab_entries": 262144,
+        "merges": 514906,
+        "added_tokens": [
+          {
+            "id": 0,
+            "content": "<pad>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 1,
+            "content": "<eos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 2,
+            "content": "<bos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 3,
+            "content": "<unk>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 4,
+            "content": "<mask>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 46,
+            "content": "<|tool>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 47,
+            "content": "<tool|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 48,
+            "content": "<|tool_call>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 49,
+            "content": "<tool_call|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 50,
+            "content": "<|tool_response>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 51,
+            "content": "<tool_response|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 52,
+            "content": "<|\"|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 98,
+            "content": "<|think|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 100,
+            "content": "<|channel>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 101,
+            "content": "<channel|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 105,
+            "content": "<|turn>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 106,
+            "content": "<turn|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 255999,
+            "content": "<|image>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 256000,
+            "content": "<|audio>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258880,
+            "content": "<|image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258881,
+            "content": "<|audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258882,
+            "content": "<image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258883,
+            "content": "<audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258884,
+            "content": "<|video|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          }
+        ],
+        "normalizer": {
+          "type": "Replace",
+          "pattern": {
+            "String": " "
+          },
+          "content": "▁"
+        },
+        "pre_tokenizer": {
+          "type": "Split",
+          "pattern": {
+            "String": " "
+          },
+          "behavior": "MergedWithPrevious",
+          "invert": false
+        },
+        "post_processor": {
+          "type": "TemplateProcessing",
+          "single": [
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            }
+          ],
+          "pair": [
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "B",
+                "type_id": 1
+              }
+            }
+          ],
+          "special_tokens": {}
+        },
+        "decoder": {
+          "type": "Sequence",
+          "decoders": [
+            {
+              "type": "Replace",
+              "pattern": {
+                "String": "▁"
+              },
+              "content": " "
+            },
+            {
+              "type": "ByteFallback"
+            },
+            {
+              "type": "Fuse"
+            }
+          ]
+        },
+        "truncation": null,
+        "padding": null
+      },
+      "has_jinja_template": true,
+      "jinja_sha256": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5"
+    },
+    "google/gemma-4-E4B-it": {
+      "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+      "json_assets": {
+        "config.json": {
+          "bytes": 5145,
+          "sha256": "33b10c02df3c2e8536cf323d29d53262aaa2f4d11dbe19bc729373fbe90295d4",
+          "top_level_keys": [
+            "architectures",
+            "audio_config",
+            "audio_token_id",
+            "boa_token_id",
+            "boi_token_id",
+            "dtype",
+            "eoa_token_id",
+            "eoa_token_index",
+            "eoi_token_id",
+            "eos_token_id",
+            "image_token_id",
+            "initializer_range",
+            "model_type",
+            "text_config",
+            "tie_word_embeddings",
+            "transformers_version",
+            "video_token_id",
+            "vision_config",
+            "vision_soft_tokens_per_image"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/config.json"
+        },
+        "generation_config.json": {
+          "bytes": 208,
+          "sha256": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+          "top_level_keys": [
+            "bos_token_id",
+            "do_sample",
+            "eos_token_id",
+            "pad_token_id",
+            "temperature",
+            "top_k",
+            "top_p",
+            "transformers_version"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/generation_config.json"
+        },
+        "processor_config.json": {
+          "bytes": 1689,
+          "sha256": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c",
+          "top_level_keys": [
+            "audio_ms_per_token",
+            "audio_seq_length",
+            "feature_extractor",
+            "image_processor",
+            "image_seq_length",
+            "processor_class",
+            "video_processor"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/processor_config.json"
+        },
+        "tokenizer.json": {
+          "bytes": 32169626,
+          "sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+          "top_level_keys": [
+            "version",
+            "truncation",
+            "padding",
+            "added_tokens",
+            "normalizer",
+            "pre_tokenizer",
+            "post_processor",
+            "decoder",
+            "model"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/tokenizer.json"
+        },
+        "tokenizer_config.json": {
+          "bytes": 3082,
+          "sha256": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633",
+          "top_level_keys": [
+            "audio_token",
+            "backend",
+            "boa_token",
+            "boi_token",
+            "bos_token",
+            "eoa_token",
+            "eoc_token",
+            "eoi_token",
+            "eos_token",
+            "eot_token",
+            "escape_token",
+            "etc_token",
+            "etd_token",
+            "etr_token",
+            "extra_special_tokens",
+            "image_token",
+            "mask_token",
+            "model_max_length",
+            "pad_token",
+            "padding_side",
+            "processor_class",
+            "response_schema",
+            "response_template",
+            "soc_token",
+            "sot_token",
+            "stc_token",
+            "std_token",
+            "str_token",
+            "think_token",
+            "tokenizer_class",
+            "unk_token"
+          ],
+          "source_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/tokenizer_config.json"
+        }
+      },
+      "generation_config": {
+        "bos_token_id": 2,
+        "do_sample": true,
+        "eos_token_id": [
+          1,
+          106,
+          50
+        ],
+        "pad_token_id": 0,
+        "temperature": 1.0,
+        "top_k": 64,
+        "top_p": 0.95,
+        "transformers_version": "5.5.0.dev0"
+      },
+      "tokenizer_summary": {
+        "model_settings": {
+          "type": "BPE",
+          "dropout": null,
+          "unk_token": "<unk>",
+          "continuing_subword_prefix": null,
+          "end_of_word_suffix": null,
+          "fuse_unk": true,
+          "byte_fallback": true,
+          "ignore_merges": false
+        },
+        "vocab_entries": 262144,
+        "merges": 514906,
+        "added_tokens": [
+          {
+            "id": 0,
+            "content": "<pad>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 1,
+            "content": "<eos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 2,
+            "content": "<bos>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 3,
+            "content": "<unk>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 4,
+            "content": "<mask>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 46,
+            "content": "<|tool>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 47,
+            "content": "<tool|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 48,
+            "content": "<|tool_call>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 49,
+            "content": "<tool_call|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 50,
+            "content": "<|tool_response>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 51,
+            "content": "<tool_response|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 52,
+            "content": "<|\"|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 98,
+            "content": "<|think|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 100,
+            "content": "<|channel>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 101,
+            "content": "<channel|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 105,
+            "content": "<|turn>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 106,
+            "content": "<turn|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 255999,
+            "content": "<|image>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 256000,
+            "content": "<|audio>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258880,
+            "content": "<|image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258881,
+            "content": "<|audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258882,
+            "content": "<image|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258883,
+            "content": "<audio|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          },
+          {
+            "id": 258884,
+            "content": "<|video|>",
+            "single_word": false,
+            "lstrip": false,
+            "rstrip": false,
+            "normalized": false,
+            "special": true
+          }
+        ],
+        "normalizer": {
+          "type": "Replace",
+          "pattern": {
+            "String": " "
+          },
+          "content": "▁"
+        },
+        "pre_tokenizer": {
+          "type": "Split",
+          "pattern": {
+            "String": " "
+          },
+          "behavior": "MergedWithPrevious",
+          "invert": false
+        },
+        "post_processor": {
+          "type": "TemplateProcessing",
+          "single": [
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            }
+          ],
+          "pair": [
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "B",
+                "type_id": 1
+              }
+            }
+          ],
+          "special_tokens": {}
+        },
+        "decoder": {
+          "type": "Sequence",
+          "decoders": [
+            {
+              "type": "Replace",
+              "pattern": {
+                "String": "▁"
+              },
+              "content": " "
+            },
+            {
+              "type": "ByteFallback"
+            },
+            {
+              "type": "Fuse"
+            }
+          ]
+        },
+        "truncation": null,
+        "padding": null
+      },
+      "has_jinja_template": true,
+      "jinja_sha256": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5"
+    }
+  },
+  "base_it_difference_paths": {
+    "E2B": {
+      "config.json": [
+        "/eos_token_id"
+      ],
+      "generation_config.json": [
+        "/eos_token_id"
+      ],
+      "processor_config.json": [],
+      "tokenizer.json": [
+        "/post_processor/pair",
+        "/post_processor/single",
+        "/post_processor/special_tokens/<bos>"
+      ],
+      "tokenizer_config.json": [
+        "/add_bos_token",
+        "/response_schema",
+        "/response_template"
+      ]
+    },
+    "E4B": {
+      "config.json": [
+        "/eos_token_id"
+      ],
+      "generation_config.json": [
+        "/eos_token_id"
+      ],
+      "processor_config.json": [],
+      "tokenizer.json": [
+        "/post_processor/pair",
+        "/post_processor/single",
+        "/post_processor/special_tokens/<bos>"
+      ],
+      "tokenizer_config.json": [
+        "/response_schema",
+        "/response_template"
+      ]
+    }
+  },
+  "meta_parameter_counts": {
+    "E2B": {
+      "total_unique_parameters": 5104297504,
+      "groups": {
+        "vision": 168544256,
+        "text": 4628569344,
+        "audio": 307183904
+      },
+      "all_parameters_meta": true,
+      "module_children": [
+        "model",
+        "lm_head"
+      ],
+      "top_model_children": [
+        "vision_tower",
+        "language_model",
+        "audio_tower",
+        "embed_vision",
+        "embed_audio"
+      ]
+    },
+    "E4B": {
+      "total_unique_parameters": 7941100832,
+      "groups": {
+        "vision": 169330688,
+        "text": 7463013376,
+        "audio": 308756768
+      },
+      "all_parameters_meta": true,
+      "module_children": [
+        "model",
+        "lm_head"
+      ],
+      "top_model_children": [
+        "vision_tower",
+        "language_model",
+        "audio_tower",
+        "embed_vision",
+        "embed_audio"
+      ]
+    }
+  },
+  "tokenizer_runtime_checks": {
+    "google/gemma-4-E2B": {
+      "tokenizer_class": "GemmaTokenizer",
+      "roundtrip_samples_passed": 3,
+      "without_special_tokens_first_ids": [
+        2063,
+        517,
+        236769,
+        236781,
+        1473
+      ],
+      "with_special_tokens_first_ids": [
+        2,
+        2063,
+        517,
+        236769,
+        236781
+      ],
+      "has_chat_template": false,
+      "jinja_files": []
+    },
+    "google/gemma-4-E4B": {
+      "tokenizer_class": "GemmaTokenizer",
+      "roundtrip_samples_passed": 3,
+      "without_special_tokens_first_ids": [
+        2063,
+        517,
+        236769,
+        236781,
+        1473
+      ],
+      "with_special_tokens_first_ids": [
+        2,
+        2063,
+        517,
+        236769,
+        236781
+      ],
+      "has_chat_template": false,
+      "jinja_files": []
+    },
+    "google/gemma-4-E2B-it": {
+      "tokenizer_class": "GemmaTokenizer",
+      "roundtrip_samples_passed": 3,
+      "without_special_tokens_first_ids": [
+        2063,
+        517,
+        236769,
+        236781,
+        1473
+      ],
+      "with_special_tokens_first_ids": [
+        2063,
+        517,
+        236769,
+        236781,
+        1473
+      ],
+      "has_chat_template": true,
+      "jinja_files": [
+        "chat_template.jinja"
+      ]
+    },
+    "google/gemma-4-E4B-it": {
+      "tokenizer_class": "GemmaTokenizer",
+      "roundtrip_samples_passed": 3,
+      "without_special_tokens_first_ids": [
+        2063,
+        517,
+        236769,
+        236781,
+        1473
+      ],
+      "with_special_tokens_first_ids": [
+        2063,
+        517,
+        236769,
+        236781,
+        1473
+      ],
+      "has_chat_template": true,
+      "jinja_files": [
+        "chat_template.jinja"
+      ]
+    },
+    "all_variants_same_raw_code_token_ids": true
+  }
+}

@@ -13,7 +13,7 @@ from typing import cast
 
 import torch
 from transformers import Gemma4TextConfig, Gemma4TextModel
-from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
+from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention, Gemma4TextMLP
 
 from bifocalgemma.models import GatedCrossAttentionBridge
 
@@ -85,6 +85,40 @@ class TestGemma4EdgeTopology(unittest.TestCase):
                 ].q_proj
                 assert isinstance(global_projection, torch.nn.Linear)
                 self.assertEqual(global_projection.weight.shape, (4096, expected["width"]))
+                for index, layer in enumerate(model.layers):
+                    gate_projection = cast(Gemma4TextMLP, layer.mlp).gate_proj
+                    assert isinstance(gate_projection, torch.nn.Linear)
+                    intermediate = (12288 if index >= 15 else 6144) if name == "e2b" else 10240
+                    self.assertEqual(
+                        gate_projection.weight.shape, (intermediate, expected["width"])
+                    )
+
+    def test_base_and_it_text_configs_match(self):
+        for name in PROFILES:
+            with self.subTest(profile=name):
+                base = json.loads(
+                    (FIXTURES / f"gemma4_{name}_base_config.json").read_text(encoding="utf-8")
+                )
+                instruction_tuned = json.loads(
+                    (FIXTURES / f"gemma4_{name}_text_config.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(base["config"]["text_config"], instruction_tuned["text_config"])
+
+    def test_base_and_it_generation_stop_policies(self):
+        manifest = json.loads(
+            (FIXTURES / "gemma4_json_audit_manifest.json").read_text(encoding="utf-8")
+        )
+        for name in PROFILES:
+            with self.subTest(profile=name):
+                base = json.loads(
+                    (FIXTURES / f"gemma4_{name}_base_config.json").read_text(encoding="utf-8")
+                )
+                self.assertNotIn("eos_token_id", base["config"])
+                self.assertEqual(base["generation_config"]["eos_token_id"], 1)
+                instruction_tuned = manifest["models"][f"google/gemma-4-{name.upper()}-it"]
+                self.assertEqual(
+                    instruction_tuned["generation_config"]["eos_token_id"], [1, 106, 50]
+                )
 
     def test_full_depth_future_token_visibility(self):
         for name in PROFILES:

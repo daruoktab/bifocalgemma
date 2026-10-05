@@ -103,3 +103,13 @@ instance/commit/patch overlap; prioritas pada konfigurasi dan subset yang dapat 
 - [OctoPack & CommitPackFT (BigCode)](https://github.com/bigcode-project/octopack)
 - [CrossCodeEval: Cross-File Code Completion Benchmark](https://github.com/amazon-science/cceval)
 - [RepoBench: Repository-Level Code Completion](https://github.com/Leolty/repobench)
+
+## Implikasi audit JSON base dan IT
+
+[Aset base dan IT](GEMMA4_JSON_AUDIT.md) memiliki text config dan vocabulary
+yang kompatibel, tetapi post-processing BOS dan generation EOS berbeda. Kandidat
+awal memakai encoder base E2B dan decoder E2B IT dengan revision masing-masing
+dipin. Full physical text parameters sekitar 4,63B/7,46B per backbone; pasangan
+E2B/E2B BF16 membutuhkan sekitar 18,514 GB bobot sebelum bridge dan state.
+MQA/GQA serta KV sharing baseline harus dibandingkan dengan full-MHA cross-KV
+bridge; keuntungan total memori tidak mengikuti ilustrasi decoder self-KV saja.

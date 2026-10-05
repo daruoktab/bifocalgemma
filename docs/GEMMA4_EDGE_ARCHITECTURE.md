@@ -7,6 +7,11 @@ saat eksperimen, pin revision checkpoint dan simpan config yang benar-benar digu
 - [Config E4B IT](https://huggingface.co/google/gemma-4-E4B-it/blob/main/config.json)
 - [Model card Gemma 4](https://ai.google.dev/gemma/docs/core/model_card_4)
 
+Lihat [audit seluruh JSON base dan pembanding IT](GEMMA4_JSON_AUDIT.md) untuk
+BOS/EOS, tokenizer, processor, lebar MLP per layer, dan parameter fisik yang dihitung
+dari struktur model pada meta. Text config base dan IT identik per ukuran;
+metadata generation dan tokenizer berbeda.
+
 ## Nilai config text backbone
 
 | Field | E2B IT | E4B IT |
@@ -106,7 +111,7 @@ bukan kualitas code repair, keberhasilan adaptasi, ataupun budget model pretrain
 
 ## Hasil verifikasi lokal
 
-Pada **5 Oktober 2026**, seluruh **22 tes lulus**, dengan
+Pada **5 Oktober 2026**, seluruh **24 tes lulus**, dengan
 **0 tes dilewati**, di environment Conda ai: Python 3.13.16,
 Torch 2.14.1+cu130, Transformers 5.18.0, dan
 NVIDIA GeForce RTX 3060 Laptop GPU.
@@ -124,3 +129,8 @@ $env:TRANSFORMERS_OFFLINE = '1'
 $env:OMP_NUM_THREADS = '4'
 python -m unittest discover -s tests
 ```
+
+Audit lanjutan menemukan lebar MLP E2B 6144 pada 15 layer awal dan 12288 pada
+20 KV-shared layer berikutnya. Biaya text-only BF16 pasangan E2B/E2B sekitar
+18,514 GB untuk bobot saja, tanpa bridge/cache/aktivasi; detail dan batas hitungan
+ada di [audit JSON](GEMMA4_JSON_AUDIT.md).
