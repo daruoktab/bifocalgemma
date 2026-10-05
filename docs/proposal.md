@@ -62,9 +62,9 @@ menentukan protokol; [evaluasi](EVALUATION.md) menjelaskan harness.
 ## Perkembangan dan status
 
 Repo merupakan construction scaffold. Registry, collator, loss, word aliasing,
-serializer dan reference attention sudah dapat diuji; native weight/layer/cache
-integration, tokenization/data adapters, full trainer, generation dan harness
-memiliki placeholder dengan kontrak.
+serializer dan reference attention sudah dapat diuji. Native tiny M07, tokenizer
+offline D03, dan patch-direction contract D06 tersedia. Pretrained transfer/production
+assembly/cache, dataset fetching, full trainer, generation dan harness masih placeholder.
 
 [Build guide](BUILD_GUIDE.md) menyusun langkahnya seperti blok: selesaikan native
 initialization/integration, data/profiling, SFT/checkpoint, lalu generation/harness.

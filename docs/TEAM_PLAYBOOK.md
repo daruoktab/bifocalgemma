@@ -20,14 +20,15 @@ Pembagian ini dapat disesuaikan, tetapi interface di contracts/config dibahas be
 | Milestone | Hasil yang diperlukan |
 | --- | --- |
 | 1. Reference blocks | Registry, collator, tying, joint softmax/GQA, loss dan smoke/tests |
-| 2. Native tiny integration | M04/M05 compatible dengan native Gemma layers, positions, PLE dan shared KV; belum bobot besar |
+| 2. Native tiny integration | M07 native layers, positions, PLE dan shared KV; M04/M05 pretrained tetap terpisah |
 | 3. Data/profile | Pinned real records/tokenizers, overlap audit dan actual memory/latency |
 | 4. Training/checkpoint | Direct SFT/PEFT budget tercatat, alias-safe resume, loss/retention diperiksa |
 | 5. Inference/harness | Patch generation, tools bila digunakan, valid wire format dan real test grading |
 | 6. Four-pair study | Same tasks/protocol, asymmetry comparison, tying controls bila ada, uncertainty dan failure analysis |
 
-Milestone pertama sudah memiliki runnable reference dan utility. Milestone lain
-memiliki placeholder; tidak dianggap selesai karena prototype backward lulus.
+Milestone 1 dan native tiny milestone 2 tersedia; D03 offline dan D06 patch contract
+juga dapat dijalankan. Milestone 3 masih memerlukan data riil dan profiling model
+penuh. Kelulusan native tiny tidak menyelesaikan transfer pretrained atau training.
 
 ## Workflow lokal
 

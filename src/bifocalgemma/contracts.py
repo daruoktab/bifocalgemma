@@ -1,6 +1,6 @@
 """D01: interfaces between construction blocks. See docs/DATA_PIPELINE.md."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 import torch
@@ -42,6 +42,7 @@ class TokenizedRepairExample:
     encoder_ids: tuple[int, ...]
     decoder_prefix_ids: tuple[int, ...]
     target_ids: tuple[int, ...]
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass

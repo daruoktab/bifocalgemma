@@ -144,7 +144,8 @@ native KV sharing, checkpoint mapping atau autoregressive cache. Tes Gemma lama
 tetap memeriksa config/native text model pada meta serta thin random-weight models;
 tes tersebut tidak memverifikasi full merged Gemma integration.
 
-Langkah sesudah reference adalah M04/M05. Kriteria penting: saat encoder context
-kosong/dimask, decoder yang dipetakan harus cocok dengan native decoder untuk
-forward, cache, posisi dan precision yang diuji. Tidak ada klaim model repair,
-training convergence atau penghematan cache dari smoke test.
+M07 sekarang mengintegrasikan native Gemma encoder/merged decoder random-weight.
+Saat context kosong/dimask, output cocok dengan native decoder pada token valid;
+mask, PLE, RoPE dan KV ownership diperiksa termasuk panjang 513. Factory
+pretrained M04/M05 dan cache M06 tetap belum siap. Detail dimensi/API dan batas
+ada pada [native local validation](NATIVE_LOCAL_VALIDATION.md).

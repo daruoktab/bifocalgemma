@@ -101,3 +101,13 @@ T5Gemma dan T5Gemma 2 dibahas dalam related work tanpa menambah kandidat benchma
 
 Implementasi mengikuti [data pipeline](DATA_PIPELINE.md), [direct SFT](TRAINING.md),
 serta [real evaluation](EVALUATION.md). Tidak ada teacher wajib pada recipe utama.
+
+## Pembaruan validasi lokal — 6 Oktober 2026
+
+[Native local validation](NATIVE_LOCAL_VALIDATION.md) menjelaskan M07 native tiny,
+D03 offline tokenizer dan D06 snapshot/patch contract. M04 pretrained transfer,
+D04 pengambilan data/overlap audit, serta trainer/harness produksi belum selesai.
+SWE-smith menyimpan bug-inducing patch: target repair perlu arah sebaliknya pada
+snapshot buggy yang tepat. Direct SFT tetap hipotesis; T5Gemma 2 menggunakan tahap
+adaptasi UL2 sebelumnya. PLE + tied words BF16 sendiri 9,5/11,75 GiB pada pasangan
+simetris, sehingga linear-only QLoRA tidak memberi jaminan muat di GPU lokal 6 GiB.

@@ -22,6 +22,7 @@ class DatasetAdapter:
 
 
 class SWESmithAdapter(DatasetAdapter):
+    # Local direction/hash validation is D06 in swesmith.py; fetching remains D04.
     source = "SWE-bench/SWE-smith"
 
 

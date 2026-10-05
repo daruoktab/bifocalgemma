@@ -33,9 +33,10 @@ menjelaskan kontrol dan confound symmetric-only tying.
 
 | Tingkat | Yang tersedia | Makna |
 | --- | --- | --- |
-| Implemented | Registry/config, data contracts, collator, word tying, CE, JSONL serializer | Utilitas dapat dipakai sesuai kontraknya |
+| Implemented | Registry/config, collator, word tying, CE, serializer, verified offline tokenization, local patch normalization | Utilitas sesuai kontraknya; dataset fetching/harness terpisah |
 | Reference | Joint-softmax merged attention, GQA, asymmetric projection, tiny assembly | Prototipe numerik kecil; bukan full Gemma integration |
-| Placeholder | Native weight/layer/cache integration, tokenizer/dataset/AST, trainer, generation, agent, harness, checkpoint | Signature dan acceptance criteria ada; fail secara eksplisit |
+| Native tiny | Full-depth Gemma encoder/merged decoder dan dua baseline, random weights | PLE/RoPE/KV sharing terintegrasi pada dimensi kecil |
+| Placeholder | Pretrained weight/production/cache integration, dataset fetching/AST, trainer, generation, agent, harness, checkpoint | Signature dan acceptance criteria ada; fail secara eksplisit |
 | Optional | Separated gated bridge dan distillation slot | Bukan recipe training default |
 
 Tidak ada checkpoint BifocalGemma pretrained, training data besar, atau hasil code
@@ -55,6 +56,7 @@ $env:OMP_NUM_THREADS = '4'
 python -m bifocalgemma inspect --experiment BifocalGemma-E4B-E2B
 python -m bifocalgemma validate-config --config configs/experiments.json
 python -m bifocalgemma smoke --experiment all --device cpu
+python -m bifocalgemma smoke-native --experiment all --device cpu
 python -m unittest discover -s tests
 ruff check .
 ruff format --check .
@@ -63,7 +65,9 @@ ty check .
 
 Perintah tersebut tidak mengunduh bobot model. smoke melakukan satu synthetic
 forward/backward per pasangan, tanpa optimizer/training riil. CUDA dapat dipilih
-untuk reference jika tersedia; ia tidak memuat model E2B/E4B asli.
+untuk reference/native tiny jika tersedia; ia tidak memuat model E2B/E4B asli.
+[Native local validation](docs/NATIVE_LOCAL_VALIDATION.md) menjelaskan API, cache
+tokenizer, patch direction SWE-smith, dan batas pengujian.
 
 ```powershell
 python -m bifocalgemma train --experiment BifocalGemma-E2B-E2B

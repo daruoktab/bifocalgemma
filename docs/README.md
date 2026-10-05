@@ -22,6 +22,7 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 | [Referensi backbone](GEMMA4_EDGE_ARCHITECTURE.md) | Config E2B/E4B dan pengujian native tanpa bobot |
 | [Log riset](RESEARCH_LOG.md) | Keputusan yang dipakai serta ide lama yang ditunda |
 | [Panduan tim](TEAM_PLAYBOOK.md) | Cara mengembangkan dan meninjau tiap blok |
+| [Native lokal](NATIVE_LOCAL_VALIDATION.md) | Native tiny, tokenizer offline dan kontrak arah patch SWE-smith |
 | [Validasi](VALIDATION.md) | Checks yang benar-benar dijalankan dan cakupannya |
 | [Kompetisi](COMPETITION_GUIDE.md) | Ketentuan yang masih perlu dikonfirmasi |
 
@@ -31,7 +32,8 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 **Reference** berarti prototipe numerik kecil untuk memeriksa gagasan; belum pengganti
 layer Gemma atau checkpoint produksi. **Placeholder** adalah slot dengan signature,
 input/output dan acceptance criteria yang jelas, lalu fail dengan FeatureNotReadyError.
-**Optional placeholder/reference** tidak diperlukan pada recipe default.
+**Native tiny** berarti integrasi native random-weight dengan dimensi kecil;
+belum pretrained. **Optional placeholder/reference** tidak diperlukan pada recipe default.
 
 Status tersebut berlaku per blok, bukan per repo secara keseluruhan. Registry bisa
 siap sementara factory bobot belum siap. Loss/collator bisa siap sementara training

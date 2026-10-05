@@ -32,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
         "--experiment", choices=(*EXPERIMENT_NAMES[:4], "all"), default=EXPERIMENT_NAMES[0]
     )
     smoke.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    native = sub.add_parser("smoke-native", help="Native full-depth tiny forward/backward.")
+    native.add_argument("--experiment", choices=(*EXPERIMENT_NAMES, "all"), default="all")
+    native.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     train = sub.add_parser("train", help="Documented production placeholder.")
     train.add_argument("--experiment", choices=EXPERIMENT_NAMES, default=EXPERIMENT_NAMES[0])
     evaluate = sub.add_parser("evaluate", help="Documented real-harness placeholder.")
@@ -70,6 +73,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             for spec in selected:
                 print(json.dumps(run_reference_smoke(spec, args.device)))
+        elif args.command == "smoke-native":
+            import torch
+
+            from bifocalgemma.models.native import run_native_smoke
+
+            torch.set_num_threads(min(4, torch.get_num_threads()))
+            selected = (
+                EXPERIMENT_SPECS if args.experiment == "all" else (get_experiment(args.experiment),)
+            )
+            for spec in selected:
+                print(json.dumps(run_native_smoke(spec, args.device)))
         elif args.command == "train":
             from bifocalgemma.training.trainer import SFTConfig, train_direct_sft
 

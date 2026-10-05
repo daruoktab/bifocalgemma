@@ -20,7 +20,7 @@ BUILD_BLOCKS = (
     ),
     BuildBlock("D02", "implemented", "data/collator.py", "Pretokenized teacher-forcing batches"),
     BuildBlock(
-        "D03", "placeholder", "data/tokenization.py", "Pinned base/IT tokenizers and formatting"
+        "D03", "implemented", "data/tokenization.py", "Pinned base/IT tokenizers and formatting"
     ),
     BuildBlock(
         "D04", "placeholder", "data/adapters.py", "Training dataset adapters and overlap audit"
@@ -31,6 +31,10 @@ BUILD_BLOCKS = (
         "data/ast.py",
         "Tree-sitter features aligned to original token offsets",
     ),
+    BuildBlock(
+        "D06", "implemented", "data/swesmith.py", "Local SWE-smith patch-direction contract"
+    ),
+    BuildBlock("M07", "native_tiny", "models/native.py", "Native random-weight merged integration"),
     BuildBlock(
         "M01",
         "reference",

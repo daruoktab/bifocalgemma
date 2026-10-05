@@ -1,65 +1,77 @@
-# Validasi Scaffold Saat Ini
+# Validasi Scaffold dan Native Tiny
 
-Pembaruan construction scaffold: **6 Oktober 2026**.
-Environment yang dipakai: Conda ai, Python 3.13.16, Torch 2.14.1+cu130,
-Transformers 5.18.0, CUDA 13.0, NVIDIA GeForce RTX 3060 Laptop GPU.
+Diperiksa **6 Oktober 2026**: Conda ai, Python 3.13.16, Torch 2.14.1+cu130,
+Transformers 5.18.0, CUDA 13.0, NVIDIA GeForce RTX 3060 Laptop GPU (6144 MiB).
+Tidak ada pretrained model weights yang diunduh atau dimuat.
 
-## Checks yang dijalankan
+## Hasil aktual
 
 | Check | Hasil | Cakupan |
 | --- | --- | --- |
-| Unit suite | 41 tests lulus, tanpa skip | Existing native/meta/reference tests + 15 construction tests |
-| Construction tests, termasuk batch baseline | 15 tests lulus dalam suite akhir | Ties/gradients, masks, collation, loss, wire format, registry, fail-fast trainer |
-| Ruff lint dan format | Lulus | Python source/tests |
-| ty | Lulus | Source/tests memakai environment ai |
-| CLI validate-config | Lulus | Enam canonical IDs, revisions, direct_sft, no mandatory teacher |
-| CLI smoke CPU | Empat pasangan lulus | Tiny random-weight forward/backward, finite loss/gradients |
-| CLI smoke CUDA | Empat pasangan lulus | Tiny reference dan sharing policy pada GPU |
-| CLI inspect | Lulus | Native profile widths, base/IT provenance, baseline no encoder |
-| Documentation links/block map | Diperiksa | Relative paths, source slots dan build-guide anchors |
-| git diff whitespace | Diperiksa | Perubahan yang disiapkan |
+| Unit suite | **55 tests lulus, tanpa skip** | 41 existing + 8 native integration + 6 offline data/tokenizer |
+| Native integration | 8 tests lulus | Six-model backward, no-context parity, masks, KV ownership, aliases |
+| Offline data/tokenizer | 6 tests lulus | Cached real tokenizers, budgets/hashes, synthetic patch roundtrip |
+| CLI smoke-native CPU | Enam model lulus | Full-depth random native forward/backward |
+| CLI smoke-native CUDA | Enam model lulus | Finite/nonzero gradients, aliases after GPU transfer, measured tiny memory |
+| Ruff lint/format dan ty | Lulus | Source/tests dengan environment ai |
+| Offline wheel | Lulus | Config/hash assets dan modul native/data terdapat dalam wheel; tanpa dependency download |
+| Docs/block map | Lulus | 18 Markdown files, 23 source blocks/anchors, relative file links |
+| Existing checks | Tetap dalam suite | Meta shapes, reference/bridge, data collation/loss, reporting, registry |
 
-Contoh smoke memiliki logits shape [2,5,128], reference widths 32/48 dan sekitar
-21k–45k parameter. Angka itu milik toy assembly, bukan estimasi full Gemma.
-Synthetic loss tidak dilaporkan sebagai kualitas model atau benchmark.
+Dua tes tokenizer riil memakai BIFOCALGEMMA_TOKENIZER_CACHE menuju cache audit.
+Tanpa environment variable ini, kedua tes tersebut di-skip; tests lainnya tetap
+portable/offline. Output tabel pada test_evaluation memakai angka fixture untuk
+menguji rendering, bukan hasil benchmark BifocalGemma.
 
-## Perilaku penting yang diverifikasi
+## Native tiny CUDA smoke
 
-- Cross-component symmetric word aliases memakai decoder anchor, preserve input
-  table values saat tying, dan menerima gradient encoder+decoder pada satu Parameter.
-- Asimetris mempertahankan encoder table terpisah; decoder head tetap alias decoder words.
-- Reference attention memakai joint competition self/encoder keys, bukan dua softmax
-  yang dijumlahkan. Decoder future tokens tidak memengaruhi prefix output; encoder
-  context dapat memengaruhi output.
-- Local self window tidak memangkas encoder context. Entirely masked query rows
-  menghasilkan zero output dan finite gradients.
-- Baseline batches menerima encoder arrays kosong; batch tidak mencampur model
-  decoder-only dan encoder-decoder.
-- Prefix/target di-shift tepat sekali; prefix/pad tidak memperoleh CE gradient.
-  All-ignored loss finite/differentiable zero.
-- Encoder formatter tidak mengambil field target_patch. Prediction JSONL tidak
-  membawa target/test artifacts dan memakai tiga key SWE-bench yang benar.
-- Default spec/config tidak meminta distillation/PLe sharing. Placeholder trainer
-  fail dengan T02/docs link, tanpa memuat dataset atau bobot.
+Batch synthetic dua contoh; logits `[2,5,128]`; FP32, eager, tanpa optimizer/cache.
+Parameter unik setelah alias dihitung dari model yang benar-benar dibuat.
 
-## Bukti native yang berbeda dari reference
+| Model | Parameters tiny | Peak allocated bytes | Peak reserved bytes |
+| --- | ---: | ---: | ---: |
+| E2B–E2B | 1,793,224 | 31,927,808 | 37,748,736 |
+| E4B–E4B | 3,129,592 | 42,767,360 | 48,234,496 |
+| E2B–E4B | 2,468,064 | 37,413,376 | 48,234,496 |
+| E4B–E2B | 2,468,064 | 37,413,376 | 48,234,496 |
+| E2B-IT baseline | 898,660 | 24,565,760 | 48,234,496 |
+| E4B-IT baseline | 1,567,868 | 30,006,272 | 48,234,496 |
 
-test_gemma4_topology memeriksa full-size text parameter shapes pada meta,
-35/42 layer schedules, PLE, MLP dan KV-sharing. Thin native Gemma4TextModel
-tests memakai random weights serta forward/backward/cached parity.
-test_bridge memeriksa separated bridge, termasuk CUDA.
+Peak counters di-reset per model dalam satu process; reserved bytes dapat membawa
+allocator cache model sebelumnya. Ini bukan total GPU process memory atau profile
+pretrained. CPU melaporkan parameter/gradient bytes dan null untuk CUDA peaks.
+Reference generic M03 tetap terpisah (sekitar 21k–45k parameter).
 
-Tes itu tidak membuktikan native merged decoder, M04 weight transfer atau M05 model
-assembly sudah bekerja. ReferenceMergedAttention belum memiliki native RoPE,
-inter-layer KV sharing, PLE dan cache. Factory, tokenization/data adapters,
-trainer, generation, agent, real harness serta checkpoint masih placeholder.
+## Perilaku yang dibuktikan
 
-## Yang belum diuji sebagai experiment
+- Keempat pasangan dan dua baseline melakukan native forward/backward dengan finite
+  logits/gradients. Ties hanya pada pasangan simetris; decoder head selalu tied.
+- Decoder tanpa context cocok dengan native Gemma pada token valid, termasuk left
+  padding dan panjang 513 yang melampaui local window. Final softcap dipertahankan.
+- Token decoder masa depan tidak memengaruhi output sebelumnya. Context encoder
+  berpengaruh, bidirectional encoder membaca suffix, dan padded context setara.
+- Entirely masked encoder/query rows menghasilkan finite backward. Local self
+  window tidak menyembunyikan encoder keys.
+- Shared layers menggunakan KV pemilik bertipe sama dan tidak memiliki k_proj/v_proj
+  tambahan. Native PLE, MLP, residual dan RoPE tetap berada dalam upstream stack.
+- Ties/PLE separation serta logits dipertahankan pada perubahan dtype dan state_dict
+  reload (termasuk assign=True). CPU→CUDA alias diperiksa melalui smoke output.
+- Tokenizer keenam konfigurasi menjaga Unicode/tab/indentasi, BOS sekali, closing
+  turn token, patch-only target, zero prefix labels dan single shift. Cache hilang,
+  hash/revision salah, target kosong dan overflow ditolak.
+- D06 membalik bug-inducing patch SWE-smith pada synthetic single/multi-file fixtures,
+  memverifikasi apply/roundtrip di temporary directory, serta menolak ref/hash/patch
+  salah. Tidak ada source checkout yang dimodifikasi oleh normalizer.
 
-Tidak ada download bobot pretrained, real dataset training, optimization run,
-BifocalGemma checkpoint, code-repair score, SWE-bench Docker evaluation, long-context
-native merged cache, BF16/quantized merged kernel, convergence atau measured full-model
-VRAM. Run-ready status tidak diperoleh hanya dari printed tables atau metadata.
+## Batas bukti
+
+M07 menguji native random-weight integration dengan width/vocabulary diperkecil.
+M04 pretrained transfer dan M05 production factory masih placeholder. D03 tersedia,
+D06 local normalization tersedia, tetapi D04 download/reconstruction/overlap audit
+real dataset belum siap. Tidak ada official SWE-smith/SWE-bench harness execution,
+repair score, real SFT, optimizer resume, autoregressive merged cache, optimized
+kernel, gradient-checkpointing integration, BF16/quantized merged validation, atau
+peak VRAM model penuh. Direct SFT masih hipotesis yang memerlukan pilot pretrained.
 
 ## Reproduksi
 
@@ -69,17 +81,17 @@ $env:PYTHONPATH = 'src'
 $env:HF_HUB_OFFLINE = '1'
 $env:TRANSFORMERS_OFFLINE = '1'
 $env:OMP_NUM_THREADS = '4'
+$env:BIFOCALGEMMA_TOKENIZER_CACHE = 'C:\path\to\gemma4-json-audit'
 python -m unittest discover -s tests
 python -m bifocalgemma validate-config
-python -m bifocalgemma smoke --experiment all --device cpu
-python -m bifocalgemma smoke --experiment all --device cuda
+python -m bifocalgemma smoke-native --experiment all --device cpu
+python -m bifocalgemma smoke-native --experiment all --device cuda
 ruff check .
 ruff format --check .
 ty check .
 git diff --check
 ```
 
-CUDA command hanya saat perangkat tersedia. Full production commands remain
-documented boundaries; lihat [build guide](BUILD_GUIDE.md). Hasil lebih lanjut
-harus mencatat commit/config/data/hardware/protocol baru, tidak menimpa angka
-historis dengan klaim yang belum dijalankan.
+Isi cache root dengan path audit milik pengguna; bukan folder tokenizer HF umum.
+[Native local validation](NATIVE_LOCAL_VALIDATION.md) menjelaskan API, assets,
+kontrak data dan sumber riset. [Build guide](BUILD_GUIDE.md) menyatakan status per blok.

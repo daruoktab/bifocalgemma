@@ -11,9 +11,11 @@ tidak berada pada jalur default direct SFT.
 | [C01](#c01) | implemented | [config.py](../src/bifocalgemma/config.py) | Six-model specification and checkpoint provenance |
 | [D01](#d01) | implemented | [contracts.py](../src/bifocalgemma/contracts.py) | Repository, example, batch and prediction contracts |
 | [D02](#d02) | implemented | [data/collator.py](../src/bifocalgemma/data/collator.py) | Pretokenized teacher-forcing batches |
-| [D03](#d03) | placeholder | [data/tokenization.py](../src/bifocalgemma/data/tokenization.py) | Pinned base/IT tokenizers and formatting |
+| [D03](#d03) | implemented | [data/tokenization.py](../src/bifocalgemma/data/tokenization.py) | Pinned base/IT tokenizers and formatting |
 | [D04](#d04) | placeholder | [data/adapters.py](../src/bifocalgemma/data/adapters.py) | Training dataset adapters and overlap audit |
 | [D05](#d05) | placeholder | [data/ast.py](../src/bifocalgemma/data/ast.py) | Tree-sitter features aligned to original token offsets |
+| [D06](#d06) | implemented | [data/swesmith.py](../src/bifocalgemma/data/swesmith.py) | Local patch direction and snapshot hash contract |
+| [M07](#m07) | native_tiny | [models/native.py](../src/bifocalgemma/models/native.py) | Native random-weight encoder/merged decoder integration |
 | [M01](#m01) | reference | [models/merged_attention.py](../src/bifocalgemma/models/merged_attention.py) | Joint softmax, GQA and asymmetric projection |
 | [M02](#m02) | implemented | [models/embeddings.py](../src/bifocalgemma/models/embeddings.py) | Symmetric word parameter sharing |
 | [M03](#m03) | reference | [models/reference.py](../src/bifocalgemma/models/reference.py) | Tiny offline assembly and backward |
@@ -33,8 +35,9 @@ tidak berada pada jalur default direct SFT.
 ## Urutan penyelesaian
 
 1. C01/D01/D02/M01/M02/M03/T01: reference offline dan kontrak yang tersedia.
-2. M04/M05: native tiny integration, tanpa memuat full pretrained weights lokal.
-3. D03/D04/T03: tokenizer/data riil dan profiling pada hardware yang sesuai.
+2. M07/D03/D06: native tiny integration, tokenizer cache dan local patch contracts tersedia.
+   M04/M05 berikutnya menangani transfer bobot dan assembly produksi.
+3. D04/T03: data riil/overlap audit dan profiling pada hardware yang sesuai.
 4. T02/S01: direct SFT, checkpoint dan resume; mulai pilot E2B–E2B lalu empat pasangan.
 5. I01/M06/A01/E01: generation, caches, tools dan real repair evaluation.
 6. Analisis keenam model dan optional ablations yang budget/protocol-nya jelas.
@@ -97,12 +100,12 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### D03 — Pinned base/IT tokenizers and formatting
 
-**Status:** placeholder. **Source:** [data/tokenization.py](../src/bifocalgemma/data/tokenization.py).
+**Status:** implemented. **Source:** [data/tokenization.py](../src/bifocalgemma/data/tokenization.py).
 
 - Dependencies: C01, D01.
 - Contract: tokenize_repair_example(example,spec,tokenizer_cache) → TokenizedRepairExample.
-- Invariants: Pinned base BOS once, IT Jinja prefix, target closing, deterministic context selection and original offsets.
-- Acceptance/readiness: Cached tokenizer/fixture round-trip, BOS/stop/template tests, no target in context, truncation manifest. Formatter exists; loader/tokenization still fail.
+- Invariants: Pinned hashes/revision, base BOS once, IT Jinja patch-only prefix/closing, sorted full context; explicit overflow errors. AST offsets remain D05.
+- Acceptance/readiness: Cached tokenizers tested for all six models: Unicode/indentation, BOS/stop, no target in inputs, one shift, hash failure and overflow rejection. Metadata records assets/counts; details in NATIVE_LOCAL_VALIDATION.
 
 <a id="d04"></a>
 
@@ -290,6 +293,30 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 - Contract: save_checkpoint(model,path), restore_checkpoint(path) → future alias-safe state.
 - Invariants: Model/config/source/tokenizer/data/version and optimizer state; rebuild ties before resume.
 - Acceptance/readiness: Save/reload logits parity, tied aliases preserved, PLE separate, deterministic resume and incompatible version rejection.
+
+<a id="m07"></a>
+
+### M07 — Native tiny integration
+
+**Status:** native_tiny. **Source:** [models/native.py](../src/bifocalgemma/models/native.py).
+
+- Dependencies: C01/D02/T01 and packaged config snapshots; no M04 weight loader.
+- Contract: build_native_tiny_model(spec), run_native_smoke(spec,device); six models.
+- Invariants: Native PLE/RoPE/residual/KV ownership; one top-level H projection; symmetric words tied, PLE separate; eager and no temporal cache.
+- Acceptance: Forward/backward all six, native parity through 513 tokens, causal/cross/padding behavior, owner reuse, dtype/device/reload aliases. Full-size pretrained M05 remains separate.
+
+<a id="d06"></a>
+
+### D06 — Local SWE-smith contract
+
+**Status:** implemented. **Source:** [data/swesmith.py](../src/bifocalgemma/data/swesmith.py).
+
+- Dependencies: D01 and local Git executable.
+- Contract: SWESmithRecord → normalize_swesmith_record(record,split) → repair example and hash provenance.
+- Invariants: Explicit buggy reference/snapshot hash; upstream patch is bug-inducing, target is its repair; temporary directories only.
+- Acceptance: Single/multi-file synthetic fixtures round-trip, wrong ref/hash/patch rejected; local existing-file UTF-8 modifications only. No official test execution or D04 fetching claim.
+
+See [native local validation](NATIVE_LOCAL_VALIDATION.md) for exact scope and reproduction.
 
 ## Integrasi docs dan kode
 

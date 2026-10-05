@@ -1,4 +1,4 @@
-"""M05: production encoder/merged-decoder slot; never silently substitutes a toy."""
+"""M05: production factory slot. Explicit native tiny implementation is M07/native.py."""
 
 import torch
 import torch.nn as nn

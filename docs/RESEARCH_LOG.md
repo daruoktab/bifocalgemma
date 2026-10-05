@@ -50,3 +50,13 @@ checks dari hal yang belum diuji.
 Setiap hasil baru harus menyebut commit/config/data/hardware/protocol dan
 menerangkan apakah implemented block, reference, integration atau experiment.
 Tidak ada goal-complete marker atau score yang disimpulkan dari scaffolding.
+
+## Pembaruan validasi lokal — 6 Oktober 2026
+
+[Native local validation](NATIVE_LOCAL_VALIDATION.md) menjelaskan M07 native tiny,
+D03 offline tokenizer dan D06 snapshot/patch contract. M04 pretrained transfer,
+D04 pengambilan data/overlap audit, serta trainer/harness produksi belum selesai.
+SWE-smith menyimpan bug-inducing patch: target repair perlu arah sebaliknya pada
+snapshot buggy yang tepat. Direct SFT tetap hipotesis; T5Gemma 2 menggunakan tahap
+adaptasi UL2 sebelumnya. PLE + tied words BF16 sendiri 9,5/11,75 GiB pada pasangan
+simetris, sehingga linear-only QLoRA tidak memberi jaminan muat di GPU lokal 6 GiB.

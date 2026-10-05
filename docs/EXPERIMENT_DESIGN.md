@@ -93,8 +93,9 @@ CrossCodeEval completion diagnostic. [Dataset](DATASETS_AND_BENCHMARKS.md) dan
 
 ## Jalur perkembangan
 
-Urutan: reference contracts/attention/ties → native M04/M05 → data/tokenization
-→ profiling/PEFT/SFT → checkpoint → generation/harness → four-pair analysis.
+Urutan: reference → native tiny M07 + offline tokenizer D03 + patch contracts D06
+→ pretrained M04/M05 + verified real D04 → profiling/PEFT/SFT → checkpoint
+→ generation/harness → four-pair analysis.
 [Build guide](BUILD_GUIDE.md) menyebut dependency dan acceptance tiap slot.
 
 Gated separated attention, separated-to-merged conversion, teacher training dan

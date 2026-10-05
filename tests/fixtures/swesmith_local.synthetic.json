@@ -1,0 +1,38 @@
+[
+  {
+    "instance_id": "synthetic-single",
+    "synthetic": true,
+    "dataset_revision": "synthetic-schema-v1",
+    "buggy_ref": "synthetic-bug-single",
+    "buggy_snapshot_sha256": "dbf2175cb7e0bad7ab053b054254d863783a9c37fce659b28fbc7f2a98b126ec",
+    "repo": "local/single",
+    "files": [
+      {
+        "path": "maths.py",
+        "content": "def add(a, b):\n    return a - b\n"
+      }
+    ],
+    "issue": "Repair arithmetic behavior across the supplied files.",
+    "bug_patch": "diff --git a/maths.py b/maths.py\n--- a/maths.py\n+++ b/maths.py\n@@ -1,2 +1,2 @@\n def add(a, b):\n-    return a + b\n+    return a - b\n"
+  },
+  {
+    "instance_id": "synthetic-multi",
+    "synthetic": true,
+    "dataset_revision": "synthetic-schema-v1",
+    "buggy_ref": "synthetic-bug-multi",
+    "buggy_snapshot_sha256": "6d773f7f6f3da379f7bede5e52df656821cd943f311802eb15b128d5135bd8bb",
+    "repo": "local/multi",
+    "files": [
+      {
+        "path": "billing.py",
+        "content": "from constants import RATE\ndef total(n):\n    return n + RATE\n"
+      },
+      {
+        "path": "constants.py",
+        "content": "RATE = 0\n"
+      }
+    ],
+    "issue": "Repair arithmetic behavior across the supplied files.",
+    "bug_patch": "diff --git a/constants.py b/constants.py\n--- a/constants.py\n+++ b/constants.py\n@@ -1 +1 @@\n-RATE = 2\n+RATE = 0\ndiff --git a/billing.py b/billing.py\n--- a/billing.py\n+++ b/billing.py\n@@ -1,3 +1,3 @@\n from constants import RATE\n def total(n):\n-    return n * RATE\n+    return n + RATE\n"
+  }
+]

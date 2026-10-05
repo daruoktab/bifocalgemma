@@ -22,7 +22,7 @@ classifiers = [
 
 dependencies = [
     "torch>=2.4.0",
-    "transformers>=5.18.0,<6",
+    "transformers==5.18.0",
     "accelerate>=1.0.0",
     "peft>=0.14.0",
     "datasets>=3.0.0",
@@ -55,3 +55,6 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
+
+[tool.setuptools.package-data]
+bifocalgemma = ["assets/*.json"]

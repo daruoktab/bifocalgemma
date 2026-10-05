@@ -21,6 +21,9 @@ Ia bukan data SWE-smith atau contoh benchmark terverifikasi.
 SWESmithAdapter, CommitPackFTAdapter dan SWEGymAdapter. iter_examples menerima
 manifest sumber lokal/revision dan split, lalu menghasilkan RepairExample.
 Fetching, checkout snapshot, filtering dan overlap audit belum diimplementasikan.
+D06 [normalizer lokal](../src/bifocalgemma/data/swesmith.py) memeriksa snapshot hash
+dan membalik bug-inducing patch SWE-smith menjadi repair. Referensi snapshot buggy
+harus eksplisit; lihat [kontrak lokal](NATIVE_LOCAL_VALIDATION.md#d06--kontrak-lokal-swe-smith).
 
 Manifest menyimpan source/revision, instance ID, repo/base_commit, license,
 file selection, token lengths, split, filter reason serta hash patch/issue.
@@ -36,17 +39,17 @@ warm-up opsional setelah pipeline patch benar. Detail sumber primer ada pada
 ## D03 — tokenization
 
 format_encoder_context tersedia: issue + file sebelum fix, diurutkan menurut path.
-Fungsi ini tidak mengambil target_patch. Tokenization sebenarnya masih placeholder:
+Fungsi ini tidak mengambil target_patch. Tokenization offline tersedia melalui D03:
 
 1. Base tokenizer memproses context dan menambahkan BOS tepat sekali.
 2. IT tokenizer memakai chat_template.jinja yang dipin untuk prefix instruksi/issue.
-   Prefix belum memuat jawaban; pemilihan thinking/tool mode harus tercatat.
+   Prefix belum memuat jawaban; enable_thinking=false dan tanpa tools.
 3. Target patch menjadi continuation assistant, dengan closing token yang sesuai.
-4. Truncation/context selection deterministik dan sama secara metodologis untuk
-   semua model. Tokenizer model_max_length sekitar 1e30 tidak dipakai sebagai limit;
-   native text config memberi batas 131072 dan profiling menentukan limit eksperimen.
-5. Simpan hash tokenizer/Jinja, policy, prefix/target boundaries, original offsets,
-   token lengths dan truncation reason.
+4. Context memakai seluruh file terurut pada keenam model. Batas encoder/decoder
+   default 4096, maksimum 131072; overflow ditolak tanpa truncation. Limit 1e30
+   pada tokenizer bukan batas eksperimen.
+5. Metadata menyimpan hash/revision, policy, prefix/target boundaries, token lengths
+   dan truncated=false. Original offsets untuk AST masih D05.
 
 Untuk baseline decoder-only, D03 meletakkan context file/issue yang sama di dalam
 IT decoder prefix dan menghasilkan encoder_ids kosong. Collator menerima batch
@@ -94,7 +97,8 @@ mengklaim graph reasoning dari keberadaan embedding tipe node saja.
 
 ## Acceptance sebelum training riil
 
-- Rekonstruksi snapshot pada base_commit dan verifikasi patch berlaku.
+- Rekonstruksi snapshot buggy sesuai adapter sumber; SWE-smith membutuhkan explicit
+  instance reference dan pembalikan bug patch. Verifikasi target repair berlaku.
 - Train/dev/eval split dan overlap audit dapat diulang dari manifest.
 - Tokenizer/Jinja source dan special-token behavior sesuai checkpoint.
 - Gold patch dan artifacts evaluator tidak muncul pada encoder atau prefix.
