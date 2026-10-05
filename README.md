@@ -35,9 +35,17 @@ Dua baseline decoder-only adalah **Gemma 4 E2B-IT** dan **Gemma 4 E4B-IT**.
 T5Gemma/T5Gemma 2 tetap menjadi related work; pembanding benchmark utama dibatasi
 pada enam model tersebut.
 
+Target word-embedding sharing: **tied pada E2B–E2B IT dan E4B–E4B IT**,
+serta **untied pada E2B–E4B IT dan E4B–E2B IT**. Rencana training bertahap
+menyimpan teacher dengan attention/embedding terpisah, lalu melakukan konversi
+merged attention, tying simetris dan continued adaptation. Pipeline konversi
+belum tersedia; sharing word embeddings tidak otomatis menyatukan PLE.
+
+
 Kontribusi yang ditargetkan: adaptasi kelas Edge untuk memahami codebase dan repair,
 inisialisasi campuran base encoder + IT decoder, serta studi pengaruh kapasitas
-encoder/decoder melalui matriks 2×2. Lihat [desain eksperimen](docs/EXPERIMENT_DESIGN.md)
+encoder/decoder melalui matriks 2×2, dengan kebijakan embedding tiap tahap
+dicatat agar efek kapasitas dan sharing tidak tercampur. Lihat [desain eksperimen](docs/EXPERIMENT_DESIGN.md)
 untuk peran checkpoint, pertanyaan riset, dan batas klaim.
 
 E2B–E2B menjadi pilot integrasi, lalu keempat pasangan dijalankan bertahap sesuai

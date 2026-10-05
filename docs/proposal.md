@@ -80,11 +80,15 @@ Empat pasangan simetris/asimetris merupakan bagian studi utama. Benchmark utama
 dibatasi pada enam model yang sudah ditetapkan; kontrol kapasitas memakai matriks
 lengkap dan duel E4B–E2B IT versus E2B–E4B IT. Mixed initialization adalah pilihan
 metode yang belum terbukti unggul secara terisolasi tanpa kontrol initialization lain.
-Kode saat ini masih gated cross-attention terpisah; merged attention dan tied
-embeddings T5Gemma 2 bukan fitur yang sudah terimplementasi.
+Kode saat ini masih gated cross-attention terpisah. Metode yang ditargetkan
+melatih teacher dengan attention/embedding terpisah, lalu melakukan konversi
+merged attention dan word tying hanya pada pasangan simetris, disertai adaptasi.
+Pasangan asimetris tetap untied; PLE terpisah. Detail provenance dan kontrol ada
+di [desain eksperimen](EXPERIMENT_DESIGN.md). Pipeline konversi belum tersedia.
 
-Multimodal, contrastive localization loss, merged attention dan partial repository
-memory menjadi pekerjaan lanjutan.
+Multimodal, contrastive localization loss dan partial repository memory menjadi
+pekerjaan lanjutan. Analisis kapasitas memakai checkpoint dengan kebijakan seragam;
+perbandingan model akhir mengikutsertakan kebijakan tying yang dipilih.
 
 Invalidasi satu hop tidak otomatis benar pada encoder full bidirectional: perubahan
 satu file dapat memengaruhi representasi file lain secara global. Eksperimen awal

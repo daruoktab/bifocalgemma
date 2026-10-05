@@ -62,7 +62,9 @@ ukuran data, precision, urutan eksekusi dan budget ditetapkan melalui profiling.
 - Catat hardware, environment, revision model, seed, precision, peak VRAM, dan log
   kegagalan. HumanEval/MBPP bukan pengganti evaluasi repositori lintas file.
 - Re-encode snapshot penuh setelah edit untuk eksperimen awal. Partial invalidation,
-  multimodal dan merged attention merupakan tahap lanjutan. Matriks 2×2 dan studi
+  multimodal merupakan tahap lanjutan. Metode konsolidasi bertahap menargetkan
+  merged attention dan word tying hanya pada pasangan simetris, dengan checkpoint
+  teacher/provenance dan adaptasi yang perlu diimplementasikan. Matriks 2×2 dan studi
   pengaruh encoder/decoder termasuk studi utama bersama baseline E2B-IT/E4B-IT.
 
 ## Sinkronisasi Git

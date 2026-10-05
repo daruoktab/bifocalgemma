@@ -21,6 +21,43 @@ T5Gemma, T5Gemma 2, Gemma 3, dan keluarga lain bukan pembanding benchmark utama.
 T5Gemma tetap dibahas dalam related work. Model yang sama diuji pada task/context
 yang sama; model registries dan tabel pelaporan tidak dianggap harness benchmark.
 
+## Kebijakan embedding dan konversi bertahap
+
+| Pasangan | Word embeddings pada model akhir |
+| --- | --- |
+| E2B–E2B IT | Tied antara encoder input, decoder input dan decoder LM head |
+| E4B–E4B IT | Tied antara encoder input, decoder input dan decoder LM head |
+| E2B–E4B IT | Encoder/decoder tetap terpisah |
+| E4B–E2B IT | Encoder/decoder tetap terpisah |
+
+Decoder Gemma sudah memiliki tying input/LM head di dalam komponennya. Kebijakan
+baru memperluas sharing lintas encoder/decoder hanya pada pasangan simetris;
+matriks PLE tetap terpisah. Vocabulary cocok, dan hidden dimensions simetris
+sama, sehingga tidak perlu projected word embeddings lintas dimensi.
+
+Mengikuti strategi bertahap, fase pertama melatih base encoder + IT decoder
+dengan self/cross-attention terpisah dan embedding encoder/decoder terpisah.
+Checkpoint ini disimpan sebagai teacher sekaligus bukti provenance awal.
+
+Pada fase konversi, keempat pasangan ditargetkan memakai merged attention;
+hanya pasangan simetris yang juga melakukan word-embedding tying. Default tabel
+bersama simetris berasal dari embedding decoder pada checkpoint teacher, sehingga
+perubahan encoder word embeddings dicatat secara eksplisit. Body encoder tetap
+berasal dari initial base checkpoint, bukan berarti seluruh bobot encoder akhir
+tetap merupakan bobot base yang tidak berubah. Setelah konversi, lakukan continued
+training/distillation dan ukur retention. Fitur konversi ini belum diimplementasikan.
+
+Tidak melakukan word tying pada pasangan asimetris menghindari projected shared
+word embeddings. Merged attention dengan proyeksi K/V bersama ala T5Gemma 2
+masih membutuhkan penyelarasan encoder hidden states 1536 versus 2560. Norm,
+head layout, KV sharing dan joint softmax tidak otomatis ekuivalen dengan teacher.
+
+Di luar bridge/konversi attention, word tying simetris mengurangi satu tabel
+encoder vocabulary: sekitar 402,65M parameter pada E2B–E2B dan 671,09M pada
+E4B–E4B. Dari estimasi bobot BF16 untied, pasangan simetris menjadi sekitar
+17,709 GB (E2B–E2B) dan 28,510 GB (E4B–E4B). Ini bukan peak VRAM akhir,
+tidak men-sharing PLE, dan belum menghitung perubahan parameter akibat merged attention.
+
 ## Tiga kontribusi yang ditargetkan
 
 1. **Adaptasi encoder-decoder kelas Edge untuk codebase understanding dan repair.**
@@ -35,7 +72,9 @@ yang sama; model registries dan tabel pelaporan tidak dianggap harness benchmark
    Tanpa kontrol init alternatif, enam model ini tidak mengisolasi keuntungan
    initialization campuran; recipe merupakan desain metode, bukan klaim sebab-akibat.
 3. **Studi alokasi kapasitas encoder versus decoder.** Matriks penuh memungkinkan
-   pengukuran efek kedua faktor dan interaksinya. Duel E4B–E2B IT versus E2B–E4B IT
+   pengukuran efek kedua faktor dan interaksinya pada checkpoint fase pertama
+   yang semuanya untied, serta perbandingan konfigurasi akhir yang kebijakan
+   embedding-nya mengikuti tabel di atas. Duel E4B–E2B IT versus E2B–E4B IT
    adalah perbandingan alokasi kapasitas dengan jumlah parameter text awal sama.
 
 [T5Gemma](https://arxiv.org/abs/2504.06225) menyediakan dasar adaptation dan
@@ -67,6 +106,16 @@ tercatat; kesimpulan dibatasi keluarga model serta tugas yang benar-benar diuji.
 E2B/E4B berbeda pada depth, width, MLP dan konfigurasi KV; efek faktor
 menjelaskan pilihan varian dalam keluarga ini, bukan hukum universal jumlah parameter.
 
+Untuk atribusi kapasitas yang lebih bersih, rumus faktor memakai checkpoint fase
+pertama dengan kebijakan attention dan embedding seragam. Pada model akhir, tying
+terkait status simetris/asimetris: perbedaan sel mencakup kapasitas serta kebijakan
+sharing, dan interaksi tidak boleh dianggap murni efek kapasitas. Duel asimetris
+tetap penting karena kedua sisinya untied. Bila mengklaim efek tying secara khusus,
+perlukan kontrol simetris untied dengan attention format dan budget adaptasi yang
+sebanding; checkpoint/control adalah ablation dalam keluarga yang sama, bukan
+tambahan keluarga model pada benchmark utama.
+
+
 ## Kontrol yang diperlukan
 
 - Pin checkpoint revisions, data training/split dan held-out task IDs. Untuk
@@ -87,8 +136,9 @@ menjelaskan pilihan varian dalam keluarga ini, bukan hukum universal jumlah para
   training tokens/FLOPs/wall time, latensi cold/warm, dan peak VRAM. Jika budget
   atau precision berbeda, nyatakan perbandingan sebagai trade-off yang terukur.
 
-Sebelum bridge, parameter fisik text pasangan E2B–E2B sekitar **9,26B**, sedangkan
-E4B-IT tunggal sekitar **7,46B**. Jadi kemenangan E2B–E2B IT tetap menarik, tetapi
+Sebelum bridge, parameter fisik text pasangan E2B–E2B sekitar **9,26B** untied
+atau **8,85B** setelah word tying, sedangkan E4B-IT tunggal sekitar **7,46B**.
+Jadi kemenangan E2B–E2B IT tetap menarik, tetapi
 bukan perbandingan iso-parameter fisik atau iso-memory. Kedua pasangan asimetris
 memiliki sekitar **12,09B** parameter text sebelum bridge. Biaya dan retention
 instruction/tool behavior perlu diukur, bukan disimpulkan dari nama ukuran.
@@ -103,8 +153,11 @@ completion diagnostic, dan lokalisasi dilaporkan terpisah. Skor kosong adalah N/
 keenam ID di atas dan mencetak enam baris tetap. Nilai dummy harus menggunakan
 `illustrative=True`; fungsi ini tidak mengeksekusi model atau benchmark.
 
-Urutan kerja: pilot integrasi E2B–E2B, bekukan protokol, jalankan empat pasangan
-secara bertahap beserta dua baseline, lalu analisis faktor. Full physical configs
+Urutan kerja: pilot integrasi E2B–E2B, bekukan protokol, latih empat pasangan
+terpisah/untied, simpan teacher, konversi ke merged attention dengan tying hanya
+pada simetris, lakukan adaptasi, lalu evaluasi terhadap dua baseline dan checkpoint
+antar tahap. Analisis kapasitas dan efek konsolidasi dilaporkan terpisah. Full physical configs
 baru diuji pada meta, versi kecil full-depth, serta bridge CUDA. Hasil code repair
 keenam model dan keuntungan recipe initialization belum tersedia. Multimodal,
-partial cache invalidation dan perubahan merged attention menjadi riset terpisah.
+partial cache invalidation menjadi riset terpisah; merged attention bertahap dan
+word tying simetris merupakan target metode yang masih memerlukan implementasi.

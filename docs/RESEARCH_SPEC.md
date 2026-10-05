@@ -116,3 +116,19 @@ dipin. Full physical text parameters sekitar 4,63B/7,46B per backbone; pasangan
 E2B/E2B BF16 membutuhkan sekitar 18,514 GB bobot sebelum bridge dan state.
 MQA/GQA serta KV sharing baseline harus dibandingkan dengan full-MHA cross-KV
 bridge; keuntungan total memori tidak mengikuti ilustrasi decoder self-KV saja.
+
+
+## Target word-embedding sharing
+
+Pasangan E2B–E2B IT/E4B–E4B IT memakai word embeddings tied pada tahap konversi;
+pasangan E2B–E4B IT/E4B–E2B IT mempertahankan embedding terpisah. PLE tidak di-tie.
+Checkpoint sebelum konversi menyimpan keadaan encoder base / decoder IT yang
+diadaptasi dengan attention terpisah. Tabel bersama simetris memakai embedding
+decoder teacher sebagai default anchor, dengan perubahan provenance encoder
+dicatat. Konversi merged attention memerlukan adaptasi/distillation; pasangan
+asimetris tetap perlu penyelarasan hidden states untuk shared K/V projections.
+
+Hitungan BF16 18,514 GB E2B–E2B di atas adalah kondisi untied sebelum bridge.
+Word tying saja menurunkannya ke sekitar 17,709 GB; itu belum peak VRAM maupun
+ukuran model akhir setelah perubahan attention. Protokol mengikuti
+[desain eksperimen](EXPERIMENT_DESIGN.md); runtime tying/konversi belum terintegrasi.
