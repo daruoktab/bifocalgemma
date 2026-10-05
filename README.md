@@ -21,7 +21,9 @@ Keunggulan kualitas, latensi, dan memori masih merupakan hipotesis yang perlu di
 | Estimasi self-KV | Ilustrasi layer full-attention seragam | Pengukuran memori sistem sebenarnya |
 | Pelaporan skor | Tabel skor masukan dan referensi bersumber | Harness benchmark dan agent loop |
 
-Tes yang tersedia memakai tensor sintetis kecil. Belum ada backbone Gemma terintegrasi,
+Tes memakai tensor sintetis, bridge dengan lebar hidden asli, serta kelas Gemma 4
+dengan bobot acak. Struktur penuh diperiksa pada meta; runtime full-depth memakai
+width dan vocabulary kecil. Tidak ada bobot pretrained dimuat. Belum ada backbone Gemma terintegrasi,
 training pipeline, checkpoint BifocalGemma, repository cache, atau hasil benchmark proyek.
 Mask token semua-valid tidak otomatis menghapus causal mask atau sliding window backbone.
 
@@ -93,6 +95,7 @@ Skor yang belum terverifikasi atau belum diukur ditampilkan sebagai `N/A`, bukan
 - [Proposal riset](docs/proposal.md)
 - [Spesifikasi teknis dan batas estimasi memori](docs/RESEARCH_SPEC.md)
 - [Referensi arsitektur Gemma 4](docs/GEMMA4_EDGE_ARCHITECTURE.md)
+- [Riset dataset training dan benchmark repair](docs/DATASETS_AND_BENCHMARKS.md)
 - [Panduan tim](docs/TEAM_PLAYBOOK.md)
 - [Catatan kompetisi dan status verifikasi](docs/COMPETITION_GUIDE.md)
 

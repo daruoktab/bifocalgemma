@@ -78,39 +78,20 @@ Snapshot penuh di-encode ulang setelah edit. Partial re-encoding satu hop ditund
 karena full bidirectional attention dapat menyebarkan perubahan ke seluruh snapshot.
 Tunda matriks empat model dan multimodal sampai eksperimen dasar dapat direproduksi.
 
-## Dataset Training untuk Code Repair & Agent
+## Dataset training dan benchmark
 
-Untuk melatih kemampuan repository encoding dan code repair lintas file, kandidat data training mencakup:
+[Riset dataset dan protokol](DATASETS_AND_BENCHMARKS.md) memuat sumber primer,
+peran tiap dataset, pemisahan train/evaluation, kebutuhan eksekusi, dan urutan eksperimen.
+SWE-smith task/trajectory menjadi kandidat utama repair; CommitPackFT Python
+merupakan warm-up editing opsional, sedangkan SWE-Gym menyediakan alternatif real issue.
 
-1. **SWE-smith** (Princeton / Cognition):
-   - Pipeline otomatisasi sintesis bug pada repositori riil (>50.000 task instances pada 128+ repositori open-source).
-   - Menghasilkan bug melalui mutasi kode prosedural dan pembalikan pull request (PR mirroring) yang diuji merusak unit test yang sebelumnya lulus.
-   - Dilengkapi lingkungan Docker terisolasi dan issue description yang disintesis, ideal untuk Supervised Fine-Tuning (SFT) dan Reinforcement Learning (RL) agent software engineering.
-2. **CommitPackFT** (BigCode / OctoPack):
-   - Subset terkurasi 2 GB dari 4 TB koleksi commit GitHub pada 350+ bahasa pemrograman.
-   - Difilter khusus untuk pesan commit berbentuk instruksi imperatif yang dipasangkan dengan patch diff.
-   - Ablasi riset OctoPack menunjukkan bahwa fine-tuning pada CommitPackFT merupakan faktor penentu keberhasilan model dalam tugas perbaikan bug nyata (bug repair).
-3. **CanItEdit / Refactoring Instruction Datasets**:
-   - Dataset instruksi multi-turn untuk refactoring kode repositori dan perbaikan kode terarah instruksi pengguna.
-
-## Benchmark Evaluasi untuk Repository-Level Code Repair
-
-Evaluasi difokuskan pada pemahaman dependensi lintas file dan kebenaran patch:
-
-1. **SWE-bench (Verified & Lite)**:
-   - Standar utama evaluasi perbaikan bug level repositori end-to-end berbasis issue GitHub riil.
-   - **SWE-bench Verified** (500 instance): Divalidasi oleh engineer manusia untuk menjamin deskripsi tidak ambigu dan unit test dapat diselesaikan.
-   - **SWE-bench Lite** (300 instance): Subset terpilih dari 12 repositori Python populer untuk evaluasi yang lebih cepat dan efisien biaya.
-   - Metrik utama: Tingkat resolusi patch (seluruh test `FAIL_TO_PASS` menjadi lulus dan tidak ada regresi pada test `PASS_TO_PASS`).
-2. **CrossCodeEval** (Amazon Science):
-   - Benchmark multi-bahasa (Python, Java, TypeScript, C#) yang dirancang khusus untuk mengukur kemampuan model dalam memanfaatkan dependensi lintas file (cross-file context).
-   - Menggunakan analisis statis untuk memastikan bahwa tugas secara ketat membutuhkan konteks di luar file yang sedang diedit.
-3. **RepoBench** (RepoBench-R, RepoBench-C, RepoBench-P):
-   - Mengevaluasi pipeline repositori multi-file: retrieval snippet lintas file (RepoBench-R), code completion dengan in-file dan cross-file context (RepoBench-C), dan pipeline end-to-end (RepoBench-P).
-4. **HumanEval-Fix & HumanEvalPack** (BigCode):
-   - Ekstensi HumanEval untuk tugas perbaikan bug tingkat fungsi terisolasi (single-file / unit-level) pada 6 bahasa pemrograman dengan eksekusi unit test.
-5. **Defects4J**:
-   - Benchmark klasik berbasis commit bug riil pada proyek open-source Java dengan test suite regresi lengkap.
+SWE-bench Lite (300 task test) dan Verified (500 task test) mengukur resolusi issue
+melalui tes. CrossCodeEval/RepoBench adalah diagnostik completion/retrieval lintas file,
+bukan keberhasilan patch. CanItEdit merupakan benchmark editing 105 program Python;
+EditPackFT adalah sumber training terpisah. HumanEvalFix memberi evaluasi repair fungsi.
+Gold patch dan test artifacts hanya digunakan untuk supervisi training atau evaluator,
+bukan masukan model saat inference evaluation. Sumber training harus diaudit terhadap
+instance/commit/patch overlap; prioritas pada konfigurasi dan subset yang dapat direproduksi.
 
 ## Referensi
 

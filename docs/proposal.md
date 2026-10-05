@@ -59,7 +59,7 @@ ekstraksi AST, backbone, training, generasi, cache, serta benchmark belum terint
   pengaruh data training atau budget. Laporkan kegagalan dan biaya tambahan.
 - Gunakan tugas repositori held-out yang memiliki dependensi lintas file sebagai
   evaluasi utama (target utama: **SWE-bench Lite / Verified** untuk perbaikan bug end-to-end
-  dan **CrossCodeEval** untuk dependensi lintas file); HumanEval-Fix/MBPP dapat menjadi pemeriksaan unit-level tambahan.
+  dan **CrossCodeEval** sebagai diagnostik completion lintas file, bukan resolved rate); HumanEval-Fix/MBPP dapat menjadi pemeriksaan unit-level tambahan.
 
 Hasil negatif tetap bernilai bila menjelaskan kapan biaya encoder/cross-attention
 lebih besar daripada manfaatnya. Tidak ada target kemenangan atau skor yang dijamin.
@@ -75,3 +75,6 @@ Invalidasi satu hop tidak otomatis benar pada encoder full bidirectional: peruba
 satu file dapat memengaruhi representasi file lain secara global. Eksperimen awal
 menggunakan re-encoding snapshot penuh setelah perubahan; pembaruan lokal memerlukan
 desain attention terstruktur atau evaluasi aproksimasi terpisah.
+
+Pemilihan sumber training, pemisahan data, dan kebutuhan harness diuraikan dalam
+[riset dataset dan benchmark](DATASETS_AND_BENCHMARKS.md).

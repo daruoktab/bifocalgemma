@@ -29,7 +29,7 @@ saat eksperimen, pin revision checkpoint dan simpan config yang benar-benar digu
 | `vocab_size` | 262144 | 262144 |
 | `use_bidirectional_attention` | `null` (default causal) | `null` (default causal) |
 
-`Gemma4TextConfig` natively supports `use_bidirectional_attention="all"`. Pada checkpoint default HF, nilainya `null` (kausal). Untuk encoder repositori BifocalGemma, parameter ini disetel ke `"all"` sehingga seluruh token kode saling memperhatikan secara dua arah tanpa membutuhkan modifikasi kernel kustom.
+`Gemma4TextConfig` mendukung `use_bidirectional_attention="all"`; checkpoint default memakai `null` (kausal). Flag encoder mengubah arah attention pada implementasi Transformers. Layer lokal tetap memakai sliding window, sedangkan layer global memungkinkan seluruh konteks saling memperhatikan. Ini tidak mengubah semua layer menjadi full global attention.
 
 `text_config.rope_parameters` memakai default RoPE untuk sliding layers dan
 proportional RoPE untuk global layers dengan `partial_rotary_factor=0.25`.
@@ -78,3 +78,49 @@ otomatis menjadi satu ruang alamat; metode pembagian bobot dan aktivasi perlu di
 [T5Gemma](https://developers.googleblog.com/en/t5gemma/) menjadi referensi adaptasi
 encoder-decoder, termasuk konfigurasi asimetris. Klaim kontribusi baru harus mengacu
 pada metode atau bukti perbaikan kode, bukan sekadar pemisahan encoder dan decoder.
+
+## Pengujian tanpa bobot pretrained
+
+[Snapshot config E2B](../tests/fixtures/gemma4_e2b_text_config.json) dan
+[snapshot E4B](../tests/fixtures/gemma4_e4b_text_config.json) menyimpan text config
+resmi dengan revision dari header Hub. Tes membaca snapshot lokal secara offline.
+Revision: E2B `3e22461f65e89153144f8adb70e3b8c2cc9845a7`,
+E4B `ee0ef6023621cff504d758262d4e04895a5af4a2`.
+
+[Tes topology](../tests/test_gemma4_topology.py) melakukan dua tingkat pemeriksaan:
+
+- Seluruh text backbone dengan dimensi checkpoint asli diinstansiasi pada `meta`.
+  Ini memeriksa bentuk parameter, 35/42 layer, 7 global layer, PLE, dan 20/18 KV-shared
+  layer tanpa mengalokasikan storage bobot. Tidak ada forward numerik pada model `meta`.
+- Runtime memakai kelas asli `Gemma4TextModel` dengan bobot acak, full depth dan
+  pola layer/KV-head/KV-sharing/PLE/double-wide MLP asli. Hidden/MLP/head dimensions
+  serta vocabulary diperkecil; tiap model runtime di bawah dua juta parameter.
+  Tes memeriksa causal versus bidirectional future-token visibility, incremental
+  cache versus full forward, dan backward melalui bridge untuk empat pasangan.
+
+[Tes bridge](../tests/test_bridge.py) juga memakai lebar hidden asli 1536/2560,
+termasuk backward CUDA jika tersedia dan Gemma acak dua-layer dengan PLE diperkecil.
+Runtime ini belum menguji sliding-window boundary panjang, multimodal, precision
+rendah, atau model penuh. Hasil tersebut memverifikasi struktur dan aliran tensor,
+bukan kualitas code repair, keberhasilan adaptasi, ataupun budget model pretrained.
+
+## Hasil verifikasi lokal
+
+Pada **5 Oktober 2026**, seluruh **22 tes lulus**, dengan
+**0 tes dilewati**, di environment Conda ai: Python 3.13.16,
+Torch 2.14.1+cu130, Transformers 5.18.0, dan
+NVIDIA GeForce RTX 3060 Laptop GPU.
+Gemma full-depth versi kecil dijalankan pada CPU; tes bridge CUDA dijalankan pada GPU.
+Ruff, pemeriksaan format, dan ty juga lulus. Tidak ada bobot pretrained diunduh.
+Hasil ini memverifikasi struktur/aliran tensor, bukan skor code repair atau kelayakan
+model penuh di GPU lokal.
+
+Reproduksi dengan environment yang menyediakan dependency paket:
+
+```powershell
+conda activate ai
+$env:HF_HUB_OFFLINE = '1'
+$env:TRANSFORMERS_OFFLINE = '1'
+$env:OMP_NUM_THREADS = '4'
+python -m unittest discover -s tests
+```

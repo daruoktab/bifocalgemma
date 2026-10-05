@@ -45,7 +45,7 @@ digunakan untuk memperbaiki format sebelum menjalankan pemeriksaan ulang.
 | 2. Audit biaya | Parameter fisik/trainable, ukuran checkpoint, precision, offloading, peak VRAM dan latensi baseline |
 | 3. Integrasi | Satu kandidat BifocalGemma-E2B-E2B terhubung ke bobot asli; attention, forward/generasi, serta checkpoint dapat direproduksi |
 | 4. Adaptasi | Split data tanpa leakage (CommitPackFT, SWE-smith), konfigurasi training sesuai profiling, log dan checkpoint yang terlacak |
-| 5. Evaluasi | Perbaikan lintas file pada held-out tasks (SWE-bench Lite/Verified, CrossCodeEval), baseline sebanding, cold/warm caching, ablation dan analisis kegagalan |
+| 5. Evaluasi | Perbaikan lintas file pada held-out repair tasks (SWE-bench Lite/Verified) dan completion diagnostics (CrossCodeEval), baseline sebanding, cold/warm caching, ablation dan analisis kegagalan |
 | 6. Paper/demo | Metode, sumber, hasil terukur dan batasan; demo issue → file terkait → patch → tes |
 
 Tahap pertama memiliki kode dan tes yang tersedia; status lulus tes harus dicatat
@@ -77,3 +77,6 @@ git push -u origin HEAD
 Gunakan branch baru untuk pekerjaan terpisah dan tinjau diff sebelum commit.
 Koordinasikan perubahan antarmuka paket dan config eksperimen agar baseline tetap
 dapat direproduksi. Jadwal paper ditetapkan ulang setelah deadline resmi dikonfirmasi.
+
+Gunakan [riset dataset dan benchmark](DATASETS_AND_BENCHMARKS.md) untuk manifest,
+audit overlap, serta pemisahan inference model dan evaluasi patch di Docker.

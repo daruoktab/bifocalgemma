@@ -103,8 +103,12 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
         # The encoder explicitly enables bidirectional attention across all repository tokens
         enc_config = Gemma4TextConfig(
             vocab_size=1000,
+            vocab_size_per_layer_input=1000,
+            hidden_size_per_layer_input=16,
+            use_cache=False,
             hidden_size=1536,
             intermediate_size=6144,
+            use_double_wide_mlp=True,
             num_hidden_layers=2,
             num_attention_heads=8,
             num_key_value_heads=1,
@@ -113,6 +117,9 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
         )
         dec_config = Gemma4TextConfig(
             vocab_size=1000,
+            vocab_size_per_layer_input=1000,
+            hidden_size_per_layer_input=16,
+            use_cache=False,
             hidden_size=2560,
             intermediate_size=10240,
             num_hidden_layers=2,
@@ -162,29 +169,41 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
             self.skipTest("transformers with Gemma4 support not available")
 
         # Causal baseline configuration
-        causal_config = Gemma4TextConfig(
-            vocab_size=100,
-            hidden_size=64,
-            intermediate_size=128,
-            num_hidden_layers=2,
-            num_attention_heads=2,
-            num_key_value_heads=1,
-            head_dim=32,
-            use_bidirectional_attention=None,
+        causal_config = Gemma4TextConfig.from_dict(
+            dict(
+                vocab_size=100,
+                vocab_size_per_layer_input=100,
+                hidden_size_per_layer_input=8,
+                global_head_dim=64,
+                use_cache=False,
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=1,
+                head_dim=32,
+                use_bidirectional_attention=None,
+            )
         )
         causal_model = Gemma4TextModel(causal_config)
         causal_model.eval()
 
         # Bidirectional encoder configuration
-        bidi_config = Gemma4TextConfig(
-            vocab_size=100,
-            hidden_size=64,
-            intermediate_size=128,
-            num_hidden_layers=2,
-            num_attention_heads=2,
-            num_key_value_heads=1,
-            head_dim=32,
-            use_bidirectional_attention="all",
+        bidi_config = Gemma4TextConfig.from_dict(
+            dict(
+                vocab_size=100,
+                vocab_size_per_layer_input=100,
+                hidden_size_per_layer_input=8,
+                global_head_dim=64,
+                use_cache=False,
+                hidden_size=64,
+                intermediate_size=128,
+                num_hidden_layers=2,
+                num_attention_heads=2,
+                num_key_value_heads=1,
+                head_dim=32,
+                use_bidirectional_attention="all",
+            )
         )
         bidi_model = Gemma4TextModel(bidi_config)
         bidi_model.eval()

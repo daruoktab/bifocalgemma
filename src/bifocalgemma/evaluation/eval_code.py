@@ -88,17 +88,20 @@ def print_repair_comparison_table(
     *,
     illustrative: bool = False,
 ) -> None:
-    """Print repository-level code repair benchmark comparison table.
+    """Print repair scores alongside a separately labeled completion diagnostic.
 
-    Supported result keys: swe_bench_lite, swe_bench_verified, crosscodeeval.
+    Supported keys: swe_bench_lite and swe_bench_verified are resolved rates;
+    crosscodeeval is completion exact match, not a repair success rate.
     """
     width = 98
     print("=" * width)
     label = "ILLUSTRATIVE SCORES (NOT MEASURED)" if illustrative else "SUPPLIED SCORES"
-    print(f"  {label} (CODE REPAIR): {model_name}")
+    print(f"  {label} (REPAIR / COMPLETION DIAGNOSTIC): {model_name}")
     print("  Reference protocols may differ; this table does not establish superiority.")
     print("=" * width)
-    print(f"{'Model':<28} | {'SWE-bench Lite (%)':<20} | {'SWE-bench Ver. (%)':<20} | CrossCodeEval (%)")
+    print(
+        f"{'Model':<28} | {'SWE-bench Lite (%)':<20} | {'SWE-bench Ver. (%)':<20} | CrossCodeEval EM (%)"
+    )
     print("-" * width)
 
     for name, base in REFERENCE_BASELINES.items():
@@ -115,3 +118,4 @@ def print_repair_comparison_table(
     )
     print("=" * width)
     print(f"SWE-bench reference: {SWEBENCH_LEADERBOARD}")
+    print(f"CrossCodeEval completion diagnostic: {CROSSCODEEVAL_REPO}")
