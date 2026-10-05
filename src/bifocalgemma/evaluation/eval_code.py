@@ -35,11 +35,18 @@ REFERENCE_BASELINES: dict[str, BaselineScores] = {
     "Gemma-4-E4B-IT": BaselineScores(
         "Gemma-4-E4B-IT", livecodebench_v6=52.0, source_url=GEMMA4_MODEL_CARD
     ),
-    "Gemma-3-1B-IT": BaselineScores("Gemma-3-1B-IT"),
-    "Gemma-3-4B-IT": BaselineScores("Gemma-3-4B-IT"),
-    "T5Gemma-2-1B-1B": BaselineScores("T5Gemma-2-1B-1B"),
-    "T5Gemma-2-4B-4B": BaselineScores("T5Gemma-2-4B-4B"),
 }
+
+
+# Each BifocalGemma pair means base encoder + instruction-tuned decoder.
+EXPERIMENT_MODELS: tuple[str, ...] = (
+    "BifocalGemma-E2B-E2B",
+    "BifocalGemma-E4B-E4B",
+    "BifocalGemma-E2B-E4B",
+    "BifocalGemma-E4B-E2B",
+    "Gemma-4-E2B-IT",
+    "Gemma-4-E4B-IT",
+)
 
 
 def _format_score(value: Optional[float]) -> str:
@@ -119,3 +126,36 @@ def print_repair_comparison_table(
     print("=" * width)
     print(f"SWE-bench reference: {SWEBENCH_LEADERBOARD}")
     print(f"CrossCodeEval completion diagnostic: {CROSSCODEEVAL_REPO}")
+
+
+def print_repair_experiment_table(
+    results_by_model: dict[str, dict[str, float]],
+    *,
+    illustrative: bool = False,
+) -> None:
+    """Print the fixed four-variant/two-baseline repair study.
+
+    Models use the canonical IDs in EXPERIMENT_MODELS. Values use swe_bench_lite,
+    swe_bench_verified, and crosscodeeval (completion exact-match percentage).
+    Absent metrics/models display N/A; references are not substituted for measurements.
+    """
+    unknown_models = set(results_by_model) - set(EXPERIMENT_MODELS)
+    if unknown_models:
+        raise ValueError(f"Models outside the six-model study: {sorted(unknown_models)}")
+    label = "ILLUSTRATIVE SCORES (NOT MEASURED)" if illustrative else "SUPPLIED SCORES"
+    print("=" * 104)
+    print(f"  {label}: FOUR BASE-ENCODER / IT-DECODER PAIRS AND TWO IT BASELINES")
+    print("  Matched protocols are required; this report does not execute benchmarks.")
+    print(
+        f"{'Model':<28} | {'SWE-bench Lite (%)':<20} | "
+        f"{'SWE-bench Ver. (%)':<20} | CrossCodeEval EM (%)"
+    )
+    print("-" * 104)
+    for model_name in EXPERIMENT_MODELS:
+        metrics = results_by_model.get(model_name, {})
+        print(
+            f"{model_name:<28} | {_format_score(metrics.get('swe_bench_lite')):<20} | "
+            f"{_format_score(metrics.get('swe_bench_verified')):<20} | "
+            f"{_format_score(metrics.get('crosscodeeval'))}"
+        )
+    print("=" * 104)

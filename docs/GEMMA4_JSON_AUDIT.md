@@ -145,8 +145,9 @@ quantization_config; precision storage yang terukur tetap memerlukan audit check
 
 ## Keputusan untuk eksperimen awal
 
-- Gunakan base E2B sebagai kandidat encoder dan E2B IT sebagai kandidat decoder,
-  dengan revision/config/tokenizer masing-masing dipin. Token space kompatibel
+- Gunakan base E2B/E4B sebagai encoder dan E2B/E4B IT sebagai decoder untuk
+  seluruh empat pasangan dalam [desain eksperimen](EXPERIMENT_DESIGN.md),
+  dengan revision/config/tokenizer masing-masing dipin. Pilot dimulai pada E2B–E2B IT. Token space kompatibel
   tetapi formatting BOS dan stopping policy harus mengikuti peran model.
 - Pertahankan fokus text-only code repair. Tower multimodal dan agent tool protocol
   perlu implementasi tersendiri, bukan diasumsikan sudah tersedia.

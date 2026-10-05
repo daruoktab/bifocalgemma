@@ -29,17 +29,21 @@ Mask token semua-valid tidak otomatis menghapus causal mask atau sliding window 
 
 ## Fokus eksperimen
 
-Eksperimen pertama memakai kandidat **BifocalGemma-E2B-E2B**, setelah kebutuhan memori
-dan kelayakan integrasinya diukur. Fokusnya adalah pemahaman dependensi lintas file,
-lokasi bug, dan patch yang lolos tes. Baseline decoder-only harus dijalankan dengan
-data, konteks, sampling, token/tool budget, dan harness yang sebanding, termasuk prefix
-caching jika didukung. Ukur kualitas perbaikan, latensi cold/warm cache, throughput,
-dan peak VRAM total; HumanEval/MBPP hanya evaluasi tambahan, bukan bukti utama.
+Studi utama memakai empat pasangan encoder base / decoder IT:
+**E2B–E2B IT**, **E4B–E4B IT**, **E2B–E4B IT**, dan **E4B–E2B IT**.
+Dua baseline decoder-only adalah **Gemma 4 E2B-IT** dan **Gemma 4 E4B-IT**.
+T5Gemma/T5Gemma 2 tetap menjadi related work; pembanding benchmark utama dibatasi
+pada enam model tersebut.
 
-Konfigurasi **BifocalGemma-E4B-E2B**, **BifocalGemma-E2B-E4B**, dan
-**BifocalGemma-E4B-E4B** merupakan eksperimen lanjutan. Perbandingan kapasitas encoder
-versus decoder membutuhkan kedua konfigurasi asimetris. Multimodal dan pembaruan
-cache satu hop juga ditunda sampai eksperimen dasar dapat direproduksi.
+Kontribusi yang ditargetkan: adaptasi kelas Edge untuk memahami codebase dan repair,
+inisialisasi campuran base encoder + IT decoder, serta studi pengaruh kapasitas
+encoder/decoder melalui matriks 2×2. Lihat [desain eksperimen](docs/EXPERIMENT_DESIGN.md)
+untuk peran checkpoint, pertanyaan riset, dan batas klaim.
+
+E2B–E2B menjadi pilot integrasi, lalu keempat pasangan dijalankan bertahap sesuai
+hasil profiling. Ukur kualitas patch/lokalisasi, latensi, throughput dan peak VRAM.
+Baseline memakai protokol data/context/tool budget yang sebanding dan prefix caching
+bila didukung. Multimodal dan partial cache invalidation adalah pekerjaan lanjutan.
 
 ## Dasar ilmiah dan batas klaim
 
@@ -90,9 +94,17 @@ python -c "from bifocalgemma.evaluation import print_comparison_table; print_com
 
 Skor yang belum terverifikasi atau belum diukur ditampilkan sebagai `N/A`, bukan nol.
 
+Tabel studi repair lengkap memakai enam baris tetap. Contoh berikut belum berisi hasil:
+
+```powershell
+python -c "from bifocalgemma.evaluation import print_repair_experiment_table; print_repair_experiment_table({}, illustrative=True)"
+```
+
+
 ## Dokumen dan kontributor
 
 - [Proposal riset](docs/proposal.md)
+- [Desain empat pasangan dan dua baseline](docs/EXPERIMENT_DESIGN.md)
 - [Spesifikasi teknis dan batas estimasi memori](docs/RESEARCH_SPEC.md)
 - [Referensi arsitektur Gemma 4](docs/GEMMA4_EDGE_ARCHITECTURE.md)
 - [Audit seluruh JSON base/IT dan dampak pada integrasi](docs/GEMMA4_JSON_AUDIT.md)

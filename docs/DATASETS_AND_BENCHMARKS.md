@@ -88,10 +88,13 @@ yang sebanding; simpan config/manifest dan rerun semua metode dengan harness yan
 
 1. Uji modul dan topology Gemma tanpa bobot pretrained.
 2. Bentuk manifest subset training SWE-smith terverifikasi dan subset Lite untuk smoke.
-3. Integrasikan encoder, decoder dan agent loop; pilih training budget setelah profiling.
+3. Integrasikan pilot E2B–E2B lalu empat pasangan base encoder / IT decoder; pilih training budget setelah profiling.
 4. Adaptasi patch-only, bandingkan localization/repair dan ablate bidirectionality/AST.
-5. Jalankan inference dan harness Lite; lanjut Verified setelah keputusan tuning dikunci.
+5. Bandingkan empat pasangan dan baseline E2B-IT/E4B-IT dengan harness Lite; lanjut Verified setelah tuning dikunci.
 6. Tambahkan trajectory SFT dan completion diagnostics bila diperlukan oleh pertanyaan riset.
 
 Ini menetapkan sumber dan protokol awal, tanpa menjanjikan keberhasilan training
 atau menetapkan ukuran model yang belum diprofilkan.
+
+Pembanding benchmark utama mengikuti [desain enam model](EXPERIMENT_DESIGN.md).
+T5Gemma dan T5Gemma 2 dibahas dalam related work tanpa menambah kandidat benchmark.

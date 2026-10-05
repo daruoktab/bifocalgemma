@@ -60,8 +60,10 @@ Gemma memakai hybrid attention dan KV sharing; estimasi seragam ini tidak memode
 
 ## Protokol eksperimen awal
 
-Kandidat pertama **BifocalGemma-E2B-E2B**, dengan kelayakan yang ditentukan melalui
-profiling. Perbandingan dengan E4B tidak boleh disebut iso-parameter/iso-memory
+Matriks utama memakai E2B–E2B IT, E4B–E4B IT, E2B–E4B IT dan E4B–E2B IT,
+dengan encoder base / decoder IT. E2B-IT dan E4B-IT menjadi baseline decoder-only.
+[Desain eksperimen](EXPERIMENT_DESIGN.md) menjadi acuan perbandingan enam model.
+Pilot integrasi memakai E2B–E2B; eksekusi empat pasangan dilakukan bertahap setelah profiling. Perbandingan dengan E4B tidak boleh disebut iso-parameter/iso-memory
 hanya karena jumlah parameter efektif berdekatan; bobot fisik, bridge, precision,
 offloading, parameter trainable, dan budget training harus dilaporkan.
 
@@ -76,7 +78,8 @@ menganggap skor dari protokol publik yang berbeda sebagai kemenangan head-to-hea
 
 Snapshot penuh di-encode ulang setelah edit. Partial re-encoding satu hop ditunda
 karena full bidirectional attention dapat menyebarkan perubahan ke seluruh snapshot.
-Tunda matriks empat model dan multimodal sampai eksperimen dasar dapat direproduksi.
+Matriks empat model tetap menjadi target utama. Multimodal ditunda sampai eksperimen
+dasar dapat direproduksi; T5Gemma/T5Gemma 2 dibahas sebagai prior art.
 
 ## Dataset training dan benchmark
 

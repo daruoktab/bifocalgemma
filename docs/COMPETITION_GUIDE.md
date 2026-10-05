@@ -31,8 +31,9 @@ submission lebih awal tanpa aturan resmi yang mendukungnya.
 
 BifocalGemma berfokus pada riset representasi repositori bidirectional untuk local
 code repair. Proposal tidak mengklaim otomatis mencakup semua kategori kompetisi,
-menjadi karya pertama, atau menjamin kemenangan. Fokus eksperimen awal adalah satu
-konfigurasi kecil dan bukti pada tugas lintas file.
+menjadi karya pertama, atau menjamin kemenangan. Fokus studi adalah matriks
+empat pasangan encoder base / decoder IT dan dua baseline decoder-only Gemma 4
+IT, dengan bukti pada tugas lintas file. Lihat [desain eksperimen](EXPERIMENT_DESIGN.md).
 
 - **Kontribusi:** jelaskan hubungan dengan T5Gemma dan kontribusi spesifik untuk kode.
 - **Kualitas:** baseline sebanding, ablation yang menjawab pertanyaan riset, dan analisis kegagalan.

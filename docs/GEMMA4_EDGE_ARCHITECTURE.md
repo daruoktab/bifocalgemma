@@ -77,8 +77,9 @@ otomatis menjadi satu ruang alamat; metode pembagian bobot dan aktivasi perlu di
 - [AST projector](../src/bifocalgemma/models/code_graph_projector.py) menerima ID
   tipe/kedalaman. Dimensi integrasi adalah 1536 untuk E2B dan 2560 untuk E4B;
   default generiknya bukan konfigurasi backbone yang otomatis terhubung.
-- **BifocalGemma-E2B-E2B** menjadi kandidat awal; konfigurasi asimetris dan E4B-E4B
-  ditunda. Parameter efektif yang berdekatan tidak berarti budget memori identik.
+- Empat pasangan E2B–E2B IT, E4B–E4B IT, E2B–E4B IT dan E4B–E2B IT menjadi
+  studi utama. Encoder memakai base, decoder memakai IT; pilot E2B–E2B mendahului
+  integrasi pasangan lain. Baseline adalah E2B-IT/E4B-IT decoder-only. Parameter efektif yang berdekatan tidak berarti budget memori identik.
 
 [T5Gemma](https://developers.googleblog.com/en/t5gemma/) menjadi referensi adaptasi
 encoder-decoder, termasuk konfigurasi asimetris. Klaim kontribusi baru harus mengacu
@@ -134,3 +135,6 @@ Audit lanjutan menemukan lebar MLP E2B 6144 pada 15 layer awal dan 12288 pada
 20 KV-shared layer berikutnya. Biaya text-only BF16 pasangan E2B/E2B sekitar
 18,514 GB untuk bobot saja, tanpa bridge/cache/aktivasi; detail dan batas hitungan
 ada di [audit JSON](GEMMA4_JSON_AUDIT.md).
+
+[Desain eksperimen](EXPERIMENT_DESIGN.md) mengatur matriks dan pembanding enam
+model; prior art T5Gemma tetap dipakai untuk menilai batas kontribusi.

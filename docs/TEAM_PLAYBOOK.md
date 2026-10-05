@@ -43,15 +43,15 @@ digunakan untuk memperbaiki format sebelum menjalankan pemeriksaan ulang.
 | --- | --- |
 | 1. Fondasi | Modul bridge, AST embedding, routing, dan laporan skor; cakupan tes sintetis dijelaskan |
 | 2. Audit biaya | Parameter fisik/trainable, ukuran checkpoint, precision, offloading, peak VRAM dan latensi baseline |
-| 3. Integrasi | Satu kandidat BifocalGemma-E2B-E2B terhubung ke bobot asli; attention, forward/generasi, serta checkpoint dapat direproduksi |
+| 3. Integrasi | Pilot E2B–E2B lalu empat pasangan base encoder / IT decoder; attention, forward/generasi dan checkpoint dapat direproduksi |
 | 4. Adaptasi | Split data tanpa leakage (CommitPackFT, SWE-smith), konfigurasi training sesuai profiling, log dan checkpoint yang terlacak |
 | 5. Evaluasi | Perbaikan lintas file pada held-out repair tasks (SWE-bench Lite/Verified) dan completion diagnostics (CrossCodeEval), baseline sebanding, cold/warm caching, ablation dan analisis kegagalan |
 | 6. Paper/demo | Metode, sumber, hasil terukur dan batasan; demo issue → file terkait → patch → tes |
 
 Tahap pertama memiliki kode dan tes yang tersedia; status lulus tes harus dicatat
 dari eksekusi sebenarnya. Tahap berikutnya merupakan rencana, bukan pekerjaan yang
-otomatis selesai karena unit test bridge lulus. Jangan mengunci ukuran data atau
-menjanjikan semua konfigurasi sebelum profiling komputasi.
+otomatis selesai karena unit test bridge lulus. Keempat pasangan adalah target studi;
+ukuran data, precision, urutan eksekusi dan budget ditetapkan melalui profiling.
 
 ## Protokol bersama
 
@@ -62,7 +62,8 @@ menjanjikan semua konfigurasi sebelum profiling komputasi.
 - Catat hardware, environment, revision model, seed, precision, peak VRAM, dan log
   kegagalan. HumanEval/MBPP bukan pengganti evaluasi repositori lintas file.
 - Re-encode snapshot penuh setelah edit untuk eksperimen awal. Partial invalidation,
-  multimodal, matriks lengkap, dan klaim encoder-versus-decoder merupakan tahap lanjutan.
+  multimodal dan merged attention merupakan tahap lanjutan. Matriks 2×2 dan studi
+  pengaruh encoder/decoder termasuk studi utama bersama baseline E2B-IT/E4B-IT.
 
 ## Sinkronisasi Git
 
@@ -80,3 +81,6 @@ dapat direproduksi. Jadwal paper ditetapkan ulang setelah deadline resmi dikonfi
 
 Gunakan [riset dataset dan benchmark](DATASETS_AND_BENCHMARKS.md) untuk manifest,
 audit overlap, serta pemisahan inference model dan evaluasi patch di Docker.
+
+Perbandingan model mengikuti [desain enam model](EXPERIMENT_DESIGN.md). T5Gemma
+dan T5Gemma 2 adalah related work, bukan kandidat tambahan pada benchmark utama.

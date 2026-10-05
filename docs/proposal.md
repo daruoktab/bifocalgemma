@@ -12,8 +12,9 @@ dan generasi patch yang benar. Kami ingin menguji apakah encoder bidirectional
 yang dipisahkan dari decoder generatif memberi manfaat pada agen lokal dengan
 anggaran komputasi terbatas. Keuntungan terhadap decoder-only belum terbukti.
 
-**Pertanyaan utama:** bagaimana kualitas perbaikan, latensi, dan peak VRAM berubah
-saat representasi repositori bidirectional digunakan untuk mengondisikan decoder?
+**Pertanyaan utama:** pada empat pasangan Gemma 4 Edge dengan encoder base dan
+decoder IT, bagaimana kapasitas encoder versus decoder memengaruhi pemahaman
+codebase, kualitas patch, latensi dan peak VRAM dibanding E2B-IT/E4B-IT decoder-only?
 
 [T5Gemma](https://developers.googleblog.com/en/t5gemma/) merupakan prior art langsung
 untuk adaptasi decoder-only menjadi encoder-decoder dan konfigurasi asimetris.
@@ -32,12 +33,21 @@ flowchart LR
     B --> P[Patch dan eksekusi tes]
 ```
 
-Mulai dari kandidat **BifocalGemma-E2B-E2B**. Kelayakannya ditentukan melalui audit
-bobot yang dimuat dan pengukuran memori, bukan penjumlahan parameter efektif.
-Urutan kerja: pengukuran biaya backbone, integrasi attention dan bridge, adaptasi
-terbatas pada data training (seperti subset terkurasi CommitPackFT dan task terisolasi SWE-smith),
-lalu evaluasi pada tugas held-out perbaikan lintas file.
-Ukuran data dan konfigurasi training baru ditetapkan setelah profiling.
+Studi utama mencakup **E2B–E2B IT**, **E4B–E4B IT**, **E2B–E4B IT**, dan
+**E4B–E2B IT**, ditambah baseline **E2B-IT** serta **E4B-IT**. Encoder berasal
+dari checkpoint base, decoder dari checkpoint instruction-tuned. Pilot E2B–E2B
+mendahului integrasi pasangan lain, tetapi keempatnya tetap target paper.
+
+Tiga kontribusi yang ditargetkan adalah adaptasi encoder-decoder kelas Edge untuk
+codebase understanding/repair, recipe initialization base encoder + IT decoder,
+dan analisis faktorial kapasitas encoder/decoder. RQ utama, perbandingan khusus
+E2B–E2B IT versus E4B-IT, serta kontrol untuk duel asimetris ada dalam
+[desain eksperimen](EXPERIMENT_DESIGN.md). T5Gemma/T5Gemma 2 menjadi related work;
+kedua keluarga itu tidak masuk perbandingan benchmark utama.
+
+Ukuran data, precision dan budget adaptasi mengikuti profiling, dengan data dan
+protokol sebanding untuk baseline. Pengujian arsitektur lokal tidak memuat bobot
+model pretrained atau melatih model penuh.
 
 Bridge menghitung `X + tanh(g) * CrossAttention(X, H)`, dengan `tanh(g)=0.05`
 saat inisialisasi. Angka itu adalah skala residual tambahan; tidak menyatakan
@@ -64,12 +74,17 @@ ekstraksi AST, backbone, training, generasi, cache, serta benchmark belum terint
 Hasil negatif tetap bernilai bila menjelaskan kapan biaya encoder/cross-attention
 lebih besar daripada manfaatnya. Tidak ada target kemenangan atau skor yang dijamin.
 
-## Eksperimen lanjutan
+## Batas studi dan pekerjaan lanjutan
 
-**BifocalGemma-E4B-E2B** dan **BifocalGemma-E2B-E4B** harus diuji bersama untuk
-membahas alokasi kapasitas encoder versus decoder. **BifocalGemma-E4B-E4B**,
-multimodal, contrastive localization loss, dan repository memory merupakan pekerjaan
-lanjutan, bukan deliverable awal yang sudah tersedia.
+Empat pasangan simetris/asimetris merupakan bagian studi utama. Benchmark utama
+dibatasi pada enam model yang sudah ditetapkan; kontrol kapasitas memakai matriks
+lengkap dan duel E4B–E2B IT versus E2B–E4B IT. Mixed initialization adalah pilihan
+metode yang belum terbukti unggul secara terisolasi tanpa kontrol initialization lain.
+Kode saat ini masih gated cross-attention terpisah; merged attention dan tied
+embeddings T5Gemma 2 bukan fitur yang sudah terimplementasi.
+
+Multimodal, contrastive localization loss, merged attention dan partial repository
+memory menjadi pekerjaan lanjutan.
 
 Invalidasi satu hop tidak otomatis benar pada encoder full bidirectional: perubahan
 satu file dapat memengaruhi representasi file lain secara global. Eksperimen awal
