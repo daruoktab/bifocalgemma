@@ -14,6 +14,7 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 | [Arsitektur](ARCHITECTURE.md) | Aliran tensor, merged attention, initialization dan tying |
 | [Panduan pembangunan](BUILD_GUIDE.md) | Blok mana tersedia, placeholder mana dikerjakan berikutnya |
 | [Pipeline data](DATA_PIPELINE.md) | Snapshot, prefix, target, offset AST, collator dan leakage |
+| [Training notebooks](TRAINING_NOTEBOOKS.md) | Dua standalone SFT notebooks dengan cell identik dan template bersama |
 | [Training](TRAINING.md) | Direct SFT, loss, profiling, PEFT, checkpoint dan opsi distillation |
 | [Evaluasi](EVALUATION.md) | Inference, prediksi, harness, metrik dan tabel enam model |
 | [Dataset dan benchmark](DATASETS_AND_BENCHMARKS.md) | Sumber primer dan alasan pemilihan data |

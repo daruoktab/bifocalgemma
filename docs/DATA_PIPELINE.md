@@ -107,3 +107,11 @@ mengklaim graph reasoning dari keberadaan embedding tipe node saja.
 - Gold patch dan artifacts evaluator tidak muncul pada encoder atau prefix.
 - Prefix/pad loss nol, target shifted sekali, lengths/position IDs konsisten.
 - Collator synthetic lulus bukan bukti D03/D04 siap untuk data riil.
+
+## Standalone SFT notebooks dengan cell seragam
+
+[Training notebooks](TRAINING_NOTEBOOKS.md) menyediakan jalur pilot paired-file
+editing → pretrained attention LoRA SFT → held-out CE → adapter/optimizer/RNG/cursor
+checkpoint resume. Keluarga simetris/asimetris memakai 17 cell yang sama, dengan
+16 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
+RUN_TRAINING default False. CLI production train_direct_sft tetap placeholder.

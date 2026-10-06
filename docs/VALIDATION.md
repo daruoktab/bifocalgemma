@@ -133,3 +133,14 @@ HF authentication pada pretrained notebook dipisahkan ke cell2a password form da
 cell2b Apply/whoami. API mock memeriksa widget precedence, environment fallback,
 anonymous False token, invalid-token failure dan safe auth report tanpa credential.
 Graph CPU/anon guard serta tiga notebook pytest tests lulus setelah perubahan.
+
+## Matched training notebooks — 6 Oktober 2026
+
+Notebook simetris/asimetris memiliki 17 cell dalam posisi sama. Diff hanya tiga
+baris FAMILY/EXPERIMENT/OUTPUT_ROOT pada control center; 16 cell lainnya identik.
+Generator --check memeriksa sinkronisasi template/helpers. Kedua notebook punya
+3 pytest tests (6 total) dan graph disabled tanpa data/model download. Tujuh helper
+tests memeriksa cell parity/instruction identity, diff dengan missing final newline, dedup/commit split, token-weighted
+accumulation versus larger batch, overwrite/compatibility/checksum failure, serta
+native tiny LoRA resumed vs uninterrupted pada kedua keluarga. Big pretrained
+SFT kedua notebook belum dijalankan lokal. Lihat [panduan](TRAINING_NOTEBOOKS.md).

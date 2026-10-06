@@ -338,3 +338,11 @@ terpisah. Ia memuat pinned base/IT text weights, melakukan attention-LoRA/AdamW
 microsteps, dan membandingkan 1–4 independent resident models. Loader/optimizer
 helpers diuji pada tiny fixtures; GPU96/pretrained measurements dijalankan pengguna.
 Ini prototype profiling, bukan penyelesaian production trainer/cache/checkpoint.
+
+## Standalone SFT notebooks dengan cell seragam
+
+[Training notebooks](TRAINING_NOTEBOOKS.md) menyediakan jalur pilot paired-file
+editing → pretrained attention LoRA SFT → held-out CE → adapter/optimizer/RNG/cursor
+checkpoint resume. Keluarga simetris/asimetris memakai 17 cell yang sama, dengan
+16 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
+RUN_TRAINING default False. CLI production train_direct_sft tetap placeholder.
