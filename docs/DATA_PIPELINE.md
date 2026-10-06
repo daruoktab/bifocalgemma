@@ -18,7 +18,7 @@ Ia bukan data SWE-smith atau contoh benchmark terverifikasi.
 ## D04 — sumber data dan manifest
 
 [Dataset adapters](../src/bifocalgemma/data/adapters.py) menyediakan slot
-SWESmithAdapter, CommitPackFTAdapter dan SWEGymAdapter. iter_examples menerima
+EditPackFTAdapter, CommitPackFTAdapter, SWESmithAdapter dan SWEGymAdapter. iter_examples menerima
 manifest sumber lokal/revision dan split, lalu menghasilkan RepairExample.
 Fetching, checkout snapshot, filtering dan overlap audit belum diimplementasikan.
 D06 [normalizer lokal](../src/bifocalgemma/data/swesmith.py) memeriksa snapshot hash
@@ -31,9 +31,12 @@ Pisahkan train/dev per kelompok task/repo agar trajectory atau commit terkait
 tidak bocor. Audit overlap issue/PR/commit/patch/near-duplicate dengan evaluation.
 Jumlah baris setelah filter lebih penting daripada jumlah pada card yang berubah.
 
-Data utama adalah SWE-smith patch-only; CommitPackFT Python warm-up opsional.
-SWE-Gym adalah alternatif setelah audit overlap. Trajectory SFT dan AST-aware
-warm-up opsional setelah pipeline patch benar. Detail sumber primer ada pada
+Data utama pilot adalah EditPackFT; CommitPackFT Python tambahan opsional setelah
+dedup. Adapter menggunakan instruction/subject dan old_contents sebagai input,
+serta unified diff before→after sebagai target. Field content/ndiff tidak menjadi
+input karena dapat membawa jawaban. SFT/data preparation tidak menjalankan kode
+repository, RL, VM atau Docker. SWE-smith/Gym dan trajectories ditunda dari jalur
+utama. Single-file pilot bukan bukti kemampuan lintas file. Detail ada pada
 [riset dataset](DATASETS_AND_BENCHMARKS.md).
 
 ## D03 — tokenization

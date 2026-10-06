@@ -11,6 +11,12 @@ codebase serta perbaikan bug lintas file. Rancangan aktif memakai **encoder Gemm
 base + decoder Gemma 4 IT**, langsung dibangun dengan merged attention, lalu
 supervised fine-tuning. Teacher network dan distillation bersifat opsional.
 
+Tuning awal memakai **offline instruction-to-patch SFT**, dengan EditPackFT sebagai
+data utama dan CommitPackFT Python opsional setelah dedup. Data berupa kode sebelum
+edit + instruksi + target patch. **RL dan VM/Docker tidak diperlukan pada jalur
+tuning**; agent rollouts/SWE-bench environments ditunda. Single-file editing pilot
+akan dilanjutkan dengan static multi-file data untuk menguji pemahaman codebase.
+
 ## Matriks penelitian
 
 | Pasangan | Encoder | Decoder | Ordinary word embeddings lintas komponen |

@@ -27,8 +27,8 @@ tidak berada pada jalur default direct SFT.
 | [T03](#t03) | placeholder | [training/profiling.py](../src/bifocalgemma/training/profiling.py) | Actual memory and latency measurements |
 | [T04](#t04) | optional_placeholder | [training/distillation.py](../src/bifocalgemma/training/distillation.py) | Optional later teacher losses |
 | [I01](#i01) | placeholder | [inference/generation.py](../src/bifocalgemma/inference/generation.py) | IT-aware generation and stopping |
-| [A01](#a01) | placeholder | [agent/loop.py](../src/bifocalgemma/agent/loop.py) | Tool parsing and bounded developer-agent loop |
-| [E01](#e01) | placeholder | [evaluation/harness.py](../src/bifocalgemma/evaluation/harness.py) | Real Docker repair evaluation |
+| [A01](#a01) | optional_placeholder | [agent/loop.py](../src/bifocalgemma/agent/loop.py) | Tool parsing and bounded developer-agent loop |
+| [E01](#e01) | optional_placeholder | [evaluation/harness.py](../src/bifocalgemma/evaluation/harness.py) | Real Docker repair evaluation |
 | [E02](#e02) | implemented | [evaluation/predictions.py](../src/bifocalgemma/evaluation/predictions.py) | SWE-bench prediction JSONL serialization |
 | [S01](#s01) | placeholder | [checkpointing.py](../src/bifocalgemma/checkpointing.py) | Alias-safe checkpoint save/load |
 
@@ -39,10 +39,13 @@ tidak berada pada jalur default direct SFT.
    M04/M05 berikutnya menangani transfer bobot dan assembly produksi.
 3. D04/T03: data riil/overlap audit dan profiling pada hardware yang sesuai.
 4. T02/S01: direct SFT, checkpoint dan resume; mulai pilot E2B–E2B lalu empat pasangan.
-5. I01/M06/A01/E01: generation, caches, tools dan real repair evaluation.
+5. I01: patch generation dan held-out editing diagnostics, lalu functional Python
+   evaluation. M06 cache adalah optimasi berikutnya; A01/E01 agent/Docker ditunda.
 6. Analisis keenam model dan optional ablations yang budget/protocol-nya jelas.
 
-D05 dan T04 bersifat optional. E02 tersedia lebih awal untuk record prediction.
+D05/T04/A01/E01 bersifat optional. Recipe utama adalah offline patch SFT pada
+EditPackFT, CommitPackFT Python opsional; tanpa RL atau VM/Docker. E02 tersedia
+sebagai serializer format SWE-bench dan tidak mewajibkan benchmark tersebut.
 
 ## Cara mencoba
 
@@ -114,7 +117,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 **Status:** placeholder. **Source:** [data/adapters.py](../src/bifocalgemma/data/adapters.py).
 
 - Dependencies: D01.
-- Contract: SWESmithAdapter/CommitPackFTAdapter/SWEGymAdapter.iter_examples(manifest,split) → records.
+- Contract: EditPackFTAdapter/CommitPackFTAdapter/SWESmithAdapter/SWEGymAdapter.iter_examples(manifest,split) → records.
 - Invariants: Source revision, base_commit reconstruction, license/filter manifest and overlap exclusions.
 - Acceptance/readiness: Small verified real fixture reconstructs before/after patch and split audit; task/commit IDs not mixed across splits.
 
@@ -254,7 +257,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### A01 — Tool parsing and bounded developer-agent loop
 
-**Status:** placeholder. **Source:** [agent/loop.py](../src/bifocalgemma/agent/loop.py).
+**Status:** optional_placeholder. **Source:** [agent/loop.py](../src/bifocalgemma/agent/loop.py).
 
 - Dependencies: I01, M06 as applicable.
 - Contract: DeveloperAgent.run(example,max_steps) → traced prediction.
@@ -265,7 +268,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### E01 — Real Docker repair evaluation
 
-**Status:** placeholder. **Source:** [evaluation/harness.py](../src/bifocalgemma/evaluation/harness.py).
+**Status:** optional_placeholder. **Source:** [evaluation/harness.py](../src/bifocalgemma/evaluation/harness.py).
 
 - Dependencies: I01/E02 predictions; A01 if agent used.
 - Contract: SWEBenchHarness.evaluate(path,dataset_revision,run_id) → EvaluationReport.

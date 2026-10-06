@@ -1,113 +1,101 @@
-# BifocalGemma: Dataset Training dan Benchmark Code Repair
+# Dataset dan Benchmark: Offline Code Editing / Repair SFT
 
-Riset sumber primer diperiksa **5 Oktober 2026**. Dokumen ini adalah rekomendasi
-eksperimen; belum ada dataset besar diunduh, model dilatih, atau skor repair dihasilkan.
-Pin revision dataset dan catat jumlah baris setelah filtering; card dan viewer dapat berbeda.
+Recipe aktif diperbarui **6 Oktober 2026**: SFT `instruksi + kode sebelum edit → patch`.
+Data preparation dan tuning berjalan dari file lokal, tanpa RL, reward model,
+agent rollouts, VM, atau Docker sebagai prasyarat. Environment `ai` tetap dipakai;
+kebutuhan GPU pretrained ditentukan oleh profiling, terpisah dari kebutuhan VM.
 
-## Pilihan training
+## Dataset untuk tahap awal
 
-| Sumber | Peran yang disarankan | Batas dan kebutuhan |
+| Sumber | Peran aktif | Field / batas |
 | --- | --- | --- |
-| [SWE-smith tasks](https://huggingface.co/datasets/SWE-bench/SWE-smith) dan [toolkit](https://github.com/SWE-bench/SWE-smith) | Sumber utama pasangan issue/snapshot → patch dan label lokasi file | Task sintetis dengan executable environment; perlu rekonstruksi snapshot dan verifikasi patch. Card menyebut 50.137 task/128 repo, sedangkan viewer terkini lebih besar; jangan menganggap angka historis sebagai jumlah split yang dipakai. |
-| [SWE-smith trajectories](https://huggingface.co/datasets/SWE-bench/SWE-smith-trajectories) | SFT aksi/tool-use setelah patch-only training bekerja | Ada messages, instance_id, resolved, model, dan patch. Pilih trajectory resolved, cocokkan schema split dan task; task dataset tidak otomatis merupakan trajectory agen. |
-| [CommitPackFT](https://huggingface.co/datasets/bigcode/commitpackft) / [OctoPack](https://github.com/bigcode-project/octopack) | Warm-up instruction editing dari subset Python terkurasi | Card mencatat 702.062 contoh total dan 56.025 Python. Commit bukan selalu bug fix, tidak selalu multi-file, dan tidak otomatis disertai reproduksi test; metadata commit-message bukan jaminan issue berkualitas. |
-| [SWE-Gym](https://huggingface.co/datasets/SWE-Gym/SWE-Gym) / [toolkit](https://github.com/SWE-Gym/SWE-Gym) | Sumber alternatif real GitHub issue untuk tahap repair | Card menampilkan sekitar 2,44k task dengan repo, base_commit, patch, test_patch, dan kelompok tes. Audit overlap dengan evaluation terlebih dahulu; lingkungan eksekusi tetap perlu disiapkan. |
-| [EditPackFT](https://huggingface.co/datasets/nuprl/EditPackFT) | Opsional untuk instruction editing | Dataset training berbeda dari benchmark CanItEdit. Tidak diperlakukan sebagai bukti kemampuan agent multi-turn lintas repositori. |
+| [EditPackFT](https://huggingface.co/datasets/nuprl/EditPackFT) | Primary pilot instruction editing Python | `instruction`, `old_contents`, `new_contents`, file paths, commit/repo/license tersedia; sekitar 22.602 records dan 48,1 MB Parquet pada pemeriksaan metadata 6 Oktober. Tidak semua edit adalah verified bug fix. |
+| [CommitPackFT Python](https://huggingface.co/datasets/bigcode/commitpackft) | Tambahan opsional setelah dedup/quality audit | `subject`, `old_contents`, `new_contents`, paths, commit/repo/license; 56.025 records, sekitar 136 MB JSONL. Commit message tidak otomatis merupakan issue yang baik atau bug fix yang teruji. |
+| Static multi-file records lokal | Tahap lanjutan untuk repository understanding | Semua file sebelum edit diberikan sebagai snapshot; instruksi + target patch. Records dengan full snapshot dapat dipakai tanpa menjalankan environment repository. Corpus riil belum tersedia. |
 
-**Rekomendasi awal:** patch-only SFT pada subset SWE-smith Python yang terverifikasi,
-dengan CommitPackFT Python sebagai warm-up opsional. Tambahkan trajectories setelah
-format tool-call dan agent loop benar-benar terintegrasi. SWE-Gym menjadi pembanding
-sumber real issue, bukan tambahan otomatis sebelum audit overlap dan compute.
+Mulai dengan EditPackFT saja. CommitPackFT bukan campuran otomatis: keduanya memakai
+sumber commit GitHub yang dapat overlap. Audit commit IDs, before/after pairs dan
+near-duplicates sebelum menambah data. Angka rows/bytes adalah upstream metadata,
+bukan ukuran train split setelah filtering; revision dipin saat data diambil.
 
-Input training berasal dari snapshot sebelum perbaikan ditambah issue. Patch merupakan
-target, bukan bagian konteks encoder. Label file dapat diambil dari diff hanya untuk
-supervisi lokalisasi. Data edit satu file tidak membuktikan kompetensi lintas file.
+Adapter [EditPackFTAdapter / CommitPackFTAdapter](../src/bifocalgemma/data/adapters.py)
+masih slot D04, belum downloader/converter production. Input hanya old_contents
+serta instruction/subject; target unified diff diturunkan dari before → after.
+Jangan memakai field `content` siap pakai atau `ndiff` sebagai input karena dapat
+memuat kode setelah edit/jawaban. Untuk pilot, gunakan modification pada path sama;
+rename/add/delete memerlukan kontrak adapter tambahan dan tidak dipaksakan menjadi
+contoh modification biasa.
 
-## Benchmark dan apa yang diukurnya
+Cross entropy hanya pada patch dan closing token. Patch application/rekonstruksi
+before→after dapat diverifikasi pada data preparation tanpa mengeksekusi kode
+repository. Syntax check adalah diagnostik; keberhasilan apply/syntax bukan bukti
+perbaikan fungsional. Tidak ada reward dari test execution pada training loop.
 
-| Benchmark | Tugas dan metrik | Posisi dalam eksperimen |
+## Sasaran tuning dan batas klaim
+
+- Mengikuti instruksi edit, menjaga format unified diff, dan mempertahankan bagian
+  kode yang tidak perlu diubah.
+- Memanfaatkan context encoder dan membandingkan empat pasangan dengan E2B-IT/E4B-IT.
+- Awal studi memakai single-file editing; klaim lintas file memerlukan static
+  multi-file records dan matched held-out evaluation tersendiri.
+- EditPackFT/CommitPackFT tidak boleh dilabeli corpus verified repair seluruhnya.
+  Laporkan bug-fix subset dan general editing secara terpisah bila dikurasi.
+
+## Evaluasi yang sesuai dengan tahap ini
+
+| Evaluasi | Penggunaan | Kebutuhan |
 | --- | --- | --- |
-| [SWE-bench Lite](https://huggingface.co/datasets/SWE-bench/SWE-bench_Lite) | Test split 300 issue–PR pairs; resolved rate lewat test suite | Iterasi awal end-to-end; subset yang diumumkan eksplisit untuk debugging |
-| [SWE-bench Verified](https://huggingface.co/datasets/SWE-bench/SWE-bench_Verified) | 500 test samples yang divalidasi manusia; resolved rate | Evaluasi akhir repair; tidak digunakan untuk tuning atau training |
-| [CrossCodeEval](https://github.com/amazon-science/cceval) | Completion lintas file; exact match dan metrik similarity dari scorer resmi | Diagnostik pemanfaatan dependensi, bukan resolved rate atau bukti bug repair |
-| [HumanEvalFix / HumanEvalPack](https://github.com/bigcode-project/octopack) | Bug repair level fungsi dalam enam bahasa; pass@k dari tes | Pemeriksaan tambahan repair skala kecil, mulai Python |
-| [CanItEdit](https://github.com/nuprl/CanItEdit) | 105 program Python dengan before/after, dua jenis instruksi, dan hidden tests | Benchmark instruction editing; bukan dataset training multi-turn |
-| [RepoBench](https://github.com/Leolty/RepoBench) | Retrieval, completion, dan pipeline repository-level | Opsional untuk ablation retrieval; bukan issue-resolution benchmark |
-| [Defects4J](https://github.com/rjust/defects4j) | Bug Java riil dengan lingkungan dan regression tests | Tahap lanjutan lintas bahasa; tidak dicampur dengan benchmark Python |
+| Held-out offline editing | Primary validation awal: patch apply/reconstruction, exact edited-code match, format/syntax, held-out CE | File lokal; tidak mengeksekusi repository atau memakai VM |
+| [HumanEvalFix Python / HumanEvalPack](https://github.com/bigcode-project/octopack) | Functional unit-level repair setelah generation/scorer siap | Inference dan test execution terpisah. Python native scorer dapat digunakan bila kompatibel; runner masih perlu diintegrasikan, tidak menjalankan tes dalam training |
+| [CanItEdit](https://github.com/nuprl/CanItEdit) | Instruction-editing benchmark tambahan, 105 program Python | Official setup/scorer dipin dan dicek sebelum dipakai; test execution tahap evaluasi terpisah, bukan prasyarat SFT |
+| [CrossCodeEval](https://github.com/amazon-science/cceval) | Diagnostik context lintas file melalui completion EM/similarity | Pinned preprocessed context/scorer; tidak disebut repair resolved rate |
 
-Card Lite menyebut **11 repo Python** dan 300 baris pada split test; ukuran agregat
-atau tabel dokumentasi yang berbeda tidak dijadikan denominator test. Validasi manusia
-pada Verified memperbaiki kualitas benchmark, bukan jaminan bahwa setiap model mampu
-menyelesaikannya. HumanEval/MBPP standar mengukur synthesis dan bersifat tambahan.
+Held-out CE dan exact match membantu diagnosis, tetapi bukan pengganti functional
+pass rate. Jika functional benchmark belum dijalankan, laporkan hasil sebagai
+editing diagnostics saja. Exact match dapat menolak patch alternatif yang benar.
+[BigCode harness](https://github.com/bigcode-project/bigcode-evaluation-harness)
+memisahkan generation dan CPU evaluation; Docker tersedia sebagai opsi eksekusi.
+Kompatibilitas scorer Python di Windows/Conda tetap perlu diperiksa, tidak dijamin
+hanya karena data berupa Python.
 
-Pelaporan kode mempertahankan key `crosscodeeval` sebagai **exact-match percentage**
-untuk kompatibilitas; edit similarity dicatat terpisah dalam laporan eksperimen.
-Jangan menggabungkan completion score dengan SWE-bench resolved rate.
+## Sumber yang ditunda dari jalur utama
 
-## Filtering dan pemisahan data
+[SWE-smith Python](https://huggingface.co/datasets/SWE-bench/SWE-smith-py),
+[SWE-Gym](https://huggingface.co/datasets/SWE-Gym/SWE-Gym),
+[SWE-smith trajectories](https://huggingface.co/datasets/SWE-bench/SWE-smith-trajectories),
+serta SWE-bench Lite/Verified tetap referensi/opsi lanjutan. Mereka tidak menjadi
+prasyarat pilot yang dipilih. SWE-smith dapat dipakai untuk SFT; tidak otomatis
+memerlukan RL. Penyiapan executable task environments dan benchmark Docker adalah
+bagian yang tidak sesuai dengan preferensi pipeline awal tanpa VM.
 
-1. Pin revision data; simpan manifest instance_id, repo, base_commit, sumber, split,
-   jumlah file yang berubah, panjang token, serta alasan filtering.
-2. Buang task ID, issue/PR, commit, patch identik dan near-duplicate yang overlap
-   dengan Lite/Verified evaluation, termasuk dari trajectory dan commit datasets.
-   Audit repository overlap; repo-disjoint holdout dipakai untuk klaim generalisasi
-   ke repo baru dan jumlah sisa data harus dilaporkan.
-3. Rekonstruksi snapshot sebelum edit. Filter patch yang tidak berlaku atau gagal
-   verifikasi tes. Pisahkan tugas satu file dan lintas file untuk analisis.
-4. Bagi train/dev secara berkelompok menurut repo atau task; trajectory dari task yang
-   sama tidak boleh tersebar antar split. Jangan memakai gold patch, test_patch,
-   label FAIL_TO_PASS/PASS_TO_PASS, atau hint yang membocorkan solusi sebagai input model.
-5. Saat truncation diperlukan, catat strategi context selection yang sama untuk baseline
-   dan BifocalGemma; subset 16k-token dilaporkan sebagai subset, bukan seluruh benchmark.
-6. Simpan attribution dan license per sumber serta lisensi repo asal. Lisensi kode
-   BifocalGemma tidak otomatis mencakup semua data atau kode pihak ketiga.
+D06 [kontrak arah patch SWE-smith](NATIVE_LOCAL_VALIDATION.md#d06--kontrak-lokal-swe-smith)
+tetap utility lokal yang sudah diuji. Itu tidak mengaktifkan environment task.
+A01 agent loop dan E01 SWE-bench Docker harness menjadi optional placeholders;
+CLI evaluate lama tetap fail-fast pada E01. Tidak ada backend evaluator offline
+production yang diam-diam disimpulkan tersedia dari perubahan recipe ini.
 
-Filter overlap mengurangi kontaminasi dari adaptasi sendiri; pretraining contamination
-pada checkpoint publik tidak dapat dihapus hanya dengan filter ini.
+## Filtering dan reproducibility
 
-## Eksekusi pada hardware terbatas
+1. Catat source revision, commit, repo set, file paths, license, before/after hashes,
+   target patch hash, token lengths, split dan filter reasons.
+2. Dedup lintas sumber; grouped train/dev/test berdasarkan repo/commit, termasuk
+   seluruh aliases repo dalam field `repos`. Jangan pisahkan record satu commit
+   ke split berbeda. Audit benchmark overlap sebelum evaluation final.
+3. Pertahankan old code sebagai input dan after/patch sebagai target. Tolak records
+   kosong/tidak berubah, paths tidak didukung, atau patch yang tidak merekonstruksi after.
+4. Gunakan context selection/token limits yang sama secara metodologis pada enam
+   model. Overflow saat ini ditolak oleh D03; tidak ada gold-based selection.
+5. Simpan attribution/license; dataset card tidak menggantikan lisensi kode asal.
+   Filtering adaptasi sendiri tidak menghapus kemungkinan pretraining contamination.
 
-[Harness SWE-bench](https://www.swebench.com/SWE-bench/guides/evaluation/) menerapkan
-patch lalu mengeksekusi tes dalam Docker. Evaluasi patch tidak membutuhkan bobot
-Gemma atau GPU; beban utamanya environment, CPU, RAM dan disk. Inference model dan
-evaluasi patch dapat dijalankan terpisah. Toolkit SWE-smith didokumentasikan untuk
-Linux/Docker, sehingga pembuatan environment tidak diasumsikan berjalan native Windows.
+## Urutan pengerjaan
 
-Mulai dengan 10–20 task Lite dalam manifest tetap dan satu worker pada Linux/WSL2
-dengan Docker yang telah disiapkan. Itu smoke subset untuk iterasi, bukan skor Lite
-300-task penuh. Setelah pipeline stabil, jalankan seluruh split Lite dan gunakan
-Verified untuk hasil akhir; laporkan overlap antar kedua benchmark.
+Native tiny M07 dan offline tokenizer D03 → D04 paired-file adapter/manifest →
+M04/M05 pretrained transfer dan T03 profiling → direct patch SFT / S01 checkpoint →
+I01 patch generation → held-out editing diagnostics → functional Python evaluation →
+static multi-file study. Tidak ada tahap RL atau VM pada jalur tuning.
 
-Catat %resolved, patch-apply failures, waktu inference/tes, timeouts dan infrastructure
-failures secara terpisah. Gunakan run_id baru untuk patch baru agar cache harness
-tidak menyamarkan pengujian ulang. Gold test artifacts tersedia hanya untuk evaluator.
-Baseline memakai issue/context, retrieval, training budget, tool budget, serta caching
-yang sebanding; simpan config/manifest dan rerun semua metode dengan harness yang sama.
-
-## Urutan eksperimen yang dipilih
-
-1. Uji kontrak, merged-attention reference, word tying dan native topology tanpa bobot pretrained.
-2. Bentuk manifest subset training SWE-smith terverifikasi dan subset Lite untuk smoke.
-3. Integrasikan target merged sejak initialization: pilot E2B–E2B lalu empat pasangan base encoder / IT decoder; pilih budget setelah profiling.
-4. Adaptasi patch-only, bandingkan localization/repair dan ablate bidirectionality/AST.
-5. Bandingkan empat pasangan dan baseline E2B-IT/E4B-IT dengan harness Lite; lanjut Verified setelah tuning dikunci.
-6. Tambahkan trajectory SFT dan completion diagnostics bila diperlukan oleh pertanyaan riset.
-
-Ini menetapkan sumber dan protokol awal, tanpa menjanjikan keberhasilan training
-atau menetapkan ukuran model yang belum diprofilkan.
-
-Pembanding benchmark utama mengikuti [desain enam model](EXPERIMENT_DESIGN.md).
-T5Gemma dan T5Gemma 2 dibahas dalam related work tanpa menambah kandidat benchmark.
-
-Implementasi mengikuti [data pipeline](DATA_PIPELINE.md), [direct SFT](TRAINING.md),
-serta [real evaluation](EVALUATION.md). Tidak ada teacher wajib pada recipe utama.
-
-## Pembaruan validasi lokal — 6 Oktober 2026
-
-[Native local validation](NATIVE_LOCAL_VALIDATION.md) menjelaskan M07 native tiny,
-D03 offline tokenizer dan D06 snapshot/patch contract. M04 pretrained transfer,
-D04 pengambilan data/overlap audit, serta trainer/harness produksi belum selesai.
-SWE-smith menyimpan bug-inducing patch: target repair perlu arah sebaliknya pada
-snapshot buggy yang tepat. Direct SFT tetap hipotesis; T5Gemma 2 menggunakan tahap
-adaptasi UL2 sebelumnya. PLE + tied words BF16 sendiri 9,5/11,75 GiB pada pasangan
-simetris, sehingga linear-only QLoRA tidak memberi jaminan muat di GPU lokal 6 GiB.
+Direct SFT tetap hipotesis: [T5Gemma 2](https://arxiv.org/html/2512.14856v2) memakai
+adaptasi UL2 sebelumnya. Data yang lebih sederhana mengurangi kebutuhan environment,
+tidak otomatis menjawab apakah adaptasi arsitektur berhasil. PLE + tied words BF16
+sendiri 9,5/11,75 GiB pada pasangan simetris; profiling GPU tetap diperlukan.

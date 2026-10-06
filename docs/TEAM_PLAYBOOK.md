@@ -23,7 +23,7 @@ Pembagian ini dapat disesuaikan, tetapi interface di contracts/config dibahas be
 | 2. Native tiny integration | M07 native layers, positions, PLE dan shared KV; M04/M05 pretrained tetap terpisah |
 | 3. Data/profile | Pinned real records/tokenizers, overlap audit dan actual memory/latency |
 | 4. Training/checkpoint | Direct SFT/PEFT budget tercatat, alias-safe resume, loss/retention diperiksa |
-| 5. Inference/harness | Patch generation, tools bila digunakan, valid wire format dan real test grading |
+| 5. Inference/evaluation | Patch generation, held-out editing diagnostics lalu functional Python scorer; agent/Docker harness optional |
 | 6. Four-pair study | Same tasks/protocol, asymmetry comparison, tying controls bila ada, uncertainty dan failure analysis |
 
 Milestone 1 dan native tiny milestone 2 tersedia; D03 offline dan D06 patch contract

@@ -87,8 +87,10 @@ Kemenangan E2B–E2B IT tetap menarik, tetapi bukan iso-parameter fisik/iso-memo
 Asimetris sekitar 12,09B sebelum adapter. [Audit JSON](GEMMA4_JSON_AUDIT.md)
 dan [arsitektur](ARCHITECTURE.md) memberi asumsi serta batas hitungan.
 
-Primary benchmark repair adalah SWE-bench Lite/Verified. Localization terpisah;
-CrossCodeEval completion diagnostic. [Dataset](DATASETS_AND_BENCHMARKS.md) dan
+Primary validation awal adalah held-out offline editing. Functional repair
+evaluation diarahkan ke Python tasks setelah scorer tersedia; SWE-bench Lite/
+Verified ditunda. Klaim lintas file membutuhkan static multi-file held-out records.
+CrossCodeEval tetap completion diagnostic. [Dataset](DATASETS_AND_BENCHMARKS.md) dan
 [evaluasi](EVALUATION.md) menjelaskan scoring dan denominator.
 
 ## Jalur perkembangan

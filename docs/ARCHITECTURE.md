@@ -149,3 +149,12 @@ Saat context kosong/dimask, output cocok dengan native decoder pada token valid;
 mask, PLE, RoPE dan KV ownership diperiksa termasuk panjang 513. Factory
 pretrained M04/M05 dan cache M06 tetap belum siap. Detail dimensi/API dan batas
 ada pada [native local validation](NATIVE_LOCAL_VALIDATION.md).
+
+## Recipe tuning tanpa RL/VM — 6 Oktober 2026
+
+Jalur aktif mengikuti [data recipe](DATASETS_AND_BENCHMARKS.md): offline patch-only
+SFT memakai EditPackFT, dengan CommitPackFT Python opsional. Input instruksi/kode
+sebelum edit dan target diff tersedia sebagai file, tanpa execution feedback,
+agent rollout, VM atau Docker. Pilot single-file menguji adaptasi/instruction editing;
+repository-level/multi-file claims memerlukan static multi-file held-out records.
+SWE-smith/Gym, trajectory training dan SWE-bench environments ditunda dari jalur utama.

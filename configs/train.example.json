@@ -11,5 +11,14 @@
   "peft_strategy": null,
   "data_manifest": "data/manifest.jsonl",
   "output_dir": "outputs",
-  "documentation": "docs/TRAINING.md"
+  "documentation": "docs/TRAINING.md",
+  "tuning_goal": "offline_instruction_to_patch",
+  "reinforcement_learning": false,
+  "execution_feedback": false,
+  "requires_vm": false,
+  "requires_docker": false,
+  "primary_dataset": "nuprl/EditPackFT",
+  "optional_dataset": "bigcode/commitpackft:python",
+  "trajectory_training": false,
+  "agent_rollouts": false
 }

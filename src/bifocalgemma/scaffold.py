@@ -66,9 +66,14 @@ BUILD_BLOCKS = (
     ),
     BuildBlock("I01", "placeholder", "inference/generation.py", "IT-aware generation and stopping"),
     BuildBlock(
-        "A01", "placeholder", "agent/loop.py", "Tool parsing and bounded developer-agent loop"
+        "A01",
+        "optional_placeholder",
+        "agent/loop.py",
+        "Tool parsing and bounded developer-agent loop",
     ),
-    BuildBlock("E01", "placeholder", "evaluation/harness.py", "Real Docker repair evaluation"),
+    BuildBlock(
+        "E01", "optional_placeholder", "evaluation/harness.py", "Real Docker repair evaluation"
+    ),
     BuildBlock(
         "E02",
         "implemented",

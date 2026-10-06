@@ -32,3 +32,13 @@ class CommitPackFTAdapter(DatasetAdapter):
 
 class SWEGymAdapter(DatasetAdapter):
     source = "SWE-Gym/SWE-Gym"
+
+
+class EditPackFTAdapter(DatasetAdapter):
+    """Offline old_contents/instruction -> before-to-after patch slot (D04).
+
+    Do not use content/ndiff as inputs: they can carry the answer. No execution,
+    reward or VM is part of this data adapter. Production mapping is still D04.
+    """
+
+    source = "nuprl/EditPackFT"

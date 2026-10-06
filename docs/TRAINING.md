@@ -8,6 +8,12 @@ asimetris untied lintas encoder/decoder, PLE tetap terpisah. Latih pada context/
 → patch dengan supervised cross-entropy. Teacher network, conversion checkpoint
 dan distillation tidak diperlukan pada jalur utama.
 
+Target tuning adalah offline instruction-to-patch SFT. Pilot menggunakan EditPackFT
+(old_contents + instruction → diff before/after); CommitPackFT Python opsional
+setelah overlap audit. Tidak ada RL, reward model, agent rollout, execution feedback,
+VM atau Docker dalam data preparation/training. Function tests dilakukan terpisah
+pada tahap evaluasi ketika runner tersedia.
+
 Titik awal decoder IT membantu menyediakan kemampuan mengikuti instruksi, tetapi
 retention sesudah perubahan attention/shared encoder words perlu diukur.
 Fine-tuning tidak dianggap berhasil hanya karena forward/backward tidak error.
@@ -24,6 +30,9 @@ C01 spec → D04 dataset/overlap → D03 tokenizer → D02 batch
 yang fail pada T02. Ia belum membangun optimizer, memuat dataset atau model.
 [Config contoh](../configs/train.example.json) sengaja memberi null pada
 hyperparameters yang belum dipilih dari profiling; teacher_required=false.
+Policy config mencatat reinforcement_learning=false, execution_feedback=false,
+requires_vm=false, requires_docker=false dan primary_dataset=nuprl/EditPackFT.
+Trainer tetap placeholder; metadata policy bukan implementasi training loop.
 
 ## Loss yang tersedia
 

@@ -7,9 +7,12 @@ Model utama hanya empat BifocalGemma base/IT pairs dan E2B-IT/E4B-IT decoder-onl
 RQ. T5Gemma/T5Gemma 2 adalah related work. Skor referensi publik LiveCodeBench
 tidak menggantikan pengukuran repair dengan protokol yang sama.
 
-Primary metric adalah resolved rate SWE-bench Lite/Verified. Lokalisasi file
-dilaporkan terpisah. CrossCodeEval adalah completion exact-match/similarity
-diagnostic; HumanEvalFix tambahan unit-level repair. Dataset guidance ada pada
+Primary validation tahap awal adalah held-out offline editing: patch application/
+reconstruction, exact edited-code match, syntax dan CE. Functional repair rate
+menunggu runner Python terpisah, dengan HumanEvalFix Python dan CanItEdit sebagai
+kandidat. CrossCodeEval adalah completion diagnostic. SWE-bench Lite/Verified
+dan Docker harness ditunda dari jalur utama. Tidak ada test reward atau RL pada
+tuning; diagnostics tidak disebut resolved rate. Lihat
 [riset dataset](DATASETS_AND_BENCHMARKS.md).
 
 ## I01 — generation
@@ -23,7 +26,7 @@ generation_config IT EOS [1,106,50] berbeda dari root config EOS [1,106].
 Token 50 mengisyaratkan tool-response boundary; parser tidak boleh menganggapnya
 hasil test atau patch. Track actual token counts/latency/termination reason.
 
-## A01 — agent loop
+## A01 — agent loop opsional, ditunda
 
 [DeveloperAgent](../src/bifocalgemma/agent/loop.py) adalah placeholder untuk
 read/search/edit/test dengan max_steps. Tool grammar Gemma, allowed workspace,
@@ -48,7 +51,7 @@ Duplicate instance IDs ditolak. Tidak ada gold patch/test metadata pada output.
 Contoh itu synthetic dan bukan prediksi berhasil. Serializer tidak membuktikan
 patch benar atau harness telah berjalan.
 
-## E01 — harness riil
+## E01 — SWE-bench harness opsional, ditunda
 
 [SWEBenchHarness](../src/bifocalgemma/evaluation/harness.py) menerima predictions
 path, dataset_revision dan run_id. Ia fail dengan FeatureNotReadyError sampai
@@ -56,7 +59,7 @@ Docker runner dan normalisasi report siap.
 
 [SWE-bench harness](https://www.swebench.com/SWE-bench/guides/evaluation/) menerapkan
 patch di lingkungan terisolasi dan menjalankan FAIL_TO_PASS/PASS_TO_PASS. Mulai
-subset yang ID-nya dikunci dengan satu worker di Linux/WSL2+Docker; nyatakan subset
+subset hanya bila jalur optional ini kelak dipilih, di Linux/WSL2+Docker; nyatakan subset
 tersebut, bukan skor Lite 300-task atau Verified 500-task penuh.
 
 Catat attempted/submitted, resolved/unresolved, empty patches, patch-apply failures,

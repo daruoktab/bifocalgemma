@@ -60,3 +60,12 @@ SWE-smith menyimpan bug-inducing patch: target repair perlu arah sebaliknya pada
 snapshot buggy yang tepat. Direct SFT tetap hipotesis; T5Gemma 2 menggunakan tahap
 adaptasi UL2 sebelumnya. PLE + tied words BF16 sendiri 9,5/11,75 GiB pada pasangan
 simetris, sehingga linear-only QLoRA tidak memberi jaminan muat di GPU lokal 6 GiB.
+
+## Preferensi pengguna: offline tuning tanpa RL atau VM
+
+Pada 6 Oktober 2026, pengguna memilih data dan sasaran tuning yang tidak membutuhkan
+RL/VM. Recipe awal SWE-smith/Lite diganti menjadi EditPackFT instruction-to-patch SFT;
+CommitPackFT Python opsional setelah dedup. Benchmark execution dipisahkan dari
+training. SWE-smith dapat dipakai untuk SFT, tetapi task-environment reconstruction
+bukan dependency pilot. D06 arah patch tetap utility lokal; A01/E01 ditunda.
+Keputusan ini tidak mengubah empat pasangan, dua baseline, tying atau merged attention.

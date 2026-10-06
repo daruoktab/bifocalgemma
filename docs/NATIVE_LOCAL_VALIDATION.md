@@ -146,6 +146,8 @@ license/overlap audit, dan official harness masih pekerjaan berikutnya.
 ## Sesudah milestone ini
 
 Lanjutkan M04 transfer bobot dan M05 assembly produksi pada hardware yang sesuai,
-D04 snapshot riil terverifikasi, T03 profiling, kemudian pilot direct SFT E2B–E2B.
+D04 paired-code EditPackFT adapter/manifest, T03 profiling, kemudian pilot direct
+SFT E2B–E2B. Recipe utama memakai file lokal tanpa RL atau VM/Docker; SWE-smith
+environment/harness ditunda. Detail ada pada DATASETS_AND_BENCHMARKS.
 Sebelum memperluas ke empat pasangan, ukur kemampuan memakai context dan retensi
 format IT pada held-out data. Model tiny tidak menjawab apakah direct SFT cukup.

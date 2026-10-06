@@ -70,3 +70,12 @@ assembly/cache, dataset fetching, full trainer, generation dan harness masih pla
 initialization/integration, data/profiling, SFT/checkpoint, lalu generation/harness.
 Smoke test bukan hasil training atau benchmark. [Log riset](RESEARCH_LOG.md)
 mencatat keputusan lama tanpa menjadikannya recipe default.
+
+## Recipe tuning tanpa RL/VM — 6 Oktober 2026
+
+Jalur aktif mengikuti [data recipe](DATASETS_AND_BENCHMARKS.md): offline patch-only
+SFT memakai EditPackFT, dengan CommitPackFT Python opsional. Input instruksi/kode
+sebelum edit dan target diff tersedia sebagai file, tanpa execution feedback,
+agent rollout, VM atau Docker. Pilot single-file menguji adaptasi/instruction editing;
+repository-level/multi-file claims memerlukan static multi-file held-out records.
+SWE-smith/Gym, trajectory training dan SWE-bench environments ditunda dari jalur utama.
