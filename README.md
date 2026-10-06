@@ -105,8 +105,8 @@ download/cache, provenance, optimizer policy dan interpretasi PASS/OOM/guard.
 
 Dua notebook khusus **training** tersedia:
 [simetris](notebooks/bifocalgemma_train_symmetric.py) dan
-[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 17 cell,
-16 isi cell identik; hanya tiga default control-center berbeda. Pipeline mencakup
+[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 18 cell,
+17 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
 EditPackFT/JSONL → LoRA SFT → dev loss → checkpoint/resume. RUN_TRAINING=False
 saat pertama dibuka. [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.

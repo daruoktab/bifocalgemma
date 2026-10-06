@@ -112,6 +112,6 @@ mengklaim graph reasoning dari keberadaan embedding tipe node saja.
 
 [Training notebooks](TRAINING_NOTEBOOKS.md) menyediakan jalur pilot paired-file
 editing → pretrained attention LoRA SFT → held-out CE → adapter/optimizer/RNG/cursor
-checkpoint resume. Keluarga simetris/asimetris memakai 17 cell yang sama, dengan
-16 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
+checkpoint resume. Keluarga simetris/asimetris memakai 18 cell yang sama, dengan
+17 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
 RUN_TRAINING default False. CLI production train_direct_sft tetap placeholder.

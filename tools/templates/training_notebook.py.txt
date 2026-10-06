@@ -58,11 +58,8 @@ def _(mo):
     DEV_FRACTION = 0.1
     ENCODER_LIMIT = 2048
     DECODER_LIMIT = 512
-    LORA_RANK = 16
     BATCH_SIZE = 1
     GRAD_ACCUMULATION = 4
-    LEARNING_RATE = 2e-5
-    WARMUP_STEPS = 5
     MAX_STEPS = 100
     EPOCHS = 1
     MAX_GRAD_NORM = 1.0
@@ -72,7 +69,7 @@ def _(mo):
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
     mo.md(f"## 1 · Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}.")
-    return (FAMILY, EXPERIMENT, OUTPUT_ROOT, PAIR_OPTIONS, RUN_TRAINING, DEVICE, PRECISION, RUN_NAME, RESUME_FROM, DATA_SOURCE, LOCAL_DATA_FILE, RAW_LIMIT, TRAIN_LIMIT, DEV_LIMIT, DEV_FRACTION, ENCODER_LIMIT, DECODER_LIMIT, LORA_RANK, BATCH_SIZE, GRAD_ACCUMULATION, LEARNING_RATE, WARMUP_STEPS, MAX_STEPS, EPOCHS, MAX_GRAD_NORM, EVAL_EVERY, SAVE_EVERY, HEADROOM_GIB, SEED, CACHE_DIR,)
+    return (FAMILY, EXPERIMENT, OUTPUT_ROOT, PAIR_OPTIONS, RUN_TRAINING, DEVICE, PRECISION, RUN_NAME, RESUME_FROM, DATA_SOURCE, LOCAL_DATA_FILE, RAW_LIMIT, TRAIN_LIMIT, DEV_LIMIT, DEV_FRACTION, ENCODER_LIMIT, DECODER_LIMIT, BATCH_SIZE, GRAD_ACCUMULATION, MAX_STEPS, EPOCHS, MAX_GRAD_NORM, EVAL_EVERY, SAVE_EVERY, HEADROOM_GIB, SEED, CACHE_DIR,)
 
 
 @app.cell
@@ -83,6 +80,7 @@ def _(DEVICE, PRECISION, mo):
     import json
     import os
     import platform
+    import math
     import difflib
     import hashlib
     import importlib
@@ -152,7 +150,7 @@ def _(DEVICE, PRECISION, mo):
     }
     mo.vstack([mo.md("## 2 · Environment"), mo.ui.table([environment], selection=None)])
     return (
-        difflib, hashlib, importlib, random, re, time, Counter, PurePosixPath, uuid4,
+        math, difflib, hashlib, importlib, random, re, time, Counter, PurePosixPath, uuid4,
         safe_open, save_file, hf_hub_download, AutoTokenizer,
         copy,
         gc,
@@ -1147,6 +1145,47 @@ def _(Path, build_model, experiment_spec, gc, hashlib, hf_download_token, hf_hub
 
 
 @app.cell
+def _(EXPERIMENT, FAMILY, ProbeLoRALinear, build_model, configure_probe_training,
+      copy, experiment_spec, math, nn, torch, mo):
+    # 7a. TRAINING POLICY — all family-specific training settings live here.
+    {{POLICY_HELPERS}}
+
+    POLICY_PROFILES = {
+        "symmetric": {
+            "version": "attention_lora_policy_v1", "family": "symmetric",
+            "rank": 16, "alpha": 32, "freeze_words": True, "freeze_ple": True,
+            "phase": "joint", "train_alignment": False,
+            "groups": {
+                "encoder": {"lr": 2e-5, "warmup_steps": 5},
+                "decoder": {"lr": 2e-5, "warmup_steps": 5},
+            },
+        },
+        "asymmetric": {
+            "version": "attention_lora_policy_v1", "family": "asymmetric",
+            "rank": 16, "alpha": 32, "freeze_words": True, "freeze_ple": True,
+            "phase": "joint", "train_alignment": True,
+            "groups": {
+                "encoder": {"lr": 2e-5, "warmup_steps": 5},
+                "decoder": {"lr": 2e-5, "warmup_steps": 5},
+                "alignment": {"lr": 2e-5, "warmup_steps": 5},
+            },
+        },
+    }
+    training_policy = copy.deepcopy(POLICY_PROFILES[FAMILY])
+    policy_spec = experiment_spec(EXPERIMENT)
+    with torch.device("meta"):
+        policy_blueprint = build_model(policy_spec,"meta",torch.bfloat16,tiny=False)
+    configure_policy_model(policy_blueprint,training_policy)
+    policy_table = training_policy_table(build_training_groups(policy_blueprint,training_policy),training_policy)
+    del policy_blueprint
+    mo.vstack([mo.md("## 7a · Training policy\nEdit rank/alpha dan LR/warm-up per group di POLICY_PROFILES. Tabel memakai blueprint meta."),
+               mo.ui.table(policy_table,selection=None)])
+    return (POLICY_PROFILES, training_policy, policy_table, default_training_profiles,
+            validate_training_policy, configure_policy_model, build_training_groups,
+            training_policy_table, optimizer_group_manifest, update_policy_learning_rates,)
+
+
+@app.cell
 def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, TokenizedRepairExample, difflib, hashlib, hf_download_token, hf_hub_download, importlib, json, random, verified_assets, mo):
     # 8. DATA PREPARATION — before code only as input, unified diff as target.
     {{DATA_HELPERS}}
@@ -1235,7 +1274,7 @@ def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, 
 
 
 @app.cell
-def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, uuid4, mo):
+def _(Path, RepairCollator, build_training_groups, copy, hashlib, json, optimizer_group_manifest, random, safe_open, save_file, torch, update_policy_learning_rates, uuid4, mo):
     # 9. TRAINING / CHECKPOINT — same helper code in both notebooks.
     {{TRAIN_HELPERS}}
     mo.md("## 9 · SFT / checkpoint\nToken-weighted gradient accumulation, clipping, dev CE, optimizer/RNG/cursor resume.")
@@ -1243,12 +1282,12 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
 
 
 @app.cell
-def _(EXPERIMENT, FAMILY, HEADROOM_GIB, LORA_RANK, RUN_TRAINING, device, experiment_spec, gpu_guard, probe_estimate, mo):
+def _(EXPERIMENT, FAMILY, HEADROOM_GIB, training_policy, RUN_TRAINING, device, experiment_spec, gpu_guard, probe_estimate, mo):
     # 10. PREFLIGHT — no data/model downloads here.
     training_spec = experiment_spec(EXPERIMENT)
     assert training_spec.encoder is not None
     assert training_spec.tie_encoder_decoder_words == (FAMILY=="symmetric")
-    training_estimate = probe_estimate(training_spec,"lora",LORA_RANK,HEADROOM_GIB)
+    training_estimate = probe_estimate(training_spec,"lora",training_policy["rank"],HEADROOM_GIB)
     training_guard = gpu_guard(training_estimate,device) if RUN_TRAINING else "RUN_TRAINING=False"
     mo.vstack([mo.md("## 10 · Preflight"),mo.ui.table([{
         "family":FAMILY,"model":EXPERIMENT,"ready":training_guard is None,
@@ -1273,7 +1312,7 @@ def _(CACHE_DIR, DATA_SOURCE, DECODER_LIMIT, DEV_FRACTION, DEV_LIMIT, ENCODER_LI
 
 
 @app.cell
-def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMULATION, LEARNING_RATE, LORA_RANK, MAX_GRAD_NORM, MAX_STEPS, OUTPUT_ROOT, Path, RESUME_FROM, RUN_NAME, SAVE_EVERY, SEED, WARMUP_STEPS, auth_info, configure_probe_training, data_manifest, dev_examples, environment, fit_offline_sft, gc, json, load_pretrained_probe, mo, torch, train_examples, training_guard, training_spec):
+def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMULATION, MAX_GRAD_NORM, MAX_STEPS, OUTPUT_ROOT, Path, RESUME_FROM, RUN_NAME, SAVE_EVERY, SEED, auth_info, configure_policy_model, training_policy, data_manifest, dev_examples, environment, fit_offline_sft, gc, json, load_pretrained_probe, mo, torch, train_examples, training_guard, training_spec):
     # 12. TRAIN — models/optimizer stay owned by this rerun boundary.
     training_result = {"status":"DISABLED","reason":training_guard}
     run_dir = Path(OUTPUT_ROOT)/EXPERIMENT/RUN_NAME
@@ -1283,21 +1322,22 @@ def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMU
             raise FileExistsError("Choose a new RUN_NAME or RESUME_FROM; refusing artifact overwrite.")
         model,provenance = load_pretrained_probe(training_spec,CACHE_DIR,SEED)
         try:
-            scope=configure_probe_training(model,policy="lora",rank=LORA_RANK)
-            compatibility={"architecture":"bifocalgemma_notebook_sft_v1","family":FAMILY,
+            scope=configure_policy_model(model,training_policy)
+            compatibility={"architecture":"bifocalgemma_notebook_sft_v2","family":FAMILY,
                 "experiment":EXPERIMENT,"sources":provenance,"data_fingerprint":data_manifest["fingerprint"],
-                "lora_rank":LORA_RANK,"batch_size":BATCH_SIZE,"accumulation":GRAD_ACCUMULATION,
-                "learning_rate":LEARNING_RATE,"warmup_steps":WARMUP_STEPS,"clip_norm":MAX_GRAD_NORM,
+                "training_policy":training_policy,"batch_size":BATCH_SIZE,"accumulation":GRAD_ACCUMULATION,
+                "clip_norm":MAX_GRAD_NORM,
                 "seed":SEED,"torch":str(torch.__version__),"transformers":environment["transformers"]}
             def progress(row):
                 message=f"step {row['step']}/{MAX_STEPS} · train CE {row['train_loss']:.4f}"
                 if "eval" in row:message+=f" · dev CE {row['eval']['loss']:.4f}"
+                if "learning_rates" in row:message+=" · LR "+", ".join(f"{name}={lr:.2g}" for name,lr in row["learning_rates"].items())
                 if "peak_allocated_gib" in row:message+=f" · VRAM {row['peak_allocated_gib']:.2f} GiB"
                 print(message)
             # Manifest files are written inside the trainer after the run-directory guard.
             training_result=fit_offline_sft(model,train_examples,dev_examples,run_dir,compatibility,
                 max_steps=MAX_STEPS,epochs=EPOCHS,batch_size=BATCH_SIZE,accumulation=GRAD_ACCUMULATION,
-                learning_rate=LEARNING_RATE,warmup_steps=WARMUP_STEPS,clip_norm=MAX_GRAD_NORM,
+                training_policy=training_policy,clip_norm=MAX_GRAD_NORM,
                 eval_every=EVAL_EVERY,save_every=SAVE_EVERY,seed=SEED,resume_from=RESUME_FROM or None,
                 progress=progress,data_manifest=data_manifest)
             training_result.update({"experiment":EXPERIMENT,"family":FAMILY,"scope":scope,

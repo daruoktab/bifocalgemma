@@ -242,8 +242,8 @@ class TestNotebookCellParity(unittest.TestCase):
             ]
             for text in texts
         ]
-        self.assertEqual(len(cells[0]), 17)
-        self.assertEqual(len(cells[1]), 17)
+        self.assertEqual(len(cells[0]), 18)
+        self.assertEqual(len(cells[1]), 18)
         self.assertEqual([i for i, (a, b) in enumerate(zip(*cells, strict=True)) if a != b], [1])
 
     def test_instruction_changes_data_identity(self):

@@ -30,6 +30,7 @@ def render(family):
     for marker, path in {
         "{{DATA_HELPERS}}": ROOT / "src/bifocalgemma/data/offline_sft.py",
         "{{TRAIN_HELPERS}}": ROOT / "src/bifocalgemma/training/offline_sft.py",
+        "{{POLICY_HELPERS}}": ROOT / "src/bifocalgemma/training/policy.py",
     }.items():
         definitions = module_definitions(path)
         # Marker is indented inside a cell; subsequent lines need the same indentation.

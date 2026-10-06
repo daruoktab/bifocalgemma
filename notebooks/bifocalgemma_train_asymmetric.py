@@ -59,11 +59,8 @@ def _(mo):
     DEV_FRACTION = 0.1
     ENCODER_LIMIT = 2048
     DECODER_LIMIT = 512
-    LORA_RANK = 16
     BATCH_SIZE = 1
     GRAD_ACCUMULATION = 4
-    LEARNING_RATE = 2e-5
-    WARMUP_STEPS = 5
     MAX_STEPS = 100
     EPOCHS = 1
     MAX_GRAD_NORM = 1.0
@@ -93,11 +90,8 @@ def _(mo):
         DEV_FRACTION,
         ENCODER_LIMIT,
         DECODER_LIMIT,
-        LORA_RANK,
         BATCH_SIZE,
         GRAD_ACCUMULATION,
-        LEARNING_RATE,
-        WARMUP_STEPS,
         MAX_STEPS,
         EPOCHS,
         MAX_GRAD_NORM,
@@ -118,6 +112,7 @@ def _(DEVICE, PRECISION, mo):
     import hashlib
     import importlib
     import json
+    import math
     import os
     import platform
     import random
@@ -184,6 +179,7 @@ def _(DEVICE, PRECISION, mo):
     }
     mo.vstack([mo.md("## 2 · Environment"), mo.ui.table([environment], selection=None)])
     return (
+        math,
         difflib,
         hashlib,
         importlib,
@@ -1209,6 +1205,233 @@ def _(
 
 @app.cell
 def _(
+    EXPERIMENT,
+    FAMILY,
+    ProbeLoRALinear,
+    build_model,
+    configure_probe_training,
+    copy,
+    experiment_spec,
+    math,
+    nn,
+    torch,
+    mo,
+):
+    # 7a. TRAINING POLICY — all family-specific training settings live here.
+    def default_training_profiles():
+        common = {
+            "version": "attention_lora_policy_v1",
+            "rank": 16,
+            "alpha": 32,
+            "freeze_words": True,
+            "freeze_ple": True,
+            "phase": "joint",
+        }
+        profiles = {}
+        for family in ("symmetric", "asymmetric"):
+            groups = {name: {"lr": 2e-5, "warmup_steps": 5} for name in ("encoder", "decoder")}
+            if family == "asymmetric":
+                groups["alignment"] = {"lr": 2e-5, "warmup_steps": 5}
+            profiles[family] = {
+                **copy.deepcopy(common),
+                "family": family,
+                "train_alignment": family == "asymmetric",
+                "groups": groups,
+            }
+        return profiles
+
+    def validate_training_policy(policy, model=None):
+        family = policy.get("family")
+        if family not in {"symmetric", "asymmetric"}:
+            raise ValueError("Unknown training-policy family.")
+        if policy.get("version") != "attention_lora_policy_v1" or policy.get("phase") != "joint":
+            raise ValueError("Only joint attention LoRA policy v1 is supported.")
+        if policy.get("freeze_words") is not True or policy.get("freeze_ple") is not True:
+            raise ValueError("Word/PLE training needs a separately validated policy.")
+        if type(policy.get("rank")) is not int or policy["rank"] < 1:
+            raise ValueError("LoRA rank must be a positive integer.")
+        if (
+            not isinstance(policy.get("alpha"), (int, float))
+            or not math.isfinite(policy["alpha"])
+            or policy["alpha"] <= 0
+        ):
+            raise ValueError("LoRA alpha must be finite and positive.")
+        expected = {"encoder", "decoder"} | ({"alignment"} if family == "asymmetric" else set())
+        if set(policy.get("groups", {})) != expected or policy.get("train_alignment") != (
+            family == "asymmetric"
+        ):
+            raise ValueError("Policy groups/alignment do not match family.")
+        for name, settings in policy["groups"].items():
+            lr, warmup = settings.get("lr"), settings.get("warmup_steps")
+            if not isinstance(lr, (int, float)) or not math.isfinite(lr) or lr <= 0:
+                raise ValueError(f"Invalid LR for {name}.")
+            if type(warmup) is not int or warmup < 0:
+                raise ValueError(f"Invalid warmup for {name}.")
+        if model is not None:
+            if getattr(model, "encoder", None) is None or model.spec.tie_encoder_decoder_words != (
+                family == "symmetric"
+            ):
+                raise ValueError("Model architecture does not match policy family.")
+            projection = model.encoder_projection
+            if family == "symmetric" and not isinstance(projection, nn.Identity):
+                raise ValueError("Symmetric policy expects Identity alignment.")
+            if family == "asymmetric" and not isinstance(projection, nn.Linear):
+                raise ValueError("Asymmetric policy expects a learned Linear alignment.")
+
+    def configure_policy_model(model, policy):
+        validate_training_policy(policy, model)
+        scope = configure_probe_training(model, policy="lora", rank=policy["rank"])
+        for module in model.modules():
+            if isinstance(module, ProbeLoRALinear):
+                module.scaling = policy["alpha"] / policy["rank"]
+        return scope
+
+    def build_training_groups(model, policy):
+        validate_training_policy(policy, model)
+        entries = {name: [] for name in ("encoder", "decoder", "alignment")}
+        seen = set()
+        # named_parameters deduplicates shared Parameter objects, including aliases.
+        for name, parameter in sorted(model.named_parameters()):
+            if not parameter.requires_grad:
+                continue
+            if id(parameter) in seen:
+                raise ValueError("A trainable Parameter was enumerated twice.")
+            seen.add(id(parameter))
+            if name.startswith("encoder_projection.") and policy["train_alignment"]:
+                group = "alignment"
+            elif name.startswith("encoder.") and name.endswith((".lora_A", ".lora_B")):
+                group = "encoder"
+            elif name.startswith("decoder.") and name.endswith((".lora_A", ".lora_B")):
+                group = "decoder"
+            else:
+                raise ValueError(
+                    f"Unsupported trainable parameter: {name}; configure policy first."
+                )
+            entries[group].append((name, parameter))
+        groups = []
+        for name in ("encoder", "decoder", "alignment"):
+            if name not in policy["groups"]:
+                if entries[name]:
+                    raise ValueError("Unexpected alignment parameters.")
+                continue
+            if not entries[name]:
+                raise ValueError(f"Empty trainable group: {name}")
+            settings = policy["groups"][name]
+            groups.append(
+                {
+                    "name": name,
+                    "params": [p for _, p in entries[name]],
+                    "param_names": [n for n, _ in entries[name]],
+                    "lr": settings["lr"],
+                    "base_lr": settings["lr"],
+                    "warmup_steps": settings["warmup_steps"],
+                }
+            )
+        if seen != {id(p) for p in model.parameters() if p.requires_grad}:
+            raise ValueError("Optimizer groups do not cover all trainable parameters.")
+        return groups
+
+    def training_policy_table(groups, policy):
+        return [
+            {
+                "group": group["name"],
+                "base_lr": group["base_lr"],
+                "warmup_steps": group["warmup_steps"],
+                "parameters": sum(p.numel() for p in group["params"]),
+                "dtypes": sorted({str(p.dtype) for p in group["params"]}),
+                "words_frozen": policy["freeze_words"],
+                "PLE_frozen": policy["freeze_ple"],
+                "word_tying": "shared_IT_anchor" if policy["family"] == "symmetric" else "separate",
+            }
+            for group in groups
+        ]
+
+    def optimizer_group_manifest(groups):
+        return [
+            {
+                "name": group["name"],
+                "param_names": list(group["param_names"]),
+                "base_lr": group["base_lr"],
+                "warmup_steps": group["warmup_steps"],
+            }
+            for group in groups
+        ]
+
+    def update_policy_learning_rates(optimizer, step):
+        if step < 0:
+            raise ValueError("Optimizer step must be nonnegative.")
+        rates = {}
+        for group in optimizer.param_groups:
+            warmup = group["warmup_steps"]
+            fraction = min(1.0, (step + 1) / warmup) if warmup else 1.0
+            group["lr"] = group["base_lr"] * fraction
+            rates[group["name"]] = group["lr"]
+        return rates
+
+    POLICY_PROFILES = {
+        "symmetric": {
+            "version": "attention_lora_policy_v1",
+            "family": "symmetric",
+            "rank": 16,
+            "alpha": 32,
+            "freeze_words": True,
+            "freeze_ple": True,
+            "phase": "joint",
+            "train_alignment": False,
+            "groups": {
+                "encoder": {"lr": 2e-5, "warmup_steps": 5},
+                "decoder": {"lr": 2e-5, "warmup_steps": 5},
+            },
+        },
+        "asymmetric": {
+            "version": "attention_lora_policy_v1",
+            "family": "asymmetric",
+            "rank": 16,
+            "alpha": 32,
+            "freeze_words": True,
+            "freeze_ple": True,
+            "phase": "joint",
+            "train_alignment": True,
+            "groups": {
+                "encoder": {"lr": 2e-5, "warmup_steps": 5},
+                "decoder": {"lr": 2e-5, "warmup_steps": 5},
+                "alignment": {"lr": 2e-5, "warmup_steps": 5},
+            },
+        },
+    }
+    training_policy = copy.deepcopy(POLICY_PROFILES[FAMILY])
+    policy_spec = experiment_spec(EXPERIMENT)
+    with torch.device("meta"):
+        policy_blueprint = build_model(policy_spec, "meta", torch.bfloat16, tiny=False)
+    configure_policy_model(policy_blueprint, training_policy)
+    policy_table = training_policy_table(
+        build_training_groups(policy_blueprint, training_policy), training_policy
+    )
+    del policy_blueprint
+    mo.vstack(
+        [
+            mo.md(
+                "## 7a · Training policy\nEdit rank/alpha dan LR/warm-up per group di POLICY_PROFILES. Tabel memakai blueprint meta."
+            ),
+            mo.ui.table(policy_table, selection=None),
+        ]
+    )
+    return (
+        POLICY_PROFILES,
+        training_policy,
+        policy_table,
+        default_training_profiles,
+        validate_training_policy,
+        configure_policy_model,
+        build_training_groups,
+        training_policy_table,
+        optimizer_group_manifest,
+        update_policy_learning_rates,
+    )
+
+
+@app.cell
+def _(
     AutoTokenizer,
     CHECKPOINTS,
     Counter,
@@ -1527,7 +1750,22 @@ def _(
 
 
 @app.cell
-def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, uuid4, mo):
+def _(
+    Path,
+    RepairCollator,
+    build_training_groups,
+    copy,
+    hashlib,
+    json,
+    optimizer_group_manifest,
+    random,
+    safe_open,
+    save_file,
+    torch,
+    update_policy_learning_rates,
+    uuid4,
+    mo,
+):
     # 9. TRAINING / CHECKPOINT — same helper code in both notebooks.
     def file_digest(path):
         digest = hashlib.sha256()
@@ -1547,7 +1785,15 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
             return tuple(cpu_tree(item) for item in value)
         return value
 
-    def save_sft_checkpoint(model, optimizer, state, run_dir, compatibility):
+    def save_sft_checkpoint(
+        model,
+        optimizer,
+        state,
+        run_dir,
+        compatibility,
+        *,
+        checkpoint_format="bifocalgemma_notebook_sft_v1",
+    ):
         root = Path(run_dir).resolve()
         root.mkdir(parents=True, exist_ok=True)
         final = root / f"checkpoint-{state['global_step']:06d}"
@@ -1570,11 +1816,13 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
         }
         torch.save(payload, stage / "trainer_state.pt")
         metadata = {
-            "format": "bifocalgemma_notebook_sft_v1",
+            "format": checkpoint_format,
             "global_step": state["global_step"],
             "compatibility": compatibility,
             "trainable_names": sorted(parameters),
         }
+        if checkpoint_format == "bifocalgemma_notebook_sft_v2":
+            metadata["optimizer_groups"] = optimizer_group_manifest(optimizer.param_groups)
         (stage / "manifest.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         marker = {
             name: file_digest(stage / name)
@@ -1586,7 +1834,15 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
         stage.rename(final)
         return str(final)
 
-    def restore_sft_checkpoint(model, optimizer, checkpoint_dir, compatibility, dataset_size):
+    def restore_sft_checkpoint(
+        model,
+        optimizer,
+        checkpoint_dir,
+        compatibility,
+        dataset_size,
+        *,
+        checkpoint_format="bifocalgemma_notebook_sft_v1",
+    ):
         root = Path(checkpoint_dir)
         marker = json.loads((root / "READY.json").read_text(encoding="utf-8"))
         required = {"adapters.safetensors", "trainer_state.pt", "manifest.json"}
@@ -1595,15 +1851,30 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
         ):
             raise ValueError("Checkpoint is incomplete or checksum validation failed.")
         manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-        if (
-            manifest.get("format") != "bifocalgemma_notebook_sft_v1"
-            or manifest["compatibility"] != compatibility
-        ):
+        if manifest.get("format") != checkpoint_format:
+            raise ValueError(
+                "Checkpoint format mismatch: grouped policy requires v2; resume v1 with the previous notebook."
+            )
+        if manifest["compatibility"] != compatibility:
             raise ValueError("Checkpoint experiment/data/tokenizer/optimizer config mismatch.")
+        if checkpoint_format == "bifocalgemma_notebook_sft_v2":
+            if manifest.get("optimizer_groups") != optimizer_group_manifest(optimizer.param_groups):
+                raise ValueError("Checkpoint optimizer group order/names/policy mismatch.")
         parameters = {name: p for name, p in model.named_parameters() if p.requires_grad}
         if sorted(parameters) != manifest["trainable_names"]:
             raise ValueError("Checkpoint trainable parameter names differ.")
         payload = torch.load(root / "trainer_state.pt", map_location="cpu", weights_only=True)
+        if checkpoint_format == "bifocalgemma_notebook_sft_v2":
+            saved_groups = payload["optimizer"]["param_groups"]
+            if optimizer_group_manifest(saved_groups) != optimizer_group_manifest(
+                optimizer.param_groups
+            ):
+                raise ValueError("Saved optimizer groups differ from current policy.")
+            if any(
+                len(saved["params"]) != len(current["params"])
+                for saved, current in zip(saved_groups, optimizer.param_groups, strict=True)
+            ):
+                raise ValueError("Saved optimizer parameter counts differ.")
         state = payload["training_state"]
         order, cursor = state["order"], state["cursor"]
         if sorted(order) != list(range(dataset_size)) or not 0 <= cursor <= len(order):
@@ -1669,6 +1940,7 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
         resume_from=None,
         progress=None,
         data_manifest=None,
+        training_policy=None,
     ):
         if (
             min(max_steps, epochs, batch_size, accumulation, eval_every, save_every) < 1
@@ -1686,13 +1958,33 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
         parameters = [p for p in model.parameters() if p.requires_grad]
         if not parameters:
             raise ValueError("No trainable parameters.")
-        optimizer = torch.optim.AdamW(parameters, lr=learning_rate, weight_decay=0.0, foreach=False)
+        checkpoint_format = "bifocalgemma_notebook_sft_v1"
+        if training_policy is None:
+            optimizer = torch.optim.AdamW(
+                parameters, lr=learning_rate, weight_decay=0.0, foreach=False
+            )
+        else:
+            groups = build_training_groups(model, training_policy)
+            optimizer = torch.optim.AdamW(groups, weight_decay=0.0, foreach=False)
+            compatibility = {
+                **compatibility,
+                "training_policy": copy.deepcopy(training_policy),
+                "optimizer_groups": optimizer_group_manifest(groups),
+            }
+            checkpoint_format = "bifocalgemma_notebook_sft_v2"
         device = next(model.parameters()).device
         order = list(range(len(train)))
         random.Random(seed).shuffle(order)
         state: dict = {"global_step": 0, "epoch": 0, "order": order, "cursor": 0, "history": []}
         if resume_from:
-            state = restore_sft_checkpoint(model, optimizer, resume_from, compatibility, len(train))
+            state = restore_sft_checkpoint(
+                model,
+                optimizer,
+                resume_from,
+                compatibility,
+                len(train),
+                checkpoint_format=checkpoint_format,
+            )
         if data_manifest is not None:
             (root / "data_manifest.json").write_text(
                 json.dumps(data_manifest, indent=2), encoding="utf-8"
@@ -1740,9 +2032,13 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
             norm = torch.nn.utils.clip_grad_norm_(parameters, clip_norm, foreach=False)
             if not bool(torch.isfinite(norm)):
                 raise RuntimeError("Nonfinite gradient norm.")
+            rates = None
             fraction = min(1.0, (state["global_step"] + 1) / warmup_steps) if warmup_steps else 1.0
-            for group in optimizer.param_groups:
-                group["lr"] = learning_rate * fraction
+            if training_policy is None:
+                for group in optimizer.param_groups:
+                    group["lr"] = learning_rate * fraction
+            else:
+                rates = update_policy_learning_rates(optimizer, state["global_step"])
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
             del gradients, micro_batches
@@ -1755,6 +2051,9 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
                 "learning_rate": learning_rate * fraction,
                 "gradient_norm": norm.detach().item(),
             }
+            if rates is not None:
+                row.pop("learning_rate")
+                row["learning_rates"] = rates
             if state["global_step"] % eval_every == 0:
                 row["eval"] = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
             if device.type == "cuda":
@@ -1766,12 +2065,28 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
                 progress(row)
             if state["global_step"] % save_every == 0:
                 checkpoints.append(
-                    save_sft_checkpoint(model, optimizer, state, root, compatibility)
+                    save_sft_checkpoint(
+                        model,
+                        optimizer,
+                        state,
+                        root,
+                        compatibility,
+                        checkpoint_format=checkpoint_format,
+                    )
                 )
                 last_checkpoint_step = state["global_step"]
         evaluation = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
         if state["global_step"] != last_checkpoint_step:
-            checkpoints.append(save_sft_checkpoint(model, optimizer, state, root, compatibility))
+            checkpoints.append(
+                save_sft_checkpoint(
+                    model,
+                    optimizer,
+                    state,
+                    root,
+                    compatibility,
+                    checkpoint_format=checkpoint_format,
+                )
+            )
         return {
             "status": "COMPLETED",
             "global_step": state["global_step"],
@@ -1787,6 +2102,11 @@ def _(Path, RepairCollator, hashlib, json, random, safe_open, save_file, torch, 
             if device.type == "cuda"
             else None,
             "functional_benchmark_run": False,
+            "checkpoint_format": checkpoint_format,
+            "training_policy": copy.deepcopy(training_policy),
+            "optimizer_groups": optimizer_group_manifest(optimizer.param_groups)
+            if training_policy is not None
+            else None,
         }
 
     mo.md(
@@ -1807,7 +2127,7 @@ def _(
     EXPERIMENT,
     FAMILY,
     HEADROOM_GIB,
-    LORA_RANK,
+    training_policy,
     RUN_TRAINING,
     device,
     experiment_spec,
@@ -1819,7 +2139,7 @@ def _(
     training_spec = experiment_spec(EXPERIMENT)
     assert training_spec.encoder is not None
     assert training_spec.tie_encoder_decoder_words == (FAMILY == "symmetric")
-    training_estimate = probe_estimate(training_spec, "lora", LORA_RANK, HEADROOM_GIB)
+    training_estimate = probe_estimate(training_spec, "lora", training_policy["rank"], HEADROOM_GIB)
     training_guard = gpu_guard(training_estimate, device) if RUN_TRAINING else "RUN_TRAINING=False"
     mo.vstack(
         [
@@ -1901,8 +2221,6 @@ def _(
     EXPERIMENT,
     FAMILY,
     GRAD_ACCUMULATION,
-    LEARNING_RATE,
-    LORA_RANK,
     MAX_GRAD_NORM,
     MAX_STEPS,
     OUTPUT_ROOT,
@@ -1911,9 +2229,9 @@ def _(
     RUN_NAME,
     SAVE_EVERY,
     SEED,
-    WARMUP_STEPS,
     auth_info,
-    configure_probe_training,
+    configure_policy_model,
+    training_policy,
     data_manifest,
     dev_examples,
     environment,
@@ -1939,18 +2257,16 @@ def _(
             )
         model, provenance = load_pretrained_probe(training_spec, CACHE_DIR, SEED)
         try:
-            scope = configure_probe_training(model, policy="lora", rank=LORA_RANK)
+            scope = configure_policy_model(model, training_policy)
             compatibility = {
-                "architecture": "bifocalgemma_notebook_sft_v1",
+                "architecture": "bifocalgemma_notebook_sft_v2",
                 "family": FAMILY,
                 "experiment": EXPERIMENT,
                 "sources": provenance,
                 "data_fingerprint": data_manifest["fingerprint"],
-                "lora_rank": LORA_RANK,
+                "training_policy": training_policy,
                 "batch_size": BATCH_SIZE,
                 "accumulation": GRAD_ACCUMULATION,
-                "learning_rate": LEARNING_RATE,
-                "warmup_steps": WARMUP_STEPS,
                 "clip_norm": MAX_GRAD_NORM,
                 "seed": SEED,
                 "torch": str(torch.__version__),
@@ -1961,6 +2277,10 @@ def _(
                 message = f"step {row['step']}/{MAX_STEPS} · train CE {row['train_loss']:.4f}"
                 if "eval" in row:
                     message += f" · dev CE {row['eval']['loss']:.4f}"
+                if "learning_rates" in row:
+                    message += " · LR " + ", ".join(
+                        f"{name}={lr:.2g}" for name, lr in row["learning_rates"].items()
+                    )
                 if "peak_allocated_gib" in row:
                     message += f" · VRAM {row['peak_allocated_gib']:.2f} GiB"
                 print(message)
@@ -1976,8 +2296,7 @@ def _(
                 epochs=EPOCHS,
                 batch_size=BATCH_SIZE,
                 accumulation=GRAD_ACCUMULATION,
-                learning_rate=LEARNING_RATE,
-                warmup_steps=WARMUP_STEPS,
+                training_policy=training_policy,
                 clip_norm=MAX_GRAD_NORM,
                 eval_every=EVAL_EVERY,
                 save_every=SAVE_EVERY,

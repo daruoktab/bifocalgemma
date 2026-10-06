@@ -5,7 +5,7 @@ File untuk diunggah satu per satu ke Molab:
 - [bifocalgemma_train_symmetric.py](../notebooks/bifocalgemma_train_symmetric.py)
 - [bifocalgemma_train_asymmetric.py](../notebooks/bifocalgemma_train_asymmetric.py)
 
-Keduanya **17 cell**, dalam urutan yang sama. **16 isi cell identik persis**.
+Keduanya **18 cell**, dalam urutan yang sama. **17 isi cell identik persis**.
 Hanya tiga baris pada control center berbeda:
 
 | Setting | Simetris | Asimetris |
@@ -49,13 +49,14 @@ kapasitas 96 GB selalu kosong. Setting training default berbeda dari micro probe
 | 7 | Native merged attention |
 | 8 | Native model builder |
 | 9 | Pretrained transfer dan attention LoRA |
-| 10 | Data conversion, split dan tokenization helpers |
-| 11 | Training/checkpoint/resume helpers |
-| 12 | Preflight metadata/VRAM guard |
-| 13 | Data preparation |
-| 14 | Model load + SFT dalam satu rerun boundary |
-| 15 | Cheap result summary |
-| 16 | Pytest-only cell |
+| 10 | Training policy: dua profil dan meta group table |
+| 11 | Data conversion, split dan tokenization helpers |
+| 12 | Training/checkpoint/resume helpers |
+| 13 | Preflight metadata/VRAM guard |
+| 14 | Data preparation |
+| 15 | Model load + SFT dalam satu rerun boundary |
+| 16 | Cheap result summary |
+| 17 | Pytest-only cell |
 
 Perubahan UI summary tidak memerlukan rerun model/training. Model dimiliki oleh
 training cell dan dilepas setelah selesai. Jangan mengubah hyperparameters saat
@@ -87,10 +88,40 @@ Gradient accumulation memakai proporsi supervised tokens per window supaya targe
 pendek tidak mendapat bobot berlebihan. Partial epoch window memakai denominator
 aktual. Tidak ada loss tambahan atau knowledge distillation.
 
+## Cell Training policy (setelah loader, sebelum data)
+
+**POLICY_PROFILES** adalah sumber setting keluarga. Cell yang sama memuat dua
+profil, lalu FAMILY memilih salah satunya. Edit rank/alpha dan LR/warmup di sini;
+control center tidak lagi menduplikasi knob LR/rank/warmup.
+
+| Group | Simetris | Asimetris | Default LR / warmup |
+| --- | --- | --- | --- |
+| encoder | Encoder attention LoRA | Encoder attention LoRA | 2e-5 / 5 steps |
+| decoder | Decoder attention LoRA | Decoder attention LoRA | 2e-5 / 5 steps |
+| alignment | Tidak ada, Identity | Learned H projection | 2e-5 / 5 steps |
+
+Word/PLE tetap frozen, phase joint, rank16 / alpha32. Profile memilih train_alignment
+hanya pada asimetris. Semua trainable parameters masuk tepat satu group; frozen
+parameters/aliases tidak diduplikasi. Group order encoder→decoder→alignment dan
+parameter names di-sort deterministik. Tabel meta sebelum training menampilkan
+parameter counts, dtype, LR, warmup, freeze dan tying policy tanpa GPU allocation.
+
+LR per group diterapkan sebagai base_lr * min(1,(step+1)/warmup_steps); warmup0
+memakai full LR langsung. Contoh eksperimen alignment LR lebih tinggi ditulis pada
+POLICY_PROFILES["asymmetric"]["groups"]["alignment"]; encoder/decoder LR tidak
+berubah. Semua log step menyimpan learning_rates per group. Alpha dipakai sebagai
+alpha/rank scaling adapter; word training atau staged projection-only training
+belum didukung oleh profile versi ini.
+
+Baseline kedua profil sengaja memakai LR/warmup yang sama. Perbedaan LR, projection
+warmup terpisah dan staged unfreezing perlu eksperimen, bukan otomatis requirement
+arsitektur. Source policy dan optimizer-group signature disimpan dalam run config
+serta checkpoint compatibility.
+
 ## Setting pilot dan dependency
 
 Attention LoRA rank16 / alpha32, frozen BF16 base words/PLE, FP32 A/B, trainable
-asymmetric H projection. AdamW foreach=False, weight_decay0, lr2e-5, warmup5 steps
+asymmetric H projection. AdamW dengan named parameter groups, foreach=False, weight_decay0, lr2e-5 per group, warmup5 steps
 lalu constant LR, clipping1.0, microbatch1, accumulation4, maksimum100 optimizer
 steps / 1 epoch. Dev CE dan checkpoint setiap25 steps plus final checkpoint.
 Ini default pilot untuk diedit setelah profiling, bukan recipe optimum yang terbukti.
@@ -119,8 +150,15 @@ weights direkonstruksi, ties/LoRA dipasang, lalu trainable weights + optimizer +
 CPU/CUDA/Python RNG + sampler order/cursor dipulihkan. Checkpoints hanya pada
 optimizer boundary; tidak ada pending gradient accumulation yang hilang.
 
+Checkpoint notebook baru memakai **v2** dengan policy lengkap serta optimizer group
+order/parameter names/base LR/warmup. **v1 ditolak sebelum adapter/optimizer atau run
+metadata diubah**; gunakan notebook commit sebelumnya untuk melanjutkan v1. Tidak
+ada silent migration optimizer state satu-group menjadi multi-group. Helper publik
+fit_offline_sft(..., training_policy=None) tetap menggunakan behavior/checkpoint v1
+untuk pemanggil lama.
+
 Compatibility mencakup experiment/family/source revisions, data/tokenizer fingerprint,
-rank, batch/accumulation, LR/warmup/clipping, seed dan runtime version. MAX_STEPS/EPOCHS
+policy/rank/alpha, group signature, batch/accumulation, LR/warmup/clipping, seed dan runtime version. MAX_STEPS/EPOCHS
 boleh diperpanjang. Wrong compatibility, incomplete/checksum-bad checkpoint, key/shape
 mismatch atau sampler invalid ditolak. Keberhasilan resume telah diuji pada native
 **tiny** simetris/asimetris terhadap run uninterrupted; big-model SFT kedua notebook
@@ -131,7 +169,8 @@ belum dijalankan dari sesi lokal. Dev CE bukan functional repair benchmark.
 [Generator](../tools/generate_training_notebooks.py) membaca
 [template cell](../tools/templates/training_notebook.py.txt) serta shared helpers:
 [data](../src/bifocalgemma/data/offline_sft.py) dan
-[training/checkpoint](../src/bifocalgemma/training/offline_sft.py).
+[training/checkpoint](../src/bifocalgemma/training/offline_sft.py) dan
+[policy](../src/bifocalgemma/training/policy.py).
 
 ```powershell
 python tools/generate_training_notebooks.py

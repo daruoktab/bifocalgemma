@@ -144,3 +144,18 @@ tests memeriksa cell parity/instruction identity, diff dengan missing final newl
 accumulation versus larger batch, overwrite/compatibility/checksum failure, serta
 native tiny LoRA resumed vs uninterrupted pada kedua keluarga. Big pretrained
 SFT kedua notebook belum dijalankan lokal. Lihat [panduan](TRAINING_NOTEBOOKS.md).
+
+## Training policy dan checkpoint v2 — 6 Oktober 2026
+
+Kedua notebook kini 18 cell, 17 isi identik, dengan satu cell Training policy setelah
+loader. Profil simetris encoder/decoder groups; asimetris menambah alignment. Meta
+table, actual LR/warmup per group, policy/group signatures dan v2 checkpoints
+tersambung. Legacy training_policy=None tetap memakai optimizer/checkpoint v1.
+Tests memeriksa coverage/frozen/aliases, per-group scheduler, native tiny v2 resume
+kedua keluarga, serta v1/policy/group-order rejection sebelum mutation. Big pretrained
+training tetap dijalankan pengguna di Molab; ini bukan hasil eksperimen training.
+
+Policy update checks completed: 12 helper tests (5 policy + 7 existing offline SFT)
+passed, 6 notebook pytest tests passed, both disabled graphs produced the expected
+meta group tables, and 18-cell/17-identical parity passed. Marimo check --strict,
+generator --check, Ruff and ty passed. No pretrained training was launched.
