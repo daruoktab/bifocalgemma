@@ -83,6 +83,19 @@ python -m bifocalgemma evaluate --predictions outputs/predictions.jsonl
 train/evaluate sengaja exit 2 dan menyebut blok yang belum terintegrasi serta
 tautan docs. Placeholder tidak menghasilkan checkpoint atau skor palsu.
 
+## Notebook marimo / Molab
+
+[Architecture test standalone](notebooks/bifocalgemma_architecture_test.py) berisi
+13 cell: control center, environment, config/meta shapes, batch/loss, merged attention,
+model, tiny tests, optional full-size BF16 probe untuk GPU 96 GB, serta report JSON.
+Unggah satu file tersebut ke Molab. Panduan ada pada
+[marimo architecture test](docs/MARIMO_ARCHITECTURE_TEST.md).
+
+```powershell
+python -m marimo check --strict notebooks/bifocalgemma_architecture_test.py
+python -m marimo edit notebooks/bifocalgemma_architecture_test.py
+```
+
 ## Setup dari checkout baru
 
 ```powershell

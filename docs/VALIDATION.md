@@ -95,3 +95,18 @@ git diff --check
 Isi cache root dengan path audit milik pengguna; bukan folder tokenizer HF umum.
 [Native local validation](NATIVE_LOCAL_VALIDATION.md) menjelaskan API, assets,
 kontrak data dan sumber riset. [Build guide](BUILD_GUIDE.md) menyatakan status per blok.
+
+## Notebook marimo standalone — 6 Oktober 2026
+
+[Notebook](../notebooks/bifocalgemma_architecture_test.py) berisi 13 cell dan PEP723
+minimal. Marimo check --strict, Ruff lint/format dan ty lulus. Cell pytest-only
+memuat tiga tes yang lulus lewat python -m pytest notebook: mask local/global,
+prefix/padding loss gradients, serta finite fully-masked backward. Graph CPU FP32
+berhasil, serta marimo HTML export pada CUDA dengan BF16 forward/backward dan
+FP32 semantic parity/causality checks berhasil: enam model, 60 kelompok checks.
+Reference decoder menyalin nonpersistent buffers sebelum mengganti attention;
+semantic FP32 tolerance tetap 2e-5. Ini tidak mengklaim BF16 logits parity.
+Full-size random BF16 probe untuk GPU 96 GB tersedia dengan RUN_FULL_SIZE=False
+secara default; belum dieksekusi di GPU Blackwell dari sesi lokal ini.
+Report JSON dan HTML berada di outputs yang ignored. Tidak ada download bobot/data.
+Cara memakai dan batas probe ada pada [panduan marimo](MARIMO_ARCHITECTURE_TEST.md).

@@ -22,6 +22,7 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 | [Referensi backbone](GEMMA4_EDGE_ARCHITECTURE.md) | Config E2B/E4B dan pengujian native tanpa bobot |
 | [Log riset](RESEARCH_LOG.md) | Keputusan yang dipakai serta ide lama yang ditunda |
 | [Panduan tim](TEAM_PLAYBOOK.md) | Cara mengembangkan dan meninjau tiap blok |
+| [Marimo / Molab](MARIMO_ARCHITECTURE_TEST.md) | Notebook standalone, cell map, tiny tests dan full-size probe |
 | [Native lokal](NATIVE_LOCAL_VALIDATION.md) | Native tiny, tokenizer offline dan kontrak arah patch SWE-smith |
 | [Validasi](VALIDATION.md) | Checks yang benar-benar dijalankan dan cakupannya |
 | [Kompetisi](COMPETITION_GUIDE.md) | Ketentuan yang masih perlu dikonfirmasi |
