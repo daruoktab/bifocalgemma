@@ -1,7 +1,7 @@
 # Molab: Checkpoint Asli dan Probe VRAM Training Beberapa Model
 
 Unggah [bifocalgemma_pretrained_probe.py](../notebooks/bifocalgemma_pretrained_probe.py)
-ke Molab. Notebook **standalone 13 cell** memuat text weights asli dari encoder base
+ke Molab. Notebook **standalone 15 cell** memuat text weights asli dari encoder base
 serta decoder IT dan mengukur micro training steps. Pengguna menjalankannya pada GPU
 Blackwell 96 GB sendiri. Sesi lokal hanya memeriksa helper dan guard; belum ada hasil
 VRAM checkpoint asli atau klaim jumlah model yang pasti muat.
@@ -47,8 +47,13 @@ Revisions dipin sesuai audit:
 Repo metadata/header yang diperiksa menunjukkan satu model.safetensors,
 text prefix **model.language_model.**, serta LM head tied ke words (tidak ada
 lm_head tensor terpisah). Config/tokenizer/Jinja hashes dicocokkan dengan audit.
-Checkpoint download memakai Hugging Face Hub dan pinned revision; HF_TOKEN dapat
-diatur sebagai environment variable Molab jika diperlukan, tidak ditulis ke report.
+Checkpoint download memakai Hugging Face Hub dan pinned revision; HF token dimasukkan lewat password form pada cell **2a**, lalu klik **Apply HF token**.
+Cell **2b** memverifikasi whoami dan menerapkan token sebagai dependency eksplisit
+semua Hub/tokenizer calls. Read token cukup; tidak ada upload dalam probe.
+Widget kosong memakai HF_TOKEN dari environment jika tersedia; tanpa keduanya,
+loader memakai akses anonim eksplisit untuk checkpoint publik. Token invalid
+menghentikan downstream loaders. Nilai token tidak ditulis ke report atau cache
+login; report hanya menyimpan mode/source/username/verified.
 
 [transfer_text_checkpoint](../src/bifocalgemma/models/checkpoint_transfer.py)
 memeriksa seluruh required text keys/shapes sebelum copy. Unexpected text keys
@@ -127,7 +132,7 @@ S01 checkpoint tetap memiliki acceptance tambahan.
 
 ## Cell map dan dependency
 
-0 intro → 1 control → 2 environment → 3 configs → 4 meta → 5 batch/loss →
+0 intro → 1 control → 2 environment → 2a password input → 2b Apply/verify → 3 configs → 4 meta → 5 batch/loss →
 6 merged attention → 7 model builder → 8 pretrained/profiling helpers →
 9 single pilot → 10 cumulative residency → 11 JSON report; cell12 khusus pytest.
 

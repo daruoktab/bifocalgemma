@@ -56,7 +56,7 @@ def _(mo):
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
     OUTPUT_DIR = "outputs/marimo_pretrained"
-    # HF_TOKEN opsional lewat environment Molab; checkpoint yang diperiksa tidak gated.
+    # Token widget dan Apply/verify berada pada cell 2a/2b.
     mo.md(
         "## 1 · Control center\nDefault: LoRA BF16, 1 contoh per batch, 512 encoder tokens, 2 langkah."
     )
@@ -167,6 +167,55 @@ def _(DEVICE, PRECISION, mo):
         dtype,
         environment,
     )
+
+
+@app.cell
+def _(mo):
+    # 2a. HF TOKEN INPUT — submit form avoids rerunning models per keystroke.
+    hf_token_form = mo.ui.dictionary(
+        {
+            "token": mo.ui.text(
+                label="Hugging Face token (read access cukup)",
+                kind="password",
+                placeholder="hf_...",
+                full_width=True,
+            )
+        }
+    ).form(submit_button_label="Apply HF token")
+    mo.vstack([mo.md("## 2a · Hugging Face API token"), hf_token_form])
+    return (hf_token_form,)
+
+
+@app.cell
+def _(hf_token_form, mo, os):
+    # 2b. APPLY / VERIFY — explicit token dependency for every Hub/tokenizer call.
+    from huggingface_hub import HfApi
+    from huggingface_hub.errors import HfHubHTTPError
+
+    _token_value = ((hf_token_form.value or {}).get("token", "") or "").strip()
+    token_source = "widget" if _token_value else "environment"
+    if not _token_value:
+        _token_value = os.environ.get("HF_TOKEN", "").strip()
+    hf_download_token = _token_value or False
+    if _token_value:
+        try:
+            _identity = HfApi(token=_token_value).whoami()
+        except HfHubHTTPError:
+            raise RuntimeError(
+                "HF token gagal diverifikasi; cek token/akses lalu Apply ulang."
+            ) from None
+        auth_info = {
+            "mode": "authenticated",
+            "source": token_source,
+            "username": _identity.get("name", "unknown"),
+            "verified": True,
+        }
+        auth_message = "HF token terverifikasi. Siap digunakan oleh loader dan tokenizer."
+    else:
+        auth_info = {"mode": "anonymous", "source": "none", "verified": False}
+        auth_message = "Tanpa token: akses anonim untuk checkpoint publik. Isi token lalu klik Apply bila diperlukan."
+    mo.md("## 2b · Apply / verifikasi HF token\n" + auth_message)
+    return (hf_download_token, auth_info)
 
 
 @app.cell
@@ -846,7 +895,7 @@ def _(
     gc,
     json,
     nn,
-    os,
+    hf_download_token,
     torch,
     F,
     mo,
@@ -1194,7 +1243,7 @@ def _(
         return None
 
     def verified_assets(checkpoint, cache_dir):
-        token = os.environ.get("HF_TOKEN")
+        token = hf_download_token
         paths = {}
         for name, digest in checkpoint["files"].items():
             path = Path(
@@ -1227,7 +1276,7 @@ def _(
                     "model.safetensors",
                     revision=ref["revision"],
                     cache_dir=cache_dir,
-                    token=os.environ.get("HF_TOKEN"),
+                    token=hf_download_token,
                 )
             )
             source_files.append((ref, assets, weights))
@@ -1276,7 +1325,7 @@ def _(
             decoder_ref["model_id"],
             revision=decoder_ref["revision"],
             cache_dir=cache_dir,
-            token=os.environ.get("HF_TOKEN"),
+            token=hf_download_token,
             trust_remote_code=False,
         )
         assert decoder is not None
@@ -1292,7 +1341,7 @@ def _(
                 ref["model_id"],
                 revision=ref["revision"],
                 cache_dir=cache_dir,
-                token=os.environ.get("HF_TOKEN"),
+                token=hf_download_token,
                 trust_remote_code=False,
             )
             assert encoder is not None
@@ -1639,6 +1688,7 @@ def _(
 
 @app.cell
 def _(
+    auth_info,
     BATCH_SIZE,
     CONCURRENT_EXPERIMENTS,
     ENCODER_CONTEXT_TOKENS,
@@ -1662,6 +1712,7 @@ def _(
     # 11. SAVE REPORT
     report = {
         "environment": environment,
+        "authentication": auth_info,
         "config": {
             "single_experiment": SINGLE_EXPERIMENT,
             "concurrent_experiments": list(CONCURRENT_EXPERIMENTS),

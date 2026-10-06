@@ -128,3 +128,8 @@ state_dict native meta: E2B 540 target keys / 60 ignored shared-KV, E4B 665 / 54
 zero missing, shape mismatch atau unexplained text key. Audit kecil tersimpan di
 [fixture header](../tests/fixtures/gemma4_checkpoint_header_audit.json).
 Payload tensor tetap belum diunduh atau diuji lokal.
+
+HF authentication pada pretrained notebook dipisahkan ke cell2a password form dan
+cell2b Apply/whoami. API mock memeriksa widget precedence, environment fallback,
+anonymous False token, invalid-token failure dan safe auth report tanpa credential.
+Graph CPU/anon guard serta tiga notebook pytest tests lulus setelah perubahan.
