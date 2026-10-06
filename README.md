@@ -96,6 +96,13 @@ python -m marimo check --strict notebooks/bifocalgemma_architecture_test.py
 python -m marimo edit notebooks/bifocalgemma_architecture_test.py
 ```
 
+Untuk **checkpoint asli dan pengukuran training GPU 96 GB**, unggah
+[pretrained memory probe](notebooks/bifocalgemma_pretrained_probe.py). Pilot memakai
+encoder base / decoder IT dan attention LoRA, lalu menaikkan jumlah model resident
+1–4 dengan round-robin versus overlapping forward graphs. Hasil VRAM ditulis dari
+runtime Molab. [Panduan pretrained probe](docs/PRETRAINED_GPU_PROBE.md) menjelaskan
+download/cache, provenance, optimizer policy dan interpretasi PASS/OOM/guard.
+
 ## Setup dari checkout baru
 
 ```powershell

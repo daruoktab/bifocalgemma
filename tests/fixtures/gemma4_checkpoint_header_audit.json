@@ -1,0 +1,53 @@
+{
+  "verified_on": "2026-10-06",
+  "method": "HTTP range header only vs native meta state_dict",
+  "text_prefix": "model.language_model.",
+  "transformers": "5.18.0",
+  "checkpoint_tensor_payload_downloaded": false,
+  "models": [
+    {
+      "model_id": "google/gemma-4-E2B",
+      "revision": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
+      "source_url": "https://huggingface.co/google/gemma-4-E2B/resolve/d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f/model.safetensors",
+      "header_bytes": 263952,
+      "target_text_state_keys": 540,
+      "ignored_shared_kv_tensors": 60,
+      "missing_keys": [],
+      "shape_mismatches": [],
+      "unexplained_text_keys": []
+    },
+    {
+      "model_id": "google/gemma-4-E4B",
+      "revision": "411aa17b749aa952df1359d2dcea73917a544d9a",
+      "source_url": "https://huggingface.co/google/gemma-4-E4B/resolve/411aa17b749aa952df1359d2dcea73917a544d9a/model.safetensors",
+      "header_bytes": 281040,
+      "target_text_state_keys": 665,
+      "ignored_shared_kv_tensors": 54,
+      "missing_keys": [],
+      "shape_mismatches": [],
+      "unexplained_text_keys": []
+    },
+    {
+      "model_id": "google/gemma-4-E2B-it",
+      "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+      "source_url": "https://huggingface.co/google/gemma-4-E2B-it/resolve/3e22461f65e89153144f8adb70e3b8c2cc9845a7/model.safetensors",
+      "header_bytes": 263952,
+      "target_text_state_keys": 540,
+      "ignored_shared_kv_tensors": 60,
+      "missing_keys": [],
+      "shape_mismatches": [],
+      "unexplained_text_keys": []
+    },
+    {
+      "model_id": "google/gemma-4-E4B-it",
+      "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+      "source_url": "https://huggingface.co/google/gemma-4-E4B-it/resolve/ee0ef6023621cff504d758262d4e04895a5af4a2/model.safetensors",
+      "header_bytes": 281040,
+      "target_text_state_keys": 665,
+      "ignored_shared_kv_tensors": 54,
+      "missing_keys": [],
+      "shape_mismatches": [],
+      "unexplained_text_keys": []
+    }
+  ]
+}

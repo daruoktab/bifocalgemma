@@ -330,3 +330,11 @@ diganti dengan pass/return zero/empty dataset yang terlihat seperti hasil berhas
 
 Dokumen detail: [architecture](ARCHITECTURE.md), [data](DATA_PIPELINE.md),
 [training](TRAINING.md), [evaluation](EVALUATION.md).
+
+## Probe asli pada Molab
+
+[Pretrained GPU probe](PRETRAINED_GPU_PROBE.md) tersedia sebagai notebook standalone
+terpisah. Ia memuat pinned base/IT text weights, melakukan attention-LoRA/AdamW
+microsteps, dan membandingkan 1–4 independent resident models. Loader/optimizer
+helpers diuji pada tiny fixtures; GPU96/pretrained measurements dijalankan pengguna.
+Ini prototype profiling, bukan penyelesaian production trainer/cache/checkpoint.

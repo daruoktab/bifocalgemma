@@ -110,3 +110,11 @@ SWE-smith menyimpan bug-inducing patch: target repair perlu arah sebaliknya pada
 snapshot buggy yang tepat. Direct SFT tetap hipotesis; T5Gemma 2 menggunakan tahap
 adaptasi UL2 sebelumnya. PLE + tied words BF16 sendiri 9,5/11,75 GiB pada pasangan
 simetris, sehingga linear-only QLoRA tidak memberi jaminan muat di GPU lokal 6 GiB.
+
+## Probe asli pada Molab
+
+[Pretrained GPU probe](PRETRAINED_GPU_PROBE.md) tersedia sebagai notebook standalone
+terpisah. Ia memuat pinned base/IT text weights, melakukan attention-LoRA/AdamW
+microsteps, dan membandingkan 1–4 independent resident models. Loader/optimizer
+helpers diuji pada tiny fixtures; GPU96/pretrained measurements dijalankan pengguna.
+Ini prototype profiling, bukan penyelesaian production trainer/cache/checkpoint.

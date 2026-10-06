@@ -151,3 +151,11 @@ SFT E2B–E2B. Recipe utama memakai file lokal tanpa RL atau VM/Docker; SWE-smit
 environment/harness ditunda. Detail ada pada DATASETS_AND_BENCHMARKS.
 Sebelum memperluas ke empat pasangan, ukur kemampuan memakai context dan retensi
 format IT pada held-out data. Model tiny tidak menjawab apakah direct SFT cukup.
+
+## Probe asli pada Molab
+
+[Pretrained GPU probe](PRETRAINED_GPU_PROBE.md) tersedia sebagai notebook standalone
+terpisah. Ia memuat pinned base/IT text weights, melakukan attention-LoRA/AdamW
+microsteps, dan membandingkan 1–4 independent resident models. Loader/optimizer
+helpers diuji pada tiny fixtures; GPU96/pretrained measurements dijalankan pengguna.
+Ini prototype profiling, bukan penyelesaian production trainer/cache/checkpoint.

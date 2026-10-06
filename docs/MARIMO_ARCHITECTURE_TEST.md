@@ -122,3 +122,11 @@ Core definitions disalin dari [native.py](../src/bifocalgemma/models/native.py),
 Perubahan core harus diselaraskan dengan notebook lalu diperiksa memakai marimo
 check dan real graph execution. Pinned version/config revisions dan semantic parity checks
 mencegah notebook dianggap contoh produksi lintas versi tanpa validasi.
+
+## Probe asli pada Molab
+
+[Pretrained GPU probe](PRETRAINED_GPU_PROBE.md) tersedia sebagai notebook standalone
+terpisah. Ia memuat pinned base/IT text weights, melakukan attention-LoRA/AdamW
+microsteps, dan membandingkan 1–4 independent resident models. Loader/optimizer
+helpers diuji pada tiny fixtures; GPU96/pretrained measurements dijalankan pengguna.
+Ini prototype profiling, bukan penyelesaian production trainer/cache/checkpoint.

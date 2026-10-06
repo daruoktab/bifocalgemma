@@ -110,3 +110,21 @@ Full-size random BF16 probe untuk GPU 96 GB tersedia dengan RUN_FULL_SIZE=False
 secara default; belum dieksekusi di GPU Blackwell dari sesi lokal ini.
 Report JSON dan HTML berada di outputs yang ignored. Tidak ada download bobot/data.
 Cara memakai dan batas probe ada pada [panduan marimo](MARIMO_ARCHITECTURE_TEST.md).
+
+## Pretrained memory probe — notebook siap Molab, belum hasil GPU96
+
+[Notebook standalone](../notebooks/bifocalgemma_pretrained_probe.py) dan
+[panduan](PRETRAINED_GPU_PROBE.md) menyediakan pinned text checkpoint transfer,
+attention LoRA/full policy, AdamW steps, serta cumulative 1–4 model residency.
+CPU preflight menampilkan SKIPPED_HEADROOM sebelum network/model weights download.
+Lima helper tests memakai native tiny safetensors fixture, termasuk atomic key/shape
+validation, shared IT word anchor, PLE separate, LoRA scope dan actual optimizer
+state formation. Tiga notebook pytest tests lulus. Marimo check --strict, Ruff dan
+ty diperiksa. Pengguna mengunggah dan menjalankan probe asli di Molab; checkpoint
+asli tidak dimuat lokal dan belum ada angka peak VRAM/kapasitas GPU96 yang diukur.
+
+Header safetensors asli keempat checkpoints diperiksa via HTTP range terhadap
+state_dict native meta: E2B 540 target keys / 60 ignored shared-KV, E4B 665 / 54;
+zero missing, shape mismatch atau unexplained text key. Audit kecil tersimpan di
+[fixture header](../tests/fixtures/gemma4_checkpoint_header_audit.json).
+Payload tensor tetap belum diunduh atau diuji lokal.

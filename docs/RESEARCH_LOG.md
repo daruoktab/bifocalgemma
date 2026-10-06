@@ -69,3 +69,13 @@ CommitPackFT Python opsional setelah dedup. Benchmark execution dipisahkan dari
 training. SWE-smith dapat dipakai untuk SFT, tetapi task-environment reconstruction
 bukan dependency pilot. D06 arah patch tetap utility lokal; A01/E01 ditunda.
 Keputusan ini tidak mengubah empat pasangan, dua baseline, tying atau merged attention.
+
+## Probe checkpoint asli dan multi-model GPU residency
+
+Pada 6 Oktober 2026, pengguna meminta pretrained test di Molab Blackwell96 GB dan
+pengukuran training beberapa model resident. Pengguna menjalankan notebook hasil
+upload sendiri. Notebook terpisah memakai base encoder / IT decoder yang dipin,
+strict text tensor mapping, attention-only LoRA, AdamW microsteps dan measured
+allocator counters. Helper lokal diuji dengan safetensors tiny; tidak ada actual
+pretrained/GPU96 measurement dari laptop. Graph overlap adalah memory stress,
+bukan klaim concurrent CUDA compute atau speedup. Lihat PRETRAINED_GPU_PROBE.
