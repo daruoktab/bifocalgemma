@@ -1,0 +1,582 @@
+{
+  "full_editpack": {
+    "date": "2026-10-07",
+    "raw_count": 22602,
+    "contract_dedup_accepted": 22583,
+    "filters": {
+      "unsupported_path": 19
+    },
+    "source_revision": "067b4c882f44eca19329fedd275438fc3c060f3f",
+    "file_sha256": "22999d95436bb32dc7a8eb0924551e1c49c80ebad677f6d9cfebcd9def8a10a3",
+    "token_lengths": {
+      "encoder": {
+        "p50": 242,
+        "p95": 404,
+        "p99": 440,
+        "max": 749
+      },
+      "pair_decoder": {
+        "p50": 242,
+        "p95": 557,
+        "p99": 768,
+        "max": 1113
+      },
+      "target": {
+        "p50": 211,
+        "p95": 526,
+        "p99": 738,
+        "max": 1085
+      },
+      "baseline_total": {
+        "p50": 493,
+        "p95": 844,
+        "p99": 1055,
+        "max": 1682
+      }
+    },
+    "paired_budget_counts": {
+      "2048/512": 21011,
+      "2048/1024": 22580,
+      "2048/2048": 22583,
+      "4096/2048": 22583,
+      "8192/4096": 22583,
+      "32768/8192": 22583
+    },
+    "matching_2048_512_baseline4096": 21011,
+    "method": "full corpus before split; dedup exact before/after; hash-verified base/IT tokenizer; notebook pair format and baseline context-prefix format; no code execution or contamination certification"
+  },
+  "samples_and_benchmarks": {
+    "method": "CPU, hash-verified Gemma tokenizers, unified diffs, no dataset code execution; sample outputs are nonrandom and cannot estimate population yield",
+    "sources": {
+      "editpack_sample": {
+        "raw_count": 100,
+        "contract_accepted": 100,
+        "rejected": {},
+        "token_lengths": {
+          "encoder": {
+            "p50": 269,
+            "p95": 399,
+            "max": 429
+          },
+          "pair_decoder": {
+            "p50": 234,
+            "p95": 473,
+            "max": 972
+          },
+          "target": {
+            "p50": 202,
+            "p95": 445,
+            "max": 941
+          },
+          "baseline_total": {
+            "p50": 510,
+            "p95": 805,
+            "max": 1341
+          }
+        },
+        "pair_2048_512": 95,
+        "matched_pair2048_512_baseline4096": 95
+      },
+      "instruct_sample": {
+        "raw_count": 100,
+        "contract_accepted": 96,
+        "rejected": {
+          "adapter_filter": 4
+        },
+        "token_lengths": {
+          "encoder": {
+            "p50": 147,
+            "p95": 310,
+            "max": 535
+          },
+          "pair_decoder": {
+            "p50": 248,
+            "p95": 519,
+            "max": 987
+          },
+          "target": {
+            "p50": 208,
+            "p95": 478,
+            "max": 945
+          },
+          "baseline_total": {
+            "p50": 411,
+            "p95": 750,
+            "max": 1288
+          }
+        },
+        "pair_2048_512": 89,
+        "matched_pair2048_512_baseline4096": 89
+      },
+      "nextcoder_sample": {
+        "raw_count": 100,
+        "contract_accepted": 100,
+        "rejected": {},
+        "token_lengths": {
+          "encoder": {
+            "p50": 576,
+            "p95": 798,
+            "max": 968
+          },
+          "pair_decoder": {
+            "p50": 927,
+            "p95": 1360,
+            "max": 1705
+          },
+          "target": {
+            "p50": 849,
+            "p95": 1282,
+            "max": 1584
+          },
+          "baseline_total": {
+            "p50": 1476,
+            "p95": 1957,
+            "max": 2372
+          }
+        },
+        "pair_2048_512": 3,
+        "matched_pair2048_512_baseline4096": 3
+      },
+      "canit_descriptive": {
+        "raw_count": 105,
+        "contract_accepted": 105,
+        "rejected": {},
+        "token_lengths": {
+          "encoder": {
+            "p50": 371,
+            "p95": 1130,
+            "max": 1949
+          },
+          "pair_decoder": {
+            "p50": 380,
+            "p95": 751,
+            "max": 1421
+          },
+          "target": {
+            "p50": 266,
+            "p95": 638,
+            "max": 1105
+          },
+          "baseline_total": {
+            "p50": 732,
+            "p95": 1591,
+            "max": 2662
+          }
+        },
+        "pair_2048_512": 76,
+        "matched_pair2048_512_baseline4096": 76,
+        "file_sha256": "9f78b1a2378b96b24d158a6fe83d69aa18e43a360ae3b7d0891c02f660cc6222",
+        "external_dependency_tasks": [
+          {
+            "id": 15,
+            "name": "pandas_random_data",
+            "imports": [
+              "pandas"
+            ]
+          },
+          {
+            "id": 25,
+            "name": "sudoku_solver",
+            "imports": [
+              "z3"
+            ]
+          },
+          {
+            "id": 26,
+            "name": "kl_divergence",
+            "imports": [
+              "torch"
+            ]
+          },
+          {
+            "id": 29,
+            "name": "genetic_algorithm",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 30,
+            "name": "cross_correlation",
+            "imports": [
+              "numpy",
+              "torch"
+            ]
+          },
+          {
+            "id": 32,
+            "name": "markov_transition",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 33,
+            "name": "genetic_algorithm_2",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 38,
+            "name": "high_order",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 41,
+            "name": "group_theory",
+            "imports": [
+              "numpy",
+              "torch"
+            ]
+          },
+          {
+            "id": 52,
+            "name": "magic_square",
+            "imports": [
+              "z3"
+            ]
+          },
+          {
+            "id": 59,
+            "name": "standard_scaling",
+            "imports": [
+              "pandas",
+              "sklearn"
+            ]
+          },
+          {
+            "id": 61,
+            "name": "ridge_regression",
+            "imports": [
+              "numpy",
+              "pandas",
+              "sklearn"
+            ]
+          },
+          {
+            "id": 66,
+            "name": "product_analysis",
+            "imports": [
+              "pandas"
+            ]
+          },
+          {
+            "id": 78,
+            "name": "llm_inference",
+            "imports": [
+              "flask",
+              "vllm"
+            ]
+          },
+          {
+            "id": 88,
+            "name": "correlation_clustering",
+            "imports": [
+              "numpy",
+              "pandas",
+              "scipy"
+            ]
+          },
+          {
+            "id": 95,
+            "name": "dbscan",
+            "imports": [
+              "numpy",
+              "scipy"
+            ]
+          },
+          {
+            "id": 96,
+            "name": "distribution_clustering",
+            "imports": [
+              "numpy",
+              "scipy"
+            ]
+          },
+          {
+            "id": 98,
+            "name": "encoder_decoder_dataset",
+            "imports": [
+              "torch"
+            ]
+          },
+          {
+            "id": 105,
+            "name": "descent_methods",
+            "imports": [
+              "autograd",
+              "numpy"
+            ]
+          },
+          {
+            "id": 110,
+            "name": "integration",
+            "imports": [
+              "autograd",
+              "numpy"
+            ]
+          },
+          {
+            "id": 100,
+            "name": "pandas_apply",
+            "imports": [
+              "pandas"
+            ]
+          },
+          {
+            "id": 118,
+            "name": "principal_component_analysis",
+            "imports": [
+              "numpy",
+              "pandas",
+              "sklearn"
+            ]
+          }
+        ],
+        "stdlib_only_count": 83
+      },
+      "canit_lazy": {
+        "raw_count": 105,
+        "contract_accepted": 105,
+        "rejected": {},
+        "token_lengths": {
+          "encoder": {
+            "p50": 330,
+            "p95": 1106,
+            "max": 1889
+          },
+          "pair_decoder": {
+            "p50": 315,
+            "p95": 708,
+            "max": 1282
+          },
+          "target": {
+            "p50": 266,
+            "p95": 638,
+            "max": 1105
+          },
+          "baseline_total": {
+            "p50": 682,
+            "p95": 1490,
+            "max": 2602
+          }
+        },
+        "pair_2048_512": 82,
+        "matched_pair2048_512_baseline4096": 82,
+        "file_sha256": "9f78b1a2378b96b24d158a6fe83d69aa18e43a360ae3b7d0891c02f660cc6222",
+        "external_dependency_tasks": [
+          {
+            "id": 15,
+            "name": "pandas_random_data",
+            "imports": [
+              "pandas"
+            ]
+          },
+          {
+            "id": 25,
+            "name": "sudoku_solver",
+            "imports": [
+              "z3"
+            ]
+          },
+          {
+            "id": 26,
+            "name": "kl_divergence",
+            "imports": [
+              "torch"
+            ]
+          },
+          {
+            "id": 29,
+            "name": "genetic_algorithm",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 30,
+            "name": "cross_correlation",
+            "imports": [
+              "numpy",
+              "torch"
+            ]
+          },
+          {
+            "id": 32,
+            "name": "markov_transition",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 33,
+            "name": "genetic_algorithm_2",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 38,
+            "name": "high_order",
+            "imports": [
+              "numpy"
+            ]
+          },
+          {
+            "id": 41,
+            "name": "group_theory",
+            "imports": [
+              "numpy",
+              "torch"
+            ]
+          },
+          {
+            "id": 52,
+            "name": "magic_square",
+            "imports": [
+              "z3"
+            ]
+          },
+          {
+            "id": 59,
+            "name": "standard_scaling",
+            "imports": [
+              "pandas",
+              "sklearn"
+            ]
+          },
+          {
+            "id": 61,
+            "name": "ridge_regression",
+            "imports": [
+              "numpy",
+              "pandas",
+              "sklearn"
+            ]
+          },
+          {
+            "id": 66,
+            "name": "product_analysis",
+            "imports": [
+              "pandas"
+            ]
+          },
+          {
+            "id": 78,
+            "name": "llm_inference",
+            "imports": [
+              "flask",
+              "vllm"
+            ]
+          },
+          {
+            "id": 88,
+            "name": "correlation_clustering",
+            "imports": [
+              "numpy",
+              "pandas",
+              "scipy"
+            ]
+          },
+          {
+            "id": 95,
+            "name": "dbscan",
+            "imports": [
+              "numpy",
+              "scipy"
+            ]
+          },
+          {
+            "id": 96,
+            "name": "distribution_clustering",
+            "imports": [
+              "numpy",
+              "scipy"
+            ]
+          },
+          {
+            "id": 98,
+            "name": "encoder_decoder_dataset",
+            "imports": [
+              "torch"
+            ]
+          },
+          {
+            "id": 105,
+            "name": "descent_methods",
+            "imports": [
+              "autograd",
+              "numpy"
+            ]
+          },
+          {
+            "id": 110,
+            "name": "integration",
+            "imports": [
+              "autograd",
+              "numpy"
+            ]
+          },
+          {
+            "id": 100,
+            "name": "pandas_apply",
+            "imports": [
+              "pandas"
+            ]
+          },
+          {
+            "id": 118,
+            "name": "principal_component_analysis",
+            "imports": [
+              "numpy",
+              "pandas",
+              "sklearn"
+            ]
+          }
+        ],
+        "stdlib_only_count": 83
+      },
+      "humanevalfix_docs": {
+        "raw_count": 164,
+        "contract_accepted": 164,
+        "rejected": {},
+        "token_lengths": {
+          "encoder": {
+            "p50": 209,
+            "p95": 418,
+            "max": 638
+          },
+          "pair_decoder": {
+            "p50": 145,
+            "p95": 208,
+            "max": 262
+          },
+          "target": {
+            "p50": 112,
+            "p95": 175,
+            "max": 229
+          },
+          "baseline_total": {
+            "p50": 347,
+            "p95": 564,
+            "max": 883
+          }
+        },
+        "pair_2048_512": 164,
+        "matched_pair2048_512_baseline4096": 164,
+        "file_sha256": "ed5f15d789156e21222bfcd556c425a39042355c84ae1e8b058abd6a3d7f8075"
+      }
+    }
+  },
+  "exact_overlap": {
+    "method": "whole-program exact hash only; normalize CRLF to LF and strip outer whitespace; not near-duplicate or repo audit",
+    "editpack_rows_matching_benchmark_before_or_after": 0,
+    "bench_code_hashes": 537,
+    "next_sample_accepted": 100,
+    "next_sample_unique_pairs": 34,
+    "next_sample_unique_seeds": 34
+  }
+}

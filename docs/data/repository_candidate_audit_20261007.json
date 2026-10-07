@@ -1,0 +1,1945 @@
+{
+  "date": "2026-10-07",
+  "metadata": [
+    {
+      "id": "internlm/SWE-Fixer-Train-110K",
+      "revision": "9e3f1366be2c9a1a230d243b4008354436685501",
+      "card_license": "mit",
+      "payload_file_bytes": 1471204778,
+      "payload_files": [
+        {
+          "path": "swe-fixer-train-110k.jsonl",
+          "bytes": 1471204778
+        }
+      ],
+      "api_response_sha256": "4e31b81578a55b76817f1851d7f828fadcbc8dfc1384ddf6cdd855a065415f83"
+    },
+    {
+      "id": "SWE-Gym/SWE-Gym",
+      "revision": "bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb",
+      "card_license": "mit",
+      "payload_file_bytes": 43644473,
+      "payload_files": [
+        {
+          "path": "data/train-00000-of-00001.parquet",
+          "bytes": 43644473
+        }
+      ],
+      "api_response_sha256": "91fb24266ed47214989783ea270f7db4a51dcaac2e4d1b782437b7b265a073b6"
+    },
+    {
+      "id": "nebius/SWE-rebench",
+      "revision": "89cdfbab4ab1bd8f5a658bb212d1b63624f4f881",
+      "card_license": "cc-by-4.0",
+      "payload_file_bytes": 245166035,
+      "payload_files": [
+        {
+          "path": "data/filtered-00000-of-00001.parquet",
+          "bytes": 33886640
+        },
+        {
+          "path": "data/test-00000-of-00002.parquet",
+          "bytes": 101556119
+        },
+        {
+          "path": "data/test-00001-of-00002.parquet",
+          "bytes": 109723276
+        }
+      ],
+      "api_response_sha256": "34b457dc9f78f93fb074044c7353e5bbff2502f7f404b0f9e8bb98aa7f55e86b"
+    },
+    {
+      "id": "nebius/SWE-rebench-V2",
+      "revision": "10483de0f50fe5da545942705a76c6150171af7f",
+      "card_license": "cc-by-4.0",
+      "payload_file_bytes": 428839266,
+      "payload_files": [
+        {
+          "path": "data/train-00000-of-00001.parquet",
+          "bytes": 428839266
+        }
+      ],
+      "api_response_sha256": "3e55a070256da495d8b62d4e6399589dc0f41e4438c332fb1b885c981af9ab90"
+    },
+    {
+      "id": "R2E-Gym/R2E-Gym-Subset",
+      "revision": "2e8108ff942f24fcb5686badfaf7f9a8808566d5",
+      "card_license": "apache-2.0",
+      "payload_file_bytes": 943928047,
+      "payload_files": [
+        {
+          "path": "data/train-00000-of-00008.parquet",
+          "bytes": 54136363
+        },
+        {
+          "path": "data/train-00001-of-00008.parquet",
+          "bytes": 121057705
+        },
+        {
+          "path": "data/train-00002-of-00008.parquet",
+          "bytes": 96219824
+        },
+        {
+          "path": "data/train-00003-of-00008.parquet",
+          "bytes": 44625354
+        },
+        {
+          "path": "data/train-00004-of-00008.parquet",
+          "bytes": 59361179
+        },
+        {
+          "path": "data/train-00005-of-00008.parquet",
+          "bytes": 130852242
+        },
+        {
+          "path": "data/train-00006-of-00008.parquet",
+          "bytes": 221308596
+        },
+        {
+          "path": "data/train-00007-of-00008.parquet",
+          "bytes": 216366784
+        }
+      ],
+      "api_response_sha256": "1a10b5e09b010e682c0c0c95504c7f2e4e00276bec3b7e5a95fcd4251f1eba85"
+    },
+    {
+      "id": "Fsoft-AIC/RepoExec",
+      "revision": "42bdbd800720bdbdd1f00b98ce88fee5557d6e2e",
+      "card_license": "mit",
+      "payload_file_bytes": 12471129,
+      "payload_files": [
+        {
+          "path": "data/full_context-00000-of-00001.parquet",
+          "bytes": 4211927
+        },
+        {
+          "path": "data/medium_context-00000-of-00001.parquet",
+          "bytes": 4146968
+        },
+        {
+          "path": "data/small_context-00000-of-00001.parquet",
+          "bytes": 4112234
+        }
+      ],
+      "api_response_sha256": "02ccb6bffa49c3e4550c603bb6a7afd52860283555dc6cf2c211a83a4142ab71"
+    },
+    {
+      "id": "Fsoft-AIC/RepoExec-Instruct",
+      "revision": "5ac24e155b07d6e70e7a80a35b48aacbbbacf05a",
+      "card_license": "mit",
+      "payload_file_bytes": 756592600,
+      "payload_files": [
+        {
+          "path": "data/data-00000-of-00002.arrow",
+          "bytes": 372774688
+        },
+        {
+          "path": "data/data-00001-of-00002.arrow",
+          "bytes": 383816608
+        },
+        {
+          "path": "data/dataset_info.json",
+          "bytes": 995
+        },
+        {
+          "path": "data/state.json",
+          "bytes": 309
+        }
+      ],
+      "api_response_sha256": "da5b6a6614dfa76a21d684e577dd7097e1f10a961ff98db463f02978e0ce2cde"
+    },
+    {
+      "id": "LJ0815/DevEval",
+      "revision": "16ff740d87f5fa97567d6dffd4bcbf299231211c",
+      "card_license": "cc-by-4.0",
+      "payload_file_bytes": 2585887540,
+      "payload_files": [
+        {
+          "path": "Dependency_Data.tar.gz",
+          "bytes": 708164793
+        },
+        {
+          "path": "Source_Code.tar.gz",
+          "bytes": 916746365
+        },
+        {
+          "path": "Source_Code.zip",
+          "bytes": 960976382
+        }
+      ],
+      "api_response_sha256": "21a99df225dd65b4ca90b19076a0201ae85568bf286ba1031399959a6666fde6"
+    },
+    {
+      "id": "SWE-bench/SWE-smith-py",
+      "revision": "77cab9055d42ab4a5c25c89a8f937096db13558e",
+      "card_license": "mit",
+      "payload_file_bytes": 220645767,
+      "payload_files": [
+        {
+          "path": "data/train-00000-of-00011.parquet",
+          "bytes": 16852671
+        },
+        {
+          "path": "data/train-00001-of-00011.parquet",
+          "bytes": 5574116
+        },
+        {
+          "path": "data/train-00002-of-00011.parquet",
+          "bytes": 6006895
+        },
+        {
+          "path": "data/train-00003-of-00011.parquet",
+          "bytes": 117625772
+        },
+        {
+          "path": "data/train-00004-of-00011.parquet",
+          "bytes": 9822409
+        },
+        {
+          "path": "data/train-00005-of-00011.parquet",
+          "bytes": 7434902
+        },
+        {
+          "path": "data/train-00006-of-00011.parquet",
+          "bytes": 12282590
+        },
+        {
+          "path": "data/train-00007-of-00011.parquet",
+          "bytes": 6665621
+        },
+        {
+          "path": "data/train-00008-of-00011.parquet",
+          "bytes": 21661282
+        },
+        {
+          "path": "data/train-00009-of-00011.parquet",
+          "bytes": 7641038
+        },
+        {
+          "path": "data/train-00010-of-00011.parquet",
+          "bytes": 9078471
+        }
+      ],
+      "api_response_sha256": "5ab994d56751c33e6e8909f9aed90a44314575251da764a1f8d42ec7d21a93c0"
+    },
+    {
+      "id": "princeton-nlp/SWE-bench",
+      "revision": "e48e2bd1e9fecd5bbd641e9414ac59da9f2e69f6",
+      "card_license": null,
+      "payload_file_bytes": 120086340,
+      "payload_files": [
+        {
+          "path": "data/dev-00000-of-00001.parquet",
+          "bytes": 1382594
+        },
+        {
+          "path": "data/test-00000-of-00001.parquet",
+          "bytes": 12097227
+        },
+        {
+          "path": "data/train-00000-of-00001.parquet",
+          "bytes": 106606519
+        }
+      ],
+      "api_response_sha256": "3ebd9995f7758ad762e51a21ba9af47502c9e0ae76d5ca5a92e9bd56b4c4f5a8"
+    }
+  ],
+  "resq": {
+    "date": "2026-10-07",
+    "dataset_revision": "c0e850b1c90d1c0eb7d3b2f3c9aa6ec09c2c04fa",
+    "sha256": "43bc9f0644e6fa0347ac58f9d9eb3f7b7235255ca7be4dd27c62d55ecbf342d2",
+    "rows": 100,
+    "languages": {
+      "python": 95,
+      "javascript": 5
+    },
+    "repos": {
+      "https://github.com/teamqurrent/httpx": 5,
+      "https://github.com/teamqurrent/discord.py": 10,
+      "https://github.com/teamqurrent/prowler": 10,
+      "https://github.com/teamqurrent/aider": 10,
+      "https://github.com/teamqurrent/requests": 10,
+      "https://github.com/teamqurrent/citrus": 6,
+      "https://github.com/teamqurrent/openai-python": 6,
+      "https://github.com/teamqurrent/storage-py": 3,
+      "https://github.com/teamqurrent/jquery": 3,
+      "https://github.com/teamqurrent/lodash": 2,
+      "https://github.com/teamqurrent/Python": 5,
+      "https://github.com/teamqurrent/BitcoinPaperTrader": 10,
+      "https://github.com/teamqurrent/web3.py": 14,
+      "https://github.com/teamqurrent/pypush": 6
+    },
+    "python_versions": {
+      "python3.9": 97,
+      "python3.10": 3
+    },
+    "distinct_python_requirements_signatures": 16,
+    "multi_gold_file_tasks": 48,
+    "add_delete_tasks": 14,
+    "python_profile": {
+      "gold_target_tokens": {
+        "0.5": 655,
+        "0.95": 3251,
+        "0.99": 4809,
+        "1": 6535
+      },
+      "decoder_teacher_forced": {
+        "0.5": 750,
+        "0.95": 3371,
+        "0.99": 4919,
+        "1": 6652
+      },
+      "gold_file_context_tokens": {
+        "0.5": 4348,
+        "0.95": 42010,
+        "0.99": 52508,
+        "1": 65247
+      }
+    },
+    "tasks": [
+      {
+        "id": "0_0",
+        "language": "python",
+        "gold_target_tokens": 167,
+        "decoder_teacher_forced": 208,
+        "gold_file_context_tokens": 3181,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "0_1",
+        "language": "python",
+        "gold_target_tokens": 156,
+        "decoder_teacher_forced": 202,
+        "gold_file_context_tokens": 2335,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "0_2",
+        "language": "python",
+        "gold_target_tokens": 378,
+        "decoder_teacher_forced": 533,
+        "gold_file_context_tokens": 6713,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "0_3",
+        "language": "python",
+        "gold_target_tokens": 281,
+        "decoder_teacher_forced": 309,
+        "gold_file_context_tokens": 220,
+        "gold_files": 1,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "0_4",
+        "language": "python",
+        "gold_target_tokens": 627,
+        "decoder_teacher_forced": 676,
+        "gold_file_context_tokens": 35190,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_0",
+        "language": "python",
+        "gold_target_tokens": 251,
+        "decoder_teacher_forced": 323,
+        "gold_file_context_tokens": 42010,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_1",
+        "language": "python",
+        "gold_target_tokens": 1144,
+        "decoder_teacher_forced": 1287,
+        "gold_file_context_tokens": 65247,
+        "gold_files": 4,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_10",
+        "language": "python",
+        "gold_target_tokens": 183,
+        "decoder_teacher_forced": 280,
+        "gold_file_context_tokens": 19987,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_3",
+        "language": "python",
+        "gold_target_tokens": 2789,
+        "decoder_teacher_forced": 2916,
+        "gold_file_context_tokens": 29307,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_4",
+        "language": "python",
+        "gold_target_tokens": 425,
+        "decoder_teacher_forced": 558,
+        "gold_file_context_tokens": 7078,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_5",
+        "language": "python",
+        "gold_target_tokens": 153,
+        "decoder_teacher_forced": 254,
+        "gold_file_context_tokens": 23243,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_6",
+        "language": "python",
+        "gold_target_tokens": 946,
+        "decoder_teacher_forced": 1135,
+        "gold_file_context_tokens": 47767,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_7",
+        "language": "python",
+        "gold_target_tokens": 493,
+        "decoder_teacher_forced": 592,
+        "gold_file_context_tokens": 2551,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_8",
+        "language": "python",
+        "gold_target_tokens": 510,
+        "decoder_teacher_forced": 681,
+        "gold_file_context_tokens": 8481,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "10_9",
+        "language": "python",
+        "gold_target_tokens": 426,
+        "decoder_teacher_forced": 543,
+        "gold_file_context_tokens": 9223,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_0",
+        "language": "python",
+        "gold_target_tokens": 206,
+        "decoder_teacher_forced": 325,
+        "gold_file_context_tokens": 924,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_1",
+        "language": "python",
+        "gold_target_tokens": 307,
+        "decoder_teacher_forced": 447,
+        "gold_file_context_tokens": 1986,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_2",
+        "language": "python",
+        "gold_target_tokens": 851,
+        "decoder_teacher_forced": 1015,
+        "gold_file_context_tokens": 1747,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_3",
+        "language": "python",
+        "gold_target_tokens": 1395,
+        "decoder_teacher_forced": 1541,
+        "gold_file_context_tokens": 3428,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_4",
+        "language": "python",
+        "gold_target_tokens": 1144,
+        "decoder_teacher_forced": 1334,
+        "gold_file_context_tokens": 15829,
+        "gold_files": 5,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_5",
+        "language": "python",
+        "gold_target_tokens": 4376,
+        "decoder_teacher_forced": 4569,
+        "gold_file_context_tokens": 10601,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_6",
+        "language": "python",
+        "gold_target_tokens": 1053,
+        "decoder_teacher_forced": 1247,
+        "gold_file_context_tokens": 14478,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_7",
+        "language": "python",
+        "gold_target_tokens": 4389,
+        "decoder_teacher_forced": 4558,
+        "gold_file_context_tokens": 24613,
+        "gold_files": 6,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "11_8",
+        "language": "python",
+        "gold_target_tokens": 1785,
+        "decoder_teacher_forced": 1938,
+        "gold_file_context_tokens": 4571,
+        "gold_files": 3,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "11_9",
+        "language": "python",
+        "gold_target_tokens": 1479,
+        "decoder_teacher_forced": 1636,
+        "gold_file_context_tokens": 2985,
+        "gold_files": 4,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_0",
+        "language": "python",
+        "gold_target_tokens": 990,
+        "decoder_teacher_forced": 1126,
+        "gold_file_context_tokens": 7960,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_1",
+        "language": "python",
+        "gold_target_tokens": 616,
+        "decoder_teacher_forced": 750,
+        "gold_file_context_tokens": 9384,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_2",
+        "language": "python",
+        "gold_target_tokens": 588,
+        "decoder_teacher_forced": 667,
+        "gold_file_context_tokens": 4348,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_3",
+        "language": "python",
+        "gold_target_tokens": 374,
+        "decoder_teacher_forced": 506,
+        "gold_file_context_tokens": 862,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_4",
+        "language": "python",
+        "gold_target_tokens": 528,
+        "decoder_teacher_forced": 612,
+        "gold_file_context_tokens": 9676,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_5",
+        "language": "python",
+        "gold_target_tokens": 761,
+        "decoder_teacher_forced": 882,
+        "gold_file_context_tokens": 8562,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_6",
+        "language": "python",
+        "gold_target_tokens": 1741,
+        "decoder_teacher_forced": 1849,
+        "gold_file_context_tokens": 8275,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_7",
+        "language": "python",
+        "gold_target_tokens": 882,
+        "decoder_teacher_forced": 993,
+        "gold_file_context_tokens": 7798,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_8",
+        "language": "python",
+        "gold_target_tokens": 613,
+        "decoder_teacher_forced": 709,
+        "gold_file_context_tokens": 7605,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "12_9",
+        "language": "python",
+        "gold_target_tokens": 407,
+        "decoder_teacher_forced": 506,
+        "gold_file_context_tokens": 6502,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_0",
+        "language": "python",
+        "gold_target_tokens": 1383,
+        "decoder_teacher_forced": 1502,
+        "gold_file_context_tokens": 38252,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_1",
+        "language": "python",
+        "gold_target_tokens": 2533,
+        "decoder_teacher_forced": 2654,
+        "gold_file_context_tokens": 38058,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_2",
+        "language": "python",
+        "gold_target_tokens": 1282,
+        "decoder_teacher_forced": 1412,
+        "gold_file_context_tokens": 52508,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_3",
+        "language": "python",
+        "gold_target_tokens": 893,
+        "decoder_teacher_forced": 1002,
+        "gold_file_context_tokens": 35585,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_4",
+        "language": "python",
+        "gold_target_tokens": 736,
+        "decoder_teacher_forced": 846,
+        "gold_file_context_tokens": 28556,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_5",
+        "language": "python",
+        "gold_target_tokens": 1415,
+        "decoder_teacher_forced": 1534,
+        "gold_file_context_tokens": 43944,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_6",
+        "language": "python",
+        "gold_target_tokens": 408,
+        "decoder_teacher_forced": 505,
+        "gold_file_context_tokens": 17961,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_7",
+        "language": "python",
+        "gold_target_tokens": 768,
+        "decoder_teacher_forced": 833,
+        "gold_file_context_tokens": 32951,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_8",
+        "language": "python",
+        "gold_target_tokens": 628,
+        "decoder_teacher_forced": 732,
+        "gold_file_context_tokens": 17900,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "13_9",
+        "language": "python",
+        "gold_target_tokens": 359,
+        "decoder_teacher_forced": 460,
+        "gold_file_context_tokens": 16934,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "1_0",
+        "language": "python",
+        "gold_target_tokens": 129,
+        "decoder_teacher_forced": 218,
+        "gold_file_context_tokens": 1529,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "1_1",
+        "language": "python",
+        "gold_target_tokens": 970,
+        "decoder_teacher_forced": 1102,
+        "gold_file_context_tokens": 2795,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "1_2",
+        "language": "python",
+        "gold_target_tokens": 483,
+        "decoder_teacher_forced": 583,
+        "gold_file_context_tokens": 592,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "1_3",
+        "language": "python",
+        "gold_target_tokens": 141,
+        "decoder_teacher_forced": 200,
+        "gold_file_context_tokens": 1069,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "1_4",
+        "language": "python",
+        "gold_target_tokens": 568,
+        "decoder_teacher_forced": 743,
+        "gold_file_context_tokens": 1653,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "1_5",
+        "language": "python",
+        "gold_target_tokens": 209,
+        "decoder_teacher_forced": 247,
+        "gold_file_context_tokens": 526,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "2_0",
+        "language": "python",
+        "gold_target_tokens": 831,
+        "decoder_teacher_forced": 981,
+        "gold_file_context_tokens": 2159,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "2_1",
+        "language": "python",
+        "gold_target_tokens": 149,
+        "decoder_teacher_forced": 232,
+        "gold_file_context_tokens": 6824,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "2_2",
+        "language": "python",
+        "gold_target_tokens": 277,
+        "decoder_teacher_forced": 329,
+        "gold_file_context_tokens": 2757,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "2_3",
+        "language": "python",
+        "gold_target_tokens": 268,
+        "decoder_teacher_forced": 311,
+        "gold_file_context_tokens": 6052,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "2_4",
+        "language": "python",
+        "gold_target_tokens": 266,
+        "decoder_teacher_forced": 327,
+        "gold_file_context_tokens": 273,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "2_5",
+        "language": "python",
+        "gold_target_tokens": 146,
+        "decoder_teacher_forced": 201,
+        "gold_file_context_tokens": 277,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "3_0",
+        "language": "python",
+        "gold_target_tokens": 129,
+        "decoder_teacher_forced": 184,
+        "gold_file_context_tokens": 392,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "3_1",
+        "language": "python",
+        "gold_target_tokens": 521,
+        "decoder_teacher_forced": 678,
+        "gold_file_context_tokens": 5189,
+        "gold_files": 4,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "3_2",
+        "language": "python",
+        "gold_target_tokens": 643,
+        "decoder_teacher_forced": 739,
+        "gold_file_context_tokens": 765,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "4_0",
+        "language": "javascript",
+        "gold_target_tokens": 93,
+        "decoder_teacher_forced": 134,
+        "gold_file_context_tokens": 65,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "4_1",
+        "language": "javascript",
+        "gold_target_tokens": 142,
+        "decoder_teacher_forced": 206,
+        "gold_file_context_tokens": 422,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "4_2",
+        "language": "javascript",
+        "gold_target_tokens": 496,
+        "decoder_teacher_forced": 562,
+        "gold_file_context_tokens": 1076,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "5_0",
+        "language": "javascript",
+        "gold_target_tokens": 171,
+        "decoder_teacher_forced": 248,
+        "gold_file_context_tokens": 1035,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "5_1",
+        "language": "javascript",
+        "gold_target_tokens": 911,
+        "decoder_teacher_forced": 997,
+        "gold_file_context_tokens": 793,
+        "gold_files": 4,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "6_0",
+        "language": "python",
+        "gold_target_tokens": 911,
+        "decoder_teacher_forced": 987,
+        "gold_file_context_tokens": 59,
+        "gold_files": 0,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "6_1",
+        "language": "python",
+        "gold_target_tokens": 3517,
+        "decoder_teacher_forced": 3609,
+        "gold_file_context_tokens": 3278,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "6_2",
+        "language": "python",
+        "gold_target_tokens": 473,
+        "decoder_teacher_forced": 559,
+        "gold_file_context_tokens": 69,
+        "gold_files": 0,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "6_3",
+        "language": "python",
+        "gold_target_tokens": 626,
+        "decoder_teacher_forced": 713,
+        "gold_file_context_tokens": 6105,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "6_4",
+        "language": "python",
+        "gold_target_tokens": 744,
+        "decoder_teacher_forced": 839,
+        "gold_file_context_tokens": 78,
+        "gold_files": 0,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "7_0",
+        "language": "python",
+        "gold_target_tokens": 1055,
+        "decoder_teacher_forced": 1128,
+        "gold_file_context_tokens": 2697,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_1",
+        "language": "python",
+        "gold_target_tokens": 1170,
+        "decoder_teacher_forced": 1326,
+        "gold_file_context_tokens": 431,
+        "gold_files": 1,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "7_2",
+        "language": "python",
+        "gold_target_tokens": 796,
+        "decoder_teacher_forced": 960,
+        "gold_file_context_tokens": 1166,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_3",
+        "language": "python",
+        "gold_target_tokens": 2268,
+        "decoder_teacher_forced": 2366,
+        "gold_file_context_tokens": 1630,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_4",
+        "language": "python",
+        "gold_target_tokens": 655,
+        "decoder_teacher_forced": 713,
+        "gold_file_context_tokens": 1751,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_5",
+        "language": "python",
+        "gold_target_tokens": 1119,
+        "decoder_teacher_forced": 1253,
+        "gold_file_context_tokens": 2261,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_6",
+        "language": "python",
+        "gold_target_tokens": 1055,
+        "decoder_teacher_forced": 1121,
+        "gold_file_context_tokens": 2690,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_7",
+        "language": "python",
+        "gold_target_tokens": 242,
+        "decoder_teacher_forced": 314,
+        "gold_file_context_tokens": 3434,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_8",
+        "language": "python",
+        "gold_target_tokens": 1055,
+        "decoder_teacher_forced": 1128,
+        "gold_file_context_tokens": 2697,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "7_9",
+        "language": "python",
+        "gold_target_tokens": 1055,
+        "decoder_teacher_forced": 1137,
+        "gold_file_context_tokens": 2706,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_0",
+        "language": "python",
+        "gold_target_tokens": 4809,
+        "decoder_teacher_forced": 4919,
+        "gold_file_context_tokens": 43240,
+        "gold_files": 5,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "8_1",
+        "language": "python",
+        "gold_target_tokens": 1992,
+        "decoder_teacher_forced": 2093,
+        "gold_file_context_tokens": 2324,
+        "gold_files": 1,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "8_10",
+        "language": "python",
+        "gold_target_tokens": 166,
+        "decoder_teacher_forced": 232,
+        "gold_file_context_tokens": 4860,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_11",
+        "language": "python",
+        "gold_target_tokens": 171,
+        "decoder_teacher_forced": 226,
+        "gold_file_context_tokens": 176,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_12",
+        "language": "python",
+        "gold_target_tokens": 1929,
+        "decoder_teacher_forced": 2041,
+        "gold_file_context_tokens": 3039,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_13",
+        "language": "python",
+        "gold_target_tokens": 225,
+        "decoder_teacher_forced": 274,
+        "gold_file_context_tokens": 2234,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_2",
+        "language": "python",
+        "gold_target_tokens": 202,
+        "decoder_teacher_forced": 250,
+        "gold_file_context_tokens": 1182,
+        "gold_files": 1,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "8_3",
+        "language": "python",
+        "gold_target_tokens": 1396,
+        "decoder_teacher_forced": 1454,
+        "gold_file_context_tokens": 3074,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_4",
+        "language": "python",
+        "gold_target_tokens": 1480,
+        "decoder_teacher_forced": 1553,
+        "gold_file_context_tokens": 1351,
+        "gold_files": 1,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "8_5",
+        "language": "python",
+        "gold_target_tokens": 867,
+        "decoder_teacher_forced": 967,
+        "gold_file_context_tokens": 6120,
+        "gold_files": 2,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "8_6",
+        "language": "python",
+        "gold_target_tokens": 1160,
+        "decoder_teacher_forced": 1269,
+        "gold_file_context_tokens": 2394,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_7",
+        "language": "python",
+        "gold_target_tokens": 715,
+        "decoder_teacher_forced": 772,
+        "gold_file_context_tokens": 4517,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_8",
+        "language": "python",
+        "gold_target_tokens": 2036,
+        "decoder_teacher_forced": 2271,
+        "gold_file_context_tokens": 10282,
+        "gold_files": 5,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "8_9",
+        "language": "python",
+        "gold_target_tokens": 536,
+        "decoder_teacher_forced": 612,
+        "gold_file_context_tokens": 4892,
+        "gold_files": 2,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "9_0",
+        "language": "python",
+        "gold_target_tokens": 3251,
+        "decoder_teacher_forced": 3371,
+        "gold_file_context_tokens": 7013,
+        "gold_files": 3,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "9_1",
+        "language": "python",
+        "gold_target_tokens": 90,
+        "decoder_teacher_forced": 156,
+        "gold_file_context_tokens": 89,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "9_2",
+        "language": "python",
+        "gold_target_tokens": 402,
+        "decoder_teacher_forced": 487,
+        "gold_file_context_tokens": 4186,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      },
+      {
+        "id": "9_3",
+        "language": "python",
+        "gold_target_tokens": 6535,
+        "decoder_teacher_forced": 6652,
+        "gold_file_context_tokens": 7480,
+        "gold_files": 2,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "9_4",
+        "language": "python",
+        "gold_target_tokens": 804,
+        "decoder_teacher_forced": 843,
+        "gold_file_context_tokens": 715,
+        "gold_files": 1,
+        "adds_or_deletes": true
+      },
+      {
+        "id": "9_5",
+        "language": "python",
+        "gold_target_tokens": 118,
+        "decoder_teacher_forced": 174,
+        "gold_file_context_tokens": 5212,
+        "gold_files": 1,
+        "adds_or_deletes": false
+      }
+    ],
+    "warning": "Gold-associated modified_files context is an oracle diagnostic only; it is not a deployable context selector and may omit needed dependency files. No repo clones or tests executed."
+  },
+  "resq_static_apply": {
+    "method": "git apply --check on virtual before snapshot assembled solely from gold-associated modified_files; added files omitted from before; no repo checkout or program execution",
+    "counts": {
+      "pass": 99,
+      "fail": 1
+    },
+    "results": [
+      {
+        "id": "0_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "0_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "0_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "0_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "0_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_10",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_6",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_7",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_8",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "10_9",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_6",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_7",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_8",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "11_9",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_6",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_7",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_8",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "12_9",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_6",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_7",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_8",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "13_9",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "1_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "1_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "1_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "1_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "1_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "1_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "2_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "2_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "2_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "2_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "2_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "2_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "3_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "3_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "3_2",
+        "language": "python",
+        "check_passed": false,
+        "error": "error: storage/__init__.py: No such file or directory\nerror: storage/lib/__init__.py: No such file or directory\nerror: storage/lib/storage_bucket_api.py: No such file or directory\nerror: storage/lib/storage_file_api.py: No such file or directory"
+      },
+      {
+        "id": "4_0",
+        "language": "javascript",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "4_1",
+        "language": "javascript",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "4_2",
+        "language": "javascript",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "5_0",
+        "language": "javascript",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "5_1",
+        "language": "javascript",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "6_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "6_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "6_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "6_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "6_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_6",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_7",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_8",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "7_9",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_10",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_11",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_12",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_13",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_6",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_7",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_8",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "8_9",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "9_0",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "9_1",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "9_2",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "9_3",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "9_4",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      },
+      {
+        "id": "9_5",
+        "language": "python",
+        "check_passed": true,
+        "error": ""
+      }
+    ],
+    "warning": "Patch applicability does not prove functional task success, full repository validity, or non-oracle input context."
+  },
+  "repoqa": {
+    "release": "2024-06-23",
+    "gzip_bytes": 12525636,
+    "json_bytes": 71510991,
+    "gzip_sha256": "c050a2ad90a7df89d9dc1f1c3b3b20683edd20a56293b35fcaae43dec115d681",
+    "counts": {
+      "python": {
+        "repos": 10,
+        "needles": 100
+      },
+      "cpp": {
+        "repos": 10,
+        "needles": 100
+      },
+      "java": {
+        "repos": 10,
+        "needles": 100
+      },
+      "typescript": {
+        "repos": 10,
+        "needles": 100
+      },
+      "rust": {
+        "repos": 10,
+        "needles": 100
+      },
+      "go": {
+        "repos": 10,
+        "needles": 100
+      }
+    },
+    "python_source_profiles": [
+      {
+        "repo": "psf/black",
+        "commit_sha": "f03ee113c9f3dfeb477f2d4247bfb7de2e5f465c",
+        "source_files": 28,
+        "raw_all_file_tokens": 122443,
+        "needles": 10
+      },
+      {
+        "repo": "python-poetry/poetry",
+        "commit_sha": "21ffd99274d299bd6d2b7b0cdd7ba273fdd941be",
+        "source_files": 183,
+        "raw_all_file_tokens": 191375,
+        "needles": 10
+      },
+      {
+        "repo": "locustio/locust",
+        "commit_sha": "6241e9cf0a5c296da98abfaeb9d66d0ad1db2390",
+        "source_files": 64,
+        "raw_all_file_tokens": 279640,
+        "needles": 10
+      },
+      {
+        "repo": "pyg-team/pytorch_geometric",
+        "commit_sha": "af0f5f44d4dfa8accd898df3e8523d06b67940b0",
+        "source_files": 598,
+        "raw_all_file_tokens": 994787,
+        "needles": 10
+      },
+      {
+        "repo": "openai/openai-python",
+        "commit_sha": "e41abf7b7dbc1e744d167f748e55d4dedfc0dca7",
+        "source_files": 189,
+        "raw_all_file_tokens": 230283,
+        "needles": 10
+      },
+      {
+        "repo": "mlc-ai/mlc-llm",
+        "commit_sha": "068d5ea9ca556f2f7a9603537b4f966da12b11f6",
+        "source_files": 49,
+        "raw_all_file_tokens": 805623,
+        "needles": 10
+      },
+      {
+        "repo": "reactive-python/reactpy",
+        "commit_sha": "4307a09dfa75e6c1b10a285e5ae4bdf0323cd018",
+        "source_files": 47,
+        "raw_all_file_tokens": 61160,
+        "needles": 10
+      },
+      {
+        "repo": "marshmallow-code/marshmallow",
+        "commit_sha": "b8149cec77d16357d11b08f86de3b13e6fe02fa0",
+        "source_files": 13,
+        "raw_all_file_tokens": 47488,
+        "needles": 10
+      },
+      {
+        "repo": "ethereum/web3.py",
+        "commit_sha": "257f464801d11431bf09132fb30bbeeb5937542e",
+        "source_files": 149,
+        "raw_all_file_tokens": 478053,
+        "needles": 10
+      },
+      {
+        "repo": "Ciphey/Ciphey",
+        "commit_sha": "5dfbe9330070d4aefc997e5d2648155a136a3757",
+        "source_files": 74,
+        "raw_all_file_tokens": 52554,
+        "needles": 10
+      }
+    ],
+    "warning": "Full stored repository tokens are not the constructed task context. RepoQA samples task windows; original context policy and task identity must be preserved. No scorer executed."
+  },
+  "patch_samples": {
+    "swe_fixer": {
+      "sample_rows": 25,
+      "raw_patch_tokens": {
+        "p50": 502,
+        "max": 7544
+      },
+      "scope": "nonrandom initial viewer rows; raw patch text only; no chat prefix or snapshot tokenization"
+    },
+    "swe_rebench": {
+      "sample_rows": 9,
+      "raw_patch_tokens": {
+        "p50": 1317,
+        "max": 8422
+      },
+      "scope": "nonrandom initial viewer rows; raw patch text only; no chat prefix or snapshot tokenization"
+    },
+    "swe_rebench_v2": {
+      "sample_rows": 6,
+      "raw_patch_tokens": {
+        "p50": 1121,
+        "max": 9708
+      },
+      "scope": "nonrandom initial viewer rows; raw patch text only; no chat prefix or snapshot tokenization"
+    }
+  },
+  "limits": "No upstream tests, model generation, GPU training, or full repository snapshots executed. Metadata/sample/static checks are not admission or functional certification."
+}

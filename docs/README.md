@@ -18,6 +18,9 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 | [Training](TRAINING.md) | Direct SFT, loss, profiling, PEFT, checkpoint dan opsi distillation |
 | [Evaluasi](EVALUATION.md) | Inference, prediksi, harness, metrik dan tabel enam model |
 | [Dataset dan benchmark](DATASETS_AND_BENCHMARKS.md) | Sumber primer dan alasan pemilihan data |
+| [Paket data/evaluasi Molab](MOLAB_DATA_EVALUATION_PLAN.md) | Pilihan aktif, profil token, dependency benchmark dan resource single GPU |
+| [Audit kandidat](RESEARCH_SFT_DATASET_AUDIT.md) | Koreksi dan batas bukti laporan riset awal |
+| [Riset repository data dan benchmark](RESEARCH_REPOSITORY_DATA_AND_BENCHMARKS.md) | Katalog luas, RES-Q/RepoQA, core repo SFT, prior art dan gate resource |
 | [Spesifikasi ringkas](RESEARCH_SPEC.md) | Ikhtisar kontrak, status dan batas estimasi memori |
 | [Audit semua JSON](GEMMA4_JSON_AUDIT.md) | Base/IT, BOS/EOS, tokenizer, processor dan parameter fisik |
 | [Referensi backbone](GEMMA4_EDGE_ARCHITECTURE.md) | Config E2B/E4B dan pengujian native tanpa bobot |

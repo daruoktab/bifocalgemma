@@ -5,7 +5,7 @@ File untuk diunggah satu per satu ke Molab:
 - [bifocalgemma_train_symmetric.py](../notebooks/bifocalgemma_train_symmetric.py)
 - [bifocalgemma_train_asymmetric.py](../notebooks/bifocalgemma_train_asymmetric.py)
 
-Keduanya **18 cell**, dalam urutan yang sama. **17 isi cell identik persis**.
+Keduanya **19 cell**, dalam urutan yang sama. **18 isi cell identik persis**.
 Hanya tiga baris pada control center berbeda:
 
 | Setting | Simetris | Asimetris |
@@ -24,7 +24,8 @@ Asimetris: untied encoder words, learned H projection. PLE tetap separate.
 
 1. Unggah salah satu file .py ke Molab; file standalone tidak perlu checkout repo.
 2. Apply HF token pada cell input/apply yang terpisah, atau gunakan akses publik
-   anonim bila tersedia. Read token cukup; tidak ada upload model/checkpoint otomatis.
+   anonim bila tersedia. Read token cukup untuk unduh; berikan token write bila
+   mengaktifkan upload run artifacts ke Hub (HF_UPLOAD_ENABLED=True).
 3. Pilih EXPERIMENT dari keluarga notebook; ubah RUN_NAME untuk eksperimen baru.
 4. Periksa control center, lalu ubah **RUN_TRAINING=True**. Default False menjaga
    pembukaan notebook/checks tidak langsung mengunduh atau melatih model besar.
@@ -56,7 +57,8 @@ kapasitas 96 GB selalu kosong. Setting training default berbeda dari micro probe
 | 14 | Data preparation |
 | 15 | Model load + SFT dalam satu rerun boundary |
 | 16 | Cheap result summary |
-| 17 | Pytest-only cell |
+| 17 | Upload artifacts ke HF Hub ({FAMILY}/{EXPERIMENT}/{RUN_NAME}) |
+| 18 | Pytest-only cell |
 
 Perubahan UI summary tidak memerlukan rerun model/training. Model dimiliki oleh
 training cell dan dilepas setelah selesai. Jangan mengubah hyperparameters saat
@@ -100,7 +102,7 @@ control center tidak lagi menduplikasi knob LR/rank/warmup.
 | decoder | Decoder attention LoRA | Decoder attention LoRA | 2e-5 / 5 steps |
 | alignment | Tidak ada, Identity | Learned H projection | 2e-5 / 5 steps |
 
-Word/PLE tetap frozen, phase joint, rank16 / alpha32. Profile memilih train_alignment
+Word/PLE tetap frozen, phase joint, rank 16 / alpha32. Profile memilih train_alignment
 hanya pada asimetris. Semua trainable parameters masuk tepat satu group; frozen
 parameters/aliases tidak diduplikasi. Group order encoder→decoder→alignment dan
 parameter names di-sort deterministik. Tabel meta sebelum training menampilkan
@@ -118,11 +120,22 @@ warmup terpisah dan staged unfreezing perlu eksperimen, bukan otomatis requireme
 arsitektur. Source policy dan optimizer-group signature disimpan dalam run config
 serta checkpoint compatibility.
 
+## Profil dataset dan batas token berikutnya
+
+[Analisis Molab](MOLAB_DATA_EVALUATION_PLAN.md) memprofilkan seluruh EditPackFT: encoder
+maksimum 749, decoder total maksimum 1.113 setelah contract filtering. Setelah stress
+probe GPU aktual, rekomendasi S1 ialah ENCODER_LIMIT=1024 dan DECODER_LIMIT=1536;
+baseline decoder-only total 2048 menampung context+target yang sama. Default notebook
+yang sekarang tetap 2048/512 sampai konfigurasi baru diterapkan dan diprofilkan.
+NextCoder memerlukan profil terpisah: pada sampel 100 Python rows, decoder median 927,
+bukan target kecil yang otomatis muat 512. Jangan mencampurnya lalu diam-diam
+memotong target atau menyimpulkan 97% overflow sampel sebagai statistik populasi.
+
 ## Setting pilot dan dependency
 
-Attention LoRA rank16 / alpha32, frozen BF16 base words/PLE, FP32 A/B, trainable
-asymmetric H projection. AdamW dengan named parameter groups, foreach=False, weight_decay0, lr2e-5 per group, warmup5 steps
-lalu constant LR, clipping1.0, microbatch1, accumulation4, maksimum100 optimizer
+Attention LoRA rank 16 / alpha32, frozen BF16 base words/PLE, FP32 A/B, trainable
+asymmetric H projection. AdamW dengan named parameter groups, foreach=False, weight_decay0, lr2e-5 per group, warmup 5 steps
+lalu constant LR, clipping1.0, microbatch 1, accumulation 4, maksimum100 optimizer
 steps / 1 epoch. Dev CE dan checkpoint setiap25 steps plus final checkpoint.
 Ini default pilot untuk diedit setelah profiling, bukan recipe optimum yang terbukti.
 
@@ -164,6 +177,19 @@ mismatch atau sampler invalid ditolak. Keberhasilan resume telah diuji pada nati
 **tiny** simetris/asimetris terhadap run uninterrupted; big-model SFT kedua notebook
 belum dijalankan dari sesi lokal. Dev CE bukan functional repair benchmark.
 
+## Upload ke Hugging Face Hub
+
+- Target repo: `HF_REPO_ID = "daruokta/bifocalgemma-sft"`.
+- Kontrol: `HF_UPLOAD_ENABLED` (default `False`).
+- Struktur folder di dalam repo: dua folder tingkat atas `symmetric` dan `asymmetric`
+  (mengikuti parameter `FAMILY`), di dalamnya terdapat folder experiment dan run:
+  `path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"`.
+- Cell upload berjalan setelah training selesai (`status == "COMPLETED"`).
+  Seluruh artefak run (`adapters.safetensors`, `data_manifest.json`, `run_config.json`,
+  `history.jsonl`, `training_report.json`, checkpoints) diunggah menggunakan `upload_folder`.
+- Token dengan izin write divalidasi sebelum proses upload dimulai; token dengan akses
+  read saja akan menampilkan pesan error yang jelas dan membatalkan proses upload.
+
 ## Maintenance: sumber bersama, bukan edit dua file manual
 
 [Generator](../tools/generate_training_notebooks.py) membaca
@@ -185,7 +211,7 @@ formatter deterministik dan --check gagal bila file generated drift. File upload
 standalone tetap bisa diedit di Molab; saat pairing live, gunakan runtime cm API,
 kemudian sinkronkan perubahan umum ke template sebelum regeneration lokal.
 
-Validasi lokal: dua graph disabled, enam notebook pytest tests, tests diff/split,
+Validasi lokal: dua graph disabled, delapan notebook pytest tests (empat per notebook), tests diff/split,
 token-weighted accumulation, checkpoint checksums/compatibility/run overwrite, serta
 native tiny LoRA resume pada kedua keluarga. Model/data asli belum dilatih oleh
 notebook baru ini; jalankan pilot di Molab dan catat hasilnya terpisah.

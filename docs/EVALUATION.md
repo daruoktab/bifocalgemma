@@ -9,11 +9,33 @@ tidak menggantikan pengukuran repair dengan protokol yang sama.
 
 Primary validation tahap awal adalah held-out offline editing: patch application/
 reconstruction, exact edited-code match, syntax dan CE. Functional repair rate
-menunggu runner Python terpisah, dengan HumanEvalFix Python dan CanItEdit sebagai
-kandidat. CrossCodeEval adalah completion diagnostic. SWE-bench Lite/Verified
+menunggu runner Python terpisah. HumanEvalFix-docs Python (164 tasks) dipilih
+sebagai benchmark repair utama. CanItEdit tambahan melalui native dependency gate
+(subset 83 tasks yang screened imports-nya bukan full official benchmark). CrossCodeEval adalah completion diagnostic. SWE-bench Lite/Verified
 dan Docker harness ditunda dari jalur utama. Tidak ada test reward atau RL pada
 tuning; diagnostics tidak disebut resolved rate. Lihat
 [riset dataset](DATASETS_AND_BENCHMARKS.md).
+
+Rincian task/input/output, token budgets, denominator, dependency dan sequential
+Molab runs ada di [paket data/evaluasi](MOLAB_DATA_EVALUATION_PLAN.md). Pilihan batas
+input/output mengikuti data aktual; target 32k/8k tidak menjadi default. Baseline
+memerlukan context+target dalam decoder, sehingga cap total decoder tidak disamakan
+dengan pasangan. Patch-output adapter dan native CPU scorer belum terintegrasi.
+
+## Kandidat evaluasi repository-context untuk studi akhir
+
+[RES-Q Python](https://github.com/Qurrent-AI/RES-Q) memakai unified diff dan scorer
+Conda native, sehingga lebih cocok dengan scope repository editing daripada hanya
+function repair. Dataset mempunyai 95 Python / 5 JavaScript tasks; environment
+3.9/3.10 dan gold tests perlu validasi terpisah dari training env. Label general
+editing versus corrective repair dipisahkan. Metadata modified_files berasosiasi
+dengan gold; tidak menjadi input selector main evaluation.
+
+[RepoQA](https://github.com/evalplus/repoqa) dan CrossCodeEval melengkapi reader
+evidence melalui function retrieval/completion, dengan output modes yang berbeda
+dari patch. Rincian full metadata/profile dan native gates ada di
+[riset repository data](RESEARCH_REPOSITORY_DATA_AND_BENCHMARKS.md). Generator/parser/
+scorer tersebut belum diimplementasikan pada package hanya oleh perubahan docs ini.
 
 ## I01 — generation
 

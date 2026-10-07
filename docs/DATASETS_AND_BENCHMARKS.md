@@ -1,9 +1,25 @@
 # Dataset dan Benchmark: Offline Code Editing / Repair SFT
 
-Recipe aktif diperbarui **6 Oktober 2026**: SFT `instruksi + kode sebelum edit → patch`.
+Recipe aktif diperbarui **7 Oktober 2026**: SFT `instruksi + kode sebelum edit → patch`.
 Data preparation dan tuning berjalan dari file lokal, tanpa RL, reward model,
 agent rollouts, VM, atau Docker sebagai prasyarat. Environment `ai` tetap dipakai;
 kebutuhan GPU pretrained ditentukan oleh profiling, terpisah dari kebutuhan VM.
+
+Analisis resource dan keputusan lengkap ada di [paket Molab](MOLAB_DATA_EVALUATION_PLAN.md),
+dengan [hasil profiling](data/molab_data_profile_20261007.json). Pilihan aktif: EditPackFT
+untuk SFT; HumanEvalFix-docs Python sebagai functional benchmark utama setelah runner
+siap. CanItEdit memakai dependency gate/subset native; CrossCodeEval adalah diagnostic.
+
+## Scope studi akhir setelah pencarian luas
+
+Untuk mempertahankan klaim repository encoding, shortlist core repo SFT adalah
+SWE-Fixer raw issue/patch atau SWE-rebench V2 Python dengan static Git snapshots.
+RES-Q Python (95 tasks) menjadi kandidat main repository-editing evaluation; RepoQA
+Python (100 tasks) reader diagnostic. HumanEvalFix tetap kontrol repair kecil.
+RES-Q bukan seluruhnya bug repair; native gold execution dan compatibility belum
+dijalankan. [Riset lengkap](RESEARCH_REPOSITORY_DATA_AND_BENCHMARKS.md) menyimpan
+schema, ukuran, profil, lisensi, batas oracle context dan pekerjaan adapter.
+Pilihan ini merupakan target studi akhir, bukan backend yang otomatis tersedia.
 
 ## Dataset untuk tahap awal
 
@@ -13,7 +29,15 @@ kebutuhan GPU pretrained ditentukan oleh profiling, terpisah dari kebutuhan VM.
 | [CommitPackFT Python](https://huggingface.co/datasets/bigcode/commitpackft) | Tambahan opsional setelah dedup/quality audit | `subject`, `old_contents`, `new_contents`, paths, commit/repo/license; 56.025 records, sekitar 136 MB JSONL. Commit message tidak otomatis merupakan issue yang baik atau bug fix yang teruji. |
 | Static multi-file records lokal | Tahap lanjutan untuk repository understanding | Semua file sebelum edit diberikan sebagai snapshot; instruksi + target patch. Records dengan full snapshot dapat dipakai tanpa menjalankan environment repository. Corpus riil belum tersedia. |
 
-Mulai dengan EditPackFT saja. CommitPackFT bukan campuran otomatis: keduanya memakai
+Mulai dengan EditPackFT saja. Profil seluruh 22.602 raw records menghasilkan 22.583
+records setelah contract filtering, encoder maksimum 749 dan decoder total maksimum
+1.113 token. Rekomendasi S1 adalah encoder 1.024 / decoder 1.536 dan baseline total 2.048,
+setelah real-model memory stress; notebook saat ini masih default 2.048/512.
+NextCoder Python menjadi tambahan tahap kedua sesudah adapter/Arrow conversion,
+profiling dan dedup seed: sampel 100 rows berisi hanya 34 unique pairs dan membutuhkan
+decoder lebih panjang. InstructCoder/code review tetap kandidat bersyarat.
+
+CommitPackFT dapat ditambahkan kemudian. CommitPackFT bukan campuran otomatis: keduanya memakai
 sumber commit GitHub yang dapat overlap. Audit commit IDs, before/after pairs dan
 near-duplicates sebelum menambah data. Angka rows/bytes adalah upstream metadata,
 bukan ukuran train split setelah filtering; revision dipin saat data diambil.
@@ -46,8 +70,8 @@ perbaikan fungsional. Tidak ada reward dari test execution pada training loop.
 | Evaluasi | Penggunaan | Kebutuhan |
 | --- | --- | --- |
 | Held-out offline editing | Primary validation awal: patch apply/reconstruction, exact edited-code match, format/syntax, held-out CE | File lokal; tidak mengeksekusi repository atau memakai VM |
-| [HumanEvalFix Python / HumanEvalPack](https://github.com/bigcode-project/octopack) | Functional unit-level repair setelah generation/scorer siap | Inference dan test execution terpisah. Python native scorer dapat digunakan bila kompatibel; runner masih perlu diintegrasikan, tidak menjalankan tes dalam training |
-| [CanItEdit](https://github.com/nuprl/CanItEdit) | Instruction-editing benchmark tambahan, 105 program Python | Official setup/scorer dipin dan dicek sebelum dipakai; test execution tahap evaluasi terpisah, bukan prasyarat SFT |
+| [HumanEvalFix-docs Python / HumanEvalPack](https://github.com/bigcode-project/octopack) | Functional unit-level repair setelah generation/scorer siap | Inference dan test execution terpisah. Python native scorer dapat digunakan bila kompatibel; runner masih perlu diintegrasikan, tidak menjalankan tes dalam training |
+| [CanItEdit](https://github.com/nuprl/CanItEdit) | Instruction-editing tambahan, 105 program / dua instruction styles | Official scorer memakai container dan old dependencies; native subset 83 tanpa non-stdlib imports terdeteksi belum divalidasi tests. Tidak disebut full official score |
 | [CrossCodeEval](https://github.com/amazon-science/cceval) | Diagnostik context lintas file melalui completion EM/similarity | Pinned preprocessed context/scorer; tidak disebut repair resolved rate |
 
 Held-out CE dan exact match membantu diagnosis, tetapi bukan pengganti functional
