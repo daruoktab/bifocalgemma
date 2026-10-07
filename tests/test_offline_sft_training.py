@@ -242,9 +242,83 @@ class TestNotebookCellParity(unittest.TestCase):
             ]
             for text in texts
         ]
-        self.assertEqual(len(cells[0]), 18)
-        self.assertEqual(len(cells[1]), 18)
+        self.assertEqual(len(cells[0]), 19)
+        self.assertEqual(len(cells[1]), 19)
         self.assertEqual([i for i, (a, b) in enumerate(zip(*cells, strict=True)) if a != b], [1])
+
+    def test_hub_upload_controls_and_path(self):
+        root = Path(__file__).resolve().parents[1]
+        for family in ("symmetric", "asymmetric"):
+            text = (root / f"notebooks/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
+            self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
+            self.assertIn("HF_UPLOAD_ENABLED = False", text)
+            self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)
+            self.assertIn("upload_folder", text)
+
+    def test_notebooks_marimo_graph_has_no_duplicate_definitions(self):
+        import importlib.util
+
+        root = Path(__file__).resolve().parents[1]
+        for family in ("symmetric", "asymmetric"):
+            path = root / f"notebooks/bifocalgemma_train_{family}.py"
+            spec = importlib.util.spec_from_file_location(f"notebook_{family}", path)
+            self.assertIsNotNone(spec)
+            assert spec is not None and spec.loader is not None
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            app = getattr(module, "app")
+            # Ensure marimo app initializes DAG without MultipleDefinitionError or cycles
+            app._maybe_initialize()
+
+    def test_token_role_detection_handles_classic_and_fine_grained_and_nulls(self):
+        def parse_role(identity):
+            access_token = (identity.get("auth") or {}).get("accessToken") or {}
+            role = access_token.get("role")
+            if not role:
+                fine_grained = access_token.get("fineGrained") or {}
+                scoped = fine_grained.get("scoped") or []
+                has_write = any(
+                    any("write" in str(perm).lower() for perm in scope_item.get("permissions", []))
+                    for scope_item in scoped
+                    if isinstance(scope_item, dict)
+                )
+                if has_write:
+                    role = "write"
+                elif fine_grained:
+                    role = "fine-grained"
+                else:
+                    role = "unknown"
+            return role
+
+        self.assertEqual(parse_role({"auth": {"accessToken": {"role": "write"}}}), "write")
+        self.assertEqual(parse_role({"auth": {"accessToken": {"role": "read"}}}), "read")
+        self.assertEqual(parse_role({"auth": {"accessToken": None}}), "unknown")
+        self.assertEqual(parse_role({"auth": None}), "unknown")
+        self.assertEqual(parse_role({}), "unknown")
+        self.assertEqual(
+            parse_role(
+                {
+                    "auth": {
+                        "accessToken": {
+                            "fineGrained": {
+                                "scoped": [{"permissions": ["repo.write", "repo.read"]}]
+                            }
+                        }
+                    }
+                }
+            ),
+            "write",
+        )
+        self.assertEqual(
+            parse_role(
+                {
+                    "auth": {
+                        "accessToken": {"fineGrained": {"scoped": [{"permissions": ["repo.read"]}]}}
+                    }
+                }
+            ),
+            "fine-grained",
+        )
 
     def test_instruction_changes_data_identity(self):
         raw = dict(

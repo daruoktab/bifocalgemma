@@ -69,8 +69,10 @@ def _(mo):
     HEADROOM_GIB = 16
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
+    HF_REPO_ID = "daruokta/bifocalgemma-sft"
+    HF_UPLOAD_ENABLED = False
     mo.md(
-        f"## 1 · Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}."
+        f"## 1 · Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}, HF_UPLOAD={HF_UPLOAD_ENABLED}."
     )
     return (
         FAMILY,
@@ -100,6 +102,8 @@ def _(mo):
         HEADROOM_GIB,
         SEED,
         CACHE_DIR,
+        HF_REPO_ID,
+        HF_UPLOAD_ENABLED,
     )
 
 
@@ -129,7 +133,8 @@ def _(DEVICE, PRECISION, mo):
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import HfApi, hf_hub_download
+    from huggingface_hub.errors import HfHubHTTPError
     from safetensors import safe_open
     from safetensors.torch import save_file
     from transformers import AutoTokenizer, Gemma4TextConfig, Gemma4TextModel
@@ -191,6 +196,8 @@ def _(DEVICE, PRECISION, mo):
         uuid4,
         safe_open,
         save_file,
+        HfApi,
+        HfHubHTTPError,
         hf_hub_download,
         AutoTokenizer,
         copy,
@@ -224,7 +231,7 @@ def _(mo):
     hf_token_form = mo.ui.dictionary(
         {
             "token": mo.ui.text(
-                label="Hugging Face token (read access cukup)",
+                label="Hugging Face token (read untuk unduh; write bila upload aktif)",
                 kind="password",
                 placeholder="hf_...",
                 full_width=True,
@@ -236,11 +243,8 @@ def _(mo):
 
 
 @app.cell
-def _(hf_token_form, mo, os):
+def _(HfApi, HfHubHTTPError, hf_token_form, mo, os):
     # 2b. APPLY / VERIFY — explicit token dependency for every Hub/tokenizer call.
-    from huggingface_hub import HfApi
-    from huggingface_hub.errors import HfHubHTTPError
-
     _token_value = ((hf_token_form.value or {}).get("token", "") or "").strip()
     token_source = "widget" if _token_value else "environment"
     if not _token_value:
@@ -253,16 +257,46 @@ def _(hf_token_form, mo, os):
             raise RuntimeError(
                 "HF token gagal diverifikasi; cek token/akses lalu Apply ulang."
             ) from None
+        _access_token = (_identity.get("auth") or {}).get("accessToken") or {}
+        _token_role = _access_token.get("role")
+        if not _token_role:
+            _fine_grained = _access_token.get("fineGrained") or {}
+            _scoped = _fine_grained.get("scoped") or []
+            _has_write = any(
+                any("write" in str(perm).lower() for perm in scope_item.get("permissions", []))
+                for scope_item in _scoped
+                if isinstance(scope_item, dict)
+            )
+            if _has_write:
+                _token_role = "write"
+            elif _fine_grained:
+                _token_role = "fine-grained"
+            else:
+                _token_role = "unknown"
         auth_info = {
             "mode": "authenticated",
             "source": token_source,
             "username": _identity.get("name", "unknown"),
+            "role": _token_role,
             "verified": True,
         }
-        auth_message = "HF token terverifikasi. Siap digunakan oleh loader dan tokenizer."
+        if _token_role in {"write", "admin"}:
+            auth_message = (
+                f"HF token terverifikasi (akses {_token_role}). Siap untuk unduh dan upload."
+            )
+        elif _token_role == "read":
+            auth_message = (
+                "HF token terverifikasi (akses read). Siap untuk unduh; gunakan token write bila"
+                " HF_UPLOAD_ENABLED diaktifkan."
+            )
+        else:
+            auth_message = "HF token terverifikasi. Siap digunakan oleh loader dan tokenizer."
     else:
-        auth_info = {"mode": "anonymous", "source": "none", "verified": False}
-        auth_message = "Tanpa token: akses anonim untuk checkpoint publik. Isi token lalu klik Apply bila diperlukan."
+        auth_info = {"mode": "anonymous", "source": "none", "role": "none", "verified": False}
+        auth_message = (
+            "Tanpa token: akses anonim untuk checkpoint publik. Isi token lalu klik Apply bila"
+            " diperlukan."
+        )
     mo.md("## 2b · Apply / verifikasi HF token\n" + auth_message)
     return (hf_download_token, auth_info)
 
@@ -2358,13 +2392,94 @@ def _(mo, run_dir, training_result):
 
 @app.cell
 def _(
-    FAMILY,
     EXPERIMENT,
+    FAMILY,
+    HF_REPO_ID,
+    HF_UPLOAD_ENABLED,
+    HfApi,
+    RUN_NAME,
+    auth_info,
+    hf_download_token,
+    mo,
+    run_dir,
+    training_result,
+):
+    # 14. HUB UPLOAD — upload run artifacts to Hugging Face Hub under {FAMILY}/{EXPERIMENT}/{RUN_NAME}.
+    upload_result = {
+        "status": "DISABLED",
+        "repo_id": HF_REPO_ID,
+        "path_in_repo": f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+        "reason": "HF_UPLOAD_ENABLED=False",
+    }
+    if HF_UPLOAD_ENABLED:
+        if not HF_REPO_ID or not str(HF_REPO_ID).strip():
+            raise ValueError("HF_REPO_ID tidak boleh kosong bila HF_UPLOAD_ENABLED diaktifkan.")
+        if not hf_download_token:
+            raise RuntimeError(
+                "HF token diperlukan untuk upload ke Hugging Face Hub; isi token write pada cell"
+                " token atau set environment HF_TOKEN."
+            )
+        if auth_info.get("role") == "read":
+            raise RuntimeError(
+                "HF token hanya memiliki akses read; upload ke Hub membutuhkan token dengan akses"
+                " write."
+            )
+        if training_result.get("status") != "COMPLETED":
+            upload_result = {
+                "status": "SKIPPED",
+                "repo_id": HF_REPO_ID,
+                "path_in_repo": f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+                "reason": (
+                    f"Training status is {training_result.get('status')}; only COMPLETED runs"
+                    " are uploaded."
+                ),
+            }
+        elif not run_dir.exists() or not any(run_dir.iterdir()):
+            upload_result = {
+                "status": "SKIPPED",
+                "repo_id": HF_REPO_ID,
+                "path_in_repo": f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+                "reason": f"Run directory `{run_dir}` is empty or does not exist.",
+            }
+        else:
+            api = HfApi(token=hf_download_token)
+            api.create_repo(repo_id=HF_REPO_ID, repo_type="model", exist_ok=True)
+            commit_url = api.upload_folder(
+                folder_path=str(run_dir),
+                repo_id=HF_REPO_ID,
+                repo_type="model",
+                path_in_repo=f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+                commit_message=f"Upload artifacts for {FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+            )
+            upload_result = {
+                "status": "COMPLETED",
+                "repo_id": HF_REPO_ID,
+                "path_in_repo": f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+                "commit_url": str(commit_url),
+            }
+    mo.vstack(
+        [
+            mo.md(
+                f"## 14 · Hugging Face Hub upload\nStatus: **{upload_result['status']}** · Repo:"
+                f" `{HF_REPO_ID}` · Path: `{upload_result['path_in_repo']}`"
+            ),
+            mo.ui.table([upload_result], selection=None),
+        ]
+    )
+    return (upload_result,)
+
+
+@app.cell
+def _(
+    EXPERIMENT,
+    FAMILY,
+    HF_REPO_ID,
     PAIR_OPTIONS,
+    RUN_NAME,
     editing_record,
+    experiment_spec,
     prepare_editing_records,
     split_editing_records,
-    experiment_spec,
 ):
     def test_family_policy_matches_selected_pair():
         spec = experiment_spec(EXPERIMENT)
@@ -2403,6 +2518,12 @@ def _(
         records, _ = prepare_editing_records(rows, source="editpackft")
         train, dev = split_editing_records(records, seed=17)
         assert not ({r["group"] for r in train} & {r["group"] for r in dev})
+
+    def test_hub_upload_configuration():
+        assert HF_REPO_ID == "daruokta/bifocalgemma-sft"
+        path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"
+        assert path_in_repo.startswith(f"{FAMILY}/")
+        assert FAMILY in {"symmetric", "asymmetric"}
 
     return
 
