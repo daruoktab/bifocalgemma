@@ -39,16 +39,30 @@ menjelaskan kontrol dan confound symmetric-only tying.
 
 | Tingkat | Yang tersedia | Makna |
 | --- | --- | --- |
-| Implemented | Registry/config, collator, word tying, CE, serializer, verified offline tokenization, local patch normalization | Utilitas sesuai kontraknya; dataset fetching/harness terpisah |
-| Reference | Joint-softmax merged attention, GQA, asymmetric projection, tiny assembly | Prototipe numerik kecil; bukan full Gemma integration |
+| Implemented | Registry/config, collator, word tying, CE, serializer, verified offline tokenization, local patch normalization, repository exports/context selection | Utilitas sesuai kontraknya; dataset fetching/harness terpisah |
+| Reference | Joint-softmax merged attention, GQA, asymmetric projection, tiny assembly | Prototipe numerik kecil; short native greedy generation/scorer tersedia, optimized cache/backend pending |
 | Native tiny | Full-depth Gemma encoder/merged decoder dan dua baseline, random weights | PLE/RoPE/KV sharing terintegrasi pada dimensi kecil |
-| Placeholder | Pretrained weight/production/cache integration, dataset fetching/AST, trainer, generation, agent, harness, checkpoint | Signature dan acceptance criteria ada; fail secara eksplisit |
+| Placeholder | Pretrained weight/production/cache integration, dataset fetching/AST, production trainer, agent, Docker harness dan general checkpoint factory | Signature dan acceptance criteria ada; fail secara eksplisit |
 | Optional | Separated gated bridge dan distillation slot | Bukan recipe training default |
 
 Tidak ada checkpoint BifocalGemma pretrained, training data besar, atau hasil code
 repair yang disertakan. Model full-size diperiksa pada meta; tes native memakai
 bobot acak yang diperkecil. CLI smoke merakit model reference yang lebih sederhana
 lagi dan selalu menyatakan mode synthetic, bukan benchmark score.
+
+## Repository study milestone — 8 Oktober 2026
+
+[Notebook standalone](notebooks/bifocalgemma_repository_study.py) menyiapkan
+source-pinned repo exports, matched-cohort SFT keenam model, checkpoint v2 inference,
+greedy patch/function/completion generation, serta opt-in native scoring.
+Default actions/network/execution disabled. Dua training notebooks tetap 19 cell
+dengan 18 isi identik dan menerima repository train exports melalui local_jsonl.
+
+Validation nyata: synthetic pipeline smoke, RepoQA Python100 prepared, dan
+HumanEvalFix 164/164 gold reference repairs lolos native ai scorer. Ini **bukan
+model benchmark scores**. Temporal cache/long-context kernels dan real RES-Q
+gold/dependency validation masih diperlukan. [Panduan implementasi](docs/REPOSITORY_STUDY_IMPLEMENTATION.md)
+menjelaskan commands, cell map dan batas readiness.
 
 ## Mulai dari blok kecil
 

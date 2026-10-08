@@ -40,8 +40,9 @@ scorer tersebut belum diimplementasikan pada package hanya oleh perubahan docs i
 ## I01 — generation
 
 [generate_patch](../src/bifocalgemma/inference/generation.py) menerima spec,
-RepairExample tanpa gold context dan max_new_tokens. Slot ini belum menghasilkan
-patch. Native model/cache/tokenizer integration harus siap sebelumnya.
+RepairExample tanpa gold context dan max_new_tokens. Short reference path sekarang menghasilkan patch bila diberi loaded native model
+dan verified tokenizer cache. Tanpa model/cache tersebut ia tetap fail-fast. Temporal
+KV cache/optimized long-context production belum tersedia.
 
 Gunakan IT Jinja prefix, catat thinking mode, sampling dan token/tool budget.
 generation_config IT EOS [1,106,50] berbeda dari root config EOS [1,106].
@@ -115,3 +116,13 @@ python -m bifocalgemma evaluate --predictions outputs/predictions.jsonl
 
 Tabel pertama memuat N/A. Perintah kedua sengaja exit 2 pada E01; file tidak
 dinilai, Docker tidak dijalankan dan tidak ada skor yang dibuat.
+
+## Native/reference path yang tersedia — 8 Oktober 2026
+
+[Repository CLI/notebook](REPOSITORY_STUDY_IMPLEMENTATION.md) menyiapkan source
+exports, generic greedy generation dan opt-in native Python scoring. Whole
+HumanEvalFix164 gold repairs lolos native ai validation; real RES-Q gold tests
+belum dijalankan. RepoQA/CrossCodeEval adapter/scorer memakai explicit **adapted EM**,
+bukan official syntax/parser metrics; official parity tidak diklaim. Preparation
+exclusions, missing predictions, runtime/dependency errors dan static-only outcomes
+tetap dilaporkan.

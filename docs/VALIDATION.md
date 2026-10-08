@@ -159,3 +159,32 @@ Policy update checks completed: 12 helper tests (5 policy + 7 existing offline S
 passed, 6 notebook pytest tests passed, both disabled graphs produced the expected
 meta group tables, and 18-cell/17-identical parity passed. Marimo check --strict,
 generator --check, Ruff and ty passed. No pretrained training was launched.
+
+
+## Repository pipeline dan Molab notebook — 8 Oktober 2026
+
+Suite gabungan package dan tiga notebook training/repository menghasilkan **96 passed,
+2 skipped** (141,29 detik). Kedua skip adalah pengujian tokenizer cache opsional.
+Suite repository terbaru, termasuk tambahan roundtrip loader checkpoint native tiny,
+menghasilkan **13 passed**. Semua 11 tes dalam tiga notebook juga lulus secara
+terpisah. Dua notebook training kini 19 cell dengan 18 isi identik; perbedaannya
+hanya tiga baris control center. Notebook repository standalone memiliki 13 cell.
+
+Kedua generator `--check`, `marimo check --strict` untuk tiga notebook, Ruff lint
+serta format, `ty check --python` memakai interpreter env ai, dan `git diff --check`
+lulus. Loader diuji dengan safetensors sintetis, shared ordinary embeddings, PLE
+terpisah dan checkpoint yang tidak cocok; ini belum memverifikasi transfer payload
+checkpoint pretrained asli.
+
+Smoke CLI menggunakan tokenizer Gemma offline yang hash-nya diperiksa: delapan
+synthetic training exports dari empat repo groups dan satu eval export. Gold fixture
+lulus 1/1. HumanEvalFix Python menghasilkan 164 prepared tasks dan **164/164 gold
+repairs lulus** pada interpreter ai Python 3.13. RepoQA Python menghasilkan 100
+prepared tasks menggunakan protokol adaptasi; exact-match scorer ini bukan scorer
+resmi RepoQA. Ringkasan empiris tersimpan di
+[validation receipt](data/repository_pipeline_validation_20261008.json).
+
+Hasil tersebut memvalidasi persiapan data dan scorer, bukan kualitas BifocalGemma.
+Training/generation checkpoint pretrained, native RES-Q gold tests, parity runtime
+benchmark resmi, serta cache dan kernel long-context belum diuji pada tahap ini.
+Ikuti [panduan repository study](REPOSITORY_STUDY_IMPLEMENTATION.md) untuk Molab.

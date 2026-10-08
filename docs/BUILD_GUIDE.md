@@ -26,7 +26,7 @@ tidak berada pada jalur default direct SFT.
 | [T02](#t02) | placeholder | [training/trainer.py](../src/bifocalgemma/training/trainer.py) | Profiled PEFT optimizer and training loop |
 | [T03](#t03) | placeholder | [training/profiling.py](../src/bifocalgemma/training/profiling.py) | Actual memory and latency measurements |
 | [T04](#t04) | optional_placeholder | [training/distillation.py](../src/bifocalgemma/training/distillation.py) | Optional later teacher losses |
-| [I01](#i01) | placeholder | [inference/generation.py](../src/bifocalgemma/inference/generation.py) | IT-aware generation and stopping |
+| [I01](#i01) | reference | [inference/generation.py](../src/bifocalgemma/inference/generation.py) | IT-aware generation and stopping |
 | [A01](#a01) | optional_placeholder | [agent/loop.py](../src/bifocalgemma/agent/loop.py) | Tool parsing and bounded developer-agent loop |
 | [E01](#e01) | optional_placeholder | [evaluation/harness.py](../src/bifocalgemma/evaluation/harness.py) | Real Docker repair evaluation |
 | [E02](#e02) | implemented | [evaluation/predictions.py](../src/bifocalgemma/evaluation/predictions.py) | SWE-bench prediction JSONL serialization |
@@ -346,3 +346,13 @@ editing → pretrained attention LoRA SFT → held-out CE → adapter/optimizer/
 checkpoint resume. Keluarga simetris/asimetris memakai 18 cell yang sama, dengan
 17 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
 RUN_TRAINING default False. CLI production train_direct_sft tetap placeholder.
+
+## Repository-study utilities — 8 Oktober 2026
+
+D07 static snapshot exports/quarantine, D08 target-free lexical windows, T05 matched
+repository SFT (including decoder-only policy), dan E03 native scorer/reference
+sekarang tersedia. I01 short greedy decoding meng-encode sekali dan memakai
+last-token LM head; decoder temporal cache belum ada. Existing M04/M05/T02/S01
+production facade slots tetap memiliki acceptance terpisah; utility loader/trainer
+yang bekerja tidak menghapus batas tersebut. Lihat
+[implementation guide](REPOSITORY_STUDY_IMPLEMENTATION.md) dan registry source.

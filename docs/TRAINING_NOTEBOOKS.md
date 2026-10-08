@@ -211,7 +211,17 @@ formatter deterministik dan --check gagal bila file generated drift. File upload
 standalone tetap bisa diedit di Molab; saat pairing live, gunakan runtime cm API,
 kemudian sinkronkan perubahan umum ke template sebelum regeneration lokal.
 
-Validasi lokal: dua graph disabled, delapan notebook pytest tests (empat per notebook), tests diff/split,
+Validasi lokal: dua graph disabled, sepuluh notebook pytest tests (lima per notebook), tests diff/split,
 token-weighted accumulation, checkpoint checksums/compatibility/run overwrite, serta
 native tiny LoRA resume pada kedua keluarga. Model/data asli belum dilatih oleh
 notebook baru ini; jalankan pilot di Molab dan catat hasilnya terpisah.
+
+## Repository exports — 8 Oktober 2026
+
+DATA_SOURCE=local_jsonl kini menerima prepared `repository_patch_v1` train records
+dengan public context, target diff dan source/snapshot provenance. Eval records
+dan gold-context flags ditolak. Legacy paired-file input tetap kompatibel; dua
+notebooks tetap19/18 parity. Preparation/repository-group splitting dijelaskan pada
+[implementation guide](REPOSITORY_STUDY_IMPLEMENTATION.md). Notebook repository
+menyediakan all-six-model matched eligibility dan decoder-only SFT policy untuk
+controlled baselines.

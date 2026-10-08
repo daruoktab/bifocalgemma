@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-08",
+  "scope": "engineering validation, not BifocalGemma quality scores",
+  "humanevalfix_gold": {
+    "attempted": 164,
+    "functional_scored": 164,
+    "passed": 164,
+    "functional_pass_rate": 1.0,
+    "conservative_pass_rate": 1.0,
+    "fully_evaluated": true,
+    "patch_apply_rate": 1.0,
+    "statuses": {
+      "PASS": 164
+    },
+    "cohort": {
+      "prepared": 164,
+      "preparation_rejected": 0,
+      "preparation_report": "preparation_report.json"
+    },
+    "purpose": "gold_scorer_validation_not_model_score"
+  },
+  "repoqa_preparation": {
+    "source": "repoqa",
+    "accepted": 100,
+    "rejections": [],
+    "source_file_sha256": "c050a2ad90a7df89d9dc1f1c3b3b20683edd20a56293b35fcaae43dec115d681",
+    "official_protocol": false,
+    "metric": "adapted_exact_code_match",
+    "context_limit": 4096
+  },
+  "synthetic_training_records": 8,
+  "synthetic_eval_records": 1,
+  "model_weights_downloaded_or_trained_locally": false
+}
