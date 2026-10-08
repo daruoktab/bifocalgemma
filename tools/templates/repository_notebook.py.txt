@@ -1,0 +1,248 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["marimo==0.25.1", "torch==2.11.0", "transformers==5.18.0", "safetensors==0.8.0", "pyarrow==25.0.0", "pytest==8.4.2"]
+# ///
+
+import marimo
+
+__generated_with = "0.25.1"
+app = marimo.App(width="medium")
+
+
+@app.cell
+def _():
+    import marimo as mo
+    mo.md("# BifocalGemma · Repository study\nPrepare → SFT → generate → native score. Default actions disabled; fixture is synthetic. Eager generation has no temporal cache. Native Python execution is opt-in and is not a security sandbox.")
+    return (mo,)
+
+
+@app.cell
+def _():
+    # CONTROL CENTER: choose one action/run at a time on a shared GPU.
+    SOURCE = "fixture"
+    EXPERIMENT = "BifocalGemma-E2B-E2B"
+    ROWS_FILE = ""
+    PREPARED_DIR = "outputs/repository_study/prepared"
+    RUN_DIR = "outputs/repository_study/training"
+    PREDICTIONS_FILE = "outputs/repository_study/predictions.jsonl"
+    SCORE_FILE = "outputs/repository_study/score.json"
+    TOKENIZER_CACHE = "outputs/repository_tokenizers"
+    MODEL_CACHE = "outputs/hf_cache"
+    ADAPTER_CHECKPOINT = ""
+    PYTHON_EVAL = ""
+    RUN_PREPARE = False
+    RUN_TRAINING = False
+    RUN_GENERATE = False
+    RUN_SCORE = False
+    VALIDATE_GOLD = False
+    ALLOW_CODE_EXECUTION = False
+    FETCH_SOURCE_ROWS = False
+    FETCH_TOKENIZERS = False
+    ALLOW_GIT_NETWORK = False
+    CONTEXT_LIMIT = 4096
+    TRAIN_DECODER_LIMIT = 2048
+    MAX_NEW_TOKENS = 512
+    GENERATION_DECODER_LIMIT = 8192
+    RAW_LIMIT = 1000
+    TASK_LIMIT = 32
+    PER_REPO_LIMIT = 8
+    MAX_STEPS = 100
+    EPOCHS = 1
+    ACCUMULATION = 4
+    HEADROOM_GIB = 16
+    return (SOURCE, EXPERIMENT, ROWS_FILE, PREPARED_DIR, RUN_DIR, PREDICTIONS_FILE, SCORE_FILE, TOKENIZER_CACHE, MODEL_CACHE, ADAPTER_CHECKPOINT, PYTHON_EVAL, RUN_PREPARE, RUN_TRAINING, RUN_GENERATE, RUN_SCORE, VALIDATE_GOLD, ALLOW_CODE_EXECUTION, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, MAX_NEW_TOKENS, GENERATION_DECODER_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, MAX_STEPS, EPOCHS, ACCUMULATION, HEADROOM_GIB)
+
+
+@app.cell
+def _(mo):
+    # BUNDLED SOURCE: generated from src/configs/fixtures; no weights or real dataset.
+    import base64
+    import hashlib
+    import io
+    import json
+    import os
+    import sys
+    import zipfile
+    from pathlib import Path
+    from types import SimpleNamespace
+    import torch
+    from huggingface_hub import HfApi, hf_hub_download
+
+    bundle_payload = {{BUNDLE_PAYLOAD}}
+    bundle_sha = "{{BUNDLE_SHA}}"
+    bundle_bytes = base64.b85decode(bundle_payload)
+    if hashlib.sha256(bundle_bytes).hexdigest() != bundle_sha:
+        raise ValueError("Bundled source checksum mismatch.")
+    runtime_root = (Path("outputs/repository_runtime") / bundle_sha[:16]).resolve()
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(bundle_bytes)) as _archive:
+        for _entry in _archive.infolist():
+            _destination = (runtime_root / _entry.filename).resolve()
+            if not _destination.is_relative_to(runtime_root):
+                raise ValueError("Bundled source path escape.")
+            _destination.parent.mkdir(parents=True, exist_ok=True)
+            _destination.write_bytes(_archive.read(_entry))
+    if "bifocalgemma" in sys.modules:
+        _loaded_root = Path(sys.modules["bifocalgemma"].__file__).resolve().parent
+        if not _loaded_root.is_relative_to(runtime_root):
+            for _module_name, _module in list(sys.modules.items()):
+                if _module_name == "bifocalgemma" or _module_name.startswith("bifocalgemma."):
+                    _file = getattr(_module, "__file__", None)
+                    if _file and Path(_file).suffix == ".py":
+                        _path = Path(_file).resolve()
+                        if not _path.is_relative_to(_loaded_root):
+                            raise RuntimeError("Restart runtime: mixed BifocalGemma source modules.")
+                        _expected = runtime_root / "src/bifocalgemma" / _path.relative_to(_loaded_root)
+                        if not _expected.exists() or _expected.read_bytes() != _path.read_bytes():
+                            raise RuntimeError("Restart runtime to switch BifocalGemma source versions.")
+    sys.path.insert(0, str(runtime_root / "src"))
+    from bifocalgemma.config import get_experiment
+    from bifocalgemma.repository_study import fetch_tokenizer_assets, prepare_run, generate_run, score_run, read_source_rows, write_json
+    from bifocalgemma.models.native import build_native_model
+    from bifocalgemma.models.pretrained import load_local_native_model
+    from bifocalgemma.training.memory_probe import tensor_bytes
+    from bifocalgemma.training.repository_sft import prepare_repository_training, fit_repository_sft
+    from bifocalgemma.data.repository import SOURCE_REVISIONS
+    environment = {"torch": str(torch.__version__), "cuda": torch.cuda.is_available(), "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None, "source_sha256": bundle_sha}
+    mo.vstack([mo.md("## 2 · Runtime/source"), mo.ui.table([environment], selection=None)])
+    return (Path, SimpleNamespace, torch, HfApi, hf_hub_download, os, sys, json, runtime_root, get_experiment, fetch_tokenizer_assets, prepare_run, generate_run, score_run, read_source_rows, write_json, build_native_model, load_local_native_model, tensor_bytes, prepare_repository_training, fit_repository_sft, SOURCE_REVISIONS)
+
+
+@app.cell
+def _(mo):
+    hf_form = mo.ui.text(kind="password", label="HF read token (optional)").form(submit_button_label="Apply HF token")
+    hf_form
+    return (hf_form,)
+
+
+@app.cell
+def _(HfApi, hf_form, mo, os):
+    hf_token = hf_form.value or os.environ.get("HF_TOKEN") or False
+    auth_status = "anonymous"
+    if hf_token:
+        HfApi(token=hf_token).whoami()
+        auth_status = "verified read/download credential"
+    mo.md("## 4 · HF authentication\n" + auth_status)
+    return (hf_token,)
+
+
+@app.cell
+def _(SOURCE, ROWS_FILE, PREPARED_DIR, TOKENIZER_CACHE, RUN_PREPARE, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, SOURCE_REVISIONS, Path, SimpleNamespace, runtime_root, get_experiment, fetch_tokenizer_assets, hf_hub_download, hf_token, prepare_run, json, mo):
+    preparation_result = {"status": "DISABLED"}
+    if RUN_PREPARE:
+        _spec = get_experiment("BifocalGemma-E2B-E2B")
+        if FETCH_TOKENIZERS:
+            fetch_tokenizer_assets(_spec, Path(TOKENIZER_CACHE), token=hf_token)
+            fetch_tokenizer_assets(get_experiment("BifocalGemma-E4B-E4B"), Path(TOKENIZER_CACHE), token=hf_token)
+        if not SOURCE.startswith("fixture") and not ROWS_FILE and not FETCH_SOURCE_ROWS:
+            raise ValueError("Real sources require ROWS_FILE or explicit pinned fetch; fixtures are never relabeled as real data.")
+        _snapshots = runtime_root / "examples/repository_study/snapshots" if SOURCE.startswith("fixture") else None
+        _rows = Path(ROWS_FILE) if ROWS_FILE else runtime_root / "examples/repository_study" / ("eval_rows.jsonl" if SOURCE == "fixture_eval" else "train_rows.jsonl")
+        if FETCH_SOURCE_ROWS:
+            _files = {"swe_fixer": "swe-fixer-train-110k.jsonl", "swe_rebench_v2": "data/train-00000-of-00001.parquet", "resq": "dataset.json"}
+            if SOURCE not in _files:
+                raise ValueError("Source-row fetching is only for the three pinned real sources.")
+            _ref = SOURCE_REVISIONS[SOURCE]
+            _rows = Path(hf_hub_download(_ref[0], _files[SOURCE], repo_type="dataset", revision=_ref[1], token=hf_token))
+        if not _rows.is_file():
+            raise FileNotFoundError("Select source rows or enable explicit pinned source fetch.")
+        _args = SimpleNamespace(source=SOURCE, rows=_rows, snapshots=_snapshots, git_cache=Path("outputs/git_snapshots"), tokenizer_cache=Path(TOKENIZER_CACHE), fetch_tokenizers=False, allow_network=ALLOW_GIT_NETWORK, study_config=runtime_root / "configs/repository_study.json", output=Path(PREPARED_DIR), context_limit=CONTEXT_LIMIT, raw_limit=RAW_LIMIT, limit=TASK_LIMIT, per_repo_limit=PER_REPO_LIMIT)
+        prepare_run(_args)
+        preparation_result = json.loads((Path(PREPARED_DIR) / "preparation_report.json").read_text(encoding="utf-8"))
+    mo.vstack([mo.md("## 5 · Preparation"), mo.ui.table([preparation_result], selection=None)])
+    return (preparation_result,)
+
+
+@app.cell
+def _(RUN_TRAINING, PREPARED_DIR, EXPERIMENT, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, get_experiment, prepare_repository_training, preparation_result, mo):
+    train_data = dev_data = training_manifest = None
+    if RUN_TRAINING:
+        train_data, dev_data, training_manifest = prepare_repository_training(Path(PREPARED_DIR) / "train.jsonl", get_experiment(EXPERIMENT), Path(TOKENIZER_CACHE), encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT)
+    mo.md("## 6 · Matched cohort/tokenization\n" + ("Train/dev prepared with repo grouping and all-six-model eligibility." if training_manifest else "Training disabled."))
+    return (train_data, dev_data, training_manifest)
+
+
+@app.cell
+def _(RUN_TRAINING, RUN_GENERATE, EXPERIMENT, MODEL_CACHE, HEADROOM_GIB, torch, Path, get_experiment, build_native_model, tensor_bytes, hf_hub_download, hf_token, mo):
+    model_paths = None
+    model_guard = "Actions disabled; no weights downloaded."
+    if RUN_TRAINING or RUN_GENERATE:
+        if not torch.cuda.is_available() or not torch.cuda.is_bf16_supported():
+            model_guard = "SKIPPED: supported BF16 CUDA is required."
+        else:
+            _spec = get_experiment(EXPERIMENT)
+            _blueprint = build_native_model(_spec, tiny=False, device="meta", dtype=torch.bfloat16)
+            _weights = tensor_bytes(_blueprint.parameters())
+            del _blueprint
+            _free, _total = torch.cuda.mem_get_info()
+            if _free < _weights + int(HEADROOM_GIB * 2**30):
+                model_guard = "SKIPPED_HEADROOM: free VRAM below weights + configured reserve."
+            else:
+                _dec = Path(hf_hub_download(_spec.decoder.model_id, "model.safetensors", revision=_spec.decoder.revision, cache_dir=MODEL_CACHE, token=hf_token))
+                _enc = Path(hf_hub_download(_spec.encoder.model_id, "model.safetensors", revision=_spec.encoder.revision, cache_dir=MODEL_CACHE, token=hf_token)) if _spec.encoder else None
+                model_paths = (_dec, _enc)
+                model_guard = "Pinned sources cached. Guard is not a guarantee of full-shape training."
+    mo.md("## 7 · GPU preflight/checkpoint cache\n" + model_guard)
+    return (model_paths, model_guard)
+
+
+@app.cell
+def _(RUN_TRAINING, RUN_DIR, EXPERIMENT, MAX_STEPS, EPOCHS, ACCUMULATION, model_paths, model_guard, training_manifest, train_data, dev_data, Path, get_experiment, load_local_native_model, fit_repository_sft, write_json, torch, mo):
+    training_result = {"status": "DISABLED", "reason": model_guard}
+    if RUN_TRAINING and model_paths:
+        if Path(RUN_DIR).exists() and any(Path(RUN_DIR).iterdir()):
+            raise FileExistsError("Choose a fresh RUN_DIR; this notebook does not silently resume/overwrite.")
+        if training_manifest is None:
+            raise ValueError("Prepare matched train/dev data first.")
+        _model, _provenance = load_local_native_model(get_experiment(EXPERIMENT), model_paths[0], model_paths[1])
+        try:
+            training_result = fit_repository_sft(_model, train_data, dev_data, Path(RUN_DIR), training_manifest, max_steps=MAX_STEPS, epochs=EPOCHS, accumulation=ACCUMULATION)
+            write_json(Path(RUN_DIR) / "data_manifest.json", training_manifest)
+            write_json(Path(RUN_DIR) / "training_report.json", training_result)
+            write_json(Path(RUN_DIR) / "model_provenance.json", _provenance)
+        finally:
+            del _model
+            torch.cuda.empty_cache()
+    mo.vstack([mo.md("## 8 · SFT (one model)"), mo.ui.table([training_result], selection=None)])
+    return (training_result,)
+
+
+@app.cell
+def _(RUN_GENERATE, EXPERIMENT, PREPARED_DIR, PREDICTIONS_FILE, ADAPTER_CHECKPOINT, TOKENIZER_CACHE, CONTEXT_LIMIT, GENERATION_DECODER_LIMIT, MAX_NEW_TOKENS, TASK_LIMIT, model_paths, model_guard, Path, SimpleNamespace, generate_run, mo):
+    generation_result = {"status": "DISABLED", "reason": model_guard}
+    if RUN_GENERATE and model_paths:
+        _args = SimpleNamespace(prepared=Path(PREPARED_DIR), experiment=EXPERIMENT, decoder_checkpoint=model_paths[0], encoder_checkpoint=model_paths[1], adapter_checkpoint=Path(ADAPTER_CHECKPOINT) if ADAPTER_CHECKPOINT else None, tokenizer_cache=Path(TOKENIZER_CACHE), context_limit=CONTEXT_LIMIT, decoder_limit=GENERATION_DECODER_LIMIT, max_new_tokens=MAX_NEW_TOKENS, limit=TASK_LIMIT, output=Path(PREDICTIONS_FILE))
+        generate_run(_args)
+        generation_result = {"status": "COMPLETED", "predictions": PREDICTIONS_FILE, "backend": "eager/no temporal cache"}
+    mo.vstack([mo.md("## 9 · Generation"), mo.ui.table([generation_result], selection=None)])
+    return (generation_result,)
+
+
+@app.cell
+def _(RUN_SCORE, PREPARED_DIR, PREDICTIONS_FILE, SCORE_FILE, PYTHON_EVAL, VALIDATE_GOLD, ALLOW_CODE_EXECUTION, Path, SimpleNamespace, sys, score_run, json, generation_result, mo):
+    score_result = {"status": "DISABLED"}
+    if RUN_SCORE:
+        _args = SimpleNamespace(prepared=Path(PREPARED_DIR), predictions=None if VALIDATE_GOLD else Path(PREDICTIONS_FILE), output=Path(SCORE_FILE), python_eval=Path(PYTHON_EVAL or sys.executable), allow_code_execution=ALLOW_CODE_EXECUTION, validate_gold=VALIDATE_GOLD, timeout=30)
+        score_run(_args)
+        score_result = json.loads(Path(SCORE_FILE).read_text(encoding="utf-8"))
+    mo.vstack([mo.md("## 10 · Native CPU score / gold validation"), mo.ui.table([{key: value for key, value in score_result.items() if key != "results"}], selection=None)])
+    return (score_result,)
+
+
+@app.cell
+def _(preparation_result, training_result, generation_result, score_result, mo):
+    mo.vstack([mo.md("## 11 · Run summary\nPreparation validates static patches; gold validation is not a model benchmark score. Empty/missing predictions and infrastructure errors remain visible."), mo.ui.table([{"stage": name, "status": result.get("status", result.get("purpose", "prepared"))} for name, result in (("prepare", preparation_result), ("train", training_result), ("generate", generation_result), ("score", score_result))], selection=None)])
+    return
+
+
+@app.cell
+def _(SOURCE_REVISIONS):
+    # This cell defines a pytest test; notebook actions remain disabled by default.
+    def test_actions_disabled_by_default():
+        assert SOURCE_REVISIONS["resq"][2] == "eval"
+        assert SOURCE_REVISIONS["fixture"][2] == "train"
+    return (test_actions_disabled_by_default,)
+
+
+if __name__ == "__main__":
+    app.run()

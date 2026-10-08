@@ -24,11 +24,11 @@ def _():
     import marimo as mo
 
     mo.md("""
-    # BifocalGemma · Offline LoRA SFT
+    # BifocalGemma Â· Offline LoRA SFT
     Dua notebook ini memakai jumlah, urutan, dan isi cell yang sama.
     Pilih pasangan di control center, Apply HF token bila diperlukan,
-    lalu aktifkan RUN_TRAINING. Pipeline: paired-code dataset → patch-only SFT
-    → held-out loss → adapter checkpoint + optimizer/data cursor resume.
+    lalu aktifkan RUN_TRAINING. Pipeline: paired-code dataset â†’ patch-only SFT
+    â†’ held-out loss â†’ adapter checkpoint + optimizer/data cursor resume.
     Default tidak memulai training atau model/data download secara otomatis.
     """)
     return (mo,)
@@ -36,7 +36,7 @@ def _():
 
 @app.cell
 def _(mo):
-    # 1. CONTROL CENTER — tiga baris ini saja berbeda antar notebook.
+    # 1. CONTROL CENTER â€” tiga baris ini saja berbeda antar notebook.
     FAMILY = "asymmetric"
     EXPERIMENT = "BifocalGemma-E2B-E4B"
     OUTPUT_ROOT = "outputs/training_asymmetric"
@@ -72,7 +72,7 @@ def _(mo):
     HF_REPO_ID = "daruokta/bifocalgemma-sft"
     HF_UPLOAD_ENABLED = False
     mo.md(
-        f"## 1 · Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}, HF_UPLOAD={HF_UPLOAD_ENABLED}."
+        f"## 1 Â· Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}, HF_UPLOAD={HF_UPLOAD_ENABLED}."
     )
     return (
         FAMILY,
@@ -109,7 +109,7 @@ def _(mo):
 
 @app.cell
 def _(DEVICE, PRECISION, mo):
-    # 2. ENVIRONMENT — pakai dependency yang sudah terpasang; tidak ada pip di cell.
+    # 2. ENVIRONMENT â€” pakai dependency yang sudah terpasang; tidak ada pip di cell.
     import copy
     import difflib
     import gc
@@ -182,7 +182,7 @@ def _(DEVICE, PRECISION, mo):
         if device == "cuda"
         else None,
     }
-    mo.vstack([mo.md("## 2 · Environment"), mo.ui.table([environment], selection=None)])
+    mo.vstack([mo.md("## 2 Â· Environment"), mo.ui.table([environment], selection=None)])
     return (
         math,
         difflib,
@@ -227,7 +227,7 @@ def _(DEVICE, PRECISION, mo):
 
 @app.cell
 def _(mo):
-    # 2a. HF TOKEN INPUT — submit form avoids rerunning models per keystroke.
+    # 2a. HF TOKEN INPUT â€” submit form avoids rerunning models per keystroke.
     hf_token_form = mo.ui.dictionary(
         {
             "token": mo.ui.text(
@@ -238,13 +238,13 @@ def _(mo):
             )
         }
     ).form(submit_button_label="Apply HF token")
-    mo.vstack([mo.md("## 2a · Hugging Face API token"), hf_token_form])
+    mo.vstack([mo.md("## 2a Â· Hugging Face API token"), hf_token_form])
     return (hf_token_form,)
 
 
 @app.cell
 def _(HfApi, HfHubHTTPError, hf_token_form, mo, os):
-    # 2b. APPLY / VERIFY — explicit token dependency for every Hub/tokenizer call.
+    # 2b. APPLY / VERIFY â€” explicit token dependency for every Hub/tokenizer call.
     _token_value = ((hf_token_form.value or {}).get("token", "") or "").strip()
     token_source = "widget" if _token_value else "environment"
     if not _token_value:
@@ -297,13 +297,13 @@ def _(HfApi, HfHubHTTPError, hf_token_form, mo, os):
             "Tanpa token: akses anonim untuk checkpoint publik. Isi token lalu klik Apply bila"
             " diperlukan."
         )
-    mo.md("## 2b · Apply / verifikasi HF token\n" + auth_message)
+    mo.md("## 2b Â· Apply / verifikasi HF token\n" + auth_message)
     return (hf_download_token, auth_info)
 
 
 @app.cell
 def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
-    # 3. CONFIG NATIVE — metadata config yang sudah diaudit, tanpa network.
+    # 3. CONFIG NATIVE â€” metadata config yang sudah diaudit, tanpa network.
     AUDITED_CONFIGS = {
         "E2B": {
             "model_id": "google/gemma-4-E2B-it",
@@ -532,7 +532,7 @@ def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
         return config
 
     mo.md(
-        "## 3 · Config Gemma\n35/42 layers; local/global heads, KV sharing, PLE, dan varian MLP dipertahankan."
+        "## 3 Â· Config Gemma\n35/42 layers; local/global heads, KV sharing, PLE, dan varian MLP dipertahankan."
     )
     return (
         AUDITED_CONFIGS,
@@ -546,7 +546,7 @@ def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
 def _(torch, F, mo):
     from dataclasses import dataclass, field
 
-    # 4. BATCH & LOSS — synthetic IDs, shift sekali, prefix/padding label -100.
+    # 4. BATCH & LOSS â€” synthetic IDs, shift sekali, prefix/padding label -100.
     @dataclass(frozen=True)
     class TokenizedRepairExample:
         """Prefix is already IT-formatted; target contains the closing target token."""
@@ -669,7 +669,7 @@ def _(torch, F, mo):
         return batch
 
     mo.md(
-        "## 4 · Batch dan patch loss\nIDs 0..127 bersifat synthetic; tokenizer asli tetap diuji terpisah."
+        "## 4 Â· Batch dan patch loss\nIDs 0..127 bersifat synthetic; tokenizer asli tetap diuji terpisah."
     )
     return (
         TokenizedRepairExample,
@@ -683,7 +683,7 @@ def _(torch, F, mo):
 
 @app.cell
 def _(Gemma4TextAttention, apply_rotary_pos_emb, repeat_kv, nn, torch, mo):
-    # 5. MERGED ATTENTION — native proyeksi/norm + satu joint softmax.
+    # 5. MERGED ATTENTION â€” native proyeksi/norm + satu joint softmax.
     def build_joint_visibility(
         encoder_valid: torch.Tensor,
         decoder_valid: torch.Tensor,
@@ -769,7 +769,7 @@ def _(Gemma4TextAttention, apply_rotary_pos_emb, repeat_kv, nn, torch, mo):
             return self.o_proj(result), None
 
     mo.md(
-        "## 5 · Merged attention\nSelf keys causal/windowed; encoder keys global. Shared layers menggunakan KV pemiliknya."
+        "## 5 Â· Merged attention\nSelf keys causal/windowed; encoder keys global. Shared layers menggunakan KV pemiliknya."
     )
     return (
         build_joint_visibility,
@@ -791,7 +791,7 @@ def _(
     torch,
     mo,
 ):
-    # 6. MODEL BUILDER — encoder bidirectional + decoder native; tying simetris.
+    # 6. MODEL BUILDER â€” encoder bidirectional + decoder native; tying simetris.
     class ArchitectureModel(nn.Module):
         """Native full-depth text stacks at reduced width; never a pretrained model."""
 
@@ -909,7 +909,7 @@ def _(
         return model
 
     mo.md(
-        "## 6 · Perakitan model\nSatu alignment projection asimetris; ordinary words simetris tied, PLE terpisah."
+        "## 6 Â· Perakitan model\nSatu alignment projection asimetris; ordinary words simetris tied, PLE terpisah."
     )
     return (
         ArchitectureModel,
@@ -934,7 +934,7 @@ def _(
     F,
     mo,
 ):
-    # 7. CHECKPOINT LOADER — original base/IT text weights, shared aliases.
+    # 7. CHECKPOINT LOADER â€” original base/IT text weights, shared aliases.
     CHECKPOINTS = {
         "E2B": {
             "encoder": {
@@ -1222,7 +1222,7 @@ def _(
         }
 
     mo.md(
-        "## 7 · Pretrained loading / LoRA\nSource revisions/keys/shapes tervalidasi; tying mengikuti spec."
+        "## 7 Â· Pretrained loading / LoRA\nSource revisions/keys/shapes tervalidasi; tying mengikuti spec."
     )
     return (
         CHECKPOINTS,
@@ -1251,7 +1251,7 @@ def _(
     torch,
     mo,
 ):
-    # 7a. TRAINING POLICY — all family-specific training settings live here.
+    # 7a. TRAINING POLICY â€” all family-specific training settings live here.
     def default_training_profiles():
         common = {
             "version": "attention_lora_policy_v1",
@@ -1272,11 +1272,17 @@ def _(
                 "train_alignment": family == "asymmetric",
                 "groups": groups,
             }
+        profiles["decoder_only"] = {
+            **copy.deepcopy(common),
+            "family": "decoder_only",
+            "train_alignment": False,
+            "groups": {"decoder": {"lr": 2e-5, "warmup_steps": 5}},
+        }
         return profiles
 
     def validate_training_policy(policy, model=None):
         family = policy.get("family")
-        if family not in {"symmetric", "asymmetric"}:
+        if family not in {"symmetric", "asymmetric", "decoder_only"}:
             raise ValueError("Unknown training-policy family.")
         if policy.get("version") != "attention_lora_policy_v1" or policy.get("phase") != "joint":
             raise ValueError("Only joint attention LoRA policy v1 is supported.")
@@ -1290,7 +1296,9 @@ def _(
             or policy["alpha"] <= 0
         ):
             raise ValueError("LoRA alpha must be finite and positive.")
-        expected = {"encoder", "decoder"} | ({"alignment"} if family == "asymmetric" else set())
+        expected = ({"decoder"} if family == "decoder_only" else {"encoder", "decoder"}) | (
+            {"alignment"} if family == "asymmetric" else set()
+        )
         if set(policy.get("groups", {})) != expected or policy.get("train_alignment") != (
             family == "asymmetric"
         ):
@@ -1302,6 +1310,10 @@ def _(
             if type(warmup) is not int or warmup < 0:
                 raise ValueError(f"Invalid warmup for {name}.")
         if model is not None:
+            if family == "decoder_only":
+                if model.encoder is not None or model.encoder_projection is not None:
+                    raise ValueError("Decoder-only policy requires a baseline model.")
+                return
             if getattr(model, "encoder", None) is None or model.spec.tie_encoder_decoder_words != (
                 family == "symmetric"
             ):
@@ -1445,7 +1457,7 @@ def _(
     mo.vstack(
         [
             mo.md(
-                "## 7a · Training policy\nEdit rank/alpha dan LR/warm-up per group di POLICY_PROFILES. Tabel memakai blueprint meta."
+                "## 7a Â· Training policy\nEdit rank/alpha dan LR/warm-up per group di POLICY_PROFILES. Tabel memakai blueprint meta."
             ),
             mo.ui.table(policy_table, selection=None),
         ]
@@ -1480,11 +1492,14 @@ def _(
     importlib,
     json,
     random,
+    re,
     verified_assets,
     mo,
 ):
-    # 8. DATA PREPARATION — before code only as input, unified diff as target.
+    # 8. DATA PREPARATION â€” before code only as input, unified diff as target.
     def editing_record(raw: dict, *, source: str) -> dict:
+        if raw.get("record_type") == "repository_patch_v1":
+            return repository_editing_record(raw)
         before, after = raw.get("old_contents"), raw.get("new_contents")
         instruction = raw.get("instruction") if source == "editpackft" else raw.get("subject")
         if not isinstance(instruction, str) or not instruction.strip():
@@ -1584,18 +1599,30 @@ def _(
     def editing_manifest(records):
         return [
             {
-                key: row[key]
-                for key in (
-                    "instance_id",
-                    "group",
-                    "pair_hash",
-                    "instruction_hash",
-                    "path",
-                    "source",
-                    "commit",
-                    "repos",
-                    "license",
-                )
+                **{
+                    key: row[key]
+                    for key in (
+                        "record_type",
+                        "source_revision",
+                        "snapshot_sha256",
+                        "context_selection",
+                    )
+                    if key in row
+                },
+                **{
+                    key: row[key]
+                    for key in (
+                        "instance_id",
+                        "group",
+                        "pair_hash",
+                        "instruction_hash",
+                        "path",
+                        "source",
+                        "commit",
+                        "repos",
+                        "license",
+                    )
+                },
             }
             for row in records
         ]
@@ -1606,6 +1633,46 @@ def _(
                 "utf-8"
             )
         ).hexdigest()
+
+    def repository_editing_record(raw):
+        """Consume only target-free-context training exports from the repo preparer."""
+        if raw.get("role") != "train":
+            raise ValueError("evaluation_record_cannot_enter_training")
+        if raw.get("source", "").lower() in {
+            "qurrent/res-q",
+            "nuprl/canitedit",
+            "bigcode/humanevalpack",
+            "evalplus/repoqa",
+        }:
+            raise ValueError("benchmark_source_cannot_enter_training")
+        instruction, context, patch = (
+            raw.get("instruction"),
+            raw.get("context"),
+            raw.get("target_patch"),
+        )
+        if not all(isinstance(x, str) and x.strip() for x in (instruction, context, patch)):
+            raise ValueError("missing_repository_training_fields")
+        if raw.get("context_selection", {}).get("gold_used") is not False:
+            raise ValueError("repository_context_policy_not_target_free")
+        snapshot = raw.get("snapshot_sha256", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", snapshot):
+            raise ValueError("missing_repository_snapshot_hash")
+        for key in ("instance_id", "group", "commit", "repos", "source", "source_revision"):
+            if not isinstance(raw.get(key), str) or not raw[key]:
+                raise ValueError("missing_repository_provenance")
+        if not patch.startswith("diff --git "):
+            raise ValueError("unsupported_repository_target_patch")
+        pair_hash = hashlib.sha256((snapshot + "\0" + patch).encode()).hexdigest()
+        instruction_hash = hashlib.sha256(instruction.strip().encode()).hexdigest()
+        return {
+            **raw,
+            "path": "repository_context",
+            "before": context,
+            "after": "",
+            "pair_hash": pair_hash,
+            "instruction_hash": instruction_hash,
+            "license": str(raw.get("license") or "unknown"),
+        }
 
     DATA_SOURCES = {
         "editpackft": {
@@ -1649,7 +1716,8 @@ def _(
 
     def tokenize_editing_row(row, spec, encoder, decoder, encoder_limit, decoder_limit):
         context = (
-            f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
+            row.get("context")
+            or f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
         )
         encoder_ids = tuple(encoder.encode(context, add_special_tokens=True))
         prefix = decoder.apply_chat_template(
@@ -1745,7 +1813,12 @@ def _(
         manifest = {
             "source": source,
             "source_ref": DATA_SOURCES.get(source),
-            "split_policy": "commit_group_holdout_not_repo_disjoint",
+            "split_policy": (
+                "canonical_repository_group_holdout"
+                if source == "local_jsonl"
+                and all(r.get("record_type") == "repository_patch_v1" for r in records)
+                else "commit_group_holdout_not_repo_disjoint"
+            ),
             "seed": seed,
             "encoder_limit": encoder_limit,
             "decoder_limit": decoder_limit,
@@ -1755,7 +1828,11 @@ def _(
             "train": editing_manifest(kept["train"]),
             "dev": editing_manifest(kept["dev"]),
         }
-        manifest["data_format_version"] = "paired_code_diff_v1"
+        manifest["data_format_version"] = (
+            "repository_context_diff_v1"
+            if all(r.get("record_type") == "repository_patch_v1" for r in records)
+            else "paired_code_diff_v1"
+        )
         manifest["tokenized_fingerprint"] = stable_fingerprint(
             {
                 split: [
@@ -1769,7 +1846,7 @@ def _(
         return tokenized["train"], tokenized["dev"], manifest
 
     mo.md(
-        "## 8 · Data / tokenisasi\nEditPackFT atau JSONL lokal, commit holdout, dedup, explicit overflow filtering."
+        "## 8 Â· Data / tokenisasi\nEditPackFT atau JSONL lokal, commit holdout, dedup, explicit overflow filtering."
     )
     return (
         DATA_SOURCES,
@@ -1800,7 +1877,7 @@ def _(
     uuid4,
     mo,
 ):
-    # 9. TRAINING / CHECKPOINT — same helper code in both notebooks.
+    # 9. TRAINING / CHECKPOINT â€” same helper code in both notebooks.
     def file_digest(path):
         digest = hashlib.sha256()
         with Path(path).open("rb") as stream:
@@ -2144,7 +2221,7 @@ def _(
         }
 
     mo.md(
-        "## 9 · SFT / checkpoint\nToken-weighted gradient accumulation, clipping, dev CE, optimizer/RNG/cursor resume."
+        "## 9 Â· SFT / checkpoint\nToken-weighted gradient accumulation, clipping, dev CE, optimizer/RNG/cursor resume."
     )
     return (
         file_digest,
@@ -2169,7 +2246,7 @@ def _(
     probe_estimate,
     mo,
 ):
-    # 10. PREFLIGHT — no data/model downloads here.
+    # 10. PREFLIGHT â€” no data/model downloads here.
     training_spec = experiment_spec(EXPERIMENT)
     assert training_spec.encoder is not None
     assert training_spec.tie_encoder_decoder_words == (FAMILY == "symmetric")
@@ -2177,7 +2254,7 @@ def _(
     training_guard = gpu_guard(training_estimate, device) if RUN_TRAINING else "RUN_TRAINING=False"
     mo.vstack(
         [
-            mo.md("## 10 · Preflight"),
+            mo.md("## 10 Â· Preflight"),
             mo.ui.table(
                 [
                     {
@@ -2218,7 +2295,7 @@ def _(
     training_spec,
     mo,
 ):
-    # 11. PREPARE DATA — changes here do not modify notebook architecture code.
+    # 11. PREPARE DATA â€” changes here do not modify notebook architecture code.
     train_examples, dev_examples = [], []
     data_manifest = None
     if training_guard is None:
@@ -2236,7 +2313,7 @@ def _(
             SEED,
         )
     mo.md(
-        f"## 11 · Dataset\nTrain: **{len(train_examples)}**, dev: **{len(dev_examples)}**. "
+        f"## 11 Â· Dataset\nTrain: **{len(train_examples)}**, dev: **{len(dev_examples)}**. "
         + ("Prepared." if data_manifest else "Disabled/guarded; no dataset fetched.")
     )
     return (
@@ -2279,7 +2356,7 @@ def _(
     training_guard,
     training_spec,
 ):
-    # 12. TRAIN — models/optimizer stay owned by this rerun boundary.
+    # 12. TRAIN â€” models/optimizer stay owned by this rerun boundary.
     training_result = {"status": "DISABLED", "reason": training_guard}
     run_dir = Path(OUTPUT_ROOT) / EXPERIMENT / RUN_NAME
     if training_guard is None:
@@ -2308,15 +2385,15 @@ def _(
             }
 
             def progress(row):
-                message = f"step {row['step']}/{MAX_STEPS} · train CE {row['train_loss']:.4f}"
+                message = f"step {row['step']}/{MAX_STEPS} Â· train CE {row['train_loss']:.4f}"
                 if "eval" in row:
-                    message += f" · dev CE {row['eval']['loss']:.4f}"
+                    message += f" Â· dev CE {row['eval']['loss']:.4f}"
                 if "learning_rates" in row:
-                    message += " · LR " + ", ".join(
+                    message += " Â· LR " + ", ".join(
                         f"{name}={lr:.2g}" for name, lr in row["learning_rates"].items()
                     )
                 if "peak_allocated_gib" in row:
-                    message += f" · VRAM {row['peak_allocated_gib']:.2f} GiB"
+                    message += f" Â· VRAM {row['peak_allocated_gib']:.2f} GiB"
                 print(message)
 
             # Manifest files are written inside the trainer after the run-directory guard.
@@ -2360,7 +2437,7 @@ def _(
             del model
             gc.collect()
             torch.cuda.empty_cache()
-    mo.md("## 12 · Training\nStatus: **" + training_result["status"] + "**")
+    mo.md("## 12 Â· Training\nStatus: **" + training_result["status"] + "**")
     return (
         training_result,
         run_dir,
@@ -2369,7 +2446,7 @@ def _(
 
 @app.cell
 def _(mo, run_dir, training_result):
-    # 13. RESULTS — cheap presentation separated from training.
+    # 13. RESULTS â€” cheap presentation separated from training.
     result_summary = {
         key: training_result.get(key)
         for key in (
@@ -2383,7 +2460,7 @@ def _(mo, run_dir, training_result):
     }
     mo.vstack(
         [
-            mo.md(f"## 13 · Summary\nArtifacts: `{run_dir}`"),
+            mo.md(f"## 13 Â· Summary\nArtifacts: `{run_dir}`"),
             mo.ui.table([result_summary], selection=None),
         ]
     )
@@ -2404,7 +2481,7 @@ def _(
     run_dir,
     training_result,
 ):
-    # 14. HUB UPLOAD — upload run artifacts to Hugging Face Hub under {FAMILY}/{EXPERIMENT}/{RUN_NAME}.
+    # 14. HUB UPLOAD â€” upload run artifacts to Hugging Face Hub under {FAMILY}/{EXPERIMENT}/{RUN_NAME}.
     upload_result = {
         "status": "DISABLED",
         "repo_id": HF_REPO_ID,
@@ -2460,8 +2537,8 @@ def _(
     mo.vstack(
         [
             mo.md(
-                f"## 14 · Hugging Face Hub upload\nStatus: **{upload_result['status']}** · Repo:"
-                f" `{HF_REPO_ID}` · Path: `{upload_result['path_in_repo']}`"
+                f"## 14 Â· Hugging Face Hub upload\nStatus: **{upload_result['status']}** Â· Repo:"
+                f" `{HF_REPO_ID}` Â· Path: `{upload_result['path_in_repo']}`"
             ),
             mo.ui.table([upload_result], selection=None),
         ]
@@ -2485,6 +2562,30 @@ def _(
         spec = experiment_spec(EXPERIMENT)
         assert spec.tie_encoder_decoder_words == (FAMILY == "symmetric")
         assert EXPERIMENT in PAIR_OPTIONS[FAMILY]
+
+    def test_repository_export_uses_public_context_and_rejects_eval():
+        raw = {
+            "record_type": "repository_patch_v1",
+            "role": "train",
+            "instance_id": "synthetic-export",
+            "source": "bifocalgemma/synthetic-repository-fixture",
+            "source_revision": "fixture-v1",
+            "group": "fixture/repo",
+            "commit": "a" * 40,
+            "repos": "fixture/repo",
+            "instruction": "Fix helper.",
+            "context": "### File: helper.py\nreturn 0\n",
+            "target_patch": "diff --git a/helper.py b/helper.py\n",
+            "snapshot_sha256": "b" * 64,
+            "context_selection": {"gold_used": False},
+        }
+        row = editing_record(raw, source="editpackft")
+        assert row["context"] == raw["context"]
+        try:
+            editing_record({**raw, "role": "eval"}, source="editpackft")
+            raise AssertionError("Eval export was admitted to training.")
+        except ValueError as error:
+            assert str(error) == "evaluation_record_cannot_enter_training"
 
     def test_editing_input_does_not_contain_target_code():
         row = editing_record(
