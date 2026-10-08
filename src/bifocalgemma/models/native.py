@@ -111,14 +111,14 @@ class NativeMergedAttention(Gemma4TextAttention):
 
 
 class NativeTinyModel(nn.Module):
-    """Native full-depth text stacks at reduced width; never a pretrained model."""
+    """Native text stacks; tiny by default, full dimensions only with explicit opt-in."""
 
-    def __init__(self, spec: ExperimentSpec):
+    def __init__(self, spec: ExperimentSpec, *, tiny: bool = True):
         super().__init__()
         self.spec = spec
-        self.decoder = Gemma4TextModel(native_config(spec.decoder.size))
+        self.decoder = Gemma4TextModel(native_config(spec.decoder.size, tiny=tiny))
         self.encoder = (
-            Gemma4TextModel(native_config(spec.encoder.size, encoder=True))
+            Gemma4TextModel(native_config(spec.encoder.size, tiny=tiny, encoder=True))
             if spec.encoder
             else None
         )
@@ -172,7 +172,15 @@ class NativeTinyModel(nn.Module):
         # No padding states enter K/V, including batches with wholly masked context.
         return self.encoder_projection(hidden).masked_fill(~attention_mask.bool()[..., None], 0)
 
-    def decode_logits(self, input_ids, decoder_mask, encoder_states=None, encoder_mask=None):
+    def decode_logits(
+        self,
+        input_ids,
+        decoder_mask,
+        encoder_states=None,
+        encoder_mask=None,
+        *,
+        last_token_only=False,
+    ):
         kwargs = {}
         if self.encoder is not None:
             if encoder_states is None:
@@ -196,11 +204,18 @@ class NativeTinyModel(nn.Module):
             use_cache=False,
             **kwargs,
         ).last_hidden_state
+        if last_token_only:
+            hidden = hidden[:, -1:]
         logits = self.lm_head(hidden)
         cap = self.decoder.config.final_logit_softcapping
         if cap is not None:
             logits = torch.tanh(logits / cap) * cap
         return logits
+
+    def decode_next_logits(self, input_ids, decoder_mask, encoder_states=None, encoder_mask=None):
+        return self.decode_logits(
+            input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=True
+        )
 
     def forward(self, batch: Seq2SeqBatch) -> ModelOutput:
         if self.encoder is None:
@@ -267,3 +282,14 @@ def run_native_smoke(spec: ExperimentSpec, device: str = "cpu") -> dict:
         pretrained_weights_loaded=False,
         benchmark_executed=False,
     )
+
+
+def build_native_model(spec: ExperimentSpec, *, tiny=True, device="cpu", dtype=torch.float32):
+    """Construct directly on destination; preserve native nonpersistent buffers."""
+    previous = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(dtype)
+        with torch.device(device):
+            return NativeTinyModel(spec, tiny=tiny)
+    finally:
+        torch.set_default_dtype(previous)

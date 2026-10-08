@@ -1,0 +1,14 @@
+{
+  "repo": "fixture/held-out",
+  "base_commit": "16b2f4289dade3409ad6bcbaf44fd766f7889c26",
+  "files": [
+    {
+      "path": "helpers.py",
+      "content": "def add_one(value):\n    # synthetic task 0\n    return value\n"
+    },
+    {
+      "path": "calculator.py",
+      "content": "from helpers import add_one\n\ndef calculate(value):\n    return add_one(value)\n"
+    }
+  ]
+}

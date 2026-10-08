@@ -1,0 +1,14 @@
+{
+  "repo": "fixture/project-2",
+  "base_commit": "0cf6a0048ea1c355212b6630ebcd34f463691845",
+  "files": [
+    {
+      "path": "helpers.py",
+      "content": "def add_one(value):\n    # synthetic task 5\n    return value\n"
+    },
+    {
+      "path": "calculator.py",
+      "content": "from helpers import add_one\n\ndef calculate(value):\n    return add_one(value)\n"
+    }
+  ]
+}

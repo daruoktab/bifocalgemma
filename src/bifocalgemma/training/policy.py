@@ -28,12 +28,18 @@ def default_training_profiles():
             "train_alignment": family == "asymmetric",
             "groups": groups,
         }
+    profiles["decoder_only"] = {
+        **copy.deepcopy(common),
+        "family": "decoder_only",
+        "train_alignment": False,
+        "groups": {"decoder": {"lr": 2e-5, "warmup_steps": 5}},
+    }
     return profiles
 
 
 def validate_training_policy(policy, model=None):
     family = policy.get("family")
-    if family not in {"symmetric", "asymmetric"}:
+    if family not in {"symmetric", "asymmetric", "decoder_only"}:
         raise ValueError("Unknown training-policy family.")
     if policy.get("version") != "attention_lora_policy_v1" or policy.get("phase") != "joint":
         raise ValueError("Only joint attention LoRA policy v1 is supported.")
@@ -47,7 +53,9 @@ def validate_training_policy(policy, model=None):
         or policy["alpha"] <= 0
     ):
         raise ValueError("LoRA alpha must be finite and positive.")
-    expected = {"encoder", "decoder"} | ({"alignment"} if family == "asymmetric" else set())
+    expected = ({"decoder"} if family == "decoder_only" else {"encoder", "decoder"}) | (
+        {"alignment"} if family == "asymmetric" else set()
+    )
     if set(policy.get("groups", {})) != expected or policy.get("train_alignment") != (
         family == "asymmetric"
     ):
@@ -59,6 +67,10 @@ def validate_training_policy(policy, model=None):
         if type(warmup) is not int or warmup < 0:
             raise ValueError(f"Invalid warmup for {name}.")
     if model is not None:
+        if family == "decoder_only":
+            if model.encoder is not None or model.encoder_projection is not None:
+                raise ValueError("Decoder-only policy requires a baseline model.")
+            return
         if getattr(model, "encoder", None) is None or model.spec.tie_encoder_decoder_words != (
             family == "symmetric"
         ):

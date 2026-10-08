@@ -10,7 +10,9 @@ import torch
 from safetensors import safe_open
 
 
-def transfer_text_checkpoint(backbone, path: Path, *, skip_words: bool = False) -> dict:
+def transfer_text_checkpoint(
+    backbone, path: Path, *, skip_words: bool = False, preflight_only: bool = False
+) -> dict:
     prefix = "model.language_model."
     target = backbone.state_dict()
     expected = {
@@ -29,7 +31,7 @@ def transfer_text_checkpoint(backbone, path: Path, *, skip_words: bool = False) 
                 raise ValueError(
                     f"Shape mismatch for {key}: source {shape}, target {tuple(value.shape)}"
                 )
-        if any(value.is_meta for value in expected.values()):
+        if not preflight_only and any(value.is_meta for value in expected.values()):
             raise ValueError("Initialize destination storage before checkpoint transfer.")
         ignored_shared = []
         skipped = {prefix + "embed_tokens.weight"} if skip_words else set()
@@ -51,14 +53,17 @@ def transfer_text_checkpoint(backbone, path: Path, *, skip_words: bool = False) 
                 ignored_shared.append(key)
             else:
                 raise ValueError(f"Unmapped text tensor: {key}")
-        with torch.no_grad():
-            for key, destination in expected.items():
-                source = reader.get_tensor(prefix + key)
-                # Direct CPU-mmap -> destination copy avoids a second large GPU PLE tensor.
-                destination.copy_(source)
+        if not preflight_only:
+            with torch.no_grad():
+                for key, destination in expected.items():
+                    source = reader.get_tensor(prefix + key)
+                    # Direct CPU-mmap -> destination copy avoids a second large GPU PLE tensor.
+                    destination.copy_(source)
     return {
         "text_prefix": prefix,
-        "tensors_copied": len(expected),
+        "tensors_copied": 0 if preflight_only else len(expected),
+        "tensors_validated": len(expected),
+        "preflight_only": preflight_only,
         "encoder_words_skipped": skip_words,
         "ignored_shared_kv_tensors": sorted(ignored_shared),
         "nontext_tensors_ignored": sum(not key.startswith(prefix) for key in available),

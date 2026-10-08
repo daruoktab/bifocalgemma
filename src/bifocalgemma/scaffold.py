@@ -64,7 +64,31 @@ BUILD_BLOCKS = (
     BuildBlock(
         "T04", "optional_placeholder", "training/distillation.py", "Optional later teacher losses"
     ),
-    BuildBlock("I01", "placeholder", "inference/generation.py", "IT-aware generation and stopping"),
+    BuildBlock(
+        "I01",
+        "reference",
+        "inference/generation.py",
+        "Target-free greedy native decoding; temporal cache pending",
+    ),
+    BuildBlock(
+        "D07",
+        "implemented",
+        "data/repository.py",
+        "Static pinned-source snapshot exports and quarantine",
+    ),
+    BuildBlock("D08", "implemented", "data/context.py", "Target-free lexical context windows"),
+    BuildBlock(
+        "E03",
+        "reference",
+        "evaluation/native_python.py",
+        "Opt-in native Python scorer; real benchmark gold validation pending",
+    ),
+    BuildBlock(
+        "T05",
+        "implemented",
+        "training/repository_sft.py",
+        "Matched-cohort repository SFT including decoder-only baselines",
+    ),
     BuildBlock(
         "A01",
         "optional_placeholder",

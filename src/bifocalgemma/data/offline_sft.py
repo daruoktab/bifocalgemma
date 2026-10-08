@@ -4,11 +4,14 @@ import difflib
 import hashlib
 import json
 import random
+import re
 from collections import Counter
 from pathlib import PurePosixPath
 
 
 def editing_record(raw: dict, *, source: str) -> dict:
+    if raw.get("record_type") == "repository_patch_v1":
+        return repository_editing_record(raw)
     before, after = raw.get("old_contents"), raw.get("new_contents")
     instruction = raw.get("instruction") if source == "editpackft" else raw.get("subject")
     if not isinstance(instruction, str) or not instruction.strip():
@@ -104,18 +107,30 @@ def split_editing_records(records, *, seed=17, dev_fraction=0.1, train_limit=200
 def editing_manifest(records):
     return [
         {
-            key: row[key]
-            for key in (
-                "instance_id",
-                "group",
-                "pair_hash",
-                "instruction_hash",
-                "path",
-                "source",
-                "commit",
-                "repos",
-                "license",
-            )
+            **{
+                key: row[key]
+                for key in (
+                    "record_type",
+                    "source_revision",
+                    "snapshot_sha256",
+                    "context_selection",
+                )
+                if key in row
+            },
+            **{
+                key: row[key]
+                for key in (
+                    "instance_id",
+                    "group",
+                    "pair_hash",
+                    "instruction_hash",
+                    "path",
+                    "source",
+                    "commit",
+                    "repos",
+                    "license",
+                )
+            },
         }
         for row in records
     ]
@@ -125,3 +140,44 @@ def stable_fingerprint(value):
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     ).hexdigest()
+
+
+def repository_editing_record(raw):
+    """Consume only target-free-context training exports from the repo preparer."""
+    if raw.get("role") != "train":
+        raise ValueError("evaluation_record_cannot_enter_training")
+    if raw.get("source", "").lower() in {
+        "qurrent/res-q",
+        "nuprl/canitedit",
+        "bigcode/humanevalpack",
+        "evalplus/repoqa",
+    }:
+        raise ValueError("benchmark_source_cannot_enter_training")
+    instruction, context, patch = (
+        raw.get("instruction"),
+        raw.get("context"),
+        raw.get("target_patch"),
+    )
+    if not all(isinstance(x, str) and x.strip() for x in (instruction, context, patch)):
+        raise ValueError("missing_repository_training_fields")
+    if raw.get("context_selection", {}).get("gold_used") is not False:
+        raise ValueError("repository_context_policy_not_target_free")
+    snapshot = raw.get("snapshot_sha256", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", snapshot):
+        raise ValueError("missing_repository_snapshot_hash")
+    for key in ("instance_id", "group", "commit", "repos", "source", "source_revision"):
+        if not isinstance(raw.get(key), str) or not raw[key]:
+            raise ValueError("missing_repository_provenance")
+    if not patch.startswith("diff --git "):
+        raise ValueError("unsupported_repository_target_patch")
+    pair_hash = hashlib.sha256((snapshot + "\0" + patch).encode()).hexdigest()
+    instruction_hash = hashlib.sha256(instruction.strip().encode()).hexdigest()
+    return {
+        **raw,
+        "path": "repository_context",
+        "before": context,
+        "after": "",
+        "pair_hash": pair_hash,
+        "instruction_hash": instruction_hash,
+        "license": str(raw.get("license") or "unknown"),
+    }
