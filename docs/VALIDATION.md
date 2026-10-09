@@ -336,3 +336,12 @@ regenerated notebooks. A real four-task cached v3 export (3 train/1 dev) passed
 the strengthened loader with evidence for 17 visible source files. Generators,
 strict marimo, Ruff, type and whitespace checks pass. The corrected production
 job is active and revalidates cached source under a separate v3 ledger.
+
+
+Full package plus all five notebooks after the v3 context-policy change:
+**146 passed /2 optional-real-cache skips in 186.19s**. Follow-up with the
+audited cache set explicitly: **6 offline-data tests passed in 42.83s**, including
+both previously skipped real-tokenizer cases. Across the two runs, 148 distinct
+test cases were verified; this is not a claim of 152 distinct tests or a single
+148-case run. [Regression receipt](data/full_regression_context_policy_v3_20261009.json).
+The production corpus and original-model 8k training-memory gate remain pending.

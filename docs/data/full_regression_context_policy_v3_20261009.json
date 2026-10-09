@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-09",
+  "scope": "Full package/five-notebook regression after visible-context license correction; no pretrained-model quality or long-context VRAM claim.",
+  "runtime": {
+    "python": "3.13.16",
+    "torch": "2.14.1+cu130",
+    "transformers": "5.19.0",
+    "marimo": "0.25.1"
+  },
+  "full_suite": {
+    "command": "pytest tests notebooks/bifocalgemma_architecture_test.py notebooks/bifocalgemma_pretrained_probe.py notebooks/bifocalgemma_train_symmetric.py notebooks/bifocalgemma_train_asymmetric.py notebooks/bifocalgemma_repository_study.py -q",
+    "passed": 146,
+    "skipped": 2,
+    "seconds": 186.19,
+    "skip_reason": "Real tokenizer cache environment variable absent."
+  },
+  "real_cache_followup": {
+    "command": "pytest tests/test_offline_data.py -q with BIFOCALGEMMA_TOKENIZER_CACHE set to audited offline assets",
+    "passed": 6,
+    "skipped": 0,
+    "seconds": 42.83,
+    "scope": "Includes both real-cache tests skipped in the full run, plus four already-passing tests; counts must not be added as if all were distinct."
+  },
+  "combined_unique_test_cases_verified": 148,
+  "production_corpus_final": false,
+  "original_model_large_window_vram_measured": false
+}
