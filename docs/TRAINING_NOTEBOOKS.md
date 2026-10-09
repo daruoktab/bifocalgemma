@@ -5,7 +5,7 @@ File untuk diunggah satu per satu ke Molab:
 - [bifocalgemma_train_symmetric.py](../notebooks/bifocalgemma_train_symmetric.py)
 - [bifocalgemma_train_asymmetric.py](../notebooks/bifocalgemma_train_asymmetric.py)
 
-Keduanya **19 cell**, dalam urutan yang sama. **18 isi cell identik persis**.
+Keduanya **20 cell**, dalam urutan yang sama. **19 isi cell identik persis**.
 Hanya tiga baris pada control center berbeda:
 
 | Setting | Simetris | Asimetris |
@@ -27,7 +27,8 @@ Asimetris: untied encoder words, learned H projection. PLE tetap separate.
    anonim bila tersedia. Read token cukup untuk unduh; berikan token write bila
    mengaktifkan upload run artifacts ke Hub (HF_UPLOAD_ENABLED=True).
 3. Pilih EXPERIMENT dari keluarga notebook; ubah RUN_NAME untuk eksperimen baru.
-4. Siapkan direktori curated pool dan periksa manifest/counts. Periksa control center, lalu ubah **RUN_TRAINING=True**. Default False menjaga
+4. Aktifkan **PREPARE_FULL_POOL=True**, biarkan RUN_TRAINING=False. Cell corpus mengunduh sumber pinned, memverifikasi benchmark dan menyiapkan foundation lalu repository corpus.
+5. Periksa tabel READY/counts, lalu ubah **RUN_TRAINING=True** untuk epoch penuh. Default False menjaga
    pembukaan notebook/checks tidak langsung mengunduh atau melatih model besar.
 5. Amati preprocessing count, training logs/dev CE, lalu lokasi checkpoint/report.
 
@@ -52,13 +53,14 @@ kapasitas 96 GB selalu kosong. Setting training default berbeda dari micro probe
 | 9 | Pretrained transfer dan attention LoRA |
 | 10 | Training policy: dua profil dan meta group table |
 | 11 | Data conversion, split dan tokenization helpers |
-| 12 | Training/checkpoint/resume helpers |
-| 13 | Preflight metadata/VRAM guard |
-| 14 | Data preparation |
-| 15 | Model load + SFT dalam satu rerun boundary |
-| 16 | Cheap result summary |
-| 17 | Upload artifacts ke HF Hub ({FAMILY}/{EXPERIMENT}/{RUN_NAME}) |
-| 18 | Pytest-only cell |
+| 12 | Full corpus preparation: bundled source, foundation, licensed snapshots |
+| 13 | Training/checkpoint/resume helpers |
+| 14 | Preflight metadata/VRAM guard |
+| 15 | Frozen data tokenization |
+| 16 | Model load + SFT dalam satu rerun boundary |
+| 17 | Cheap result summary |
+| 18 | Upload artifacts ke HF Hub ({FAMILY}/{EXPERIMENT}/{RUN_NAME}) |
+| 19 | Pytest-only cell |
 
 Perubahan UI summary tidak memerlukan rerun model/training. Model dimiliki oleh
 training cell dan dilepas setelah selesai. Jangan mengubah hyperparameters saat
@@ -66,7 +68,7 @@ run aktif kecuali memang hendak memulai ulang rerun boundary.
 
 ## Data dan objective
 
-Default sekarang **curated_pool**, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
+Default sekarang **curated_pool** dengan CORPUS_KIND=repository, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
 `data/train-00000-of-00001.parquet`. Opsi **CommitPackFT Python** revision
 `fc56fe33c030c6daa414c2b112c932b8eed085e6`, file `data/python/data.jsonl`.
 Pilihan local_jsonl menerima schema old_file/new_file, old_contents/new_contents,
@@ -136,8 +138,8 @@ Attention LoRA rank 16 / alpha32, frozen BF16 base words/PLE, FP32 A/B, trainabl
 asymmetric H projection. AdamW dengan named parameter groups, foreach=False, weight_decay0, lr2e-5 per group, warmup 5 steps
 lalu constant LR, clipping 1.0, microbatch 1, accumulation 4, satu epoch penuh. MAX_STEPS=0 menghitung budget dari panjang train split; nilai positif menjadi batas eksplisit. Dev CE dan checkpoint setiap 500 steps plus final checkpoint. Recipe ini belum merupakan optimum empiris. Pilot lama 100 steps tetap tersimpan sebagai baseline mekanik, bukan full-corpus result.
 
-PEP723 memakai runtime Molab yang berhasil: Torch2.11.0, Transformers5.18.0,
-marimo0.25.1, safetensors0.8.0, pyarrow25.0.0 dan pytest8.4.2, Python3.13.
+PEP723 memakai runtime Molab yang berhasil: Torch2.14.1 + CUDA13.0, Transformers5.19.0,
+marimo0.25.1, safetensors0.8.0, pyarrow25.0.1 dan pytest8.4.2, Python3.13.
 Actual runtime versions masuk report/checkpoint compatibility. Tidak ada pip/reinstall
 Torch dalam cell. Model source revisions dan text mapping sama dengan
 [pretrained probe](PRETRAINED_GPU_PROBE.md).

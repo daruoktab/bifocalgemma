@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-09",
+  "transformers": "5.19.0",
+  "pool_fingerprint": "994bae3cea351c5ff8a3da5fdaaa44a69335603b0c7e12593abfb4b2672243db",
+  "counts": {
+    "BifocalGemma-E2B-E2B": 49259,
+    "BifocalGemma-E4B-E4B": 49259,
+    "BifocalGemma-E2B-E4B": 49259,
+    "BifocalGemma-E4B-E2B": 49259,
+    "Gemma-4-E2B-IT": 49259,
+    "Gemma-4-E4B-IT": 49259
+  },
+  "tokenized_stream_sha256": {
+    "BifocalGemma-E2B-E2B": "ddcfc094ac66de95c04b2965109cd8ba9f86c11de9e35adf145408bdbb2dfa5a",
+    "BifocalGemma-E4B-E4B": "ddcfc094ac66de95c04b2965109cd8ba9f86c11de9e35adf145408bdbb2dfa5a",
+    "BifocalGemma-E2B-E4B": "ddcfc094ac66de95c04b2965109cd8ba9f86c11de9e35adf145408bdbb2dfa5a",
+    "BifocalGemma-E4B-E2B": "ddcfc094ac66de95c04b2965109cd8ba9f86c11de9e35adf145408bdbb2dfa5a",
+    "Gemma-4-E2B-IT": "092c4ca78fed732827bfc1af59728d7e081ff1c6b0b8b528f7c13ce593f781b1",
+    "Gemma-4-E4B-IT": "092c4ca78fed732827bfc1af59728d7e081ff1c6b0b8b528f7c13ce593f781b1"
+  },
+  "scope": "all frozen IDs, limits and official templates checked for all six; no model weights or training"
+}

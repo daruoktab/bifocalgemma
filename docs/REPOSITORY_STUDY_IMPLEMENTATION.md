@@ -4,7 +4,7 @@ Diperbarui **8 Oktober 2026**. Milestone ini menyiapkan alur data → SFT → ge
 
 ## Artefak utama
 
-- [Notebook standalone Molab](../notebooks/bifocalgemma_repository_study.py), 13 cell, source dibundel dari repo dengan SHA-256. Unggah satu file .py; tidak perlu checkout repo di Molab.
+- [Notebook standalone Molab](../notebooks/bifocalgemma_repository_study.py), 14 cell, source dibundel dari repo dengan SHA-256. Unggah satu file .py; tidak perlu checkout repo di Molab.
 - [Konfigurasi sumber/quarantine](../configs/repository_study.json): expected source revisions, 14 verified RES-Q fork aliases, 37 quarantined repo IDs, execution/network disabled defaults.
 - [Fixture lintas file sintetis](../examples/repository_study/README.md):8 train records /4 repo groups dan 1 eval record. Bukan benchmark atau training-quality evidence.
 - CLI `python -m bifocalgemma.repository_study`: `fetch-assets`, `prepare`, `prepare-diagnostic`, `prepare-humanevalfix`, `generate`, `score`.
@@ -25,7 +25,7 @@ Diperbarui **8 Oktober 2026**. Milestone ini menyiapkan alur data → SFT → ge
 |9|Target-free greedy generation; encoder sekali, LM head hanya last token|
 |10|Native Python scoring atau gold-scorer validation|
 |11|Cheap stage summary|
-|12|Pytest self-test|
+|12|Pytest self-test (position 13 after corpus cell)|
 
 Semua RUN flags default False. FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK dan ALLOW_CODE_EXECUTION juga default False. Tokenizer fetch hanya metadata/tokenizer, bukan weights. Model files diunduh hanya sesudah RUN_TRAINING/GENERATE diaktifkan dan guard CUDA/BF16/free-memory lulus.
 
@@ -138,3 +138,7 @@ python -m marimo check --strict notebooks/bifocalgemma_repository_study.py noteb
 ```
 
 Edit helper source/template, lalu regenerate; jangan mengedit encoded bundle secara manual. Bundle tidak memuat pretrained weights, tokenizer payload, HF credentials atau real benchmark code/data. [Riset](RESEARCH_REPOSITORY_DATA_AND_BENCHMARKS.md) memisahkan admission/benchmark claims dari readiness engineering ini.
+
+The added full-corpus cell prepares instruction foundation and repository snapshots before SFT. TRAINING_DATA_MODE=curated_pool uses the frozen complete cohort for all six models; MAX_STEPS=0 completes configured epochs. Legacy repository_tasks is an explicit alternative, and RESUME_FROM supports checkpoint v2. See [full-corpus guide](FULL_CORPUS_TRAINING.md).
+
+Runtime pins now match the ai environment: Transformers 5.19.0 / Torch 2.14.1 CUDA13.0. The earlier 5.18.0/2.11.0 results are historical measurements, not re-labeled as this runtime.

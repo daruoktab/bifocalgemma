@@ -55,7 +55,7 @@ lagi dan selalu menyatakan mode synthetic, bukan benchmark score.
 [Notebook standalone](notebooks/bifocalgemma_repository_study.py) menyiapkan
 source-pinned repo exports, matched-cohort SFT keenam model, checkpoint v2 inference,
 greedy patch/function/completion generation, serta opt-in native scoring.
-Default actions/network/execution disabled. Dua training notebooks tetap 19 cell
+Default actions/network/execution disabled. Dua training notebooks tetap 20 cell
 dengan 18 isi identik dan menerima repository train exports melalui local_jsonl.
 
 Validation nyata: synthetic pipeline smoke, RepoQA Python100 prepared, dan
@@ -119,8 +119,8 @@ download/cache, provenance, optimizer policy dan interpretasi PASS/OOM/guard.
 
 Dua notebook khusus **training** tersedia:
 [simetris](notebooks/bifocalgemma_train_symmetric.py) dan
-[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 19 cell,
-18 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
+[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 20 cell,
+19 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
 EditPackFT/JSONL → LoRA SFT → dev loss → checkpoint/resume. RUN_TRAINING=False
 saat pertama dibuka. [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.
@@ -160,3 +160,5 @@ Kode memakai [Apache License 2.0](LICENSE). [Ketentuan kompetisi](docs/COMPETITI
 yang belum terverifikasi tetap diberi status demikian.
 
 Full-corpus admission dan complete-epoch defaults dijelaskan dalam [panduan](docs/FULL_CORPUS_TRAINING.md). Kurasi penuh sedang berjalan; jumlah upstream bukan jumlah yang sudah lolos training admission. Pilot model asli E2B–E2B berhasil 100 steps dengan peak allocated 23,38 GiB; ini belum skor repair.
+
+Manual Molab upload kini menyiapkan corpus melalui cell PREPARE_FULL_POOL. Dependency mengikuti env ai (Torch 2.14.1/cu130, Transformers 5.19.0). Foundation terverifikasi: 44.333 train / 4.926 dev; main repository corpus memakai snapshot berlisensi dan public-issue context. Lihat [panduan](docs/FULL_CORPUS_TRAINING.md).

@@ -1,0 +1,66 @@
+{
+  "scope": "four real tasks through full repository export/tokenization for all six; not production corpus or model scores",
+  "transformers": "5.19.0",
+  "instances": {
+    "BifocalGemma-E2B-E2B": {
+      "train": [
+        "azure__walinuxagent-970",
+        "sissbruecker__linkding-984",
+        "mozilla-services__cliquet-203"
+      ],
+      "dev": [
+        "tomwhite__cubed-211"
+      ]
+    },
+    "BifocalGemma-E4B-E4B": {
+      "train": [
+        "azure__walinuxagent-970",
+        "sissbruecker__linkding-984",
+        "mozilla-services__cliquet-203"
+      ],
+      "dev": [
+        "tomwhite__cubed-211"
+      ]
+    },
+    "BifocalGemma-E2B-E4B": {
+      "train": [
+        "azure__walinuxagent-970",
+        "sissbruecker__linkding-984",
+        "mozilla-services__cliquet-203"
+      ],
+      "dev": [
+        "tomwhite__cubed-211"
+      ]
+    },
+    "BifocalGemma-E4B-E2B": {
+      "train": [
+        "azure__walinuxagent-970",
+        "sissbruecker__linkding-984",
+        "mozilla-services__cliquet-203"
+      ],
+      "dev": [
+        "tomwhite__cubed-211"
+      ]
+    },
+    "Gemma-4-E2B-IT": {
+      "train": [
+        "azure__walinuxagent-970",
+        "sissbruecker__linkding-984",
+        "mozilla-services__cliquet-203"
+      ],
+      "dev": [
+        "tomwhite__cubed-211"
+      ]
+    },
+    "Gemma-4-E4B-IT": {
+      "train": [
+        "azure__walinuxagent-970",
+        "sissbruecker__linkding-984",
+        "mozilla-services__cliquet-203"
+      ],
+      "dev": [
+        "tomwhite__cubed-211"
+      ]
+    }
+  }
+}

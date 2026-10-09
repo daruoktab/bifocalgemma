@@ -77,9 +77,9 @@ loading; file checksums and instance order are verified before training.
 
 ## Notebook recipe
 
-The two matched notebooks retain 19 cells / 18 identical bodies. Their new
+The two matched notebooks retain 20 cells / 19 identical bodies. Their new
 default is `DATA_SOURCE="curated_pool"`, with `LOCAL_DATA_FILE` pointing to the
-pool directory. `RUN_TRAINING=False` remains the startup guard. `MAX_STEPS=0`
+pool directory. A separate `PREPARE_FULL_POOL` cell fetches all pinned sources and builds the pool on a fresh Molab session; no checkout/data folder upload is required. `RUN_TRAINING=False` remains the startup guard. `MAX_STEPS=0`
 means all configured epochs over the frozen split; positive values explicitly
 limit updates. `EPOCHS=1`, batch 1, accumulation 4 give approximately
 `ceil(train_examples/4)` optimizer updates. Evaluation/checkpoint intervals default
@@ -108,3 +108,48 @@ resume support; generate/scorer-evaluate the held-out benchmarks. The 100-step
 pilot only validates training mechanics. Gold-scorer checks are not model scores.
 
 The trainer records `step_seconds` after CUDA synchronization, evaluation time, and checkpoint/segment wall time. These measurements are collected on the actual run; no GPU-hour estimate is derived from the short pilot for longer-context models.
+
+
+## Verified complete instruction foundation
+
+The full local job scanned 459,750 upstream records across all three sources.
+50,461 unique candidates passed static admission; the 2,048/2,048/4,608 gate
+retained **49,259 examples (97.62%)**, split into **44,333 train / 4,926 dev**.
+The training split has 16,513,084 supervised target tokens. One epoch at batch 1,
+accumulation 4 is **11,084 optimizer updates**. These are actual data counts,
+not trained-model results. Details: [receipt](data/full_instruction_pool_20261009.json).
+
+Before caps, P95 lengths were encoder 1,119, paired decoder 1,540 and baseline
+2,385; P99 paired decoder was 2,474. The 2k gate discards a measured 2.38% tail
+without truncation. Full-tail budgets would require a new GPU resource gate,
+not simply setting 32k/8k.
+
+## Manual Molab upload
+
+Upload the regenerated symmetric/asymmetric notebook `.py` only. Apply the HF
+read token in its dedicated cell, set PREPARE_FULL_POOL=True, and wait for READY.
+The default CORPUS_KIND=repository first prepares the instruction foundation, then
+SWE-rebench V2 Python before snapshots with issue-only retrieval and static patch
+roundtrips. LOCAL_DATA_FILE defaults to `outputs/full_repository_pool_v1`;
+FOUNDATION_POOL_DIR remains `outputs/full_training_pool_v1`.
+
+The repository budget targets at most 10,000 accepted examples, at most 50 per
+repository, and 20 GiB compressed archives. These are explicit resource controls,
+not a promise of 10,000 usable tasks. Rejections, quotas and budget stops remain
+in the manifest. Use CORPUS_KIND=instruction plus its foundation directory for
+an instruction-only ablation. The main repository study does not silently fall
+back to EditPackFT or fixtures.
+
+The universal repository notebook accepts the same frozen pool for all six models,
+including decoder-only baselines, and supports checkpoint-v2 RESUME_FROM. Model
+weights load only after data preparation/tokenization and GPU preflight. No RL,
+VM, Docker, teacher model or PEFT package is needed by this recipe.
+
+The runtime now follows conda ai: Transformers 5.19.0, Torch 2.14.1 with CUDA 13.0,
+PyArrow 25.0.1, tokenizers 0.23.2, huggingface-hub 1.33.0 and NumPy 2.5.3. CUDA
+wheels use the explicit official cu130 uv index. No pip/reinstall cell modifies
+the active runtime. Historical pilot measurements keep their original versions.
+
+Full repository-table audit found 7,243 Python SWE-rebench V2 rows; 7,192 remained after 46 benchmark-repository and five duplicate-lineage exclusions. These are candidates before snapshot/license/context gates. The 10,000 target is therefore an upper budget, not an admitted-count promise. SWE-Fixer has 114,352 table candidates across 846 repos, but every row lacks a source-code license field; actual pinned-source license evidence is mandatory. See [table audit](data/repository_table_audit_20261009.json).
+
+Repository preparation now retries incomplete HTTP archive transfers and checkpoints each accepted/excluded outcome in SQLite. Re-running unchanged settings resumes the source cursor and accepted records; settings fingerprints prevent mixing a new corpus policy into old state. Source archives remain cached and no repository code is executed.

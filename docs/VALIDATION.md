@@ -200,3 +200,36 @@ sebelumnya menghasilkan 25 passed sebelum tiga complete-epoch tests ditambahkan.
 Generator parity, marimo strict, Ruff dan type checking lulus. Full-corpus job
 masih menjalankan admission/profiling; manifest final belum menjadi bukti pada
 catatan ini. [Pilot pretrained](data/molab_pilot_20261008.json) dicatat terpisah.
+
+
+## ai runtime and standalone corpus notebooks — 9 Oktober 2026
+
+Runtime pins now match the upgraded conda ai environment: Torch 2.14.1/cu130,
+Transformers 5.19.0, PyArrow 25.0.1, tokenizers 0.23.2 and NumPy 2.5.3. The
+5.18.0 → 5.19.0 Gemma4 source comparison found text RoPE changes and output/router
+metadata changes; this is followed by full native/scaffold/notebook regression,
+not just removal of the version guard. The official CUDA130 index contains the
+Linux CPython3.13 x86_64 Torch2.14.1 wheel.
+
+Package plus all five notebooks: **116 passed, 2 optional-cache skips**. After
+moving the source bootstrap into the Environment cell, related helpers and both
+training notebook checks additionally produced **20 passed**. Timing diagnostics
+are excluded only from wall-clock equality; v2 resume still checks all semantic
+history fields and model weights.
+
+Both training notebooks have **20 cells /19 identical bodies**, with only the
+three control-center family/experiment/output lines differing. The universal
+repository notebook has 14 cells and now consumes complete frozen pools for pairs
+and baselines, with explicit checkpoint-v2 resume. The Environment cell holds the
+source bundle so the data-preparation cell remains readable.
+
+The complete instruction foundation has 44,333 train and 4,926 dev records after
+all-source admission/profiling. A real SWE-rebench task, wtforms__wtforms-614,
+validated a 92-file pinned text snapshot, BSD source license evidence, 2,019-token
+issue-only context and static application of a patch touching 10 files. This is
+adapter validation, not model quality or a claim that the task fits every output
+budget. Repository-corpus admission is being checked separately.
+
+Every one of the 49,259 frozen instruction-pool records was re-tokenized on Transformers 5.19.0 for all six experiment configurations. IDs, split order, limits and closing-token policy passed with no model-specific filtering. [All-six receipt](data/all_six_pool_tokenization_20261009.json) stores per-configuration token-stream digests.
+
+The updated repository builder completed a four-real-task end-to-end export (3 train/1 dev), with licensed immutable snapshots, issue-only context, benchmark overlap checks and static patch roundtrip. Its six tokenizer configurations are checked separately. Six archive/ledger tests cover transport retry, resume settings, nested license includes and read-only index protection. The larger 64-task adapter run is separate from production corpus preparation.
