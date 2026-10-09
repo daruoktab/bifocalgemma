@@ -211,3 +211,74 @@ def profile_training_group(models, batches, *, steps=2, mode="overlap_graphs", l
             # Caller owns models and may release them after OOM; no success is fabricated.
             for model in models:
                 model.zero_grad(set_to_none=True)
+
+
+def synthetic_stress_target(prefix_length, target_ids, decoder_tokens, padding_ids):
+    """Fill a synthetic tensor-stress target exactly; never truncate real examples."""
+    if (
+        type(prefix_length) is not int
+        or prefix_length < 1
+        or type(decoder_tokens) is not int
+        or not 1 <= decoder_tokens <= 131072
+        or not target_ids
+        or target_ids[-1] != 106
+        or not padding_ids
+    ):
+        raise ValueError("invalid_synthetic_stress_boundary")
+    extra = decoder_tokens + 1 - prefix_length - len(target_ids)
+    if extra < 0:
+        raise ValueError("synthetic_stress_budget_too_small_no_truncation")
+    padding = (tuple(padding_ids) * ((extra + len(padding_ids) - 1) // len(padding_ids)))[:extra]
+    return (*target_ids[:-1], *padding, 106)
+
+
+def run_length_grid(names, length_grid, probe, *, progress=None) -> dict:
+    """One model at a time; stop larger boundaries for that model after a failure."""
+    allowed = {
+        "BifocalGemma-E2B-E2B",
+        "BifocalGemma-E4B-E4B",
+        "BifocalGemma-E2B-E4B",
+        "BifocalGemma-E4B-E2B",
+        "Gemma-4-E2B-IT",
+        "Gemma-4-E4B-IT",
+    }
+    if not names or len(set(names)) != len(names) or not set(names) <= allowed:
+        raise ValueError("invalid_length_grid_experiments")
+    grid = list(length_grid)
+    if not grid or any(
+        len(pair) != 2 or any(type(v) is not int or not 64 <= v <= 32768 for v in pair)
+        for pair in grid
+    ):
+        raise ValueError("invalid_length_grid_boundaries")
+    if any(a[0] > b[0] or a[1] > b[1] or a == b for a, b in zip(grid, grid[1:])):
+        raise ValueError("length_grid_must_increase")
+    rows: list[dict] = []
+    for name in names:
+        for index, (encoder, paired_decoder) in enumerate(grid):
+            decoder = (
+                encoder + paired_decoder + 512 if name.startswith("Gemma-4-") else paired_decoder
+            )
+            result = probe(name, encoder, decoder)
+            rows.append(
+                {
+                    "experiment": name,
+                    "encoder_context_budget": encoder,
+                    "paired_decoder_budget": paired_decoder,
+                    "actual_decoder_budget": decoder,
+                    "result": result,
+                    "larger_boundaries_not_attempted": grid[index + 1 :]
+                    if result["status"] != "PASS"
+                    else [],
+                }
+            )
+            if progress is not None:
+                progress(rows[-1])
+            if result["status"] != "PASS":
+                break
+    return {
+        "scope": "synthetic_exact_length_training_memory_not_model_quality",
+        "rows": rows,
+        "one_resident_model_at_a_time": True,
+        "all_configurations_passed_maximum": len(rows) == len(names) * len(grid)
+        and all(row["result"]["status"] == "PASS" for row in rows),
+    }

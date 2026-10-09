@@ -282,3 +282,21 @@ encoder overflow, budget rejection before loading weights, and one tokenizer
 load per checkpoint per generation run. Generators, strict marimo, Ruff, type
 checking and whitespace checks passed. Original-model math generation and
 larger-context training memory remain unmeasured.
+
+
+## Original-model context sweep preparation — 9 Oktober 2026
+
+The standalone pretrained probe now has 16 cells and an opt-in sequential
+six-model length sweep. Unlike the short-target pilot, it fills synthetic
+supervised decoder tensors to the requested shifted length, preserving the
+prefix mask and final turn token. Baseline lengths include the same selected
+context plus target budget. These are stress tensors, not real SFT examples.
+
+**12 helper/notebook tests passed**, including exact 2k/4k/8k/16,896 collator
+shapes, failure-boundary stopping, baseline budget parity, library/notebook
+helper identity, and incremental per-case JSON persistence. The simulated
+persistence test uses mock probe outcomes; it is not a GPU measurement.
+All five notebooks pass strict marimo checking; generators, Ruff, type checking
+and whitespace checks pass. [Run instructions](PRETRAINED_GPU_PROBE.md).
+Original checkpoint allocation/training at these boundaries is left to the
+user's Molab runtime and is not declared feasible by these CPU tests.

@@ -114,3 +114,6 @@ checked real tokenizer IDs and generation budgets for all six configurations,
 and passed a 1,319/1,319 reference-answer scorer check. This is **not model
 accuracy**. [Complete validation receipt](data/gsm8k_adapter_validation_20261009.json).
 Original-model GSM8K generation remains to be run by the user on Molab.
+
+
+The [pretrained memory probe](PRETRAINED_GPU_PROBE.md) now offers an opt-in sequential six-model exact-length sweep and per-case reports for the larger repository-window gate. Raising the short pilot decoder cap alone does not constitute a long-sequence test.

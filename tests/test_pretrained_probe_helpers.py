@@ -139,3 +139,139 @@ class TestMemoryProbe(unittest.TestCase):
         configure_probe_training(model, rank=2)
         with self.assertRaisesRegex(ValueError, "independent"):
             profile_training_group([model, model], [self.batch(), self.batch()])
+
+
+def test_exact_synthetic_lengths_preserve_shift_and_closing_turn():
+    from bifocalgemma.training.memory_probe import synthetic_stress_target
+
+    prefix = (2, 7, 8)
+    target = (9, 10, 106)
+    for length in (2048, 4096, 8192, 16896):
+        filled = synthetic_stress_target(len(prefix), target, length, (11, 12))
+        assert filled[:2] == target[:2] and filled[-1] == 106
+        batch = RepairCollator()([TokenizedRepairExample("stress", (), prefix, filled)])
+        assert batch.decoder_input_ids.shape == (1, length)
+        assert batch.labels[0, -1].item() == 106
+        assert (batch.labels[0, : len(prefix) - 1] == -100).all()
+    assert synthetic_stress_target(3, target, 5, (11,)) == target
+    for args in ((3, target, 4, (11,)), (3, (9,), 8, (11,)), (3, target, 8, ())):
+        try:
+            synthetic_stress_target(*args)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Invalid/truncating stress configuration was accepted")
+
+
+def test_length_grid_matches_baseline_budget_and_stops_after_failure():
+    from bifocalgemma.training.memory_probe import run_length_grid
+
+    calls = []
+
+    def probe(name, encoder, decoder):
+        calls.append((name, encoder, decoder))
+        return {"status": "OOM" if name.startswith("BifocalGemma") and encoder == 4096 else "PASS"}
+
+    grid = ((2048, 2048), (4096, 4096), (8192, 8192))
+    progress = []
+    result = run_length_grid(
+        ("BifocalGemma-E2B-E2B", "Gemma-4-E4B-IT"), grid, probe, progress=progress.append
+    )
+    assert progress == result["rows"]
+    assert len(calls) == 5
+    assert calls[-1] == ("Gemma-4-E4B-IT", 8192, 16896)
+    same_encoder = run_length_grid(("Gemma-4-E2B-IT",), ((2048, 2048), (2048, 4096)), probe)
+    assert same_encoder["all_configurations_passed_maximum"]
+    assert result["rows"][1]["larger_boundaries_not_attempted"] == [(8192, 8192)]
+    assert not result["all_configurations_passed_maximum"]
+    assert result["one_resident_model_at_a_time"]
+    for invalid in (((4096, 4096), (2048, 2048)), ((1, 1),), ()):
+        try:
+            run_length_grid(("Gemma-4-E4B-IT",), invalid, probe)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Invalid length grid was accepted")
+    assert run_length_grid(("Gemma-4-E2B-IT",), ((2048, 2048),), probe)[
+        "all_configurations_passed_maximum"
+    ]
+
+
+def test_notebook_stress_helpers_match_shared_library():
+    import ast
+
+    def definitions(path):
+        nodes = ast.walk(ast.parse(Path(path).read_text(encoding="utf-8")))
+        return {
+            node.name: ast.dump(node, include_attributes=False)
+            for node in nodes
+            if isinstance(node, ast.FunctionDef)
+            and node.name in {"synthetic_stress_target", "run_length_grid"}
+        }
+
+    library = definitions("src/bifocalgemma/training/memory_probe.py")
+    assert library == definitions("notebooks/bifocalgemma_pretrained_probe.py")
+
+
+def test_notebook_sweep_persists_results_per_case(tmp_path):
+    import ast
+    import copy
+    import json
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from bifocalgemma.training.memory_probe import run_length_grid
+
+    tree = ast.parse(Path("notebooks/bifocalgemma_pretrained_probe.py").read_text(encoding="utf-8"))
+    cell = copy.deepcopy(
+        next(
+            n
+            for n in tree.body
+            if isinstance(n, ast.FunctionDef)
+            and any(a.arg == "RUN_LENGTH_SWEEP" for a in n.args.args)
+        )
+    )
+    cell.decorator_list = []
+    namespace = {}
+    exec(compile(ast.Module(body=[cell], type_ignores=[]), "probe_cell", "exec"), namespace)
+    observed = []
+
+    def probe(*args, **kwargs):
+        assert kwargs["stress_decoder"]
+        files = list(tmp_path.glob("length_sweep_*.json"))
+        if files:
+            observed.append(json.loads(files[0].read_text(encoding="utf-8")))
+        return {"status": "PASS", "data": {"decoder_tokens_actual": args[6]}}
+
+    mo = SimpleNamespace(
+        md=lambda text: text,
+        vstack=lambda rows: rows,
+        ui=SimpleNamespace(table=lambda rows, **kwargs: rows),
+    )
+    result, path = namespace["_"](
+        RUN_PRETRAINED=True,
+        RUN_LENGTH_SWEEP=True,
+        LENGTH_EXPERIMENTS=("Gemma-4-E2B-IT",),
+        LENGTH_GRID=((2048, 2048), (4096, 4096)),
+        TRAINING_POLICY="lora",
+        LORA_RANK=16,
+        STEPS=2,
+        CACHE_DIR="cache",
+        BATCH_SIZE=1,
+        HEADROOM_GIB=8,
+        SEED=17,
+        device="cuda",
+        run_single_pretrained=probe,
+        run_length_grid=run_length_grid,
+        single_result={},
+        mo=mo,
+        Path=Path,
+        OUTPUT_DIR=tmp_path,
+        datetime=datetime,
+        timezone=timezone,
+        json=json,
+    )
+    assert observed[0]["status"] == "IN_PROGRESS" and len(observed[0]["rows"]) == 1
+    final = json.loads(path.read_text(encoding="utf-8"))
+    assert final["status"] == "FINISHED" and len(final["rows"]) == 2
+    assert result["all_configurations_passed_maximum"]

@@ -1,7 +1,7 @@
 # Molab: Checkpoint Asli dan Probe VRAM Training Beberapa Model
 
 Unggah [bifocalgemma_pretrained_probe.py](../notebooks/bifocalgemma_pretrained_probe.py)
-ke Molab. Notebook **standalone 15 cell** memuat text weights asli dari encoder base
+ke Molab. Notebook **standalone 16 cell** memuat text weights asli dari encoder base
 serta decoder IT dan mengukur micro training steps. Pengguna menjalankannya pada GPU
 Blackwell 96 GB sendiri. Sesi lokal hanya memeriksa helper dan guard; belum ada hasil
 VRAM checkpoint asli atau klaim jumlah model yang pasti muat.
@@ -157,3 +157,49 @@ word anchor/PLE separation, LoRA scope/zero init, real optimizer states, indepen
 models and two residency modes tested with native tiny tensors. Graph CPU guard and
 notebook pytest inspected without checkpoint download. GPU96 execution is delegated
 to the user, matching their upload workflow.
+
+
+## Exact-length sweep for the larger context study
+
+The default single pilot has a short repair target. Raising MAX_DECODER_TOKENS
+alone only raises its cap; it does not test training on a longer decoder
+sequence. The added sweep explicitly fills a synthetic target before the IT
+closing turn so that the **shifted decoder tensor reaches the requested length**.
+This artificial loss is a memory/gradient stress test, not a realistic repair
+example or a quality evaluation. Real SFT examples are never padded this way.
+
+For the sequential sweep set:
+
+```python
+RUN_PRETRAINED = True
+RUN_CONCURRENCY = False
+RUN_LENGTH_SWEEP = True
+LENGTH_GRID = ((2048, 2048), (4096, 4096), (4096, 8192), (8192, 8192))
+```
+
+LENGTH_EXPERIMENTS defaults to the four pairs plus both IT baselines. Each pair
+uses (encoder context, total paired-decoder training length). Baselines receive
+the selected context in their decoder prefix and reserve encoder + paired
+budget + 512 tokens, reaching 16,896 total at the 8k/8k boundary. Inactive cap
+settings from the short pilot do not control this sweep.
+
+One original model is loaded and released for each case. Cases execute
+sequentially. OOM/guard failure stops larger boundaries for that model and is
+recorded; the next configuration is still attempted. PASS requires finite loss,
+nonzero finite gradients and AdamW updates at the **actual** tensor dimensions.
+Headroom estimates do not establish an activation-memory budget.
+
+Every attempted case is saved immediately to a timestamped length_sweep JSON
+under OUTPUT_DIR, with IN_PROGRESS while running and FINISHED after the loop.
+The final report also includes the whole sweep. FINISHED is a process state;
+only all_configurations_passed_maximum=true shows that every requested model
+passed the largest requested boundary. A failed or skipped case is not a
+measured feasible training length. Partial files can be inspected after session
+interruption; this does not implement optimization-state resume for probes.
+
+The current attention implementation is eager. If the desired 8k boundary
+fails, gradient/attention memory optimization is a subsequent implementation
+task, followed by remeasurement. Do not infer 32k/8k feasibility from the
+original architecture's 128k position limit or from inference measurements.
+The sweep is prepared for the user's Molab run; no pretrained weights were
+loaded locally for this update.

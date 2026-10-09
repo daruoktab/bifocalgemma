@@ -46,6 +46,16 @@ def _(mo):
     PRECISION = "auto"
     RUN_PRETRAINED = True  # GPU guard harus lulus sebelum download/model allocation.
     RUN_CONCURRENCY = True
+    RUN_LENGTH_SWEEP = False  # Sequential full-length stress; disable concurrency for this study.
+    LENGTH_EXPERIMENTS = (
+        "BifocalGemma-E2B-E2B",
+        "BifocalGemma-E4B-E4B",
+        "BifocalGemma-E2B-E4B",
+        "BifocalGemma-E4B-E2B",
+        "Gemma-4-E2B-IT",
+        "Gemma-4-E4B-IT",
+    )
+    LENGTH_GRID = ((2048, 2048), (4096, 4096), (4096, 8192), (8192, 8192))
     SINGLE_EXPERIMENT = "BifocalGemma-E2B-E2B"
     CONCURRENT_EXPERIMENTS = (
         "BifocalGemma-E2B-E2B",
@@ -72,6 +82,9 @@ def _(mo):
         PRECISION,
         RUN_PRETRAINED,
         RUN_CONCURRENCY,
+        RUN_LENGTH_SWEEP,
+        LENGTH_EXPERIMENTS,
+        LENGTH_GRID,
         SINGLE_EXPERIMENT,
         CONCURRENT_EXPERIMENTS,
         TRAINING_POLICY,
@@ -1320,13 +1333,88 @@ def _(
             "checkpoint_format": "single_safetensors",
         }
 
-    def repair_probe_batch(spec, cache_dir, encoder_tokens, decoder_limit, batch_size):
+    def synthetic_stress_target(prefix_length, target_ids, decoder_tokens, padding_ids):
+        """Fill a synthetic tensor-stress target exactly; never truncate real examples."""
         if (
-            not 64 <= encoder_tokens <= 8192
-            or not 64 <= decoder_limit <= 4096
+            type(prefix_length) is not int
+            or prefix_length < 1
+            or type(decoder_tokens) is not int
+            or not 1 <= decoder_tokens <= 131072
+            or not target_ids
+            or target_ids[-1] != 106
+            or not padding_ids
+        ):
+            raise ValueError("invalid_synthetic_stress_boundary")
+        extra = decoder_tokens + 1 - prefix_length - len(target_ids)
+        if extra < 0:
+            raise ValueError("synthetic_stress_budget_too_small_no_truncation")
+        padding = (tuple(padding_ids) * ((extra + len(padding_ids) - 1) // len(padding_ids)))[
+            :extra
+        ]
+        return (*target_ids[:-1], *padding, 106)
+
+    def run_length_grid(names, length_grid, probe, *, progress=None) -> dict:
+        """One model at a time; stop larger boundaries for that model after a failure."""
+        allowed = {
+            "BifocalGemma-E2B-E2B",
+            "BifocalGemma-E4B-E4B",
+            "BifocalGemma-E2B-E4B",
+            "BifocalGemma-E4B-E2B",
+            "Gemma-4-E2B-IT",
+            "Gemma-4-E4B-IT",
+        }
+        if not names or len(set(names)) != len(names) or not set(names) <= allowed:
+            raise ValueError("invalid_length_grid_experiments")
+        grid = list(length_grid)
+        if not grid or any(
+            len(pair) != 2 or any(type(v) is not int or not 64 <= v <= 32768 for v in pair)
+            for pair in grid
+        ):
+            raise ValueError("invalid_length_grid_boundaries")
+        if any(a[0] > b[0] or a[1] > b[1] or a == b for a, b in zip(grid, grid[1:])):
+            raise ValueError("length_grid_must_increase")
+        rows: list[dict] = []
+        for name in names:
+            for index, (encoder, paired_decoder) in enumerate(grid):
+                decoder = (
+                    encoder + paired_decoder + 512
+                    if name.startswith("Gemma-4-")
+                    else paired_decoder
+                )
+                result = probe(name, encoder, decoder)
+                rows.append(
+                    {
+                        "experiment": name,
+                        "encoder_context_budget": encoder,
+                        "paired_decoder_budget": paired_decoder,
+                        "actual_decoder_budget": decoder,
+                        "result": result,
+                        "larger_boundaries_not_attempted": grid[index + 1 :]
+                        if result["status"] != "PASS"
+                        else [],
+                    }
+                )
+                if progress is not None:
+                    progress(rows[-1])
+                if result["status"] != "PASS":
+                    break
+        return {
+            "scope": "synthetic_exact_length_training_memory_not_model_quality",
+            "rows": rows,
+            "one_resident_model_at_a_time": True,
+            "all_configurations_passed_maximum": len(rows) == len(names) * len(grid)
+            and all(row["result"]["status"] == "PASS" for row in rows),
+        }
+
+    def repair_probe_batch(
+        spec, cache_dir, encoder_tokens, decoder_limit, batch_size, *, stress_decoder=False
+    ):
+        if (
+            not 64 <= encoder_tokens <= 32768
+            or not 64 <= decoder_limit <= 131072
             or not 1 <= batch_size <= 8
         ):
-            raise ValueError("Probe limits: encoder 64..8192, decoder 64..4096, batch 1..8.")
+            raise ValueError("Probe limits: encoder 64..32768, decoder 64..131072, batch 1..8.")
         decoder_ref = CHECKPOINTS[spec.decoder.size]["decoder"]
         decoder = AutoTokenizer.from_pretrained(
             decoder_ref["model_id"],
@@ -1383,7 +1471,12 @@ def _(
         target = full_ids[len(prefix_ids) :]
         if not target or target[-1] != 106:
             raise ValueError("Missing canonical IT closing turn.")
-        if len(full_ids) - 1 > decoder_limit:
+        if stress_decoder:
+            padding_ids = tuple(
+                decoder.encode("# synthetic stress padding\n", add_special_tokens=False)
+            )
+            target = synthetic_stress_target(len(prefix_ids), target, decoder_limit, padding_ids)
+        if len(prefix_ids) + len(target) - 1 > decoder_limit:
             raise ValueError("Decoder budget exceeded; increase MAX_DECODER_TOKENS explicitly.")
         examples = [
             TokenizedRepairExample(f"synthetic-repair-{i}", encoder_ids, prefix_ids, target)
@@ -1394,7 +1487,8 @@ def _(
             "synthetic": True,
             "batch_size": batch_size,
             "encoder_tokens_actual": len(encoder_ids),
-            "decoder_tokens_actual": len(full_ids) - 1,
+            "decoder_tokens_actual": len(prefix_ids) + len(target) - 1,
+            "decoder_policy": "synthetic_exact_length" if stress_decoder else "short_repair_target",
             "prefix_tokens": len(prefix_ids),
             "target_tokens": len(target),
             "context_policy": encoder_policy,
@@ -1414,6 +1508,7 @@ def _(
         headroom,
         seed,
         device,
+        stress_decoder=False,
     ):
         spec = experiment_spec(name)
         estimate = probe_estimate(spec, policy, rank, headroom)
@@ -1432,7 +1527,12 @@ def _(
             scope = configure_probe_training(model, policy=policy, rank=rank)
             stage = "optimizer_probe"
             batch, data = repair_probe_batch(
-                spec, cache_dir, encoder_tokens, decoder_limit, batch_size
+                spec,
+                cache_dir,
+                encoder_tokens,
+                decoder_limit,
+                batch_size,
+                stress_decoder=stress_decoder,
             )
             loaded = gpu_memory("cuda")
             result = profile_training_group([model], [batch], steps=steps, mode="round_robin")
@@ -1581,6 +1681,7 @@ def _(
         probe_estimate,
         gpu_guard,
         run_single_pretrained,
+        run_length_grid,
         run_resident_group,
     )
 
@@ -1624,6 +1725,110 @@ def _(
 
 @app.cell
 def _(
+    RUN_PRETRAINED,
+    RUN_LENGTH_SWEEP,
+    LENGTH_EXPERIMENTS,
+    LENGTH_GRID,
+    TRAINING_POLICY,
+    LORA_RANK,
+    STEPS,
+    CACHE_DIR,
+    BATCH_SIZE,
+    HEADROOM_GIB,
+    SEED,
+    device,
+    run_single_pretrained,
+    run_length_grid,
+    single_result,
+    mo,
+    Path,
+    OUTPUT_DIR,
+    datetime,
+    timezone,
+    json,
+):
+    # Sequential sweep: single pilot completes first; no resident concurrency here.
+    length_sweep_result: dict = {"status": "DISABLED", "rows": []}
+    length_sweep_progress_path = None
+    if RUN_PRETRAINED and RUN_LENGTH_SWEEP:
+        _stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        length_sweep_progress_path = Path(OUTPUT_DIR) / f"length_sweep_{_stamp}.json"
+        length_sweep_progress_path.parent.mkdir(parents=True, exist_ok=True)
+        _history = []
+
+        def _save_progress(_row):
+            _history.append(_row)
+            length_sweep_progress_path.write_text(
+                json.dumps(
+                    {
+                        "status": "IN_PROGRESS",
+                        "scope": "synthetic_training_memory",
+                        "rows": _history,
+                        "requested_experiments": LENGTH_EXPERIMENTS,
+                        "requested_grid": LENGTH_GRID,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+        def _probe(_name, _encoder, _decoder):
+            return run_single_pretrained(
+                _name,
+                TRAINING_POLICY,
+                LORA_RANK,
+                STEPS,
+                CACHE_DIR,
+                _encoder,
+                _decoder,
+                BATCH_SIZE,
+                HEADROOM_GIB,
+                SEED,
+                device,
+                stress_decoder=True,
+            )
+
+        length_sweep_result = run_length_grid(
+            LENGTH_EXPERIMENTS, LENGTH_GRID, _probe, progress=_save_progress
+        )
+    if length_sweep_progress_path is not None:
+        length_sweep_progress_path.write_text(
+            json.dumps({"status": "FINISHED", **length_sweep_result}, indent=2), encoding="utf-8"
+        )
+    _rows = []
+    for _row in length_sweep_result["rows"]:
+        _result = _row["result"]
+        _memory = _result.get("training", {}).get("after", {})
+        _data = _result.get("data", {})
+        _rows.append(
+            {
+                "experiment": _row["experiment"],
+                "encoder_budget": _row["encoder_context_budget"],
+                "pair_decoder_budget": _row["paired_decoder_budget"],
+                "actual_decoder_budget": _row["actual_decoder_budget"],
+                "decoder_tokens_measured": _data.get("decoder_tokens_actual"),
+                "status": _result["status"],
+                "peak_allocated_gib": _memory.get("peak_allocated_bytes", 0) / 2**30
+                if _memory.get("peak_allocated_bytes") is not None
+                else None,
+            }
+        )
+    mo.vstack(
+        [
+            mo.md(
+                "## Context length stress sweep\nSynthetic exact-length targets, one model at a time. A failed boundary stops larger lengths for that model. This is not dataset training or quality evaluation."
+            ),
+            mo.ui.table(_rows, selection=None),
+        ]
+    )
+    return (
+        length_sweep_result,
+        length_sweep_progress_path,
+    )
+
+
+@app.cell
+def _(
     BATCH_SIZE,
     CACHE_DIR,
     CONCURRENT_EXPERIMENTS,
@@ -1640,6 +1845,7 @@ def _(
     mo,
     run_resident_group,
     single_result,
+    length_sweep_result,
 ):
     # 10. CUMULATIVE GPU RESIDENCY — 1, 2, 3, 4 independent models.
     concurrency_result: dict = {"rows": [], "status": "DISABLED"}
@@ -1714,6 +1920,9 @@ def _(
     json,
     mo,
     single_result,
+    length_sweep_result,
+    LENGTH_GRID,
+    LENGTH_EXPERIMENTS,
     timezone,
 ):
     # 11. SAVE REPORT
@@ -1733,6 +1942,9 @@ def _(
             "seed": SEED,
         },
         "single": single_result,
+        "length_sweep": length_sweep_result,
+        "length_grid": LENGTH_GRID,
+        "length_experiments": LENGTH_EXPERIMENTS,
         "concurrency": concurrency_result,
         "throughput_improvement_claimed": False,
         "dataset_benchmark_run": False,
