@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-09",
+  "python": "3.13.16",
+  "environment": "conda ai",
+  "versions": {
+    "torch": "2.14.1+cu130",
+    "transformers": "5.19.0",
+    "marimo": "0.25.1",
+    "safetensors": "0.8.0",
+    "huggingface-hub": "1.33.0",
+    "tokenizers": "0.23.2",
+    "pyarrow": "25.0.1",
+    "pytest": "8.4.2",
+    "numpy": "2.5.3"
+  },
+  "gemma4_source_audit": {
+    "modeling_gemma4.py": {
+      "previous_5_18_sha256": "0c64986d8e42c47354e13461e9689f9c9c38f6964794be0896b6fc6c9b0b974c",
+      "current_5_19_sha256": "edc123ab83fbb25548ec65536eaecee998c088653adf683be3ef69d62e2bfea9"
+    },
+    "configuration_gemma4.py": {
+      "previous_5_18_sha256": "978758d43e44fa2b7a786453b5520a5c639d89837d8495f22b6a7a6d281afec4",
+      "current_5_19_sha256": "978758d43e44fa2b7a786453b5520a5c639d89837d8495f22b6a7a6d281afec4"
+    }
+  },
+  "cuda_wheel_index": "https://download.pytorch.org/whl/cu130",
+  "linux_cp313_x86_64_wheel_sha256": "3a78ea0a4d6605c1e351b33ab8aabe44ddb815239cec00cc6f85555d26c0a5a5",
+  "text_model_change": "Text RoPE now uses FP32 elementwise position/frequency multiplication; projections and KV ownership remain subject to regression checks."
+}

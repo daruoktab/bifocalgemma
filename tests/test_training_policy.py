@@ -126,7 +126,15 @@ class TestTrainingPolicy(unittest.TestCase):
                 self.assertNotIn("learning_rate", resumed["history"][0])
                 self.assertEqual(resumed["history"][0]["learning_rates"]["encoder"], 5e-4)
                 self.assertEqual(resumed["history"][3]["learning_rates"]["decoder"], 2e-3)
-                self.assertEqual(full["history"], resumed["history"])
+
+                # Wall-clock diagnostics vary; every training-semantic field must match.
+                def semantic(rows):
+                    return [
+                        {k: v for k, v in row.items() if k not in {"step_seconds", "eval_seconds"}}
+                        for row in rows
+                    ]
+
+                self.assertEqual(semantic(full["history"]), semantic(resumed["history"]))
                 for key, tensor in full_model.state_dict().items():
                     torch.testing.assert_close(
                         tensor, restored.state_dict()[key], atol=1e-6, rtol=1e-6

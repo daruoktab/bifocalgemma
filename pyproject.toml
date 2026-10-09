@@ -21,10 +21,14 @@ classifiers = [
 ]
 
 dependencies = [
-    "torch>=2.4.0",
-    "safetensors>=0.8.0",
-    "transformers==5.18.0",
-    "accelerate>=1.0.0",
+    "torch==2.14.1",
+    "safetensors==0.8.0",
+    "transformers==5.19.0",
+    "huggingface-hub==1.33.0",
+    "tokenizers==0.23.2",
+    "pyarrow==25.0.1",
+    "numpy==2.5.3",
+    "accelerate==1.15.0",
     "peft>=0.14.0",
     "datasets>=3.0.0",
     "einops>=0.8.0",
@@ -60,3 +64,11 @@ ignore = ["E501"]
 
 [tool.setuptools.package-data]
 bifocalgemma = ["assets/*.json"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

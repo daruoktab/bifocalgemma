@@ -28,8 +28,8 @@ from bifocalgemma.training.objectives import patch_cross_entropy
 
 def native_config(size: ModelSize, *, tiny: bool = True, encoder: bool = False):
     """Full dimensions are for meta inspection only; factory always uses tiny."""
-    if version("transformers") != "5.18.0":
-        raise RuntimeError("Native integration is validated against transformers==5.18.0.")
+    if version("transformers") != "5.19.0":
+        raise RuntimeError("Native integration is validated against transformers==5.19.0.")
     asset = files("bifocalgemma.assets").joinpath(f"gemma4_{size.lower()}.json")
     values = json.loads(asset.read_text(encoding="utf-8"))["text_config"]
     if tiny:
