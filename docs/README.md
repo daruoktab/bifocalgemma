@@ -56,3 +56,5 @@ lama hanya ada di RESEARCH_LOG.
 
 Tidak ada bobot pretrained, dataset besar, atau hasil code-repair BifocalGemma
 yang disertakan. Config/checksum resmi dan contoh synthetic dibedakan dengan jelas.
+
+- [Full-corpus curation and training](FULL_CORPUS_TRAINING.md): admission, benchmark quarantine, complete-epoch notebook defaults.

@@ -27,7 +27,7 @@ Asimetris: untied encoder words, learned H projection. PLE tetap separate.
    anonim bila tersedia. Read token cukup untuk unduh; berikan token write bila
    mengaktifkan upload run artifacts ke Hub (HF_UPLOAD_ENABLED=True).
 3. Pilih EXPERIMENT dari keluarga notebook; ubah RUN_NAME untuk eksperimen baru.
-4. Periksa control center, lalu ubah **RUN_TRAINING=True**. Default False menjaga
+4. Siapkan direktori curated pool dan periksa manifest/counts. Periksa control center, lalu ubah **RUN_TRAINING=True**. Default False menjaga
    pembukaan notebook/checks tidak langsung mengunduh atau melatih model besar.
 5. Amati preprocessing count, training logs/dev CE, lalu lokasi checkpoint/report.
 
@@ -66,7 +66,7 @@ run aktif kecuali memang hendak memulai ulang rerun boundary.
 
 ## Data dan objective
 
-Default **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
+Default sekarang **curated_pool**, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
 `data/train-00000-of-00001.parquet`. Opsi **CommitPackFT Python** revision
 `fc56fe33c030c6daa414c2b112c932b8eed085e6`, file `data/python/data.jsonl`.
 Pilihan local_jsonl menerima schema old_file/new_file, old_contents/new_contents,
@@ -80,8 +80,7 @@ reward model atau test-driven rollout pada training.
 
 Dedup before/after pairs sebelum split. Train/dev dibagi menurut **commit group**,
 bukan repo-disjoint; dataset ini tidak membuktikan generalisasi ke repository baru.
-Raw/sample limits default10000/2000/200, dev fraction0.1, seed17. Token overflow
-ditolak dan counted (encoder2048, decoder512); tidak ada silent truncation.
+Pada curated_pool, seluruh train/dev mengikuti manifest dan limit sampling legacy diabaikan. Seed split sudah dibekukan saat kurasi. Initial token gate kini encoder 2048 / decoder 2048; overflow pada frozen pool adalah error, bukan silent filtering. Legacy sources tetap memiliki knob sampling untuk pilot yang dinyatakan eksplisit.
 Data manifest memuat source revisions, rows/commits/repos/licenses, instruction/pair
 hashes, tokenizer sources/hashes, tokenization fingerprint dan filter counts.
 
@@ -126,18 +125,16 @@ serta checkpoint compatibility.
 maksimum 749, decoder total maksimum 1.113 setelah contract filtering. Setelah stress
 probe GPU aktual, rekomendasi S1 ialah ENCODER_LIMIT=1024 dan DECODER_LIMIT=1536;
 baseline decoder-only total 2048 menampung context+target yang sama. Default notebook
-yang sekarang tetap 2048/512 sampai konfigurasi baru diterapkan dan diprofilkan.
+yang sekarang 2048/2048 sebagai gate awal full-pool; final budget mengikuti distribusi token corpus penuh dan stress GPU. Lihat [full corpus](FULL_CORPUS_TRAINING.md).
 NextCoder memerlukan profil terpisah: pada sampel 100 Python rows, decoder median 927,
 bukan target kecil yang otomatis muat 512. Jangan mencampurnya lalu diam-diam
 memotong target atau menyimpulkan 97% overflow sampel sebagai statistik populasi.
 
-## Setting pilot dan dependency
+## Setting full-pool dan dependency
 
 Attention LoRA rank 16 / alpha32, frozen BF16 base words/PLE, FP32 A/B, trainable
 asymmetric H projection. AdamW dengan named parameter groups, foreach=False, weight_decay0, lr2e-5 per group, warmup 5 steps
-lalu constant LR, clipping1.0, microbatch 1, accumulation 4, maksimum100 optimizer
-steps / 1 epoch. Dev CE dan checkpoint setiap25 steps plus final checkpoint.
-Ini default pilot untuk diedit setelah profiling, bukan recipe optimum yang terbukti.
+lalu constant LR, clipping 1.0, microbatch 1, accumulation 4, satu epoch penuh. MAX_STEPS=0 menghitung budget dari panjang train split; nilai positif menjadi batas eksplisit. Dev CE dan checkpoint setiap 500 steps plus final checkpoint. Recipe ini belum merupakan optimum empiris. Pilot lama 100 steps tetap tersimpan sebagai baseline mekanik, bukan full-corpus result.
 
 PEP723 memakai runtime Molab yang berhasil: Torch2.11.0, Transformers5.18.0,
 marimo0.25.1, safetensors0.8.0, pyarrow25.0.0 dan pytest8.4.2, Python3.13.

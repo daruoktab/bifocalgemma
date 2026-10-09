@@ -119,8 +119,8 @@ download/cache, provenance, optimizer policy dan interpretasi PASS/OOM/guard.
 
 Dua notebook khusus **training** tersedia:
 [simetris](notebooks/bifocalgemma_train_symmetric.py) dan
-[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 18 cell,
-17 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
+[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 19 cell,
+18 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
 EditPackFT/JSONL → LoRA SFT → dev loss → checkpoint/resume. RUN_TRAINING=False
 saat pertama dibuka. [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.
@@ -158,3 +158,5 @@ dan hasil benchmark harus diukur serta diulang melalui harness.
 Kontributor: [daruoktab](https://github.com/daruoktab) dan [attmhd](https://github.com/attmhd).
 Kode memakai [Apache License 2.0](LICENSE). [Ketentuan kompetisi](docs/COMPETITION_GUIDE.md)
 yang belum terverifikasi tetap diberi status demikian.
+
+Full-corpus admission dan complete-epoch defaults dijelaskan dalam [panduan](docs/FULL_CORPUS_TRAINING.md). Kurasi penuh sedang berjalan; jumlah upstream bukan jumlah yang sudah lolos training admission. Pilot model asli E2B–E2B berhasil 100 steps dengan peak allocated 23,38 GiB; ini belum skor repair.

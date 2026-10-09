@@ -188,3 +188,15 @@ Hasil tersebut memvalidasi persiapan data dan scorer, bukan kualitas BifocalGemm
 Training/generation checkpoint pretrained, native RES-Q gold tests, parity runtime
 benchmark resmi, serta cache dan kernel long-context belum diuji pada tahap ini.
 Ikuti [panduan repository study](REPOSITORY_STUDY_IMPLEMENTATION.md) untuk Molab.
+
+
+## Full-pool curation — 9 Oktober 2026
+
+Sembilan tes curation/complete-epoch runner lulus, termasuk SQLite vs memory index,
+benchmark/license quarantine, cross-source dedup, connected split, prepared-pool
+checksum rejection, dan complete-epoch native tiny training untuk simetris,
+asimetris serta baseline decoder-only. Suite related helpers dan dua notebook
+sebelumnya menghasilkan 25 passed sebelum tiga complete-epoch tests ditambahkan.
+Generator parity, marimo strict, Ruff dan type checking lulus. Full-corpus job
+masih menjalankan admission/profiling; manifest final belum menjadi bukti pada
+catatan ini. [Pilot pretrained](data/molab_pilot_20261008.json) dicatat terpisah.
