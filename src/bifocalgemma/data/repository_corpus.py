@@ -223,10 +223,12 @@ def resolved_license(name, content, files):
     return name, "unknown", hashlib.sha256(content.encode()).hexdigest()
 
 
-def patch_license_evidence(snapshot, patch):
+def path_license_evidence(snapshot, paths):
+    """Check license boundaries for source paths, independently of gold patches."""
     files = {file.path: file.content for file in snapshot.files}
     evidence = []
-    for target in patch_paths(patch):
+    for target in paths:
+        target = safe_repo_path(target)
         own = files.get(target, "")
         if "SPDX-License-Identifier:" in own:
             candidates = [(target, own)]
@@ -267,7 +269,7 @@ def patch_license_evidence(snapshot, patch):
             raise ValueError("source_code_license_not_admitted")
         evidence.append(
             {
-                "target_path": target,
+                "path": target,
                 "licenses": [
                     {"path": name, "license": license, "sha256": digest}
                     for name, license, digest in recognized
@@ -275,6 +277,24 @@ def patch_license_evidence(snapshot, patch):
             }
         )
     return evidence
+
+
+def patch_license_evidence(snapshot, patch):
+    return [
+        {"target_path": item["path"], "licenses": item["licenses"]}
+        for item in path_license_evidence(snapshot, patch_paths(patch))
+    ]
+
+
+def context_license_evidence(snapshot, selection):
+    """Verify every file actually shown to the encoder/baseline; no oracle paths."""
+    if selection.get("gold_used") is not False:
+        raise ValueError("context_license_requires_target_free_selection")
+    paths = sorted({window["path"] for window in selection.get("windows", [])})
+    available = {file.path for file in snapshot.files}
+    if not paths or not set(paths) <= available:
+        raise ValueError("context_license_missing_selected_source")
+    return path_license_evidence(snapshot, paths)
 
 
 class RepositoryPreparationLedger:
@@ -330,6 +350,9 @@ def build_repository_corpus(
     progress=None,
 ):
     """Freeze a resource-bounded corpus; every exclusion is a recorded outcome."""
+    import platform
+    from importlib.metadata import version
+
     from bifocalgemma.config import EXPERIMENT_SPECS
     from bifocalgemma.data.tokenization import load_verified_tokenizer
     from bifocalgemma.training.repository_sft import tokenize_repository_record
@@ -356,9 +379,11 @@ def build_repository_corpus(
     store = ArchiveSnapshotStore(cache / "archives", allow_network=allow_network)
     first_ref, second_ref = EXPERIMENT_SPECS[0].encoder, EXPERIMENT_SPECS[1].encoder
     assert first_ref is not None and second_ref is not None
-    encoder, _ = load_verified_tokenizer(first_ref, Path(tokenizer_cache))
-    other_encoder, _ = load_verified_tokenizer(second_ref, Path(tokenizer_cache))
-    decoder, _ = load_verified_tokenizer(EXPERIMENT_SPECS[0].decoder, Path(tokenizer_cache))
+    encoder, encoder_assets = load_verified_tokenizer(first_ref, Path(tokenizer_cache))
+    other_encoder, other_encoder_assets = load_verified_tokenizer(second_ref, Path(tokenizer_cache))
+    decoder, decoder_assets = load_verified_tokenizer(
+        EXPERIMENT_SPECS[0].decoder, Path(tokenizer_cache)
+    )
     counts = Counter()
     accepted = []
     exclusions = []
@@ -373,7 +398,16 @@ def build_repository_corpus(
         "context_limit": context_limit,
         "decoder_limit": decoder_limit,
         "disk_budget_gib": disk_budget_gib,
-        "admission_version": "repository_archive_v2",
+        "admission_version": "repository_archive_v3_context_licenses",
+        "study_config_fingerprint": stable_fingerprint(study_config),
+        "tokenizer_assets_fingerprint": stable_fingerprint(
+            [encoder_assets, other_encoder_assets, decoder_assets]
+        ),
+        "runtime": {
+            "python": platform.python_version(),
+            "transformers": version("transformers"),
+            "tokenizers": version("tokenizers"),
+        },
     }
     ledger = RepositoryPreparationLedger(
         cache / "ledgers" / (stable_fingerprint(settings) + ".sqlite"), settings
@@ -431,6 +465,10 @@ def build_repository_corpus(
                 aliases=aliases,
                 max_context_tokens=context_limit,
             )
+            try:
+                visible_license_evidence = context_license_evidence(snapshot, row["context_selection"])
+            except ValueError as error:
+                raise ValueError("context_" + str(error)) from error
             fixed = apply_patch_to_snapshot(snapshot, task.target_patch)
             before_files = {f.path: f.content for f in snapshot.files}
             fixed_files = {f.path: f.content for f in fixed.files}
@@ -466,6 +504,7 @@ def build_repository_corpus(
                 before_signature=code_signature(row["context"]),
                 snapshot_coverage=coverage,
                 source_code_license_evidence=license_evidence,
+                context_source_code_license_evidence=visible_license_evidence,
                 dataset_license="mit" if source == "swe_fixer" else "cc-by-4.0",
                 source_key=source,
                 token_lengths={
@@ -518,6 +557,7 @@ def build_repository_corpus(
     train, dev, split = split_connected_records(accepted)
     report = {
         "source": source,
+        "preparation_settings": settings,
         "source_file_sha256": file_digest(rows_file),
         "foundation_fingerprint": foundation["fingerprint"],
         "benchmark_quarantine": registry,
@@ -541,6 +581,7 @@ def build_repository_corpus(
             "updates_full_epoch": (len(train) + 3) // 4,
             "supervised_train_tokens": sum(r["token_lengths"]["target"] for r in train),
         },
+        "context_source_license_policy": "nearest_license_for_each_visible_file_v1",
         "snapshot_policy": "immutable text archive; no functional-quality verification",
         "target_count": target_count,
         "resource_budget_gib": disk_budget_gib,

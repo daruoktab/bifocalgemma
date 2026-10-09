@@ -247,3 +247,35 @@ The full source-file SHA, tokenizer hashes, aggregate distributions and ordered
 per-row length-stream SHA are in the [receipt](data/swe_fixer_raw_target_profile_20261009.json).
 Raw source text stays outside Git. Primary-source 8k coverage is 96.01%;
 secondary-source 8k coverage is 98.63%, before their other admission gates.
+
+
+## Corrected visible-context source licensing
+
+A cached-snapshot audit of all 487 accepted records at a captured v2 production
+checkpoint found **483 passing /4 requiring review** for visible context files.
+The earlier gate verified licenses on patched files only. BM25 context can
+include another file with a separate license boundary; target-file licensing
+alone does not cover every piece of source shown to a training model.
+These are project-policy review cases, not assertions of unlawful licensing.
+[Audit receipt](data/repository_context_license_audit_20261009.json).
+
+The v3 builder now verifies every unique selected source path independently of
+gold paths, retains `context_source_code_license_evidence`, and records
+`context_source_license_policy=nearest_license_for_each_visible_file_v1` in the
+report. Failed context checks have separate recorded exclusion reasons. The
+consumer rejects repository pools without this marker or complete per-path
+license evidence before they can become training input. The instruction-only
+foundation and synthetic legacy editing interfaces retain their own contracts.
+
+The old producer was deliberately stopped for this coverage correction; its
+v2 ledger and source archives remain preserved. Its accepted count is not a
+completed approved corpus. The corrected production pass revalidates cached
+source using a new ledger signature and produces the final pool only after
+all gates pass. Settings now bind the study config, tokenizer assets and
+Python/tokenizer/Transformers runtime as well as budgets and source hashes.
+There is no silent migration of v2 acceptance into v3.
+
+Historical four/64-task adapter receipts continue to describe their original
+validation scope; they are not license-complete SFT approval. A separate
+[four-real-task v3 check](data/repository_context_license_smoke_v3_20261009.json)
+verifies the strengthened exporter and consumer using cached immutable source.

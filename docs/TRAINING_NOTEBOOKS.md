@@ -224,3 +224,6 @@ notebooks tetap19/18 parity. Preparation/repository-group splitting dijelaskan p
 [implementation guide](REPOSITORY_STUDY_IMPLEMENTATION.md). Notebook repository
 menyediakan all-six-model matched eligibility dan decoder-only SFT policy untuk
 controlled baselines.
+
+
+Repository-mode corpus READY now requires v3 visible-context license evidence, in addition to licenses on patched files. Old patch-only prototype pools are rejected; rebuild under the new policy in a new output directory if an old completed pool already exists. Cached source archives are reused; no model download is required for this validation.

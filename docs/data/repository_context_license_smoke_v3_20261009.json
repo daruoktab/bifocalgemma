@@ -1,0 +1,11 @@
+{
+  "scope": "Four-real-task cached adapter validation with target AND visible-context licensing; not full production corpus or model quality.",
+  "fingerprint": "cf26caab130450d2b4fce24bbcc510a055b0c54ee337c6935eda093e6d56f30e",
+  "counts": {
+    "train": 3,
+    "dev": 1
+  },
+  "context_source_license_policy": "nearest_license_for_each_visible_file_v1",
+  "admission_version": "repository_archive_v3_context_licenses",
+  "visible_source_files_checked": 17
+}

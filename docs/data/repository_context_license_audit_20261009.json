@@ -1,0 +1,58 @@
+{
+  "scope": "All accepted records at captured incomplete production ledger offset; source context licenses from cached pinned snapshots, no new download or code execution.",
+  "max_upstream_offset": 5103,
+  "accepted_checked": 487,
+  "counts": {
+    "passed": 483,
+    "visible_source_files_checked": 1628,
+    "failed": 4
+  },
+  "failures": [
+    {
+      "instance_id": "more-itertools__more-itertools-1028",
+      "offset": 823,
+      "reason": "source_code_license_not_admitted",
+      "selected_paths": [
+        "more_itertools/more.py",
+        "more_itertools/recipes.py",
+        "more_itertools/more.py",
+        "docs/requirements.txt"
+      ]
+    },
+    {
+      "instance_id": "aws-cloudformation__cfn-lint-3388",
+      "offset": 1107,
+      "reason": "source_code_license_not_admitted",
+      "selected_paths": [
+        "README.md",
+        "src/cfnlint/rules/resources/properties/ImageId.py",
+        "docs/getting_started/integration.md",
+        "src/cfnlint/custom_rules.txt",
+        "custom_rules.txt"
+      ]
+    },
+    {
+      "instance_id": "dr-leo__pandasdmx-99",
+      "offset": 2247,
+      "reason": "source_code_license_not_admitted",
+      "selected_paths": [
+        "pandasdmx/message.py",
+        "pandasdmx/message.py",
+        "doc/conf.py"
+      ]
+    },
+    {
+      "instance_id": "python-attrs__attrs-1410",
+      "offset": 4794,
+      "reason": "source_code_license_not_admitted",
+      "selected_paths": [
+        "src/attr/_make.py",
+        "src/attr/_make.py",
+        "src/attr/converters.py",
+        "docs/hashing.md"
+      ]
+    }
+  ],
+  "date": "2026-10-09",
+  "interpretation": "Four records require additional context-license review under the project admission policy. This is a coverage gap, not a claim of unlawful licensing."
+}

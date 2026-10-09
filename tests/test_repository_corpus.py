@@ -132,3 +132,54 @@ def test_archive_download_retries_incomplete_transport(tmp_path, monkeypatch, re
     task = SimpleNamespace(repo="owner/repo", base_commit="a" * 40)
     snapshot, _ = ArchiveSnapshotStore(tmp_path / "cache", allow_network=True).snapshot(task)
     assert len(attempts) == 2 and snapshot.base_commit == "a" * 40
+
+
+def test_context_files_are_licensed_separately_from_patch(tmp_path):
+    from bifocalgemma.data.repository_corpus import context_license_evidence
+
+    path = tmp_path / "snapshot.tar.gz"
+    archive(
+        path,
+        {
+            "LICENSE": MIT,
+            "pkg/a.py": "x=0\n",
+            "vendor/LICENSE": "Proprietary.",
+            "vendor/x.py": "x=0\n",
+        },
+    )
+    snapshot, _ = read_text_archive(path, "owner/repo", "a" * 40)
+    patch = "diff --git a/pkg/a.py b/pkg/a.py\n--- a/pkg/a.py\n+++ b/pkg/a.py\n@@ -1 +1 @@\n-x=0\n+x=1\n"
+    assert patch_license_evidence(snapshot, patch)
+    selection = {"gold_used": False, "windows": [{"path": "pkg/a.py"}, {"path": "vendor/x.py"}]}
+    with pytest.raises(ValueError, match="license_not_admitted"):
+        context_license_evidence(snapshot, selection)
+    valid = context_license_evidence(
+        snapshot, {"gold_used": False, "windows": [{"path": "pkg/a.py"}, {"path": "pkg/a.py"}]}
+    )
+    assert len(valid) == 1 and valid[0]["path"] == "pkg/a.py"
+    with pytest.raises(ValueError, match="target_free"):
+        context_license_evidence(snapshot, {**selection, "gold_used": True})
+    with pytest.raises(ValueError, match="missing_selected"):
+        context_license_evidence(
+            snapshot, {"gold_used": False, "windows": [{"path": "missing.py"}]}
+        )
+
+
+def test_context_license_record_covers_all_visible_paths():
+    from bifocalgemma.data.offline_sft import validate_context_license_record
+
+    row = {
+        "context_selection": {"windows": [{"path": "a.py"}]},
+        "context_source_code_license_evidence": [
+            {
+                "path": "a.py",
+                "licenses": [{"path": "LICENSE", "license": "mit", "sha256": "a" * 64}],
+            }
+        ],
+    }
+    validate_context_license_record(row)
+    with pytest.raises(ValueError, match="coverage"):
+        validate_context_license_record({**row, "context_source_code_license_evidence": []})
+    row["context_source_code_license_evidence"][0]["licenses"][0]["license"] = "unknown"
+    with pytest.raises(ValueError, match="not_admitted"):
+        validate_context_license_record(row)

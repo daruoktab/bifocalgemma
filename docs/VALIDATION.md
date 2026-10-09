@@ -313,3 +313,26 @@ licenses or functional quality. At 8k paired decoder, 113,820 raw candidates
 fit (98.63%). Extreme targets exceed the original 128k position limit.
 Profiler lint, formatting and type checks passed. Repository-production
 preparation continues separately with its own immutable settings and ledger.
+
+
+## Visible-context license coverage correction — 9 Oktober 2026
+
+A complete point-in-time audit of 487 v2 accepted records found 483 passing
+and four requiring review for visible-context source licensing. This does not
+assert unlawful licensing; those files fall outside the project's currently
+admitted/reliably recognized license policy. Target-file checks alone did not
+cover every source window. The [receipt](data/repository_context_license_audit_20261009.json)
+records cases and the captured offset.
+
+The v3 builder gates and records licenses on every selected context path.
+Consumers reject old repository pools without the marker or with incomplete
+coverage before training. Settings bind study config, tokenizer assets and
+Python/Transformers/tokenizer runtime. The old producer was intentionally
+superseded for this confirmed coverage gap, with ledger/archives preserved;
+its accepted count is not a completed approved corpus.
+
+**39 tests passed** across archive/curation, complete-epoch training and three
+regenerated notebooks. A real four-task cached v3 export (3 train/1 dev) passed
+the strengthened loader with evidence for 17 visible source files. Generators,
+strict marimo, Ruff, type and whitespace checks pass. The corrected production
+job is active and revalidates cached source under a separate v3 ledger.

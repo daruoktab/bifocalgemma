@@ -202,6 +202,13 @@ def load_curated_pool(directory):
     fingerprint = manifest.get("fingerprint")
     if stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"}) != fingerprint:
         raise ValueError("curated_pool_manifest_integrity")
+    repository_pool = "snapshot_policy" in manifest.get("report", {})
+    if (
+        repository_pool
+        and manifest["report"].get("context_source_license_policy")
+        != "nearest_license_for_each_visible_file_v1"
+    ):
+        raise ValueError("repository_pool_context_license_audit_required")
     rows = {}
     all_ids = set()
     for split in ("train", "dev"):
@@ -220,6 +227,8 @@ def load_curated_pool(directory):
             all_ids.add(row["instance_id"])
             if row.get("record_type") == "repository_patch_v1":
                 repository_editing_record(row)
+                if repository_pool:
+                    validate_context_license_record(row)
             elif not all(
                 isinstance(row.get(k), str) and row[k]
                 for k in (
@@ -259,3 +268,24 @@ def validate_curated_pool_limits(manifest, *, encoder_limit, decoder_limit):
             f"Requested {expected}; frozen {actual}."
         )
     return dict(actual)
+
+
+def validate_context_license_record(row):
+    """Check complete recorded coverage; artifact hashes bind this provenance."""
+    from bifocalgemma.data.curation import PERMITTED_CODE_LICENSES
+
+    paths = {window["path"] for window in row.get("context_selection", {}).get("windows", [])}
+    evidence = row.get("context_source_code_license_evidence", [])
+    recorded = [item["path"] for item in evidence]
+    if not paths or set(recorded) != paths or len(set(recorded)) != len(recorded):
+        raise ValueError("repository_context_license_coverage")
+    for item in evidence:
+        if not item.get("licenses"):
+            raise ValueError("repository_context_license_missing")
+        for license in item["licenses"]:
+            if (
+                license.get("license") not in PERMITTED_CODE_LICENSES
+                or not isinstance(license.get("sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", license.get("sha256", ""))
+            ):
+                raise ValueError("repository_context_license_not_admitted")

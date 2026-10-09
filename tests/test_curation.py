@@ -292,3 +292,49 @@ def test_invalid_requested_pool_budget_is_rejected(invalid):
 
     with pytest.raises(ValueError, match="Invalid requested"):
         validate_curated_pool_limits({}, encoder_limit=invalid, decoder_limit=2048)
+
+
+def test_repository_pool_requires_context_license_policy_and_coverage(tmp_path):
+    from bifocalgemma.data.offline_sft import load_curated_pool
+
+    rows = []
+    for split in ("train", "dev"):
+        rows.append(
+            {
+                "instance_id": split,
+                "pool_split": split,
+                "role": "train",
+                "record_type": "repository_patch_v1",
+                "source": "synthetic-fixture",
+                "before": "### File: a.py\nx=0\n",
+                "after": "",
+                "path": "repository_context",
+                "source_revision": "fixture-v1",
+                "group": "fixture/" + split,
+                "commit": "a" * 40,
+                "repos": "fixture/" + split,
+                "instruction": "Fix x",
+                "context": "### File: a.py\nx=0\n",
+                "target_patch": "diff --git a/a.py b/a.py\n",
+                "snapshot_sha256": "b" * 64,
+                "context_selection": {"gold_used": False, "windows": [{"path": "a.py"}]},
+                "context_source_code_license_evidence": [
+                    {
+                        "path": "a.py",
+                        "licenses": [{"path": "LICENSE", "license": "mit", "sha256": "c" * 64}],
+                    }
+                ],
+            }
+        )
+    old = {"snapshot_policy": "immutable text archive"}
+    export_pool(rows, tmp_path / "old", old)
+    with pytest.raises(ValueError, match="context_license_audit_required"):
+        load_curated_pool(tmp_path / "old")
+    current = {**old, "context_source_license_policy": "nearest_license_for_each_visible_file_v1"}
+    export_pool(rows, tmp_path / "current", current)
+    assert len(load_curated_pool(tmp_path / "current")[0]["train"]) == 1
+    broken = copy.deepcopy(rows)
+    broken[0]["context_source_code_license_evidence"] = []
+    export_pool(broken, tmp_path / "broken", current)
+    with pytest.raises(ValueError, match="context_license_coverage"):
+        load_curated_pool(tmp_path / "broken")
