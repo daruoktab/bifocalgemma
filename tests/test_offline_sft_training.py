@@ -242,8 +242,8 @@ class TestNotebookCellParity(unittest.TestCase):
             ]
             for text in texts
         ]
-        self.assertEqual(len(cells[0]), 19)
-        self.assertEqual(len(cells[1]), 19)
+        self.assertEqual(len(cells[0]), 20)
+        self.assertEqual(len(cells[1]), 20)
         self.assertEqual([i for i, (a, b) in enumerate(zip(*cells, strict=True)) if a != b], [1])
 
     def test_hub_upload_controls_and_path(self):

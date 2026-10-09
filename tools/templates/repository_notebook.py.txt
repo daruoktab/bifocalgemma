@@ -1,6 +1,13 @@
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["marimo==0.25.1", "torch==2.11.0", "transformers==5.18.0", "safetensors==0.8.0", "pyarrow==25.0.0", "pytest==8.4.2"]
+# dependencies = ["marimo==0.25.1", "torch==2.14.1", "transformers==5.19.0", "safetensors==0.8.0", "pyarrow==25.0.1", "pytest==8.4.2", "huggingface-hub==1.33.0", "tokenizers==0.23.2", "numpy==2.5.3"]
+#
+# [tool.uv.sources]
+# torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+# [[tool.uv.index]]
+# name = "pytorch-cu130"
+# url = "https://download.pytorch.org/whl/cu130"
+# explicit = true
 # ///
 
 import marimo
@@ -46,11 +53,21 @@ def _():
     RAW_LIMIT = 1000
     TASK_LIMIT = 32
     PER_REPO_LIMIT = 8
-    MAX_STEPS = 100
+    MAX_STEPS = 0  # 0 = complete configured epochs
     EPOCHS = 1
+    RESUME_FROM = ""  # checkpoint-v2 path, empty starts a new run
+    TRAINING_DATA_MODE = "curated_pool"  # curated_pool / repository_tasks
+    CURATED_POOL_DIR = "outputs/full_repository_pool_v1"
+    FOUNDATION_POOL_DIR = "outputs/full_training_pool_v1"
+    PREPARE_FULL_POOL = False
+    CORPUS_KIND = "repository"
+    REPOSITORY_SOURCE = "swe_rebench_v2"
+    REPOSITORY_TARGET_COUNT = 10000
+    REPOSITORY_PER_REPO_LIMIT = 50
+    REPOSITORY_DISK_GIB = 20
     ACCUMULATION = 4
     HEADROOM_GIB = 16
-    return (SOURCE, EXPERIMENT, ROWS_FILE, PREPARED_DIR, RUN_DIR, PREDICTIONS_FILE, SCORE_FILE, TOKENIZER_CACHE, MODEL_CACHE, ADAPTER_CHECKPOINT, PYTHON_EVAL, RUN_PREPARE, RUN_TRAINING, RUN_GENERATE, RUN_SCORE, VALIDATE_GOLD, ALLOW_CODE_EXECUTION, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, MAX_NEW_TOKENS, GENERATION_DECODER_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, MAX_STEPS, EPOCHS, ACCUMULATION, HEADROOM_GIB)
+    return (RESUME_FROM, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, PREPARE_FULL_POOL, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, SOURCE, EXPERIMENT, ROWS_FILE, PREPARED_DIR, RUN_DIR, PREDICTIONS_FILE, SCORE_FILE, TOKENIZER_CACHE, MODEL_CACHE, ADAPTER_CHECKPOINT, PYTHON_EVAL, RUN_PREPARE, RUN_TRAINING, RUN_GENERATE, RUN_SCORE, VALIDATE_GOLD, ALLOW_CODE_EXECUTION, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, MAX_NEW_TOKENS, GENERATION_DECODER_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, MAX_STEPS, EPOCHS, ACCUMULATION, HEADROOM_GIB)
 
 
 @app.cell
@@ -127,6 +144,34 @@ def _(HfApi, hf_form, mo, os):
 
 
 @app.cell
+def _(PREPARE_FULL_POOL, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, runtime_root, get_experiment, fetch_tokenizer_assets, hf_token, json, mo):
+    from bifocalgemma.data.full_pool import prepare_full_corpus
+    from bifocalgemma.data.repository_corpus import prepare_repository_corpus
+    from bifocalgemma.data.offline_sft import load_curated_pool
+    from bifocalgemma.training.curated_sft import prepare_curated_training, fit_curated_sft
+
+    full_pool_status = {"status": "DISABLED"}
+    if PREPARE_FULL_POOL or (RUN_TRAINING and TRAINING_DATA_MODE == "curated_pool"):
+        if CORPUS_KIND not in {"instruction", "repository"}:
+            raise ValueError("Choose instruction or repository corpus kind.")
+        for _name in ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"):
+            fetch_tokenizer_assets(get_experiment(_name), Path(TOKENIZER_CACHE), token=hf_token)
+        _config = json.loads((runtime_root / "configs/repository_study.json").read_text(encoding="utf-8"))
+        _foundation = FOUNDATION_POOL_DIR if CORPUS_KIND == "repository" else CURATED_POOL_DIR
+        if not Path(_foundation).exists():
+            prepare_full_corpus("outputs/full_corpus_raw", _foundation, TOKENIZER_CACHE, _config, token=hf_token, encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT)
+        if not Path(CURATED_POOL_DIR).exists():
+            prepare_repository_corpus("outputs/full_corpus_raw", CURATED_POOL_DIR, FOUNDATION_POOL_DIR, TOKENIZER_CACHE, _config, source=REPOSITORY_SOURCE, token=hf_token, target_count=REPOSITORY_TARGET_COUNT, per_repo_limit=REPOSITORY_PER_REPO_LIMIT, context_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT, disk_budget_gib=REPOSITORY_DISK_GIB, progress=lambda _row: print(json.dumps(_row), flush=True))
+        _rows, _manifest = load_curated_pool(CURATED_POOL_DIR)
+        _kind = "repository" if "snapshot_policy" in _manifest["report"] else "instruction"
+        if _kind != CORPUS_KIND:
+            raise ValueError("Selected pool directory belongs to another corpus kind.")
+        full_pool_status = {"status": "READY", "train": len(_rows["train"]), "dev": len(_rows["dev"]), "fingerprint": _manifest["fingerprint"]}
+    mo.vstack([mo.md("## Full corpus (all six configurations)"), mo.ui.table([full_pool_status], selection=None)])
+    return (full_pool_status, prepare_curated_training, fit_curated_sft)
+
+
+@app.cell
 def _(SOURCE, ROWS_FILE, PREPARED_DIR, TOKENIZER_CACHE, RUN_PREPARE, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, SOURCE_REVISIONS, Path, SimpleNamespace, runtime_root, get_experiment, fetch_tokenizer_assets, hf_hub_download, hf_token, prepare_run, json, mo):
     preparation_result = {"status": "DISABLED"}
     if RUN_PREPARE:
@@ -154,16 +199,19 @@ def _(SOURCE, ROWS_FILE, PREPARED_DIR, TOKENIZER_CACHE, RUN_PREPARE, FETCH_SOURC
 
 
 @app.cell
-def _(RUN_TRAINING, PREPARED_DIR, EXPERIMENT, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, get_experiment, prepare_repository_training, preparation_result, mo):
+def _(RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, full_pool_status, prepare_curated_training, PREPARED_DIR, EXPERIMENT, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, get_experiment, prepare_repository_training, preparation_result, mo):
     train_data = dev_data = training_manifest = None
-    if RUN_TRAINING:
+    if RUN_TRAINING and TRAINING_DATA_MODE == "curated_pool":
+        if full_pool_status["status"] != "READY":raise ValueError("Full corpus is not ready.")
+        train_data, dev_data, training_manifest = prepare_curated_training(get_experiment(EXPERIMENT), CURATED_POOL_DIR, TOKENIZER_CACHE)
+    elif RUN_TRAINING and TRAINING_DATA_MODE == "repository_tasks":
         train_data, dev_data, training_manifest = prepare_repository_training(Path(PREPARED_DIR) / "train.jsonl", get_experiment(EXPERIMENT), Path(TOKENIZER_CACHE), encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT)
     mo.md("## 6 · Matched cohort/tokenization\n" + ("Train/dev prepared with repo grouping and all-six-model eligibility." if training_manifest else "Training disabled."))
     return (train_data, dev_data, training_manifest)
 
 
 @app.cell
-def _(RUN_TRAINING, RUN_GENERATE, EXPERIMENT, MODEL_CACHE, HEADROOM_GIB, torch, Path, get_experiment, build_native_model, tensor_bytes, hf_hub_download, hf_token, mo):
+def _(RUN_TRAINING, RUN_GENERATE, training_manifest, EXPERIMENT, MODEL_CACHE, HEADROOM_GIB, torch, Path, get_experiment, build_native_model, tensor_bytes, hf_hub_download, hf_token, mo):
     model_paths = None
     model_guard = "Actions disabled; no weights downloaded."
     if RUN_TRAINING or RUN_GENERATE:
@@ -187,16 +235,20 @@ def _(RUN_TRAINING, RUN_GENERATE, EXPERIMENT, MODEL_CACHE, HEADROOM_GIB, torch, 
 
 
 @app.cell
-def _(RUN_TRAINING, RUN_DIR, EXPERIMENT, MAX_STEPS, EPOCHS, ACCUMULATION, model_paths, model_guard, training_manifest, train_data, dev_data, Path, get_experiment, load_local_native_model, fit_repository_sft, write_json, torch, mo):
+def _(RUN_TRAINING, RESUME_FROM, TRAINING_DATA_MODE, fit_curated_sft, RUN_DIR, EXPERIMENT, MAX_STEPS, EPOCHS, ACCUMULATION, model_paths, model_guard, training_manifest, train_data, dev_data, Path, get_experiment, load_local_native_model, fit_repository_sft, write_json, torch, mo):
     training_result = {"status": "DISABLED", "reason": model_guard}
     if RUN_TRAINING and model_paths:
-        if Path(RUN_DIR).exists() and any(Path(RUN_DIR).iterdir()):
-            raise FileExistsError("Choose a fresh RUN_DIR; this notebook does not silently resume/overwrite.")
+        if not RESUME_FROM and Path(RUN_DIR).exists() and any(Path(RUN_DIR).iterdir()):
+            raise FileExistsError("Choose a fresh RUN_DIR or an explicit RESUME_FROM checkpoint.")
         if training_manifest is None:
             raise ValueError("Prepare matched train/dev data first.")
         _model, _provenance = load_local_native_model(get_experiment(EXPERIMENT), model_paths[0], model_paths[1])
         try:
-            training_result = fit_repository_sft(_model, train_data, dev_data, Path(RUN_DIR), training_manifest, max_steps=MAX_STEPS, epochs=EPOCHS, accumulation=ACCUMULATION)
+            if TRAINING_DATA_MODE == "curated_pool":
+                training_result = fit_curated_sft(_model, train_data, dev_data, Path(RUN_DIR), training_manifest, max_steps=MAX_STEPS or None, epochs=EPOCHS, accumulation=ACCUMULATION, resume_from=RESUME_FROM or None)
+            else:
+                _budget = MAX_STEPS or ((len(train_data) + ACCUMULATION - 1)//ACCUMULATION)*EPOCHS
+                training_result = fit_repository_sft(_model, train_data, dev_data, Path(RUN_DIR), training_manifest, max_steps=_budget, epochs=EPOCHS, accumulation=ACCUMULATION, resume_from=RESUME_FROM or None)
             write_json(Path(RUN_DIR) / "data_manifest.json", training_manifest)
             write_json(Path(RUN_DIR) / "training_report.json", training_result)
             write_json(Path(RUN_DIR) / "model_provenance.json", _provenance)

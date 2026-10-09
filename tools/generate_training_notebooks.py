@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from notebook_bundle import source_bundle
+
 ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = {
     "symmetric": ("BifocalGemma-E2B-E2B", "outputs/training_symmetric"),
@@ -35,6 +37,8 @@ def render(family):
         definitions = module_definitions(path)
         # Marker is indented inside a cell; subsequent lines need the same indentation.
         template = template.replace(marker, definitions.replace("\n", "\n    "))
+    payload, bundle_sha = source_bundle(ROOT)
+    template = template.replace("{{BUNDLE_PAYLOAD}}", payload).replace("{{BUNDLE_SHA}}", bundle_sha)
     experiment, output = VARIANTS[family]
     template = template.replace('FAMILY = "symmetric"', f'FAMILY = "{family}"', 1)
     template = template.replace(

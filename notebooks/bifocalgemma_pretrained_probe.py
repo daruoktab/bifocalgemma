@@ -3,10 +3,17 @@
 # dependencies = [
 #     "marimo==0.25.1",
 #     "torch==2.14.1",
-#     "transformers==5.18.0",
+#     "transformers==5.19.0",
 #     "safetensors==0.8.0",
 #     "pytest==8.4.2",
 # ]
+#
+# [tool.uv.sources]
+# torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+# [[tool.uv.index]]
+# name = "pytorch-cu130"
+# url = "https://download.pytorch.org/whl/cu130"
+# explicit = true
 # ///
 # Standalone Molab pretrained + co-resident training memory probe.
 # Pinned checkpoint downloads execute only after the GPU/headroom guard passes.
@@ -105,7 +112,7 @@ def _(DEVICE, PRECISION, mo):
         repeat_kv,
     )
 
-    assert version("transformers") == "5.18.0", "Gunakan transformers==5.18.0."
+    assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
     torch.set_num_threads(min(4, torch.get_num_threads()))
     torch.set_float32_matmul_precision("highest")
     device_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_DEVICE", DEVICE)
@@ -429,8 +436,8 @@ def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
 
     def native_config(size: str, *, tiny: bool = True, encoder: bool = False):
         """Full dimensions are for meta inspection only; factory always uses tiny."""
-        if version("transformers") != "5.18.0":
-            raise RuntimeError("Native integration is validated against transformers==5.18.0.")
+        if version("transformers") != "5.19.0":
+            raise RuntimeError("Native integration is validated against transformers==5.19.0.")
         values = copy.deepcopy(AUDITED_CONFIGS[size]["text_config"])
         if tiny:
             width = 32 if size == "E2B" else 48
