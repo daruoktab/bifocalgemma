@@ -69,3 +69,48 @@ The raw repository profile shows 8k paired-decoder coverage of 96.01%, before
 license/snapshot/context gates; encoder retrieval length still needs profiling.
 
 Source: [official GSM8K release](https://github.com/openai/grade-school-math).
+
+
+## Executable adapter and scorer
+
+The implementation is `src/bifocalgemma/evaluation/gsm8k.py`. Prepare separate
+zero-shot and eight-shot directories. The opt-in public fetch checks pinned
+file hashes and exact row counts, and never downloads weights. Public inputs
+and hidden numeric references have independent file checksums; generation
+loads public inputs only. Generation budgets are checked before model loading.
+
+```powershell
+$env:PYTHONPATH='src'
+python -m bifocalgemma.evaluation.gsm8k prepare --fetch --source-directory outputs/gsm8k_raw --output outputs/gsm8k_zero_shot_v1 --shots 0
+python -m bifocalgemma.evaluation.gsm8k prepare --source-directory outputs/gsm8k_raw --output outputs/gsm8k_eight_shot_v1 --shots 8
+python -m bifocalgemma.evaluation.gsm8k generate --prepared outputs/gsm8k_zero_shot_v1 --experiment BifocalGemma-E2B-E2B --decoder-checkpoint <local-E2B-IT-safetensors> --encoder-checkpoint <local-E2B-base-safetensors> --adapter-checkpoint <optional-SFT-checkpoint-directory> --tokenizer-cache outputs/repository_tokenizers --output outputs/gsm8k_E2B-E2B_after.jsonl
+python -m bifocalgemma.evaluation.gsm8k score --prepared outputs/gsm8k_zero_shot_v1 --predictions outputs/gsm8k_E2B-E2B_after.jsonl --output outputs/gsm8k_E2B-E2B_after_score.json
+```
+
+For a before-SFT run omit `--adapter-checkpoint`; for decoder-only baselines
+omit `--encoder-checkpoint`. Replace paths with actual local safetensors used
+by the native loader. It checks tensor shapes/keys; this does not authenticate
+upstream checkpoint identity. No CPU pretrained fallback is used. A generation
+report records inference peak VRAM separately from training memory.
+
+Within an uploaded notebook, after its bundled source bootstrap, import the
+same API: `fetch_gsm8k_sources`, `prepare_gsm8k`, `load_gsm8k`,
+`generate_gsm8k` and `score_gsm8k`. Generation takes an already-loaded native
+model and its experiment spec; it does not create another resident model.
+Tokenizers are verified and loaded once per generation run, rather than once
+per question. The shared source bundle includes this implementation.
+
+Predictions contain `instance_id`, `experiment`, `completion`, `status`,
+`stop_reason` and `manifest_fingerprint`. The CLI rejects a missing/mismatched
+protocol fingerprint; score files cannot silently combine zero-shot and
+8-shot output. Duplicate/unknown IDs and mixed experiment names are rejected.
+Missing predictions and generation errors count in the full denominator;
+length-limit terminations are separately counted. The scorer follows the
+release's first `####` regex match, removes commas and compares strings;
+`2.0` is not treated as identical to `2`. No expression is evaluated.
+
+Actual validation prepared all 1,319 released test examples in both protocols,
+checked real tokenizer IDs and generation budgets for all six configurations,
+and passed a 1,319/1,319 reference-answer scorer check. This is **not model
+accuracy**. [Complete validation receipt](data/gsm8k_adapter_validation_20261009.json).
+Original-model GSM8K generation remains to be run by the user on Molab.

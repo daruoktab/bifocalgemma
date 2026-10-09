@@ -1,0 +1,128 @@
+{
+  "date": "2026-10-09",
+  "scope": "Complete real released GSM8K adapter/tokenizer/scorer validation. No pretrained-model generation or model accuracy measured.",
+  "formats": {
+    "0": {
+      "manifest_fingerprint": "c724b212dbeb1d84a4ec9c37c1cd5a0b3170ed5359ff763334cdad30eb639265",
+      "count": 1319,
+      "oracle_scorer_check": {
+        "correct": 1319,
+        "total": 1319
+      },
+      "empty_predictions_check": {
+        "missing_prediction": 1319
+      },
+      "six_model_tokenization": {
+        "BifocalGemma-E2B-E2B": {
+          "count": 1319,
+          "encoder_max_tokens": 195,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "225b812ab51f13a4993eefa31ba9d96b7f272c78f04619f87a759ce671f31dce"
+        },
+        "BifocalGemma-E4B-E4B": {
+          "count": 1319,
+          "encoder_max_tokens": 195,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "225b812ab51f13a4993eefa31ba9d96b7f272c78f04619f87a759ce671f31dce"
+        },
+        "BifocalGemma-E2B-E4B": {
+          "count": 1319,
+          "encoder_max_tokens": 195,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "225b812ab51f13a4993eefa31ba9d96b7f272c78f04619f87a759ce671f31dce"
+        },
+        "BifocalGemma-E4B-E2B": {
+          "count": 1319,
+          "encoder_max_tokens": 195,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "225b812ab51f13a4993eefa31ba9d96b7f272c78f04619f87a759ce671f31dce"
+        },
+        "Gemma-4-E2B-IT": {
+          "count": 1319,
+          "encoder_max_tokens": 0,
+          "decoder_prefix_max_tokens": 222,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "9fa0b75aaf261a2489a7ed7e878b0e3e8a2442cd5e11059c0d92b1e71160cb4d"
+        },
+        "Gemma-4-E4B-IT": {
+          "count": 1319,
+          "encoder_max_tokens": 0,
+          "decoder_prefix_max_tokens": 222,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "9fa0b75aaf261a2489a7ed7e878b0e3e8a2442cd5e11059c0d92b1e71160cb4d"
+        }
+      }
+    },
+    "8": {
+      "manifest_fingerprint": "91f8dc41904d5ea531b97d65b4e1eb0942353ab2670abfc2f540b45b64c37a71",
+      "count": 1319,
+      "oracle_scorer_check": {
+        "correct": 1319,
+        "total": 1319
+      },
+      "empty_predictions_check": {
+        "missing_prediction": 1319
+      },
+      "six_model_tokenization": {
+        "BifocalGemma-E2B-E2B": {
+          "count": 1319,
+          "encoder_max_tokens": 1253,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "883f87f8f6bbdb4edd5ed1d588e1835dfc8fa9c5b91f592a88d09367893d7cf0"
+        },
+        "BifocalGemma-E4B-E4B": {
+          "count": 1319,
+          "encoder_max_tokens": 1253,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "883f87f8f6bbdb4edd5ed1d588e1835dfc8fa9c5b91f592a88d09367893d7cf0"
+        },
+        "BifocalGemma-E2B-E4B": {
+          "count": 1319,
+          "encoder_max_tokens": 1253,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "883f87f8f6bbdb4edd5ed1d588e1835dfc8fa9c5b91f592a88d09367893d7cf0"
+        },
+        "BifocalGemma-E4B-E2B": {
+          "count": 1319,
+          "encoder_max_tokens": 1253,
+          "decoder_prefix_max_tokens": 34,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "883f87f8f6bbdb4edd5ed1d588e1835dfc8fa9c5b91f592a88d09367893d7cf0"
+        },
+        "Gemma-4-E2B-IT": {
+          "count": 1319,
+          "encoder_max_tokens": 0,
+          "decoder_prefix_max_tokens": 1280,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "9d366c837cc10e77731d2048af1dd9c82210a78c581503b5d07bde61a5096587"
+        },
+        "Gemma-4-E4B-IT": {
+          "count": 1319,
+          "encoder_max_tokens": 0,
+          "decoder_prefix_max_tokens": 1280,
+          "max_new_tokens_checked": 2048,
+          "total_decoder_limit": 4096,
+          "ordered_token_stream_sha256": "9d366c837cc10e77731d2048af1dd9c82210a78c581503b5d07bde61a5096587"
+        }
+      }
+    }
+  }
+}

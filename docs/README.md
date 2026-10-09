@@ -58,3 +58,6 @@ Tidak ada bobot pretrained, dataset besar, atau hasil code-repair BifocalGemma
 yang disertakan. Config/checksum resmi dan contoh synthetic dibedakan dengan jelas.
 
 - [Full-corpus curation and training](FULL_CORPUS_TRAINING.md): admission, benchmark quarantine, complete-epoch notebook defaults.
+
+
+[GSM8K supplementary evaluation and context budgets](GSM8K_CONTEXT.md) documents the executable pinned adapter, math generation/scoring workflow, full 1,319-case tokenizer validation, and the separate larger-window GPU gate.

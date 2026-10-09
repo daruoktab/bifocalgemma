@@ -263,3 +263,22 @@ Both generators --check, marimo --strict, Ruff, type checking and whitespace
 checks passed. AST comparison confirms 20 cells /19 identical bodies in the
 matched family notebooks. The universal context default now agrees with the
 bounded 2k pilot pool, and all three show frozen limits in READY.
+
+
+## GSM8K executable evaluation — 9 Oktober 2026
+
+Pinned preparation exported all 1,319 released test cases in separate zero-shot
+and eight-shot directories. All six real tokenizer configurations passed
+public-input and generation-budget checks for every case in both protocols.
+Reference completions passed 1,319/1,319 release-style scorer checks through
+the CLI; this is adapter validation, not pretrained-model accuracy. Empty
+predictions retain a denominator of 1,319. The [receipt](data/gsm8k_adapter_validation_20261009.json)
+stores frozen manifests and complete ordered token-stream hashes.
+
+**22 tests passed** across the GSM8K adapter and three regenerated notebooks.
+Tests cover gold isolation, train-only demonstrations, source/file hashes,
+fixed denominators, duplicate/unknown predictions, mixed models/protocols,
+encoder overflow, budget rejection before loading weights, and one tokenizer
+load per checkpoint per generation run. Generators, strict marimo, Ruff, type
+checking and whitespace checks passed. Original-model math generation and
+larger-context training memory remain unmeasured.
