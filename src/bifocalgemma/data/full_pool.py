@@ -281,9 +281,6 @@ def build_full_pool(
 def main():
     import argparse
 
-    from bifocalgemma.config import EXPERIMENT_SPECS
-    from bifocalgemma.data.tokenization import load_verified_tokenizer
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache", type=Path, default=Path("outputs/full_corpus_raw"))
     parser.add_argument("--output", type=Path, default=Path("outputs/full_training_pool_v1"))
@@ -305,7 +302,46 @@ def main():
         print(json.dumps(row), flush=True)
         (args.cache / "progress.json").write_text(json.dumps(row, indent=2), encoding="utf-8")
 
-    benchmarks = fetch_benchmark_files(args.cache / "benchmarks")
+    prepare_full_corpus(
+        args.cache,
+        args.output,
+        args.tokenizer_cache,
+        config,
+        audit_repository=args.audit_repository,
+        progress=progress,
+    )
+
+
+def prepare_full_corpus(
+    cache,
+    output,
+    tokenizer_cache,
+    config,
+    *,
+    token=False,
+    audit_repository=True,
+    encoder_limit=2048,
+    decoder_limit=2048,
+    progress=None,
+):
+    """Library entry point for the same complete curation as the CLI."""
+    from bifocalgemma.config import EXPERIMENT_SPECS
+    from bifocalgemma.data.tokenization import load_verified_tokenizer
+
+    cache = Path(cache)
+    output = Path(output)
+    tokenizer_cache = Path(tokenizer_cache)
+    if output.exists():
+        raise FileExistsError("Curated output exists; validate/reuse it or choose a new directory.")
+    cache.mkdir(parents=True, exist_ok=True)
+    if progress is None:
+
+        def progress(row):
+            print(json.dumps(row), flush=True)
+
+    cache.mkdir(parents=True, exist_ok=True)
+
+    benchmarks = fetch_benchmark_files(cache / "benchmarks", token=token)
     progress({"stage": "benchmark_artifacts_cached"})
     source_files = {}
     for key, ref in SOURCE_REFS.items():
@@ -322,8 +358,8 @@ def main():
                     filename,
                     revision=ref["revision"],
                     repo_type="dataset",
-                    cache_dir=args.cache / "hf",
-                    token=False,
+                    cache_dir=cache / "hf",
+                    token=token,
                 )
             )
             progress({"stage": "source_cached", "source": key, "file": filename})
@@ -333,7 +369,7 @@ def main():
         for ref in (spec.encoder, spec.decoder):
             if ref is not None and ref.model_id not in assets:
                 assets[ref.model_id], manifests[ref.model_id] = load_verified_tokenizer(
-                    ref, args.tokenizer_cache
+                    ref, tokenizer_cache
                 )
     # Equivalence is checked using all tokenizer behavior assets, not assumed from model size.
     for family in ("", "-it"):
@@ -352,11 +388,14 @@ def main():
         assets["google/gemma-4-E2B"],
         assets["google/gemma-4-E2B-it"],
         config,
-        args.output,
+        output,
+        encoder_limit=encoder_limit,
+        decoder_limit=decoder_limit,
+        baseline_limit=encoder_limit + decoder_limit + 512,
         progress=progress,
         additional_encoder=assets["google/gemma-4-E4B"],
     )
-    if args.audit_repository:
+    if audit_repository:
         for key, repo, revision, filename in (
             (
                 "swe_fixer",
@@ -377,8 +416,8 @@ def main():
                     filename,
                     revision=revision,
                     repo_type="dataset",
-                    cache_dir=args.cache / "hf",
-                    token=False,
+                    cache_dir=cache / "hf",
+                    token=token,
                 )
             ]
         quarantine = manifest["report"]["benchmark_quarantine"]
@@ -389,12 +428,12 @@ def main():
             set(quarantine["crosscodeeval_repository_slugs"]),
             progress=progress,
         )
-        (args.cache / "repository_table_audit.json").write_text(
+        (cache / "repository_table_audit.json").write_text(
             json.dumps(report, indent=2), encoding="utf-8"
         )
-    progress(
-        {"stage": "completed", "pool": str(args.output), "fingerprint": manifest["fingerprint"]}
-    )
+    progress({"stage": "completed", "pool": str(output), "fingerprint": manifest["fingerprint"]})
+
+    return manifest
 
 
 if __name__ == "__main__":

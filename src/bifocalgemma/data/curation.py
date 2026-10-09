@@ -83,7 +83,9 @@ class CodeOverlapIndex:
     minimum-hash candidate heuristic; semantic rewrites remain outside scope.
     """
 
-    def __init__(self, *, threshold=0.8, candidate_shingles=None, storage_path=None):
+    def __init__(
+        self, *, threshold=0.8, candidate_shingles=None, storage_path=None, read_only=False
+    ):
         self.threshold = threshold
         self.candidate_shingles = candidate_shingles
         self.exact = {}
@@ -95,6 +97,12 @@ class CodeOverlapIndex:
 
             path = Path(storage_path)
             path.parent.mkdir(parents=True, exist_ok=True)
+            if read_only:
+                self.db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+                for table in ("exact", "codes", "postings"):
+                    if self.db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] < 1:
+                        raise ValueError("Incomplete benchmark index.")
+                return
             self.db = sqlite3.connect(path)
             # This is a disposable index, never a raw dataset or curated export.
             self.db.executescript(

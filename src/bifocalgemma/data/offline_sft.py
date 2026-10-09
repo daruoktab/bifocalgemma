@@ -218,7 +218,9 @@ def load_curated_pool(directory):
             if row["instance_id"] in all_ids:
                 raise ValueError("curated_pool_duplicate_identity")
             all_ids.add(row["instance_id"])
-            if not all(
+            if row.get("record_type") == "repository_patch_v1":
+                repository_editing_record(row)
+            elif not all(
                 isinstance(row.get(k), str) and row[k]
                 for k in (
                     "instruction",

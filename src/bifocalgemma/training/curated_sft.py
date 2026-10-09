@@ -24,7 +24,7 @@ def prepare_curated_training(spec, pool_directory, tokenizer_cache):
     for split, items in rows.items():
         outputs[split] = []
         for row in items:
-            context = (
+            context = row.get("context") or (
                 f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
             )
             tokenized = tokenize_repository_record(
