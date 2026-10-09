@@ -98,6 +98,7 @@ def profile(source, rows_file, tokenizer_cache):
         "tokenizer_assets": assets,
         "scope": "All raw Python rows with issue/patch; not training admission. No snapshot context, license, overlap, patch validity or functional validation is implied.",
         "decoder_policy": "Official patch-only IT, no thinking/tools; pair length includes issue prefix and closing turn, with one shift.",
+        "language_policy": "Rows are selected by declared language; missing language defaults to Python as in the repository task adapter. This is not per-file Python verification.",
         "counts": dict(counts),
         "quantiles": {k: distribution(v) for k, v in lengths.items()},
         "pair_decoder_coverage": dict(coverage),

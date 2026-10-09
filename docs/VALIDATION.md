@@ -300,3 +300,16 @@ All five notebooks pass strict marimo checking; generators, Ruff, type checking
 and whitespace checks pass. [Run instructions](PRETRAINED_GPU_PROBE.md).
 Original checkpoint allocation/training at these boundaries is left to the
 user's Molab runtime and is not declared feasible by these CPU tests.
+
+
+## Full SWE-Fixer raw target profile — 9 Oktober 2026
+
+All 115,406 pinned raw records were measured using official patch-only IT
+formatting and verified tokenizer assets, with no sampling or gold truncation.
+The [aggregate receipt](data/swe_fixer_raw_target_profile_20261009.json) records
+input-file and complete ordered length-stream hashes. Its missing-language
+convention is explicit; it does not certify Python source validity, snapshot
+licenses or functional quality. At 8k paired decoder, 113,820 raw candidates
+fit (98.63%). Extreme targets exceed the original 128k position limit.
+Profiler lint, formatting and type checks passed. Repository-production
+preparation continues separately with its own immutable settings and ledger.

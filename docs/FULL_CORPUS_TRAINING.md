@@ -212,3 +212,38 @@ No claim that the larger budget fits all original models is implied.
 
 
 GSM8K is planned as supplementary reasoning-retention evaluation, with a separate math prompt and numeric scorer. Its measured eight-shot input maximum is only 1,280 tokens under the declared protocol; repository data motivates the larger window. See [GSM8K and context budgets](GSM8K_CONTEXT.md) for the 8k-encoder/8k-paired-decoder candidate and its required original-model GPU gate.
+
+
+## Full secondary repository source profile: SWE-Fixer
+
+The pinned source's **115,406 raw records** were all profiled with the same
+IT issue-prefix/patch/closing-turn protocol. SWE-Fixer does not provide a
+language field in the inspected schema; the task adapter defaults missing
+language to Python. These are source-protocol candidate counts, not proof that
+every changed file is Python or that every row is valid training data.
+
+| Paired decoder cap | Raw rows within cap | Coverage |
+| --- | ---: | ---: |
+| 2,048 | 92,881 | 80.48% |
+| 4,096 | 109,210 | 94.63% |
+| 8,192 | 113,820 | 98.63% |
+| 16,384 | 114,987 | 99.64% |
+
+Paired decoder P50/P95/P99 are 1,009 / 4,257 / 9,714; target-only P95 is 2,788.
+The maximum paired length is **1,199,365**, and the longest issue alone is
+147,215 tokens. These outliers exceed the backbone position limit. Raising a
+window to 32k cannot admit the whole source; overflow must remain an explicit
+recorded rejection, without truncating gold patches.
+
+This strengthens 8k paired-decoder length as a coverage candidate across both
+repository sources, conditional on original-model training-memory validation.
+It does not choose an encoder retrieval length. The earlier SWE-Fixer table
+audit found 114,352 candidates after benchmark/lineage gates, all lacking
+source-code license fields. Actual immutable snapshots and source-license
+inspection are still required. SWE-Fixer is not silently added to the running
+SWE-rebench production pass or called approved SFT by this profile.
+
+The full source-file SHA, tokenizer hashes, aggregate distributions and ordered
+per-row length-stream SHA are in the [receipt](data/swe_fixer_raw_target_profile_20261009.json).
+Raw source text stays outside Git. Primary-source 8k coverage is 96.01%;
+secondary-source 8k coverage is 98.63%, before their other admission gates.

@@ -1,0 +1,70 @@
+{
+  "format": "raw_repository_target_profile_v1",
+  "source": "swe_fixer",
+  "source_reference": [
+    "internlm/SWE-Fixer-Train-110K",
+    "9e3f1366be2c9a1a230d243b4008354436685501",
+    "train"
+  ],
+  "source_file_sha256": "ea4e41526c4c2bee3de1b11b874116f9b97ced60fa9f3f4657ff53489befff2a",
+  "tokenizer_assets": {
+    "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+    "files": {
+      "tokenizer.json": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+      "tokenizer_config.json": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633",
+      "chat_template.jinja": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+      "config.json": "1b28f3d2c3100f6c594754b81107428bd7b822a7f48272ca681dae9d2ec38330",
+      "generation_config.json": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+      "processor_config.json": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+    }
+  },
+  "scope": "All 115406 raw SWE-Fixer rows under the source adapter language convention, before training admission. No snapshot context, license, overlap, patch validity or functional validation is implied.",
+  "decoder_policy": "Official patch-only IT, no thinking/tools; pair length includes issue prefix and closing turn, with one shift.",
+  "counts": {
+    "raw_rows": 115406,
+    "python_rows": 115406,
+    "profiled": 115406
+  },
+  "quantiles": {
+    "target": {
+      "count": 115406,
+      "total": 106487935,
+      "p50": 480,
+      "p90": 1860,
+      "p95": 2788,
+      "p99": 6306,
+      "max": 1199294
+    },
+    "pair_decoder": {
+      "count": 115406,
+      "total": 183887471,
+      "p50": 1009,
+      "p90": 2982,
+      "p95": 4257,
+      "p99": 9714,
+      "max": 1199365
+    },
+    "issue": {
+      "count": 115406,
+      "total": 74860604,
+      "p50": 266,
+      "p90": 1377,
+      "p95": 2144,
+      "p99": 5847,
+      "max": 147215
+    }
+  },
+  "pair_decoder_coverage": {
+    "2048": 92881,
+    "4096": 109210,
+    "8192": 113820,
+    "16384": 114987
+  },
+  "profile_stream_sha256": "bbcaf874030d96d3193ed831965f6cb3a4222b82b3ace4baae416b901b5b1445",
+  "date": "2026-10-09",
+  "runtime": {
+    "transformers": "5.19.0",
+    "tokenizers": "0.23.2"
+  },
+  "language_policy": "Rows are selected by declared language; missing language defaults to Python as in the repository task adapter. SWE-Fixer omits language in the inspected schema; this is not per-file Python verification."
+}
