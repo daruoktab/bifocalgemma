@@ -181,3 +181,54 @@ def repository_editing_record(raw):
         "instruction_hash": instruction_hash,
         "license": str(raw.get("license") or "unknown"),
     }
+
+
+def curated_pool_digest(path):
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def load_curated_pool(directory):
+    """Honor a frozen full-pool split; verify every file and record before training."""
+    from pathlib import Path
+
+    root = Path(directory)
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("format") != "bifocalgemma_curated_pool_v1":
+        raise ValueError("unsupported_curated_pool_format")
+    fingerprint = manifest.get("fingerprint")
+    if stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"}) != fingerprint:
+        raise ValueError("curated_pool_manifest_integrity")
+    rows = {}
+    all_ids = set()
+    for split in ("train", "dev"):
+        name = split + ".jsonl"
+        if curated_pool_digest(root / name) != manifest["files"].get(name):
+            raise ValueError("curated_pool_file_integrity:" + name)
+        with (root / name).open(encoding="utf-8") as handle:
+            items = [json.loads(line) for line in handle if line.strip()]
+        if not items or [r["instance_id"] for r in items] != manifest["record_ids"][split]:
+            raise ValueError("curated_pool_split_identity")
+        for row in items:
+            if row.get("pool_split") != split or row.get("role") != "train":
+                raise ValueError("curated_pool_role_or_split")
+            if row["instance_id"] in all_ids:
+                raise ValueError("curated_pool_duplicate_identity")
+            all_ids.add(row["instance_id"])
+            if not all(
+                isinstance(row.get(k), str) and row[k]
+                for k in (
+                    "instruction",
+                    "before",
+                    "after",
+                    "target_patch",
+                    "source",
+                    "source_revision",
+                )
+            ):
+                raise ValueError("curated_pool_missing_fields")
+        rows[split] = items
+    return rows, manifest

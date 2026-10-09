@@ -203,6 +203,11 @@ def fit_offline_sft(
     data_manifest=None,
     training_policy=None,
 ):
+    import time
+
+    segment_started = time.perf_counter()
+    evaluation_seconds = 0.0
+    checkpoint_seconds = 0.0
     if (
         min(max_steps, epochs, batch_size, accumulation, eval_every, save_every) < 1
         or learning_rate <= 0
@@ -263,6 +268,7 @@ def fit_offline_sft(
             state["order"] = list(range(len(train)))
             random.Random(seed + state["epoch"]).shuffle(state["order"])
             state["cursor"] = 0
+        step_started = time.perf_counter()
         micro_batches = []
         for micro in range(accumulation):
             if state["cursor"] >= len(state["order"]):
@@ -310,11 +316,17 @@ def fit_offline_sft(
             "learning_rate": learning_rate * fraction,
             "gradient_norm": norm.detach().item(),
         }
+        if device.type == "cuda":
+            torch.cuda.synchronize(device)
+        row["step_seconds"] = time.perf_counter() - step_started
         if rates is not None:
             row.pop("learning_rate")
             row["learning_rates"] = rates
         if state["global_step"] % eval_every == 0:
+            eval_started = time.perf_counter()
             row["eval"] = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
+            row["eval_seconds"] = time.perf_counter() - eval_started
+            evaluation_seconds += row["eval_seconds"]
         if device.type == "cuda":
             row["peak_allocated_gib"] = torch.cuda.max_memory_allocated(device) / 2**30
         state["history"].append(row)
@@ -323,6 +335,7 @@ def fit_offline_sft(
         if progress:
             progress(row)
         if state["global_step"] % save_every == 0:
+            checkpoint_started = time.perf_counter()
             checkpoints.append(
                 save_sft_checkpoint(
                     model,
@@ -333,15 +346,25 @@ def fit_offline_sft(
                     checkpoint_format=checkpoint_format,
                 )
             )
+            checkpoint_seconds += time.perf_counter() - checkpoint_started
             last_checkpoint_step = state["global_step"]
+    eval_started = time.perf_counter()
     evaluation = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
+    evaluation_seconds += time.perf_counter() - eval_started
     if state["global_step"] != last_checkpoint_step:
+        checkpoint_started = time.perf_counter()
         checkpoints.append(
             save_sft_checkpoint(
                 model, optimizer, state, root, compatibility, checkpoint_format=checkpoint_format
             )
         )
+        checkpoint_seconds += time.perf_counter() - checkpoint_started
     return {
+        "timing": {
+            "segment_wall_seconds": time.perf_counter() - segment_started,
+            "segment_evaluation_seconds": evaluation_seconds,
+            "segment_checkpoint_seconds": checkpoint_seconds,
+        },
         "status": "COMPLETED",
         "global_step": state["global_step"],
         "epoch": state["epoch"],
