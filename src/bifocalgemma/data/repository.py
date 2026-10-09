@@ -206,7 +206,7 @@ class GitSnapshotStore:
         return RepositorySnapshot(task.repo, commit, tuple(files))
 
 
-def prepare_repository_record(
+def prepare_repository_record_with_snapshot(
     task: RepositoryTask,
     snapshot: RepositorySnapshot,
     tokenizer,
@@ -214,8 +214,8 @@ def prepare_repository_record(
     blocked_repos: set[str],
     aliases: dict[str, str] | None = None,
     max_context_tokens: int = 4096,
-) -> tuple[dict, dict | None]:
-    """Training export and hidden evaluation spec are written into separate files."""
+) -> tuple[dict, dict | None, RepositorySnapshot]:
+    """Validate once and return the fixed snapshot for subsequent static audits."""
     if task.role not in {"train", "eval"}:
         raise ValueError("invalid_repository_task_role")
     if repo_identity(snapshot.repo) != repo_identity(task.repo):
@@ -254,7 +254,7 @@ def prepare_repository_record(
         row["target_patch"] = task.target_patch
         row["fixed_snapshot_sha256"] = canonical_snapshot_hash(fixed)
         row["target_patch_sha256"] = patch_hash
-        return row, None
+        return row, None, fixed
     hidden = {
         "instance_id": task.instance_id,
         "source": task.source,
@@ -266,6 +266,27 @@ def prepare_repository_record(
         "python_environment": task.python_environment,
         "requirements": task.requirements,
     }
+    return row, hidden, fixed
+
+
+def prepare_repository_record(
+    task: RepositoryTask,
+    snapshot: RepositorySnapshot,
+    tokenizer,
+    *,
+    blocked_repos: set[str],
+    aliases: dict[str, str] | None = None,
+    max_context_tokens: int = 4096,
+) -> tuple[dict, dict | None]:
+    """Preserve the public two-value export API; validation remains identical."""
+    row, hidden, _ = prepare_repository_record_with_snapshot(
+        task,
+        snapshot,
+        tokenizer,
+        blocked_repos=blocked_repos,
+        aliases=aliases,
+        max_context_tokens=max_context_tokens,
+    )
     return row, hidden
 
 

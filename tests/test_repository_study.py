@@ -441,3 +441,38 @@ def test_local_loader_preflights_and_preserves_shared_words(tmp_path):
         load_local_native_model(
             original.spec, decoder, encoder, device="cpu", dtype=torch.float32, tiny=True
         )
+
+
+def test_preparation_reuses_one_verified_snapshot_without_changing_export(monkeypatch):
+    import bifocalgemma.data.repository as repository
+
+    snapshot, patch = fixture()
+    task = repository_task_from_row(
+        "swe_fixer",
+        dict(
+            instance_id="reuse",
+            repo=snapshot.repo,
+            base_commit=snapshot.base_commit,
+            problem_statement="Fix calculator.calculate using add_one.",
+            patch=patch,
+        ),
+    )
+    options = dict(blocked_repos=set(), max_context_tokens=1000)
+    original = repository.prepare_repository_record(task, snapshot, CharacterTokenizer(), **options)
+    apply = repository.apply_patch_to_snapshot
+    calls = []
+
+    def counted(before, target):
+        calls.append((before, target))
+        return apply(before, target)
+
+    monkeypatch.setattr(repository, "apply_patch_to_snapshot", counted)
+    row, hidden, fixed = repository.prepare_repository_record_with_snapshot(
+        task, snapshot, CharacterTokenizer(), **options
+    )
+    assert (row, hidden) == original and len(calls) == 1
+    assert canonical_snapshot_hash(fixed) == row["fixed_snapshot_sha256"]
+    assert fixed == apply(snapshot, patch)
+    assert dict((file.path, file.content) for file in snapshot.files) != dict(
+        (file.path, file.content) for file in fixed.files
+    )

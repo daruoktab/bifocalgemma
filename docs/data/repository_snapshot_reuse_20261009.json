@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-09",
+  "scope": "Preparation-only snapshot reuse and unchanged real-record export parity; not GPU/model throughput or full production completion.",
+  "profiled_task": "mozilla-services__cliquet-203",
+  "before_profile_seconds": 1.639,
+  "before_patch_application_calls": 2,
+  "before_patch_application_cumulative_seconds": 1.366,
+  "new_patch_application_calls_per_record": 1,
+  "real_parity": {
+    "train": 3,
+    "dev": 1,
+    "train_dev_file_sha256_identical": true,
+    "files": {
+      "train.jsonl": "527231cb2bda436db7591df695c2126f3d68ebf0b9a0ef6ca622ea2286b2ffbb",
+      "dev.jsonl": "c32bc384675d624b421c71e2832b215797622f7231f97ebb0277ba8b21aca7a2"
+    },
+    "input_source_sha_changed_only_for_fresh_ledger_validation": true
+  },
+  "public_two_value_prepare_api_preserved": true,
+  "unit_archive_study_tests_passed": 23,
+  "production_resume_evidence": {
+    "admission_version": "repository_archive_v3_context_licenses",
+    "upstream_offset": 1551,
+    "accepted_preserved": 154
+  }
+}

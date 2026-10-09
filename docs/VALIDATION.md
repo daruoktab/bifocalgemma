@@ -345,3 +345,21 @@ both previously skipped real-tokenizer cases. Across the two runs, 148 distinct
 test cases were verified; this is not a claim of 152 distinct tests or a single
 148-case run. [Regression receipt](data/full_regression_context_policy_v3_20261009.json).
 The production corpus and original-model 8k training-memory gate remain pending.
+
+
+## Reuse of verified fixed snapshots — 9 Oktober 2026
+
+Profiling the real cached cliquet task showed two identical Git patch-application
+sessions taking 1.366 of 1.639 seconds in its preparation path. The builder now
+receives the fixed snapshot from the first validation and reuses it for syntax
+and benchmark checks. Git --check and apply remain mandatory; source licensing
+and all acceptance gates are unchanged. The public two-value preparation API
+is retained. This removes duplicated filesystem/Git work, not model computation.
+
+**23 repository/archive tests passed**, including one-application invocation,
+unchanged public export, source immutability and fixed-snapshot hash parity.
+Four real tasks produced identical train/dev file SHA values compared with the
+previous v3 output. The optimized worker resumed the same ledger at offset
+1551, preserving all 154 accepted records. [Receipt](data/repository_snapshot_reuse_20261009.json).
+Generator checks, strict marimo, Ruff, type and whitespace checks passed. No
+pipeline-wide speed ratio or GPU-hour saving is inferred from the small profile.

@@ -22,9 +22,9 @@ from bifocalgemma.data.curation import (
     split_connected_records,
 )
 from bifocalgemma.data.offline_sft import load_curated_pool, stable_fingerprint
-from bifocalgemma.data.patches import apply_patch_to_snapshot, patch_paths, safe_repo_path
+from bifocalgemma.data.patches import patch_paths, safe_repo_path
 from bifocalgemma.data.repository import (
-    prepare_repository_record,
+    prepare_repository_record_with_snapshot,
     read_source_rows,
     repo_identity,
     repository_task_from_row,
@@ -457,7 +457,7 @@ def build_repository_corpus(
                 {item["license"] for entry in license_evidence for item in entry["licenses"]}
             )
             task = replace(task, license=" AND ".join(actual_licenses))
-            row, _ = prepare_repository_record(
+            row, _, fixed = prepare_repository_record_with_snapshot(
                 task,
                 snapshot,
                 encoder,
@@ -466,10 +466,11 @@ def build_repository_corpus(
                 max_context_tokens=context_limit,
             )
             try:
-                visible_license_evidence = context_license_evidence(snapshot, row["context_selection"])
+                visible_license_evidence = context_license_evidence(
+                    snapshot, row["context_selection"]
+                )
             except ValueError as error:
                 raise ValueError("context_" + str(error)) from error
-            fixed = apply_patch_to_snapshot(snapshot, task.target_patch)
             before_files = {f.path: f.content for f in snapshot.files}
             fixed_files = {f.path: f.content for f in fixed.files}
             for path in patch_paths(task.target_patch):
