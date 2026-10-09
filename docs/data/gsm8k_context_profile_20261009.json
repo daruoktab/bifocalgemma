@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-09",
+  "source": {
+    "revision": "3101c7d5072418e28b9008a6636bde82a006892c",
+    "files": {
+      "train": {
+        "sha256": "17f347dc51477c50d4efb83959dbb7c56297aba886e5544ee2aaed3024813465",
+        "bytes": 4166206,
+        "rows": 7473,
+        "url": "https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/train.jsonl"
+      },
+      "test": {
+        "sha256": "3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14",
+        "bytes": 749738,
+        "rows": 1319,
+        "url": "https://raw.githubusercontent.com/openai/grade-school-math/3101c7d5072418e28b9008a6636bde82a006892c/grade_school_math/data/test.jsonl"
+      }
+    }
+  },
+  "tokenizer_assets": {
+    "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+    "files": {
+      "tokenizer.json": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+      "tokenizer_config.json": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633",
+      "chat_template.jinja": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+      "config.json": "1b28f3d2c3100f6c594754b81107428bd7b822a7f48272ca681dae9d2ec38330",
+      "generation_config.json": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+      "processor_config.json": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+    }
+  },
+  "runtime": {
+    "transformers": "5.19.0",
+    "tokenizers": "0.23.2"
+  },
+  "scope": "All 1319 released test questions; official IT prompt lengths, not a model score or generated-answer length guarantee.",
+  "protocol": {
+    "instruction": "Solve the math problem step by step. End with #### followed by the final numeric answer.",
+    "enable_thinking": false,
+    "tools": false,
+    "calculator": false,
+    "reference_calculation_annotations": "removed <<...>>",
+    "eight_shot_examples": "first eight upstream train rows in original order; no test answers in prompt",
+    "eight_shot_prefix_sha256": "3a6aa2f06771ce24d241ef16f4e4380b1a5bc4fad523b36d2f2d400b01802a99",
+    "zero_shot_format": "instruction + blank line + Question: <question> + newline + Answer:",
+    "eight_shot_format": "instruction + blank line + train Q/A blocks separated by blank lines + blank line + test Question/Answer prefix",
+    "tokenization": "apply_chat_template(tokenize=False), then encode(add_special_tokens=False); IDs verified as a list with one template BOS"
+  },
+  "quantiles": {
+    "zero_shot_prompt": {
+      "count": 1319,
+      "total": 123356,
+      "p50": 90,
+      "p90": 124,
+      "p95": 136,
+      "p99": 160,
+      "max": 222
+    },
+    "eight_shot_prompt": {
+      "count": 1319,
+      "total": 1518858,
+      "p50": 1148,
+      "p90": 1182,
+      "p95": 1194,
+      "p99": 1218,
+      "max": 1280
+    },
+    "reference_answer": {
+      "count": 1319,
+      "total": 123566,
+      "p50": 87,
+      "p90": 148,
+      "p95": 171,
+      "p99": 220,
+      "max": 301
+    }
+  },
+  "length_stream_sha256": "e7e07eef497d17ce65330ccac7c8553c18de4c39f3843cd4c4ba50157cb6dcac"
+}

@@ -209,3 +209,6 @@ limits implicitly; this mismatch is fixed. READY displays the frozen limits.
 For the next 8k-decoder study, choose a new pool directory and adjust both
 encoder and decoder controls; do not reuse the 2k pilot directory or checkpoint.
 No claim that the larger budget fits all original models is implied.
+
+
+GSM8K is planned as supplementary reasoning-retention evaluation, with a separate math prompt and numeric scorer. Its measured eight-shot input maximum is only 1,280 tokens under the declared protocol; repository data motivates the larger window. See [GSM8K and context budgets](GSM8K_CONTEXT.md) for the 8k-encoder/8k-paired-decoder candidate and its required original-model GPU gate.
