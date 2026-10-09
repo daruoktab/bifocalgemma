@@ -93,9 +93,23 @@ def fit_curated_sft(
     )
     policy = default_training_profiles()[family]
     configure_policy_model(model, policy)
+    from importlib.metadata import version
+
+    import torch
+
     compatibility = {
         "architecture": "native_curated_pool_sft_v1",
         "experiment": model.spec.name,
+        "model_spec": model.spec.to_dict(),
+        "torch": str(torch.__version__),
+        "transformers": version("transformers"),
+        "backbone_dimensions": {
+            "decoder_hidden_size": model.decoder.config.hidden_size,
+            "decoder_vocab_size": model.decoder.config.vocab_size,
+            "encoder_hidden_size": model.encoder.config.hidden_size
+            if model.encoder is not None
+            else None,
+        },
         "family": family,
         "data_fingerprint": manifest["fingerprint"],
         "pool_fingerprint": manifest["pool_fingerprint"],

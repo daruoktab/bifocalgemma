@@ -209,3 +209,52 @@ def test_complete_epoch_training_budget_all_families(index, tmp_path):
         assert (tmp_path / "run/checkpoint-000004/READY.json").exists()
     finally:
         torch.set_num_threads(previous)
+
+
+def test_curated_resume_rejects_runtime_drift(tmp_path, monkeypatch):
+    import importlib.metadata
+
+    import torch
+
+    from bifocalgemma.config import EXPERIMENT_SPECS
+    from bifocalgemma.contracts import TokenizedRepairExample
+    from bifocalgemma.models.native import build_native_tiny_model
+    from bifocalgemma.training.curated_sft import fit_curated_sft
+
+    previous = torch.get_num_threads()
+    torch.set_num_threads(4)
+    try:
+        spec = EXPERIMENT_SPECS[4]
+        examples = [TokenizedRepairExample(str(i), (), (2, 3), (4, 5)) for i in range(2)]
+        manifest = {"fingerprint": "data", "pool_fingerprint": "pool"}
+        first = fit_curated_sft(
+            build_native_tiny_model(spec),
+            examples,
+            examples[:1],
+            tmp_path / "run",
+            manifest,
+            max_steps=1,
+            accumulation=1,
+            save_every=1,
+            eval_every=1,
+        )
+        restored = build_native_tiny_model(spec)
+        version = importlib.metadata.version
+        monkeypatch.setattr(
+            importlib.metadata,
+            "version",
+            lambda name: "5.20.0" if name == "transformers" else version(name),
+        )
+        with pytest.raises(ValueError, match="config mismatch"):
+            fit_curated_sft(
+                restored,
+                examples,
+                examples[:1],
+                tmp_path / "run",
+                manifest,
+                max_steps=2,
+                accumulation=1,
+                resume_from=first["checkpoints"][-1],
+            )
+    finally:
+        torch.set_num_threads(previous)
