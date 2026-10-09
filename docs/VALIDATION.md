@@ -237,3 +237,5 @@ The updated repository builder completed a four-real-task end-to-end export (3 t
 The completed 64-real-task repository adapter cohort contains 58 train/6 dev and 45 multi-file patches. All six configurations tokenized exactly those frozen IDs. This validates the repository pipeline, not the configured full production budget or functional model quality. [Receipt](data/repository_64_task_validation_20261009.json).
 
 Universal curated-run checkpoint compatibility now records model spec, physical dimensions and runtime versions. Native tiny complete-epoch checks passed (9 tests), followed by a targeted runtime-drift resume rejection test (1 passed).
+
+Production preparation exposed a connection-reset error separate from HTTP incomplete-read. Archive retries now cover ConnectionError; seven archive/ledger regression tests passed. Actual preparation resumed from ledger offset 1203 with all 118 accepted records preserved.

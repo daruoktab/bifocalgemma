@@ -102,7 +102,8 @@ def test_preparation_ledger_preserves_records_and_rejects_new_settings(tmp_path)
         RepositoryPreparationLedger(path, {"source": "fixture", "budget": 10000})
 
 
-def test_archive_download_retries_incomplete_transport(tmp_path, monkeypatch):
+@pytest.mark.parametrize("reset", [False, True])
+def test_archive_download_retries_incomplete_transport(tmp_path, monkeypatch, reset):
     import http.client
     from types import SimpleNamespace
 
@@ -116,7 +117,11 @@ def test_archive_download_retries_incomplete_transport(tmp_path, monkeypatch):
     class Response(io.BytesIO):
         def read(self, size=-1):
             if len(attempts) == 1:
-                raise http.client.IncompleteRead(b"partial")
+                raise (
+                    ConnectionResetError("reset")
+                    if reset
+                    else http.client.IncompleteRead(b"partial")
+                )
             return super().read(size)
 
     def fetch(*args, **kwargs):

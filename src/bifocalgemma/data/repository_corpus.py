@@ -72,7 +72,12 @@ class ArchiveSnapshotStore:
                                     raise ValueError("archive_download_budget_exceeded")
                                 handle.write(chunk)
                     break
-                except (http.client.HTTPException, urllib.error.URLError, TimeoutError) as error:
+                except (
+                    http.client.HTTPException,
+                    urllib.error.URLError,
+                    TimeoutError,
+                    ConnectionError,
+                ) as error:
                     if attempt == 2:
                         raise ValueError("snapshot_download_transport_failure") from error
             temporary.replace(path)
