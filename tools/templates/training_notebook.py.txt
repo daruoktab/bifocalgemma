@@ -48,23 +48,23 @@ def _(mo):
     RUN_TRAINING = False
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "pilot-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
+    RUN_NAME = "full-pool-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
     RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
-    DATA_SOURCE = "editpackft"  # editpackft / commitpackft_python / local_jsonl
-    LOCAL_DATA_FILE = "data/editing_records.jsonl"
+    DATA_SOURCE = "curated_pool"  # frozen full pool; legacy sources are explicit pilots
+    LOCAL_DATA_FILE = "outputs/full_training_pool_v1"  # directory with manifest/train/dev
     RAW_LIMIT = 10000
     TRAIN_LIMIT = 2000
     DEV_LIMIT = 200
     DEV_FRACTION = 0.1
     ENCODER_LIMIT = 2048
-    DECODER_LIMIT = 512
+    DECODER_LIMIT = 2048
     BATCH_SIZE = 1
     GRAD_ACCUMULATION = 4
-    MAX_STEPS = 100
+    MAX_STEPS = 0  # 0 = complete EPOCHS over the frozen training split
     EPOCHS = 1
     MAX_GRAD_NORM = 1.0
-    EVAL_EVERY = 25
-    SAVE_EVERY = 25
+    EVAL_EVERY = 500
+    SAVE_EVERY = 500
     HEADROOM_GIB = 16
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
@@ -1300,11 +1300,18 @@ def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, 
                               dev_fraction,encoder_limit,decoder_limit,seed):
         if not 1<=encoder_limit<=131072 or not 1<=decoder_limit<=131072:
             raise ValueError("Invalid token limits.")
-        semantic_source = "commitpackft" if source=="commitpackft_python" else "editpackft"
-        records,filters = prepare_editing_records(dataset_rows(source,local_file,cache_dir),
-                                                 source=semantic_source,raw_limit=raw_limit)
-        train_rows,dev_rows = split_editing_records(records,seed=seed,dev_fraction=dev_fraction,
-                                                   train_limit=train_limit,dev_limit=dev_limit)
+        pool_manifest = None
+        if source == "curated_pool":
+            frozen_rows, pool_manifest = load_curated_pool(local_file)
+            train_rows, dev_rows = frozen_rows["train"], frozen_rows["dev"]
+            records = train_rows + dev_rows
+            filters = {}
+        else:
+            semantic_source = "commitpackft_python" if source == "commitpackft_python" else "editpackft"
+            records,filters = prepare_editing_records(dataset_rows(source,local_file,cache_dir),
+                                                     source=semantic_source,raw_limit=raw_limit)
+            train_rows,dev_rows = split_editing_records(records,seed=seed,dev_fraction=dev_fraction,
+                                                       train_limit=train_limit,dev_limit=dev_limit)
         assert spec.encoder is not None
         enc_ref=CHECKPOINTS[spec.encoder.size]["encoder"];dec_ref=CHECKPOINTS[spec.decoder.size]["decoder"]
         enc_assets=verified_assets(enc_ref,cache_dir);dec_assets=verified_assets(dec_ref,cache_dir)
@@ -1318,6 +1325,7 @@ def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, 
             for row in rows:
                 try:item=tokenize_editing_row(row,spec,encoder,decoder,encoder_limit,decoder_limit)
                 except ValueError as error:
+                    if source == "curated_pool":raise ValueError("Frozen pool rejected by tokenizer; rebuild pool or correct limits.") from error
                     token_filters[str(error)]+=1;continue
                 tokenized[split].append(item);kept[split].append(row)
         if not all(tokenized.values()):raise ValueError("Empty split after token filtering.")
@@ -1326,6 +1334,10 @@ def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, 
             "seed":seed,"encoder_limit":encoder_limit,"decoder_limit":decoder_limit,
             "tokenizer_sources":[enc_ref,dec_ref],"data_filters":filters,"token_filters":dict(token_filters),
             "train":editing_manifest(kept["train"]),"dev":editing_manifest(kept["dev"])}
+        if pool_manifest is not None:
+            manifest["curated_pool_fingerprint"]=pool_manifest["fingerprint"]
+            manifest["split_policy"]=pool_manifest["report"]["split"]["policy"]
+            manifest["pool_report"]=pool_manifest["report"]
         manifest["data_format_version"]=("repository_context_diff_v1" if all(r.get("record_type") == "repository_patch_v1" for r in records) else "paired_code_diff_v1")
         manifest["tokenized_fingerprint"]=stable_fingerprint({split:[(item.instance_id,item.encoder_ids,item.decoder_prefix_ids,item.target_ids) for item in items] for split,items in tokenized.items()})
         manifest["fingerprint"]=stable_fingerprint(manifest)
@@ -1379,6 +1391,8 @@ def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMU
     training_result = {"status":"DISABLED","reason":training_guard}
     run_dir = Path(OUTPUT_ROOT)/EXPERIMENT/RUN_NAME
     if training_guard is None:
+        effective_max_steps = MAX_STEPS or ((len(train_examples)+BATCH_SIZE*GRAD_ACCUMULATION-1)//(BATCH_SIZE*GRAD_ACCUMULATION))*EPOCHS
+        if effective_max_steps < 1:raise ValueError("Invalid complete-epoch training budget.")
         if data_manifest is None:raise ValueError("Prepare data first.")
         if not RESUME_FROM and run_dir.exists() and any(run_dir.iterdir()):
             raise FileExistsError("Choose a new RUN_NAME or RESUME_FROM; refusing artifact overwrite.")
@@ -1391,14 +1405,14 @@ def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMU
                 "clip_norm":MAX_GRAD_NORM,
                 "seed":SEED,"torch":str(torch.__version__),"transformers":environment["transformers"]}
             def progress(row):
-                message=f"step {row['step']}/{MAX_STEPS} Â· train CE {row['train_loss']:.4f}"
+                message=f"step {row['step']}/{effective_max_steps} Â· train CE {row['train_loss']:.4f}"
                 if "eval" in row:message+=f" Â· dev CE {row['eval']['loss']:.4f}"
                 if "learning_rates" in row:message+=" Â· LR "+", ".join(f"{name}={lr:.2g}" for name,lr in row["learning_rates"].items())
                 if "peak_allocated_gib" in row:message+=f" Â· VRAM {row['peak_allocated_gib']:.2f} GiB"
                 print(message)
             # Manifest files are written inside the trainer after the run-directory guard.
             training_result=fit_offline_sft(model,train_examples,dev_examples,run_dir,compatibility,
-                max_steps=MAX_STEPS,epochs=EPOCHS,batch_size=BATCH_SIZE,accumulation=GRAD_ACCUMULATION,
+                max_steps=effective_max_steps,epochs=EPOCHS,batch_size=BATCH_SIZE,accumulation=GRAD_ACCUMULATION,
                 training_policy=training_policy,clip_norm=MAX_GRAD_NORM,
                 eval_every=EVAL_EVERY,save_every=SAVE_EVERY,seed=SEED,resume_from=RESUME_FROM or None,
                 progress=progress,data_manifest=data_manifest)

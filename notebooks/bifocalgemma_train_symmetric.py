@@ -49,23 +49,23 @@ def _(mo):
     RUN_TRAINING = False
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "pilot-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
+    RUN_NAME = "full-pool-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
     RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
-    DATA_SOURCE = "editpackft"  # editpackft / commitpackft_python / local_jsonl
-    LOCAL_DATA_FILE = "data/editing_records.jsonl"
+    DATA_SOURCE = "curated_pool"  # frozen full pool; legacy sources are explicit pilots
+    LOCAL_DATA_FILE = "outputs/full_training_pool_v1"  # directory with manifest/train/dev
     RAW_LIMIT = 10000
     TRAIN_LIMIT = 2000
     DEV_LIMIT = 200
     DEV_FRACTION = 0.1
     ENCODER_LIMIT = 2048
-    DECODER_LIMIT = 512
+    DECODER_LIMIT = 2048
     BATCH_SIZE = 1
     GRAD_ACCUMULATION = 4
-    MAX_STEPS = 100
+    MAX_STEPS = 0  # 0 = complete EPOCHS over the frozen training split
     EPOCHS = 1
     MAX_GRAD_NORM = 1.0
-    EVAL_EVERY = 25
-    SAVE_EVERY = 25
+    EVAL_EVERY = 500
+    SAVE_EVERY = 500
     HEADROOM_GIB = 16
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
@@ -1674,6 +1674,58 @@ def _(
             "license": str(raw.get("license") or "unknown"),
         }
 
+    def curated_pool_digest(path):
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def load_curated_pool(directory):
+        """Honor a frozen full-pool split; verify every file and record before training."""
+        from pathlib import Path
+
+        root = Path(directory)
+        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        if manifest.get("format") != "bifocalgemma_curated_pool_v1":
+            raise ValueError("unsupported_curated_pool_format")
+        fingerprint = manifest.get("fingerprint")
+        if (
+            stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"})
+            != fingerprint
+        ):
+            raise ValueError("curated_pool_manifest_integrity")
+        rows = {}
+        all_ids = set()
+        for split in ("train", "dev"):
+            name = split + ".jsonl"
+            if curated_pool_digest(root / name) != manifest["files"].get(name):
+                raise ValueError("curated_pool_file_integrity:" + name)
+            with (root / name).open(encoding="utf-8") as handle:
+                items = [json.loads(line) for line in handle if line.strip()]
+            if not items or [r["instance_id"] for r in items] != manifest["record_ids"][split]:
+                raise ValueError("curated_pool_split_identity")
+            for row in items:
+                if row.get("pool_split") != split or row.get("role") != "train":
+                    raise ValueError("curated_pool_role_or_split")
+                if row["instance_id"] in all_ids:
+                    raise ValueError("curated_pool_duplicate_identity")
+                all_ids.add(row["instance_id"])
+                if not all(
+                    isinstance(row.get(k), str) and row[k]
+                    for k in (
+                        "instruction",
+                        "before",
+                        "after",
+                        "target_patch",
+                        "source",
+                        "source_revision",
+                    )
+                ):
+                    raise ValueError("curated_pool_missing_fields")
+            rows[split] = items
+        return rows, manifest
+
     DATA_SOURCES = {
         "editpackft": {
             "id": "nuprl/EditPackFT",
@@ -1770,17 +1822,28 @@ def _(
     ):
         if not 1 <= encoder_limit <= 131072 or not 1 <= decoder_limit <= 131072:
             raise ValueError("Invalid token limits.")
-        semantic_source = "commitpackft" if source == "commitpackft_python" else "editpackft"
-        records, filters = prepare_editing_records(
-            dataset_rows(source, local_file, cache_dir), source=semantic_source, raw_limit=raw_limit
-        )
-        train_rows, dev_rows = split_editing_records(
-            records,
-            seed=seed,
-            dev_fraction=dev_fraction,
-            train_limit=train_limit,
-            dev_limit=dev_limit,
-        )
+        pool_manifest = None
+        if source == "curated_pool":
+            frozen_rows, pool_manifest = load_curated_pool(local_file)
+            train_rows, dev_rows = frozen_rows["train"], frozen_rows["dev"]
+            records = train_rows + dev_rows
+            filters = {}
+        else:
+            semantic_source = (
+                "commitpackft_python" if source == "commitpackft_python" else "editpackft"
+            )
+            records, filters = prepare_editing_records(
+                dataset_rows(source, local_file, cache_dir),
+                source=semantic_source,
+                raw_limit=raw_limit,
+            )
+            train_rows, dev_rows = split_editing_records(
+                records,
+                seed=seed,
+                dev_fraction=dev_fraction,
+                train_limit=train_limit,
+                dev_limit=dev_limit,
+            )
         assert spec.encoder is not None
         enc_ref = CHECKPOINTS[spec.encoder.size]["encoder"]
         dec_ref = CHECKPOINTS[spec.decoder.size]["decoder"]
@@ -1804,6 +1867,10 @@ def _(
                         row, spec, encoder, decoder, encoder_limit, decoder_limit
                     )
                 except ValueError as error:
+                    if source == "curated_pool":
+                        raise ValueError(
+                            "Frozen pool rejected by tokenizer; rebuild pool or correct limits."
+                        ) from error
                     token_filters[str(error)] += 1
                     continue
                 tokenized[split].append(item)
@@ -1828,6 +1895,10 @@ def _(
             "train": editing_manifest(kept["train"]),
             "dev": editing_manifest(kept["dev"]),
         }
+        if pool_manifest is not None:
+            manifest["curated_pool_fingerprint"] = pool_manifest["fingerprint"]
+            manifest["split_policy"] = pool_manifest["report"]["split"]["policy"]
+            manifest["pool_report"] = pool_manifest["report"]
         manifest["data_format_version"] = (
             "repository_context_diff_v1"
             if all(r.get("record_type") == "repository_patch_v1" for r in records)
@@ -2053,6 +2124,11 @@ def _(
         data_manifest=None,
         training_policy=None,
     ):
+        import time
+
+        segment_started = time.perf_counter()
+        evaluation_seconds = 0.0
+        checkpoint_seconds = 0.0
         if (
             min(max_steps, epochs, batch_size, accumulation, eval_every, save_every) < 1
             or learning_rate <= 0
@@ -2115,6 +2191,7 @@ def _(
                 state["order"] = list(range(len(train)))
                 random.Random(seed + state["epoch"]).shuffle(state["order"])
                 state["cursor"] = 0
+            step_started = time.perf_counter()
             micro_batches = []
             for micro in range(accumulation):
                 if state["cursor"] >= len(state["order"]):
@@ -2162,11 +2239,17 @@ def _(
                 "learning_rate": learning_rate * fraction,
                 "gradient_norm": norm.detach().item(),
             }
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            row["step_seconds"] = time.perf_counter() - step_started
             if rates is not None:
                 row.pop("learning_rate")
                 row["learning_rates"] = rates
             if state["global_step"] % eval_every == 0:
+                eval_started = time.perf_counter()
                 row["eval"] = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
+                row["eval_seconds"] = time.perf_counter() - eval_started
+                evaluation_seconds += row["eval_seconds"]
             if device.type == "cuda":
                 row["peak_allocated_gib"] = torch.cuda.max_memory_allocated(device) / 2**30
             state["history"].append(row)
@@ -2175,6 +2258,7 @@ def _(
             if progress:
                 progress(row)
             if state["global_step"] % save_every == 0:
+                checkpoint_started = time.perf_counter()
                 checkpoints.append(
                     save_sft_checkpoint(
                         model,
@@ -2185,9 +2269,13 @@ def _(
                         checkpoint_format=checkpoint_format,
                     )
                 )
+                checkpoint_seconds += time.perf_counter() - checkpoint_started
                 last_checkpoint_step = state["global_step"]
+        eval_started = time.perf_counter()
         evaluation = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
+        evaluation_seconds += time.perf_counter() - eval_started
         if state["global_step"] != last_checkpoint_step:
+            checkpoint_started = time.perf_counter()
             checkpoints.append(
                 save_sft_checkpoint(
                     model,
@@ -2198,7 +2286,13 @@ def _(
                     checkpoint_format=checkpoint_format,
                 )
             )
+            checkpoint_seconds += time.perf_counter() - checkpoint_started
         return {
+            "timing": {
+                "segment_wall_seconds": time.perf_counter() - segment_started,
+                "segment_evaluation_seconds": evaluation_seconds,
+                "segment_checkpoint_seconds": checkpoint_seconds,
+            },
             "status": "COMPLETED",
             "global_step": state["global_step"],
             "epoch": state["epoch"],
@@ -2360,6 +2454,16 @@ def _(
     training_result = {"status": "DISABLED", "reason": training_guard}
     run_dir = Path(OUTPUT_ROOT) / EXPERIMENT / RUN_NAME
     if training_guard is None:
+        effective_max_steps = (
+            MAX_STEPS
+            or (
+                (len(train_examples) + BATCH_SIZE * GRAD_ACCUMULATION - 1)
+                // (BATCH_SIZE * GRAD_ACCUMULATION)
+            )
+            * EPOCHS
+        )
+        if effective_max_steps < 1:
+            raise ValueError("Invalid complete-epoch training budget.")
         if data_manifest is None:
             raise ValueError("Prepare data first.")
         if not RESUME_FROM and run_dir.exists() and any(run_dir.iterdir()):
@@ -2385,7 +2489,9 @@ def _(
             }
 
             def progress(row):
-                message = f"step {row['step']}/{MAX_STEPS} Â· train CE {row['train_loss']:.4f}"
+                message = (
+                    f"step {row['step']}/{effective_max_steps} Â· train CE {row['train_loss']:.4f}"
+                )
                 if "eval" in row:
                     message += f" Â· dev CE {row['eval']['loss']:.4f}"
                 if "learning_rates" in row:
@@ -2403,7 +2509,7 @@ def _(
                 dev_examples,
                 run_dir,
                 compatibility,
-                max_steps=MAX_STEPS,
+                max_steps=effective_max_steps,
                 epochs=EPOCHS,
                 batch_size=BATCH_SIZE,
                 accumulation=GRAD_ACCUMULATION,
