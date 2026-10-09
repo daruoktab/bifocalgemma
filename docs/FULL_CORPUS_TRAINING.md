@@ -199,3 +199,13 @@ contain no upstream source code or model weights:
 $env:PYTHONPATH='src'
 python tools/profile_repository_lengths.py --source swe_rebench_v2 --rows-file <pinned-parquet-path> --tokenizer-cache <verified-tokenizer-cache> --output outputs/repository-target-profile.json
 ```
+
+
+All three curated-training notebooks now validate the requested encoder,
+paired-decoder and baseline-decoder limits against the immutable pool before
+reporting READY. Their bounded-pilot defaults agree at 2,048 / 2,048 / 4,608.
+The universal notebook previously requested a 4k context while consuming pool
+limits implicitly; this mismatch is fixed. READY displays the frozen limits.
+For the next 8k-decoder study, choose a new pool directory and adjust both
+encoder and decoder controls; do not reuse the 2k pilot directory or checkpoint.
+No claim that the larger budget fits all original models is implied.

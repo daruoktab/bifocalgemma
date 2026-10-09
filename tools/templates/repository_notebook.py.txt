@@ -46,7 +46,7 @@ def _():
     FETCH_SOURCE_ROWS = False
     FETCH_TOKENIZERS = False
     ALLOW_GIT_NETWORK = False
-    CONTEXT_LIMIT = 4096
+    CONTEXT_LIMIT = 2048  # bounded pilot; choose a new pool for longer contexts
     TRAIN_DECODER_LIMIT = 2048
     MAX_NEW_TOKENS = 512
     GENERATION_DECODER_LIMIT = 8192
@@ -147,7 +147,7 @@ def _(HfApi, hf_form, mo, os):
 def _(PREPARE_FULL_POOL, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, runtime_root, get_experiment, fetch_tokenizer_assets, hf_token, json, mo):
     from bifocalgemma.data.full_pool import prepare_full_corpus
     from bifocalgemma.data.repository_corpus import prepare_repository_corpus
-    from bifocalgemma.data.offline_sft import load_curated_pool
+    from bifocalgemma.data.offline_sft import load_curated_pool, validate_curated_pool_limits
     from bifocalgemma.training.curated_sft import prepare_curated_training, fit_curated_sft
 
     full_pool_status = {"status": "DISABLED"}
@@ -166,7 +166,8 @@ def _(PREPARE_FULL_POOL, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOU
         _kind = "repository" if "snapshot_policy" in _manifest["report"] else "instruction"
         if _kind != CORPUS_KIND:
             raise ValueError("Selected pool directory belongs to another corpus kind.")
-        full_pool_status = {"status": "READY", "train": len(_rows["train"]), "dev": len(_rows["dev"]), "fingerprint": _manifest["fingerprint"]}
+        _limits = validate_curated_pool_limits(_manifest, encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT)
+        full_pool_status = {"status": "READY", "limits": _limits, "train": len(_rows["train"]), "dev": len(_rows["dev"]), "fingerprint": _manifest["fingerprint"]}
     mo.vstack([mo.md("## Full corpus (all six configurations)"), mo.ui.table([full_pool_status], selection=None)])
     return (full_pool_status, prepare_curated_training, fit_curated_sft)
 

@@ -234,3 +234,28 @@ def load_curated_pool(directory):
                 raise ValueError("curated_pool_missing_fields")
         rows[split] = items
     return rows, manifest
+
+
+def validate_curated_pool_limits(manifest, *, encoder_limit, decoder_limit):
+    """Reject control/manifest drift before training or loading model weights.
+
+    Baselines must have room for the same context and paired target budget.
+    Changing these controls requires a newly prepared, independently named pool.
+    """
+    if any(
+        type(value) is not int or not 1 <= value <= 131072
+        for value in (encoder_limit, decoder_limit)
+    ):
+        raise ValueError("Invalid requested pool token limits.")
+    expected = {
+        "encoder": encoder_limit,
+        "pair_decoder": decoder_limit,
+        "baseline_decoder": encoder_limit + decoder_limit + 512,
+    }
+    actual = manifest.get("report", {}).get("tokens", {}).get("limits")
+    if actual != expected:
+        raise ValueError(
+            "Pool token limits differ: restore its limits or build a new named pool. "
+            f"Requested {expected}; frozen {actual}."
+        )
+    return dict(actual)

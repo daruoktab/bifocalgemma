@@ -258,3 +258,37 @@ def test_curated_resume_rejects_runtime_drift(tmp_path, monkeypatch):
             )
     finally:
         torch.set_num_threads(previous)
+
+
+@pytest.mark.parametrize("encoder,decoder", [(2048, 2048), (4096, 8192)])
+def test_frozen_budget_matches_all_six_controls(encoder, decoder):
+    from bifocalgemma.data.offline_sft import validate_curated_pool_limits
+
+    limits = {
+        "encoder": encoder,
+        "pair_decoder": decoder,
+        "baseline_decoder": encoder + decoder + 512,
+    }
+    manifest = {"report": {"tokens": {"limits": limits}}}
+    original = copy.deepcopy(manifest)
+    actual = validate_curated_pool_limits(manifest, encoder_limit=encoder, decoder_limit=decoder)
+    assert actual == limits and manifest == original
+    actual["encoder"] = 1
+    assert manifest == original
+    for key in limits:
+        changed = copy.deepcopy(manifest)
+        changed["report"]["tokens"]["limits"][key] += 1
+        with pytest.raises(ValueError, match="Pool token limits differ"):
+            validate_curated_pool_limits(changed, encoder_limit=encoder, decoder_limit=decoder)
+    with pytest.raises(ValueError, match="Pool token limits differ"):
+        validate_curated_pool_limits(manifest, encoder_limit=encoder, decoder_limit=decoder * 2)
+    with pytest.raises(ValueError, match="Pool token limits differ"):
+        validate_curated_pool_limits({}, encoder_limit=encoder, decoder_limit=decoder)
+
+
+@pytest.mark.parametrize("invalid", [0, -1, 131073, True, 2048.0, "2048"])
+def test_invalid_requested_pool_budget_is_rejected(invalid):
+    from bifocalgemma.data.offline_sft import validate_curated_pool_limits
+
+    with pytest.raises(ValueError, match="Invalid requested"):
+        validate_curated_pool_limits({}, encoder_limit=invalid, decoder_limit=2048)

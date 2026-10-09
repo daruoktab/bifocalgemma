@@ -253,3 +253,13 @@ VRAM validation. The 2k paired-decoder gate covers only 54.45% of raw Python
 rows; 8k covers 96.01%. Main-study length selection must account for this tail.
 Profiler Ruff, formatting and type checks pass; its actual full-source run is
 the validation evidence. Production 2k corpus preparation remains active.
+
+
+Curated pool/control limit consistency: **29 tests passed**, covering curation,
+complete-epoch training/resume, all three regenerated notebook test cells,
+and rejection of encoder/pair/baseline manifest drift. Invalid controls and
+missing limit metadata are rejected; validation does not mutate the manifest.
+Both generators --check, marimo --strict, Ruff, type checking and whitespace
+checks passed. AST comparison confirms 20 cells /19 identical bodies in the
+matched family notebooks. The universal context default now agrees with the
+bounded 2k pilot pool, and all three show frozen limits in READY.
