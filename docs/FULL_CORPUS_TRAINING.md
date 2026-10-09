@@ -155,3 +155,47 @@ Full repository-table audit found 7,243 Python SWE-rebench V2 rows; 7,192 remain
 Repository preparation now retries incomplete HTTP archive transfers and checkpoints each accepted/excluded outcome in SQLite. Re-running unchanged settings resumes the source cursor and accepted records; settings fingerprints prevent mixing a new corpus policy into old state. Source archives remain cached and no repository code is executed.
 
 The universal full-pool runner now binds checkpoint compatibility to model source references, backbone dimensions, Torch version and Transformers version as well as the frozen data/policy fingerprint. Runtime drift is rejected during resume rather than silently accepted.
+
+## Repository target lengths: complete raw Python profile
+
+All 32,079 pinned SWE-rebench V2 rows were scanned; all **7,243 Python rows**
+had usable issue/patch fields and were measured with the audited official IT
+chat template on Transformers 5.19.0. The paired decoder length includes the
+issue prompt, repair patch and closing turn, with one shifting operation.
+This is a raw-source profile, before snapshot, license, overlap and patch gates.
+It does not measure encoder context or baseline decoder lengths.
+
+| Paired decoder cap | Raw Python rows within cap | Coverage |
+| --- | ---: | ---: |
+| 2,048 | 3,944 | 54.45% |
+| 4,096 | 5,868 | 81.02% |
+| 8,192 | 6,954 | 96.01% |
+| 16,384 | 7,241 | 99.97% |
+
+Target-only P50/P95/P99 are 1,261 / 6,933 / 9,517 tokens; paired decoder
+P50/P95/P99 are 1,848 / 7,638 / 10,427. The largest paired sequence is 20,471.
+These results differ substantially from the shorter instruction-editing pool.
+**The current 2k repository production pass is a bounded pilot/ablation, not
+an adequate default for the full main-study population.**
+
+An 8,192 paired-decoder budget is the next candidate for the main study: it
+covers 96.01% of raw Python rows before the other admission gates. It must first
+pass original-model forward/backward VRAM checks on Molab, including the E4B
+pairs and decoder-only baselines. This is a total paired sequence budget,
+not a guarantee of 8k generated patch tokens. Encoder retrieval length and
+baseline context-plus-target limits require separate measurement. The table
+cannot establish that 32k input is necessary or feasible.
+
+Keep the running 2k pass and its immutable manifest separate. A larger-budget
+pass must use a new output directory and ledger settings, reuse pinned archives,
+freeze one common six-model cohort, and report overflow without truncation.
+Changing a notebook knob does not enlarge an already-frozen pool; the matched
+training notebooks reject a manifest with different limits.
+
+The reproducible tool and aggregate-only [receipt](data/repository_raw_target_profile_20261009.json)
+contain no upstream source code or model weights:
+
+```powershell
+$env:PYTHONPATH='src'
+python tools/profile_repository_lengths.py --source swe_rebench_v2 --rows-file <pinned-parquet-path> --tokenizer-cache <verified-tokenizer-cache> --output outputs/repository-target-profile.json
+```

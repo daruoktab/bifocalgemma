@@ -1,0 +1,70 @@
+{
+  "format": "raw_repository_target_profile_v1",
+  "source": "swe_rebench_v2",
+  "source_reference": [
+    "nebius/SWE-rebench-V2",
+    "10483de0f50fe5da545942705a76c6150171af7f",
+    "train"
+  ],
+  "source_file_sha256": "0e0bf9355f892ad74ae98d4e1c404f39fd6654a8e351ee3e6ab162e4a64cd3ad",
+  "tokenizer_assets": {
+    "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+    "files": {
+      "tokenizer.json": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+      "tokenizer_config.json": "9f4fec4b1dc6ecddf8f4a92e9caea5971c0e67d81309f3f9066a2bee8c362633",
+      "chat_template.jinja": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+      "config.json": "1b28f3d2c3100f6c594754b81107428bd7b822a7f48272ca681dae9d2ec38330",
+      "generation_config.json": "d4226bbe3117d2d253ba4609720ba82c6c4ce4627a9a6ae05387c78983ac03de",
+      "processor_config.json": "32bdf45d2ad4cc29a0822ddd157a182de76644f0419a6228d151495256e9813c"
+    }
+  },
+  "scope": "All raw Python rows with issue/patch; not training admission. No snapshot context, license, overlap, patch validity or functional validation is implied.",
+  "decoder_policy": "Official patch-only IT, no thinking/tools; pair length includes issue prefix and closing turn, with one shift.",
+  "counts": {
+    "raw_rows": 32079,
+    "non_python": 24836,
+    "python_rows": 7243,
+    "profiled": 7243
+  },
+  "quantiles": {
+    "target": {
+      "count": 7243,
+      "total": 14985198,
+      "p50": 1261,
+      "p90": 5132,
+      "p95": 6933,
+      "p99": 9517,
+      "max": 17999
+    },
+    "pair_decoder": {
+      "count": 7243,
+      "total": 19105046,
+      "p50": 1848,
+      "p90": 5829,
+      "p95": 7638,
+      "p99": 10427,
+      "max": 20471
+    },
+    "issue": {
+      "count": 7243,
+      "total": 3960502,
+      "p50": 300,
+      "p90": 1230,
+      "p95": 1807,
+      "p99": 3808,
+      "max": 12988
+    }
+  },
+  "pair_decoder_coverage": {
+    "16384": 7241,
+    "8192": 6954,
+    "4096": 5868,
+    "2048": 3944
+  },
+  "profile_stream_sha256": "dd5084a8a2d96b63953e1a92fe8176a146aad6968489314520dfdf4c90d01d5a",
+  "date": "2026-10-09",
+  "runtime": {
+    "transformers": "5.19.0",
+    "tokenizers": "0.23.2"
+  }
+}

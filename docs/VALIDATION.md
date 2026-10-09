@@ -239,3 +239,17 @@ The completed 64-real-task repository adapter cohort contains 58 train/6 dev and
 Universal curated-run checkpoint compatibility now records model spec, physical dimensions and runtime versions. Native tiny complete-epoch checks passed (9 tests), followed by a targeted runtime-drift resume rejection test (1 passed).
 
 Production preparation exposed a connection-reset error separate from HTTP incomplete-read. Archive retries now cover ConnectionError; seven archive/ledger regression tests passed. Actual preparation resumed from ledger offset 1203 with all 118 accepted records preserved.
+
+
+## Complete raw repository target profile — 9 Oktober 2026
+
+The profiler scanned all 32,079 pinned SWE-rebench V2 rows and measured all
+7,243 Python issue/patch targets with the hash-verified official IT tokenizer.
+No rows were sampled or silently truncated. Aggregate counts, nearest-rank
+quantiles, input-file SHA and ordered per-row length-stream SHA are preserved
+in the [receipt](data/repository_raw_target_profile_20261009.json).
+This is separate from snapshot/license/overlap admission and original-model
+VRAM validation. The 2k paired-decoder gate covers only 54.45% of raw Python
+rows; 8k covers 96.01%. Main-study length selection must account for this tail.
+Profiler Ruff, formatting and type checks pass; its actual full-source run is
+the validation evidence. Production 2k corpus preparation remains active.
