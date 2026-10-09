@@ -1,0 +1,3850 @@
+{
+  "date": "2026-10-09",
+  "scope": "64-real-task adapter validation, not full production corpus or model quality",
+  "pool_fingerprint": "ff9dbcbe4579df40964a1f4cec9be6565b85978b3db114c7c2dc400f7e44098b",
+  "counts": {
+    "train": 58,
+    "dev": 6
+  },
+  "report": {
+    "source": "swe_rebench_v2",
+    "source_file_sha256": "0e0bf9355f892ad74ae98d4e1c404f39fd6654a8e351ee3e6ab162e4a64cd3ad",
+    "foundation_fingerprint": "994bae3cea351c5ff8a3da5fdaaa44a69335603b0c7e12593abfb4b2672243db",
+    "benchmark_quarantine": {
+      "task_counts": {
+        "humanevalfix": 164,
+        "canitedit": 105,
+        "repoqa": 100,
+        "crosscodeeval": 2665,
+        "resq": 100
+      },
+      "crosscodeeval_repository_slugs": [
+        "0xdebabrata-citrus",
+        "20171130-llmux",
+        "34j-boost-loss",
+        "3dlg-hcvc-m3dref-clip",
+        "adam-vandervorst-pybhv",
+        "adaptchat-adapt.py",
+        "adeon18-mori-bazius-backend",
+        "adobe-aepp",
+        "adrienbrignon-mkdocs-exporter",
+        "aicps-rs2g",
+        "aiplan4eu-up4ros",
+        "airdot-io-airdot-deployer",
+        "alex-zaikman-fastapi-postgres-tmpl",
+        "alexgidiotis-gpt-light",
+        "algorand-conduit",
+        "alphadinosaur89-glang",
+        "alteryx-locust-grasshopper",
+        "amazon-science-ope-learn-action-embeddings",
+        "amazon-science-random-tma",
+        "amd-open-field-health-check",
+        "anarchy-ai-llm-vm",
+        "ansys-pyaedt-toolkit-template",
+        "antonosika-gpt-engineer",
+        "apple-ml-tract",
+        "appsignal-appsignal-python",
+        "arbol-project-gridded-etl-tools",
+        "argus-hdps-rico",
+        "ashi-ta-speechglue",
+        "aws-samples-amazon-codewhisperer-immersion-day",
+        "awslabs-decode-answer-logical-form",
+        "axelmunch-laser-tag",
+        "babylm-baseline-pretraining",
+        "bazingagin-npc_gzip",
+        "beidongjiedeguang-openai-forward",
+        "bharatsubedi-parseq_torch",
+        "biomag-mtbi_meeg",
+        "bluebrain-currentscape",
+        "blurgyy-jaxngp",
+        "blurry-dev-blurry",
+        "bond-anton-bdpotentiometer",
+        "brdav-cma",
+        "briandelmsft-stat-function",
+        "brianpugh-tamp",
+        "brown-ivl-cafi-net",
+        "bswck-configzen",
+        "bufbuild-protovalidate-python",
+        "build-aau-lcabyg_web_api_doc",
+        "bxdoan-venom-auto",
+        "bytedance-uss",
+        "bytewax-rt-embed",
+        "callowayproject-bump-my-version",
+        "camenduru-minigpt4",
+        "caniko-pydantic-numpy",
+        "canpool-qxribbon",
+        "cassioml-cassio",
+        "celluloseai-sdk",
+        "celyes-checkr",
+        "cerlancism-faster-whisper-webui",
+        "cert-edf-generaptor",
+        "ch3njust1n-generative-api",
+        "chainstacklabs-chainbench",
+        "chatnoir-eu-web-content-extraction-benchmark",
+        "ches-001-metatune",
+        "chrisdewa-ardilla",
+        "chrisli-kw-autotradingplatform",
+        "chrisrude-oobabot",
+        "chuloai-brainchulo",
+        "chunbolang-r2net",
+        "chunmeifeng-fedpr",
+        "cibere-kick.py",
+        "circuitsacul-io",
+        "clear-nus-ncdssm",
+        "cmu-multicomp-lab-cmu-multimodalsdk",
+        "co1li1la1-yoshino-bot",
+        "colindecourt-darod",
+        "congtuong-docile",
+        "continue-revolution-sd-webui-segment-anything",
+        "continuum-llms-acad-gpt",
+        "continuum-llms-chatgpt-memory",
+        "cpjku-paow",
+        "crowdgames-sturgeon-pub",
+        "crypto-jobs-fyi-crawler",
+        "cupidbow20000-cosmos20000",
+        "cybereason-eztw",
+        "czczup-gptrans",
+        "damo-nlp-sg-mt-llama",
+        "danilonumeroso-dar",
+        "danyi1212-celery-insights",
+        "datasig-ac-uk-roughpy",
+        "david-a-jetter-pydantic-dynamo",
+        "david-stan-dagfed-chain",
+        "davidmaamoaix-singleline",
+        "davisyoshida-qax",
+        "dbt-labs-dbt-meshify",
+        "ddpn08-rvc-webui",
+        "deadblue-py115",
+        "decodableco-dbt-decodable",
+        "deep-diver-pingpong",
+        "deep-diver-tfx-wandb",
+        "deepmatterltd-rdfreader",
+        "devchat-ai-devchat",
+        "dfilyushin-habr-project-inn",
+        "dichem-django-excel-report",
+        "diohabara-pychd",
+        "diptanu-indexify",
+        "dishb-hive",
+        "dmemsys-smart",
+        "dmlc-tl2cgen",
+        "dmsintalor-oj-be",
+        "doccano-doccano-mini",
+        "donkie-spoolman",
+        "donnype-xtdb-py",
+        "dory111111-pengenuity",
+        "doublewinter0-auto-dns",
+        "dpasse-extr",
+        "dropreg-chatmlm",
+        "drubinstein-python-compose",
+        "dsupertramp-pubgpt",
+        "edarchimbaud-systematic-trading",
+        "edsaav-nail",
+        "edwardleelpz-powerbev",
+        "egrinstein-gnn_ssl",
+        "eimenhmdt-autoresearcher",
+        "elementsinteractive-twyn",
+        "eleutherai-concept-erasure",
+        "eloimoliner-babe",
+        "embedinai-embedindb",
+        "entangled-entangled.py",
+        "entbappy-cnnclassifier",
+        "epfml-landmark-attention",
+        "ergodicio-adept",
+        "esnya-lm-talkbot",
+        "eugenos-programos-own-language-with-llvm-lite",
+        "eurobios-scb-acrocord",
+        "evalplus-evalplus",
+        "ezhang7423-language-control-diffusion",
+        "f-inc-dynamic",
+        "fabienroger-concistency-lenses",
+        "facebookresearch-audiodec",
+        "facico-chinese-vicuna",
+        "fbdp1202-tts_data_engine",
+        "filipporomani-whatsapp",
+        "finopsfoundation-focus-spec-validator",
+        "fivexl-terraform-aws-sso-elevator",
+        "fizzledorf-ait",
+        "flatironinstitute-mountainsort5",
+        "francescosaveriozuppichini-linkedingpt",
+        "francoismdj-netbox-kea-dhcp",
+        "freddyaboulton-gradio-tools",
+        "fritzsedlazeck-spectre",
+        "fsoft-aic-class-based-influence-functions",
+        "fuzzylabs-matcha-examples",
+        "gabacode-chatgpdp",
+        "gabrielmbmb-kaflow",
+        "gage-technologies-embedding-server",
+        "gchristensen-deepfloyd_if_lab",
+        "gdsfactory-gf180",
+        "gdsfactory-kplugins",
+        "genbench-genbench_cbt",
+        "genentech-walk-jump",
+        "geoffwhittington-meshtastic-matrix-relay",
+        "gitguesser-gitguesser",
+        "gnbonney-symlogos",
+        "google-lineax",
+        "google-research-precondition",
+        "googlecloudplatform-alloydb-python-connector",
+        "gorarakelyan-langchain-chatbot",
+        "graphcore-poptransformer",
+        "graphcore-research-unit-scaling-demo",
+        "griffinbholt-decisionmaking-code-py",
+        "happen2me-subgraph-retrieval-toolkit",
+        "havenhq-haven",
+        "hbqjzx-wxxiaozhi",
+        "hcmlab-ganonymization",
+        "helsinkiunicollab-weatherbasedrecommender",
+        "heng840-all_pipeline_information_extraction",
+        "herta-villa-herta-villa-sdk",
+        "heshuting555-pap-fzs3d",
+        "hiper0-hiper",
+        "hq0709-depth-neus",
+        "huanranchen-energybasedgenerativemodel",
+        "hugofloresgarcia-vampnet",
+        "husisy-arxiv-gpt",
+        "hxyou-idealgpt",
+        "hynnsk-hp",
+        "hyp3rd-telegram-discord-bridge",
+        "hyperliquid-dex-hyperliquid-python-sdk",
+        "ibm-auto-contrastive-generation",
+        "ibm-domain-adaptive-attribution-robustness",
+        "ieasybooks-tafrigh",
+        "imaginationtech-constrainedrandom",
+        "ingra14m-mipnerf360-pytorch",
+        "ini-multigrid",
+        "innocentsax-airbnb_clone",
+        "intellabs-gravi-t",
+        "intelligenzaartificiale-free-auto-gpt",
+        "inweb3ai-chatweb3",
+        "iqmo-org-magic_duckdb",
+        "irgolic-autopr",
+        "ironwoodcall-tagtracker",
+        "iryna-kondr-scikit-llm",
+        "isayahc-semi-automated-youtube-channel",
+        "iuiaoin-wechat-gptbot",
+        "jackory-rpbt",
+        "jamescalam-ask-lex-plugin",
+        "janghyuk-choi-slot-attention-lightning",
+        "jannerm-ddpo",
+        "janvarev-oneringtranslator",
+        "jason-qiu-multisum_model",
+        "javiber-scrat",
+        "jborean93-dpapi-ng",
+        "jdum-asciinema-scene",
+        "jerryyli-svitt",
+        "jfamestad-texasholdemagents",
+        "jfc43-stratified-adv-rej",
+        "jiangjiechen-uncommongen",
+        "jiggy-ai-jiggybase",
+        "johnnyirvin-shell-craft",
+        "josh-xt-agixt",
+        "jtext-103-jddb",
+        "junbongjang-contour-tracking",
+        "juniusluo-veclucene",
+        "k024-chatglm-q",
+        "kabachuha-sd-webui-text2video",
+        "kabeer11000-autollm",
+        "kadirnar-segment-anything-video",
+        "kaiko-ai-typedspark",
+        "kaiokendev-superbig",
+        "kamilfo-developer-alice-sleepy-helper-skill",
+        "kimmishi-torchdistpackage",
+        "kiran94-prfiesta",
+        "kit-cel-mokka",
+        "knexer-ai-storyteller",
+        "knrdl-acme-ca-server",
+        "kraemer-lab-grapevne",
+        "krishnaik06-chicken-disease-classification-projects",
+        "krishnaik06-text-summarization-nlp-project",
+        "kth-flowai-deepreinforcementlearning_rayleighbenard2d_control",
+        "kubenew-chaosgpt",
+        "kumitterer-matrix-gptbot",
+        "kyegomez-blockwise-parallel-transformer",
+        "kygao-abgnn",
+        "lambrou-semterm",
+        "langchain-ai-kork",
+        "last-war-photoshare-fastapi",
+        "leandl-wvalidate",
+        "leggedrobotics-rayen",
+        "leomo-27-fastapi-template",
+        "leonelhs-face-shine",
+        "lhenault-simpleai",
+        "libsql-libsql-client-py",
+        "light1726-betavae_vc",
+        "lightning-ai-lit-llama",
+        "line-meta-ai-video-similarity-challenge-3rd-place-solution",
+        "lineindent-material_design_flet",
+        "liuzuxin-osrl",
+        "livekit-client-sdk-python",
+        "llmapi-io-llmapi-server",
+        "llukas22-llm-rs-python",
+        "log10-io-log10",
+        "lskyset-priconne-asset-extractor",
+        "lucmos-powermanim",
+        "lwb2099-stable_diffusion_pytorch",
+        "lxjmaster-ja3requests",
+        "manoskary-vocsep_ijcai2023",
+        "marcpage-pylavi",
+        "materials-data-science-and-informatics-somesy",
+        "matteosalvatori-ince",
+        "mattie-chatsnack",
+        "maxvanspengler-hyperbolic_learning_library",
+        "maybelinot-yamx",
+        "mboot-github-whoisdomain",
+        "mecene-studio-debuggpt",
+        "medley56-space_packet_parser",
+        "meh9-game-of-life",
+        "melmass-comfy_mtb",
+        "memew1se-openrss",
+        "metalbobinou-python-listcomparator",
+        "microsoft-deep-language-networks",
+        "microsoft-dpsda",
+        "microsoft-gpt-review",
+        "microsoft-seqrecord",
+        "mihirh19-todo_web_app",
+        "mikanwolfe-kuro",
+        "minyoungg-vqtorch",
+        "ml-opt-lab-sdmgrad",
+        "ml-research-slash",
+        "mlfoundations-dataset2metadata",
+        "mobarski-aidapter",
+        "motherofcoconuts-async-dramatiq",
+        "mp3guy-syme3",
+        "mraniki-dxsp",
+        "n00bception-ai-powered-5g-openran-optimizer",
+        "nccgroup-libslub",
+        "neo4j-nallm",
+        "netorc-community-netorc",
+        "nicolasebastianelli-speech-ai",
+        "nki-ai-stapler",
+        "nobu-g-jglue-evaluation-scripts",
+        "nofish-528-encodec-pytorch",
+        "nrel-buildingsbench",
+        "nvidia-holoscan-holoscan-test-suite",
+        "nvidia-isaac-ros-ros2_benchmark",
+        "nyaarium-blender-nyaatools",
+        "obahamonde-aiofauna",
+        "odtuyzt-chrono-kit",
+        "ohdsi-apollo",
+        "omron-sinicx-action-constrained-rl-benchmark",
+        "open-mmlab-multimodal-gpt",
+        "open-swarm-net-gpt-swarm",
+        "openaccess-ai-collective-axolotl",
+        "opengsl-opengsl",
+        "opengvlab-videomaev2",
+        "opensean-kedro-graphql",
+        "operand-agency",
+        "opticore-netbox-celery",
+        "opticore-netbox-nornir",
+        "oriyor-reasoning-on-cots",
+        "orsinium-labs-pytypest",
+        "ortursucceeh-project-photoshare",
+        "osipi-tf2.4_ivim-mri_codecollection",
+        "ouisolutions-cwebstudio",
+        "ovo1111-efficientsubclasslearning",
+        "panzer-jack-chatglm_vits_for_qq-rob",
+        "patio-python-patio",
+        "patrickkalkman-python-di",
+        "patrickkalkman-python-eda",
+        "paulpanwang-cas6d",
+        "paulromano-endf-python",
+        "pawelkn-xapi-python",
+        "peach-db-peachdb",
+        "penvm-penvm",
+        "phac-nml-rebar",
+        "philtabor-protorl",
+        "piercefreeman-vectordb-orm",
+        "pimoroni-badger2040",
+        "pitaya1001-hta",
+        "pnkraemer-matfree",
+        "pomponchik-instld",
+        "pp-mo-ncdata",
+        "ppoitier-sign-language-tools",
+        "priesemann-group-nninfo",
+        "pro470-live-save-for-blender",
+        "probcomp-llamppl",
+        "profcomff-social-api",
+        "prophecy-io-spark-ai",
+        "pycob-pyvibe",
+        "pygfx-gfxmorph",
+        "quantomatic-zxlive",
+        "quarkslab-pastis",
+        "quarkslab-tritondse",
+        "questdb-questdb-connect",
+        "radar-research-lab-mfglib",
+        "rangilyu-llama.mmengine",
+        "reko-beep-hsr-data",
+        "remixer-dec-botality-ii",
+        "rgbkrk-chatlab",
+        "rmihaylov-falcontune",
+        "robertocorti-gptravel",
+        "robinschfr-lightning-control-for-nanoleaf",
+        "roboflow-cvevals",
+        "rosemary666-chatgpt",
+        "rtiinternational-teehr",
+        "run-llama-llama-lab",
+        "ryongithub-gatedprompttuning",
+        "s41m0n-enid",
+        "saic-ismart-api-saic-python-client",
+        "salesforce-auditnlg",
+        "satyapravin-deribit-option-arb",
+        "sauljabin-kayak",
+        "scottjiao-slotgat_icml23",
+        "sebastienrousseau-pain001",
+        "seiarotg-autobean-format",
+        "shijiuchen-nodens",
+        "shug2k-content-review-tool",
+        "significant-gravitas-auto-gpt-plugins",
+        "silicalnz-taptitans2py",
+        "sindilab-scanna",
+        "skbarbon-swoopyui",
+        "slawekradzyminski-personal-ai-assistant",
+        "slewie-hyponic",
+        "slonogram-slonogram",
+        "smpanaro-more-ane-transformers",
+        "snu-mllab-efficient-cnn-depth-compression",
+        "solarisneko-suger-python",
+        "solo-spice-sospice",
+        "somaonishi-mtr",
+        "sonic-net-sonic-platform-vpp",
+        "spawning-inc-datadiligence",
+        "speedb-io-log-parser",
+        "sprite-neu-spread-api",
+        "srameo-dnf",
+        "sshh12-llm_oracle",
+        "stac-utils-stac-asset",
+        "stardust-hyx-instruction_tuning",
+        "steklyashka33-minecraft-mod-translator",
+        "stevenic-promptrix-py",
+        "stiglidu-autotruss",
+        "stn-tap-jquants",
+        "superpoweredai-task-tree-agent",
+        "swan-utokyo-deir",
+        "sweetice-peer-cvpr23",
+        "sygil-dev-muse-maskgit-pytorch",
+        "taptorestart-forms",
+        "tarsil-databasez",
+        "tconbeer-textual-textarea",
+        "techonomydev-django-crispy-tableselect",
+        "teelinsan-parallel-decoding",
+        "textualize-frogmouth",
+        "thb1314-maskrcnn-tensorrt",
+        "theneonwhale-frt-photo-share",
+        "thestageai-torchintegral",
+        "thetacz-nautobot-plugin-device-resources",
+        "thismlguy-code-genie",
+        "thuliu-yt16-dualvector",
+        "tigrisdata-tigris-client-python",
+        "tlntin-chatglm2-6b-tensorrt",
+        "tmori-generative-agents",
+        "tongyuantongyu-cycmunet",
+        "traas-stack-holoinsight-ai",
+        "tricktreat-diffusionner",
+        "tricktreat-promptner",
+        "tungduongbk-airflow-custom-plugins",
+        "turboderp-exllama",
+        "twopointone-stripe-integrations",
+        "typing-monkeys-complex-network-link-prediction",
+        "uezo-aiavatarkit",
+        "ukplab-nlpeer",
+        "umessen-matrix-scala",
+        "uripeled2-llm-client-sdk",
+        "usecakework-async-backend",
+        "utiasdsl-fmpc_socp",
+        "v-mikhaylov-tfold-release",
+        "valentingol-cliconfig",
+        "vectara-vectara-ingest",
+        "vetka925-llms-lora-8bit-4bit-finetuning-lit",
+        "viper-framework-viper2",
+        "virtualzx-nad-easy_llm_agents",
+        "vladkens-twscrape",
+        "voneiden-ocp-freecad-cam",
+        "vsiegel-thoughttree",
+        "weaweawe01-luajit_decompile",
+        "wheretrue-biobear",
+        "willleeney-ugle",
+        "wm-pxel-langchain-testbench",
+        "wolfhoundgelert-xman",
+        "wxian3-neurolens",
+        "xbpeng-rl_assignments",
+        "xrcyz-dpg-swisscontrols",
+        "xsfa-pointstorm",
+        "yairl-r1xbot",
+        "yangalan123-amortized-interpretability",
+        "yangbang18-zeronlg",
+        "yangxiaocui1215-gmp",
+        "yanqingmen-ask-api",
+        "yarrow-id-diagrams",
+        "ycc140-fastapi_messaging",
+        "ycyy-faster-whisper-webui",
+        "ying1123-llm-caching-multiplexing",
+        "yoheinakajima-babyagi",
+        "yotakayama-stlccp",
+        "yuvalkirstain-pickscore",
+        "yuyujunjun-rsmt-realtime-stylized-motion-transition",
+        "zhang-zhiyuan-zzy-hotpot",
+        "zhangjd-ong-mosid-breast-tumor-segmentation-from-multi-parametric-mri",
+        "zhendong-wang-patch-diffusion",
+        "zhengpeng7-cosod_fps_collection",
+        "zikangxiong-stl-mobile-robot",
+        "zjum3-llmeval_rcc",
+        "zmzhang2000-hybrank",
+        "zx-yin-ms-nerf"
+      ],
+      "blocked_repositories": [
+        "0xdebabrata/citrus",
+        "aider-ai/aider",
+        "apeworx/web3.py",
+        "ciphey/ciphey",
+        "encode/httpx",
+        "ethereum/web3.py",
+        "jjtech0130/pypush",
+        "jquery/jquery",
+        "locustio/locust",
+        "lodash/lodash",
+        "marshmallow-code/marshmallow",
+        "mlc-ai/mlc-llm",
+        "openai/openai-python",
+        "prowler-cloud/prowler",
+        "psf/black",
+        "psf/requests",
+        "pyg-team/pytorch_geometric",
+        "python-poetry/poetry",
+        "rapptz/discord.py",
+        "reactive-python/reactpy",
+        "supabase/storage-py",
+        "teamqurrent/aider",
+        "teamqurrent/bitcoinpapertrader",
+        "teamqurrent/citrus",
+        "teamqurrent/discord.py",
+        "teamqurrent/httpx",
+        "teamqurrent/jquery",
+        "teamqurrent/lodash",
+        "teamqurrent/openai-python",
+        "teamqurrent/prowler",
+        "teamqurrent/pypush",
+        "teamqurrent/python",
+        "teamqurrent/requests",
+        "teamqurrent/storage-py",
+        "teamqurrent/web3.py",
+        "thealgorithms/python",
+        "zergucci/bitcoinpapertrader"
+      ],
+      "artifact_sha256": {
+        "humanevalfix": "ed5f15d789156e21222bfcd556c425a39042355c84ae1e8b058abd6a3d7f8075",
+        "canitedit": "9f78b1a2378b96b24d158a6fe83d69aa18e43a360ae3b7d0891c02f660cc6222",
+        "resq": "43bc9f0644e6fa0347ac58f9d9eb3f7b7235255ca7be4dd27c62d55ecbf342d2",
+        "repoqa": "c050a2ad90a7df89d9dc1f1c3b3b20683edd20a56293b35fcaae43dec115d681",
+        "crosscodeeval": "d65c0316f63df3434deac3b67ae95478cbe00c706c14ff1a91e1173619962b88"
+      },
+      "near_match_threshold": 0.8,
+      "scope": "exact/token-near overlap on released benchmark code, repo family quarantine; no pretraining or semantic contamination certification"
+    },
+    "admission": {
+      "counts": {
+        "examined": 715,
+        "rejected:non_python": 538,
+        "rejected:repository_token_overflow": 51,
+        "rejected:missing_source_code_license": 5,
+        "rejected:unsupported_repository_path": 1,
+        "rejected:unsupported_patch_operation": 14,
+        "rejected:snapshot_resource_budget_exceeded": 16,
+        "accepted": 64,
+        "rejected:patch_apply_failed": 6,
+        "rejected:issue_exceeds_context_budget": 6,
+        "rejected:source_code_license_not_admitted": 8,
+        "rejected:snapshot_case_colliding_paths": 2,
+        "rejected:missing_repository_task_fields": 2,
+        "rejected:The read operation timed out": 1,
+        "rejected:benchmark_repo_quarantine": 1,
+        "stopped_target_count": 1
+      },
+      "exclusions": [
+        {
+          "upstream_row": 0,
+          "instance_id": "elastic__synthetics-316",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 1,
+          "instance_id": "wtforms__wtforms-614",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 2,
+          "instance_id": "webpack-contrib__copy-webpack-plugin-590",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 3,
+          "instance_id": "crawler-commons__crawler-commons-227",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 4,
+          "instance_id": "dtolnay__cxx-839",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 5,
+          "instance_id": "gradleup__shadow-1448",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 6,
+          "instance_id": "aio-libs__aiohttp-9047",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 7,
+          "instance_id": "bvanelli__actualpy-56",
+          "reason": "missing_source_code_license"
+        },
+        {
+          "upstream_row": 8,
+          "instance_id": "box-project__box-644",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 9,
+          "instance_id": "rust-bitcoin__rust-bitcoin-2255",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 10,
+          "instance_id": "ash-project__ash_graphql-166",
+          "reason": "unsupported_repository_path"
+        },
+        {
+          "upstream_row": 11,
+          "instance_id": "keras-team__keras-19955",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 12,
+          "instance_id": "filecoin-project__specs-actors-592",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 13,
+          "instance_id": "awslabs__aws-embedded-metrics-node-19",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 14,
+          "instance_id": "analysis-dev__diktat-857",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 15,
+          "instance_id": "aws-cloudformation__cfn-lint-3965",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 16,
+          "instance_id": "bbc__psammead-1362",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 17,
+          "instance_id": "palantir__policy-bot-302",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 18,
+          "instance_id": "helm__helm-7201",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 19,
+          "instance_id": "cpisciotta__xcbeautify-311",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 20,
+          "instance_id": "editorconfig-checker__editorconfig-checker-360",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 21,
+          "instance_id": "d5__tengo-221",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 22,
+          "instance_id": "sindresorhus__execa-490",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 23,
+          "instance_id": "projectfluent__fluent-rs-143",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 24,
+          "instance_id": "plataformatec__broadway-31",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 25,
+          "instance_id": "roave__betterreflection-618",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 26,
+          "instance_id": "kestra-io__kestra-5316",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 27,
+          "instance_id": "tanstack__router-3269",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 28,
+          "instance_id": "go-ldap__ldap-111",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 29,
+          "instance_id": "qiskit__qiskit-terra-5662",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 30,
+          "instance_id": "vaskoz__dailycodingproblem-go-471",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 31,
+          "instance_id": "khan__flow-to-ts-216",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 33,
+          "instance_id": "vue-gl__vue-gl-989",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 36,
+          "instance_id": "peternator7__strum-220",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 37,
+          "instance_id": "rust-lang__rustfmt-5817",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 38,
+          "instance_id": "elastic__synthetics-622",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 39,
+          "instance_id": "ocaml-ppx__ppx_deriving_yojson-164",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 40,
+          "instance_id": "andrewdavidmackenzie__pigg-16",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 41,
+          "instance_id": "knative__client-1054",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 42,
+          "instance_id": "pandas-dev__pandas-59608",
+          "reason": "patch_apply_failed: error: ci/code_checks.sh: No such file or directory\nerror: doc/source/whatsnew/v3.0.0.rst: No such file or directory\n"
+        },
+        {
+          "upstream_row": 43,
+          "instance_id": "paritytech__parity-common-667",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 44,
+          "instance_id": "apollographql__apollo-rs-565",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 45,
+          "instance_id": "joshuakgoldberg__create-typescript-app-1793",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 46,
+          "instance_id": "square__anvil-92",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 47,
+          "instance_id": "decorators-squad__eo-yaml-467",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 48,
+          "instance_id": "mgechev__revive-1370",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 50,
+          "instance_id": "fuellabs__fuel-vm-404",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 51,
+          "instance_id": "bytecodealliance__wasmtime-4825",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 52,
+          "instance_id": "google__go-safeweb-67",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 54,
+          "instance_id": "immerjs__immer-872",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 55,
+          "instance_id": "asterinas__asterinas-1486",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 56,
+          "instance_id": "jhipster__jhipster-lite-10797",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 58,
+          "instance_id": "godaddy__kubernetes-external-secrets-179",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 59,
+          "instance_id": "pinojs__pino-503",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 61,
+          "instance_id": "serverless__serverless-2588",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 62,
+          "instance_id": "sigstore__fulcio-1931",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 63,
+          "instance_id": "gfx-rs__naga-823",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 64,
+          "instance_id": "jump-dev__jump.jl-2699",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 65,
+          "instance_id": "ant-design__ant-design-mobile-6239",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 66,
+          "instance_id": "cqfn__diktat-932",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 68,
+          "instance_id": "fleather-editor__fleather-345",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 69,
+          "instance_id": "rooseveltframework__roosevelt-824",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 70,
+          "instance_id": "google__yamlfmt-4",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 71,
+          "instance_id": "mgechev__revive-840",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 72,
+          "instance_id": "scalameta__scalameta-3163",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 73,
+          "instance_id": "tefra__xsdata-310",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 74,
+          "instance_id": "newrelic__node-newrelic-486",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 75,
+          "instance_id": "friendsofphp__php-cs-fixer-6447",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 76,
+          "instance_id": "projectevergreen__greenwood-565",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 77,
+          "instance_id": "cloudflare__cloudflare-go-760",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 78,
+          "instance_id": "clap-rs__clap-1975",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 79,
+          "instance_id": "pyqtgraph__pyqtgraph-1845",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 80,
+          "instance_id": "pallets__werkzeug-2583",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 81,
+          "instance_id": "typedorm__typedorm-111",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 82,
+          "instance_id": "kiegroup__github-action-build-chain-446",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 83,
+          "instance_id": "vaskoz__dailycodingproblem-go-579",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 84,
+          "instance_id": "ember-cli__ember-cli-7874",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 85,
+          "instance_id": "epiforecasts__scoringutils-882",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 86,
+          "instance_id": "owncloud__ocis-3725",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 88,
+          "instance_id": "cs-si__eodag-228",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 89,
+          "instance_id": "w3c__webidl2.js-171",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 90,
+          "instance_id": "istio__istio-31254",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 91,
+          "instance_id": "grafana__grafana-plugin-sdk-go-66",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 92,
+          "instance_id": "vuejs__eslint-plugin-vue-2334",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 93,
+          "instance_id": "salsita__node-pg-migrate-671",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 94,
+          "instance_id": "weaveworks__eksctl-3810",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 95,
+          "instance_id": "blitz-js__superjson-112",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 96,
+          "instance_id": "qossmic__deptrac-899",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 97,
+          "instance_id": "xlate__staedi-130",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 98,
+          "instance_id": "mgechev__revive-477",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 99,
+          "instance_id": "kubernetes__kops-9967",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 100,
+          "instance_id": "sinaptik-ai__pandas-ai-1099",
+          "reason": "issue_exceeds_context_budget"
+        },
+        {
+          "upstream_row": 101,
+          "instance_id": "bmatsuo__lmdb-go-55",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 102,
+          "instance_id": "ember-cli__eslint-plugin-ember-1865",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 103,
+          "instance_id": "helm__helm-7640",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 104,
+          "instance_id": "jsonmapper__jsonmapper-55",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 105,
+          "instance_id": "pyccel__pyccel-2004",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 106,
+          "instance_id": "andregasser__bigbone-533",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 107,
+          "instance_id": "containrrr__watchtower-1526",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 108,
+          "instance_id": "fika-lang__fika-43",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 109,
+          "instance_id": "microsoft__kiota-4606",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 110,
+          "instance_id": "qossmic__deptrac-1227",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 112,
+          "instance_id": "kbknapp__clap-rs-941",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 113,
+          "instance_id": "joshuakgoldberg__create-typescript-app-1806",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 114,
+          "instance_id": "rust-lang__rustfmt-4994",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 115,
+          "instance_id": "veryl-lang__veryl-717",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 116,
+          "instance_id": "projectlombok__lombok-3578",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 117,
+          "instance_id": "weaveworks__eksctl-4128",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 118,
+          "instance_id": "aws-cloudformation__cfn-lint-3805",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 119,
+          "instance_id": "farmbot__farmbot-web-app-2387",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 120,
+          "instance_id": "plaid__sanctuary-107",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 121,
+          "instance_id": "pingcap__dumpling-342",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 122,
+          "instance_id": "detekt__detekt-8604",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 123,
+          "instance_id": "joshuakgoldberg__create-typescript-app-1865",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 124,
+          "instance_id": "rust-analyzer__rust-analyzer-1657",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 125,
+          "instance_id": "sveltejs__prettier-plugin-svelte-152",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 126,
+          "instance_id": "helm__helm-9536",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 127,
+          "instance_id": "uber-go__fx-802",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 129,
+          "instance_id": "harttle__liquidjs-631",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 130,
+          "instance_id": "microsoft__typescript-go-908",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 131,
+          "instance_id": "pandas-dev__pandas-59909",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 132,
+          "instance_id": "xknx__xknx-470",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 133,
+          "instance_id": "formidablelabs__urql-880",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 134,
+          "instance_id": "ota-meshi__eslint-plugin-svelte-365",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 135,
+          "instance_id": "swc-project__swc-7876",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 136,
+          "instance_id": "awslabs__aws-ddk-284",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 137,
+          "instance_id": "amzn__ion-java-289",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 138,
+          "instance_id": "stoplightio__spectral-1376",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 139,
+          "instance_id": "jhipster__generator-jhipster-11631",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 140,
+          "instance_id": "ember-intl__ember-intl-1515",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 141,
+          "instance_id": "hyperledger__firefly-1288",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 142,
+          "instance_id": "gleam-lang__gleam-4398",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 143,
+          "instance_id": "roave__betterreflection-651",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 144,
+          "instance_id": "vacanza__holidays-2737",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 145,
+          "instance_id": "expressionengine__expressionengine-3388",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 146,
+          "instance_id": "iopipe__iopipe-js-core-267",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 147,
+          "instance_id": "phoenixframework__phoenix-3131",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 148,
+          "instance_id": "getmoto__moto-8984",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 149,
+          "instance_id": "aio-libs__aiosmtpd-242",
+          "reason": "issue_exceeds_context_budget"
+        },
+        {
+          "upstream_row": 150,
+          "instance_id": "nats-io__nats.go-1544",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 151,
+          "instance_id": "xknx__xknx-1642",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 152,
+          "instance_id": "abahmed__kwatch-189",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 153,
+          "instance_id": "mavlink__mavsdk-2595",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 154,
+          "instance_id": "serverless__serverless-2499",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 155,
+          "instance_id": "juliadocs__docstringextensions.jl-141",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 156,
+          "instance_id": "pion__webrtc-2786",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 157,
+          "instance_id": "rust-lang__annotate-snippets-rs-3",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 158,
+          "instance_id": "urfave__cli-1671",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 159,
+          "instance_id": "worksapplications__sudachi.rs-183",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 160,
+          "instance_id": "qiskit__qiskit-ibm-runtime-367",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 161,
+          "instance_id": "swc-project__swc-3051",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 162,
+          "instance_id": "goblint__cil-75",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 163,
+          "instance_id": "apple__swift-syntax-2186",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 164,
+          "instance_id": "cogent3__cogent3-2050",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 165,
+          "instance_id": "julialang__juliasyntax.jl-261",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 166,
+          "instance_id": "opengovsg__gogovsg-241",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 167,
+          "instance_id": "akvelon__flutter-code-editor-243",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 169,
+          "instance_id": "rust-lang__rust-bindgen-2667",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 170,
+          "instance_id": "grafana__tanka-130",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 171,
+          "instance_id": "elliotchance__c2go-867",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 172,
+          "instance_id": "eslint__eslint-11398",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 173,
+          "instance_id": "serverless__serverless-4249",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 174,
+          "instance_id": "rust-analyzer__rust-analyzer-3451",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 175,
+          "instance_id": "enthought__envisage-275",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 176,
+          "instance_id": "mageddo__dns-proxy-server-381",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 177,
+          "instance_id": "beeware__briefcase-2059",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 178,
+          "instance_id": "serverless__serverless-4120",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 179,
+          "instance_id": "appium__appium-18479",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 180,
+          "instance_id": "bitshifter__glam-rs-435",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 181,
+          "instance_id": "eslint-stylistic__eslint-stylistic-822",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 182,
+          "instance_id": "typescript-eslint__tslint-to-eslint-config-276",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 183,
+          "instance_id": "istanbuljs__nyc-1068",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 184,
+          "instance_id": "formidablelabs__urql-2431",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 185,
+          "instance_id": "projectevergreen__greenwood-1359",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 186,
+          "instance_id": "jump-dev__jump.jl-3979",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 187,
+          "instance_id": "rcardin__raise4s-104",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 188,
+          "instance_id": "getmoto__moto-7955",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 189,
+          "instance_id": "statamic__cms-7478",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 190,
+          "instance_id": "jlongster__prettier-391",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 191,
+          "instance_id": "influxdata__influxdb-java-685",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 192,
+          "instance_id": "chipsalliance__caliptra-sw-1190",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 193,
+          "instance_id": "okonet__lint-staged-1117",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 194,
+          "instance_id": "gpbl__react-day-picker-502",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 195,
+          "instance_id": "robsontenorio__vue-api-query-148",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 196,
+          "instance_id": "hub4j__github-api-1247",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 197,
+          "instance_id": "numaproj__numaflow-1567",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 199,
+          "instance_id": "swc-project__swc-6423",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 200,
+          "instance_id": "scalameta__scalameta-2790",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 201,
+          "instance_id": "swc-project__swc-8727",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 202,
+          "instance_id": "rooseveltframework__roosevelt-745",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 203,
+          "instance_id": "burntsushi__toml-414",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 205,
+          "instance_id": "deislabs__ratify-452",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 206,
+          "instance_id": "intuit__auto-1103",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 207,
+          "instance_id": "codeception__codeceptjs-1898",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 208,
+          "instance_id": "datadog__dd-trace-js-2146",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 209,
+          "instance_id": "analysis-dev__diktat-1624",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 210,
+          "instance_id": "twitch-apis__twitch-js-159",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 211,
+          "instance_id": "kripken__emscripten-6545",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 212,
+          "instance_id": "joshuakgoldberg__create-typescript-app-1734",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 213,
+          "instance_id": "external-secrets__external-secrets-3288",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 214,
+          "instance_id": "prestashop__prestashop-38903",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 215,
+          "instance_id": "ontodev__robot-646",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 216,
+          "instance_id": "cockroachdb__pebble-2949",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 217,
+          "instance_id": "sigstore__sigstore-go-465",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 218,
+          "instance_id": "ouranosinc__xclim-339",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 219,
+          "instance_id": "jlongster__prettier-666",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 220,
+          "instance_id": "jsonata-js__jsonata-435",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 221,
+          "instance_id": "cosmwasm__cosmwasm-2008",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 222,
+          "instance_id": "neet__masto.js-55",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 223,
+          "instance_id": "dart-lang__dartdoc-3393",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 224,
+          "instance_id": "mosn__layotto-701",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 225,
+          "instance_id": "infernojs__inferno-1193",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 226,
+          "instance_id": "auth0__node-auth0-785",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 227,
+          "instance_id": "digitalocean__doctl-1593",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 228,
+          "instance_id": "randombit__botan-2425",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 229,
+          "instance_id": "azat-io__eslint-plugin-perfectionist-406",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 230,
+          "instance_id": "xknx__xknx-544",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 231,
+          "instance_id": "fortio__fortio-516",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 232,
+          "instance_id": "willowtreeapps__assertk-457",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 233,
+          "instance_id": "jnwatson__py-lmdb-222",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 234,
+          "instance_id": "nats-io__nats-server-5709",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 235,
+          "instance_id": "segmentio__encoding-19",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 236,
+          "instance_id": "googleapis__python-bigquery-2039",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 237,
+          "instance_id": "switchbacktech__compass-354",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 238,
+          "instance_id": "spaze__phpstan-disallowed-calls-102",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 239,
+          "instance_id": "hypothesisworks__hypothesis-2322",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 240,
+          "instance_id": "jeremydaly__dynamodb-toolbox-53",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 241,
+          "instance_id": "microsoft__kiota-3760",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 242,
+          "instance_id": "remy__nodemon-1620",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 243,
+          "instance_id": "samuelcolvin__pydantic-1737",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 244,
+          "instance_id": "biotite-dev__biotite-795",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 245,
+          "instance_id": "platers__obsidian-linter-504",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 246,
+          "instance_id": "vaskoz__dailycodingproblem-go-786",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 247,
+          "instance_id": "jimhester__lintr-698",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 248,
+          "instance_id": "googlecloudplatform__cloud-sql-python-connector-906",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 249,
+          "instance_id": "chainguard-dev__apko-465",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 250,
+          "instance_id": "gokcehan__lf-238",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 251,
+          "instance_id": "cloudant__couchbackup-384",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 252,
+          "instance_id": "fastify__fastify-jwt-91",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 253,
+          "instance_id": "friendsofphp__php-cs-fixer-5618",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 254,
+          "instance_id": "elastic__synthetics-784",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 255,
+          "instance_id": "effekt-lang__effekt-1098",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 256,
+          "instance_id": "crossplane-contrib__provider-gitlab-156",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 257,
+          "instance_id": "ably__ably-go-317",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 258,
+          "instance_id": "google__exposure-notifications-server-550",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 259,
+          "instance_id": "niconoe__pyinaturalist-72",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 260,
+          "instance_id": "metal3-io__baremetal-operator-880",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 261,
+          "instance_id": "notaryproject__notation-1145",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 262,
+          "instance_id": "galileo-galilei__kedro-mlflow-633",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 263,
+          "instance_id": "xlate__staedi-303",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 265,
+          "instance_id": "microsoft__kiota-6414",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 267,
+          "instance_id": "seldaek__monolog-1801",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 268,
+          "instance_id": "apollographql__apollo-codegen-345",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 269,
+          "instance_id": "zeek__zeek-1909",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 270,
+          "instance_id": "cfug__dio-1671",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 271,
+          "instance_id": "dell__csi-baremetal-655",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 272,
+          "instance_id": "influxdata__telegraf-operator-108",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 273,
+          "instance_id": "camshaft__bolero-182",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 276,
+          "instance_id": "ant-design__ant-design-mobile-6657",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 277,
+          "instance_id": "adhocore__gronx-7",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 278,
+          "instance_id": "vuejs__composition-api-532",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 279,
+          "instance_id": "getmoto__moto-8237",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 280,
+          "instance_id": "mitsuhiko__redis-rs-538",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 281,
+          "instance_id": "gleam-lang__gleam-4629",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 282,
+          "instance_id": "evcc-io__evcc-2613",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 283,
+          "instance_id": "pandas-dev__pandas-59966",
+          "reason": "patch_apply_failed: error: doc/source/whatsnew/v3.0.0.rst: No such file or directory\n"
+        },
+        {
+          "upstream_row": 284,
+          "instance_id": "sindresorhus__query-string-99",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 285,
+          "instance_id": "rust-lang__cargo-14530",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 286,
+          "instance_id": "aws-cloudformation__rain-118",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 287,
+          "instance_id": "jump-dev__jump.jl-3840",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 288,
+          "instance_id": "opentripplanner__opentripplanner-5415",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 289,
+          "instance_id": "qmuntal__gltf-92",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 290,
+          "instance_id": "scala-steward-org__scala-steward-2805",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 291,
+          "instance_id": "swc-project__swc-8686",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 292,
+          "instance_id": "googleapis__google-api-python-client-2368",
+          "reason": "snapshot_case_colliding_paths"
+        },
+        {
+          "upstream_row": 293,
+          "instance_id": "jump-dev__jump.jl-3759",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 294,
+          "instance_id": "getmoto__moto-8315",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 295,
+          "instance_id": "modin-project__modin-7399",
+          "reason": "issue_exceeds_context_budget"
+        },
+        {
+          "upstream_row": 296,
+          "instance_id": "xd009642__tarpaulin-1206",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 297,
+          "instance_id": "keikoproj__instance-manager-65",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 299,
+          "instance_id": "katex__katex-2040",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 300,
+          "instance_id": "newrelic__elixir_agent-500",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 301,
+          "instance_id": "platers__obsidian-linter-955",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 302,
+          "instance_id": "maizzle__framework-803",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 303,
+          "instance_id": "ipython__traitlets-615",
+          "reason": "missing_source_code_license"
+        },
+        {
+          "upstream_row": 304,
+          "instance_id": "getmoto__moto-8469",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 305,
+          "instance_id": "google__go-safeweb-304",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 306,
+          "instance_id": "gitleaks__gitleaks-1524",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 309,
+          "instance_id": "appleboy__gin-jwt-342",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 310,
+          "instance_id": "kong__swrv-49",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 311,
+          "instance_id": "woylie__doggo-196",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 312,
+          "instance_id": "paustint__soql-parser-js-32",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 313,
+          "instance_id": "kestra-io__kestra-5593",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 315,
+          "instance_id": "dprint__dprint-plugin-typescript-469",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 316,
+          "instance_id": "hotmeteor__spectator-175",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 317,
+          "instance_id": "opengovsg__gogovsg-158",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 318,
+          "instance_id": "systemd__mkosi-3586",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 319,
+          "instance_id": "dedoc__scramble-388",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 320,
+          "instance_id": "decorators-squad__eo-yaml-404",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 322,
+          "instance_id": "rust-lang__rust-analyzer-14549",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 323,
+          "instance_id": "ploomber__jupysql-168",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 324,
+          "instance_id": "ember-cli__eslint-plugin-ember-107",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 325,
+          "instance_id": "pyjanitor-devs__pyjanitor-1315",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 327,
+          "instance_id": "square__anvil-652",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 328,
+          "instance_id": "ceph__go-ceph-447",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 329,
+          "instance_id": "fhir__sushi-1318",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 330,
+          "instance_id": "jsx-eslint__eslint-plugin-react-3385",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 331,
+          "instance_id": "open-telemetry__opentelemetry-go-contrib-4229",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 332,
+          "instance_id": "pandas-dev__pandas-56194",
+          "reason": "patch_apply_failed: error: doc/source/whatsnew/v2.1.4.rst: No such file or directory\nerror: doc/source/whatsnew/v2.2.0.rst: No such file or directory\n"
+        },
+        {
+          "upstream_row": 333,
+          "instance_id": "swaggest__rest-140",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 334,
+          "instance_id": "ta4j__ta4j-1121",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 335,
+          "instance_id": "goblint__cil-48",
+          "reason": "missing_repository_task_fields"
+        },
+        {
+          "upstream_row": 336,
+          "instance_id": "onsi__ginkgo-1101",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 337,
+          "instance_id": "vapor__jwt-kit-177",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 338,
+          "instance_id": "theupdateframework__go-tuf-645",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 339,
+          "instance_id": "alibaba__fescar-408",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 340,
+          "instance_id": "go-kratos__kratos-1341",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 341,
+          "instance_id": "aws-cloudformation__cfn-lint-3060",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 342,
+          "instance_id": "speee__jsx-slack-207",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 343,
+          "instance_id": "naturalcrit__homebrewery-1981",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 344,
+          "instance_id": "arrow-kt__arrow-3592",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 345,
+          "instance_id": "vegaprotocol__vegawallet-367",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 346,
+          "instance_id": "cscfi__rems-1642",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 347,
+          "instance_id": "swc-project__swc-5201",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 348,
+          "instance_id": "serverless__serverless-2940",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 349,
+          "instance_id": "yoctol__bottender-281",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 350,
+          "instance_id": "inertiajs__inertia-laravel-592",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 351,
+          "instance_id": "devlooped__moq-1319",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 352,
+          "instance_id": "mozilla__nunjucks-849",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 353,
+          "instance_id": "mapbox__mr-ui-148",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 354,
+          "instance_id": "diegoholiveira__jsonlogic-30",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 355,
+          "instance_id": "pgjdbc__pgjdbc-1708",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 356,
+          "instance_id": "myremylar__pygame_gui-439",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 357,
+          "instance_id": "apache__pulsar-client-go-957",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 358,
+          "instance_id": "couds__react-bulma-components-293",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 359,
+          "instance_id": "ripple__explorer-746",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 360,
+          "instance_id": "clap-rs__clap-3968",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 361,
+          "instance_id": "boardgameio__boardgame.io-857",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 362,
+          "instance_id": "oragono__oragono-1087",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 363,
+          "instance_id": "aws-cloudformation__cfn-lint-2428",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 364,
+          "instance_id": "config4k__config4k-146",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 366,
+          "instance_id": "rstudio-education__gradethis-162",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 367,
+          "instance_id": "redis__lettuce-3026",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 368,
+          "instance_id": "clap-rs__clap-3188",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 369,
+          "instance_id": "urfave__cli-1673",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 370,
+          "instance_id": "pumasai__quartonotebookrunner.jl-105",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 371,
+          "instance_id": "karen-irc__option-t-1013",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 372,
+          "instance_id": "broadwaylamb__opencombine-107",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 373,
+          "instance_id": "elastic__curator-1437",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 374,
+          "instance_id": "getmoto__moto-6086",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 375,
+          "instance_id": "evcc-io__evcc-9015",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 377,
+          "instance_id": "graphhopper__graphhopper-1719",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 379,
+          "instance_id": "lightstep__otel-launcher-go-597",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 380,
+          "instance_id": "near__borsh-rs-177",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 381,
+          "instance_id": "vaskoz__dailycodingproblem-go-74",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 383,
+          "instance_id": "brenolf__polyjuice-66",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 384,
+          "instance_id": "formidablelabs__urql-348",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 385,
+          "instance_id": "timshannon__bolthold-129",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 386,
+          "instance_id": "go-resty__resty-417",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 387,
+          "instance_id": "matejkob__swift-spyable-130",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 388,
+          "instance_id": "alecthomas__kong-245",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 390,
+          "instance_id": "dbader__node-datadog-metrics-137",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 391,
+          "instance_id": "jump-dev__jump.jl-3751",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 392,
+          "instance_id": "svg-sprite__svg-sprite-693",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 393,
+          "instance_id": "open-feature__js-sdk-704",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 395,
+          "instance_id": "orchestr7__ktoml-322",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 396,
+          "instance_id": "knative__client-851",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 397,
+          "instance_id": "capricorn86__happy-dom-758",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 398,
+          "instance_id": "juliaplots__makie.jl-1739",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 400,
+          "instance_id": "pion__mediadevices-75",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 401,
+          "instance_id": "fhir__sushi-1524",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 402,
+          "instance_id": "denvercoder1__github-readme-streak-stats-498",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 403,
+          "instance_id": "pydicom__pynetdicom-998",
+          "reason": "missing_source_code_license"
+        },
+        {
+          "upstream_row": 404,
+          "instance_id": "gleam-lang__gleam-4272",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 405,
+          "instance_id": "pinojs__pino-875",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 406,
+          "instance_id": "scimmyjs__scimmy-54",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 407,
+          "instance_id": "vazco__uniforms-818",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 408,
+          "instance_id": "kubernetes-sigs__kwok-1345",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 409,
+          "instance_id": "kubernetes-sigs__security-profiles-operator-1254",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 410,
+          "instance_id": "jenkinsci__prometheus-plugin-592",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 411,
+          "instance_id": "maxgraph__maxgraph-359",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 412,
+          "instance_id": "pyjanitor-devs__pyjanitor-1066",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 413,
+          "instance_id": "pyvrp__pyvrp-280",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 414,
+          "instance_id": "apollographql__apollo-rs-267",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 415,
+          "instance_id": "bimmerconnected__bimmer_connected-394",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 416,
+          "instance_id": "stfc__psyclone-2609",
+          "reason": "snapshot_case_colliding_paths"
+        },
+        {
+          "upstream_row": 417,
+          "instance_id": "joshuakgoldberg__create-typescript-app-2196",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 418,
+          "instance_id": "jquense__yup-1305",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 419,
+          "instance_id": "msz__hammox-13",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 420,
+          "instance_id": "knative-sandbox__eventing-kafka-broker-2811",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 421,
+          "instance_id": "sa7mon__s3scanner-379",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 422,
+          "instance_id": "redis__redis-7826",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 424,
+          "instance_id": "raml-org__raml-java-parser-155",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 425,
+          "instance_id": "sql-formatter-org__sql-formatter-565",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 427,
+          "instance_id": "jhipster__generator-jhipster-11729",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 428,
+          "instance_id": "mapbox__batfish-247",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 429,
+          "instance_id": "cubed-dev__cubed-462",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 430,
+          "instance_id": "ta4j__ta4j-530",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 431,
+          "instance_id": "absinthe-graphql__absinthe-998",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 432,
+          "instance_id": "skiptests__astraea-1321",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 433,
+          "instance_id": "swc-project__swc-3696",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 435,
+          "instance_id": "helidon-io__helidon-8583",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 436,
+          "instance_id": "slack-go__slack-862",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 437,
+          "instance_id": "php__pie-173",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 438,
+          "instance_id": "eslint__eslint-11374",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 439,
+          "instance_id": "vaskoz__dailycodingproblem-go-56",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 440,
+          "instance_id": "projectlombok__lombok-3619",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 441,
+          "instance_id": "serverless__serverless-3848",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 442,
+          "instance_id": "softwaremill__elasticmq-443",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 443,
+          "instance_id": "rust-itertools__itertools-565",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 444,
+          "instance_id": "gavv__httpexpect-266",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 445,
+          "instance_id": "vegaprotocol__vegawallet-368",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 446,
+          "instance_id": "sveltejs__kit-9280",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 447,
+          "instance_id": "ponder-sh__ponder-1546",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 448,
+          "instance_id": "rust-lang__rust-analyzer-17942",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 449,
+          "instance_id": "ember-cli__eslint-plugin-ember-1079",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 450,
+          "instance_id": "threefoldtech__zos-481",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 451,
+          "instance_id": "python-cmd2__cmd2-681",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 452,
+          "instance_id": "owasp__threat-dragon-569",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 453,
+          "instance_id": "wultra__powerauth-crypto-472",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 454,
+          "instance_id": "vaskoz__dailycodingproblem-go-442",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 455,
+          "instance_id": "zeromicro__go-zero-3625",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 456,
+          "instance_id": "kubernetes-client__python-1933",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 457,
+          "instance_id": "lorenzwalthert__touchstone-37",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 458,
+          "instance_id": "stoplightio__spectral-1227",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 459,
+          "instance_id": "opentripplanner__opentripplanner-4652",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 460,
+          "instance_id": "pragdave__earmark-255",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 461,
+          "instance_id": "pandas-dev__pandas-61376",
+          "reason": "patch_apply_failed: error: doc/source/whatsnew/v3.0.0.rst: No such file or directory\n"
+        },
+        {
+          "upstream_row": 462,
+          "instance_id": "acloudguru__serverless-plugin-aws-alerts-84",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 463,
+          "instance_id": "gfx-rs__naga-749",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 464,
+          "instance_id": "sdv-dev__rdt-760",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 465,
+          "instance_id": "gcanti__io-ts-types-45",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 466,
+          "instance_id": "spatie__laravel-permission-2396",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 467,
+          "instance_id": "userfront__userfront-core-17",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 468,
+          "instance_id": "qiniu__goc-110",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 469,
+          "instance_id": "eclipse-ee4j__yasson-250",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 470,
+          "instance_id": "pymor__pymor-793",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 472,
+          "instance_id": "pymc-devs__pytensor-1396",
+          "reason": "missing_source_code_license"
+        },
+        {
+          "upstream_row": 473,
+          "instance_id": "microsoft__kiota-5770",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 474,
+          "instance_id": "davidlattimore__wild-499",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 477,
+          "instance_id": "crossplane-contrib__provider-aws-2221",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 478,
+          "instance_id": "pallets__werkzeug-2639",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 479,
+          "instance_id": "thomasdezeeuw__a10-115",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 480,
+          "instance_id": "ron-rs__ron-84",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 481,
+          "instance_id": "envoyproxy__ai-gateway-252",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 482,
+          "instance_id": "gleam-lang__gleam-4155",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 483,
+          "instance_id": "hibernate__hibernate-reactive-2038",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 485,
+          "instance_id": "bombsimon__wsl-45",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 486,
+          "instance_id": "knative__client-1027",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 487,
+          "instance_id": "apify__apify-cli-557",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 488,
+          "instance_id": "tox-dev__sphinx-autodoc-typehints-199",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 490,
+          "instance_id": "pandas-dev__pandas-61600",
+          "reason": "patch_apply_failed: error: ci/deps/actions-310-minimum_versions.yaml: No such file or directory\nerror: ci/deps/actions-310.yaml: No such file or directory\nerror: ci/deps/actions-311-downstream_compat.yaml: No such file or directory\nerror: ci/deps/actions-311.yaml: No such file or directory\nerror: ci/deps/actions-312.yaml: No such file or directory\nerror: ci/deps/actions-313.yaml: No such file or directory\nerror: doc/source/whatsnew/v3.0.0.rst: No such file or directory\n"
+        },
+        {
+          "upstream_row": 491,
+          "instance_id": "pterm__pterm-662",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 492,
+          "instance_id": "tencent__tdesign-mobile-vue-902",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 493,
+          "instance_id": "enmasseproject__enmasse-3538",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 494,
+          "instance_id": "wix__detox-4789",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 495,
+          "instance_id": "dtolnay__syn-808",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 496,
+          "instance_id": "juliaintervals__intervalarithmetic.jl-496",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 497,
+          "instance_id": "slskd__slskd-1128",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 499,
+          "instance_id": "pandas-dev__pandas-60510",
+          "reason": "The read operation timed out"
+        },
+        {
+          "upstream_row": 500,
+          "instance_id": "juliadynamics__drwatson.jl-285",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 501,
+          "instance_id": "systemd__mkosi-3216",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 502,
+          "instance_id": "jugglerchris__rust-html2text-197",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 503,
+          "instance_id": "salsa-rs__salsa-392",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 504,
+          "instance_id": "allegro__marathon-consul-150",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 505,
+          "instance_id": "googlechrome__sw-precache-244",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 506,
+          "instance_id": "apache__datafusion-sqlparser-rs-1790",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 507,
+          "instance_id": "alteryx__evalml-1223",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 508,
+          "instance_id": "modin-project__modin-6648",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 509,
+          "instance_id": "fhir__sushi-645",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 510,
+          "instance_id": "swc-project__swc-8860",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 512,
+          "instance_id": "unexpectedjs__unexpected-571",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 513,
+          "instance_id": "ipython__traitlets-613",
+          "reason": "missing_source_code_license"
+        },
+        {
+          "upstream_row": 514,
+          "instance_id": "twigphp__twig-3353",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 515,
+          "instance_id": "tami5__sql.nvim-102",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 516,
+          "instance_id": "swc-project__swc-6965",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 518,
+          "instance_id": "getmoto__moto-5969",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 519,
+          "instance_id": "open-telemetry__opentelemetry-php-869",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 520,
+          "instance_id": "ocsigen__lwt-860",
+          "reason": "missing_repository_task_fields"
+        },
+        {
+          "upstream_row": 521,
+          "instance_id": "filecoin-project__specs-actors-567",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 522,
+          "instance_id": "geoffrich__svelte-adapter-azure-swa-107",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 523,
+          "instance_id": "jhump__protoreflect-512",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 524,
+          "instance_id": "nodejs__llhttp-243",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 526,
+          "instance_id": "sunng87__handlebars-rust-373",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 527,
+          "instance_id": "okteto__okteto-4722",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 528,
+          "instance_id": "ipfs__boxo-710",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 529,
+          "instance_id": "pallets__werkzeug-2692",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 534,
+          "instance_id": "hetznercloud__hcloud-go-56",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 535,
+          "instance_id": "sagiegurari__cargo-make-866",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 536,
+          "instance_id": "openmdao__openmdao-3423",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 537,
+          "instance_id": "cosmwasm__cosmwasm-873",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 538,
+          "instance_id": "evant__kotlin-inject-46",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 539,
+          "instance_id": "hub4j__github-api-1425",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 540,
+          "instance_id": "mozilla__mozdownload-709",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 542,
+          "instance_id": "statamic__cms-9744",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 543,
+          "instance_id": "alexcasalboni__aws-lambda-power-tuning-98",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 544,
+          "instance_id": "rust-lang__rustfmt-5879",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 545,
+          "instance_id": "zeit-ui__react-344",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 546,
+          "instance_id": "canonical__operator-1074",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 547,
+          "instance_id": "i18next__i18next-parser-217",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 548,
+          "instance_id": "microsoft__griffel-292",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 549,
+          "instance_id": "swiftlang__swift-syntax-1164",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 550,
+          "instance_id": "lektor__lektor-1143",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 551,
+          "instance_id": "kubermatic__kubermatic-13139",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 552,
+          "instance_id": "jonase__eastwood-358",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 553,
+          "instance_id": "projectlombok__lombok-3637",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 554,
+          "instance_id": "statamic__cms-10553",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 555,
+          "instance_id": "mr-linch__go-tg-90",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 556,
+          "instance_id": "eslint__eslint-10561",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 557,
+          "instance_id": "evcc-io__evcc-19956",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 558,
+          "instance_id": "azure__walinuxagent-2633",
+          "reason": "issue_exceeds_context_budget"
+        },
+        {
+          "upstream_row": 559,
+          "instance_id": "serverless-heaven__serverless-webpack-813",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 560,
+          "instance_id": "go-critic__go-critic-618",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 561,
+          "instance_id": "jolocom__smartwallet-app-1449",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 563,
+          "instance_id": "formidablelabs__urql-1509",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 565,
+          "instance_id": "rust-lang__rust-bindgen-2586",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 566,
+          "instance_id": "7mind__izumi-2267",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 568,
+          "instance_id": "networknt__json-schema-validator-1152",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 569,
+          "instance_id": "getporter__porter-2154",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 570,
+          "instance_id": "samuelcolvin__pydantic-2720",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 571,
+          "instance_id": "pires__go-proxyproto-48",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 573,
+          "instance_id": "sharkdp__numbat-209",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 574,
+          "instance_id": "grafana__dskit-146",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 575,
+          "instance_id": "yannickcr__eslint-plugin-react-665",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 577,
+          "instance_id": "newrelic__elixir_agent-88",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 578,
+          "instance_id": "cli__cli-10417",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 579,
+          "instance_id": "kkawakam__rustyline-324",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 580,
+          "instance_id": "djc__askama-837",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 581,
+          "instance_id": "callowayproject__bump-my-version-104",
+          "reason": "benchmark_repo_quarantine"
+        },
+        {
+          "upstream_row": 582,
+          "instance_id": "hypothesisworks__hypothesis-3427",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 583,
+          "instance_id": "omni-us__jsonargparse-571",
+          "reason": "issue_exceeds_context_budget"
+        },
+        {
+          "upstream_row": 585,
+          "instance_id": "elastic__elastic-package-177",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 586,
+          "instance_id": "swc-project__swc-8036",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 587,
+          "instance_id": "fhir__sushi-270",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 588,
+          "instance_id": "kubermatic__kubermatic-12404",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 589,
+          "instance_id": "urlaubsverwaltung__urlaubsverwaltung-4666",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 590,
+          "instance_id": "aws-cloudformation__cfn-lint-2253",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 591,
+          "instance_id": "tikv__pd-5480",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 592,
+          "instance_id": "cqfn__diktat-662",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 594,
+          "instance_id": "node-red__node-red-4267",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 595,
+          "instance_id": "serverless__serverless-3548",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 596,
+          "instance_id": "rust-analyzer__rust-analyzer-8848",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 597,
+          "instance_id": "cuthbertlab__music21-1725",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 598,
+          "instance_id": "mitsuhiko__insta-346",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 599,
+          "instance_id": "leafwing-studios__leafwing-input-manager-452",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 600,
+          "instance_id": "whitfin__cachex-306",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 601,
+          "instance_id": "pacak__bpaf-94",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 602,
+          "instance_id": "bombsimon__wsl-34",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 603,
+          "instance_id": "typestack__class-validator-1785",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 604,
+          "instance_id": "babel__minify-842",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 605,
+          "instance_id": "paustint__soql-parser-js-22",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 606,
+          "instance_id": "solid__community-server-863",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 607,
+          "instance_id": "focus-shift__jollyday-407",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 608,
+          "instance_id": "fhir__sushi-1466",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 609,
+          "instance_id": "jhipster__generator-jhipster-10319",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 610,
+          "instance_id": "pretix__pretix-5080",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 611,
+          "instance_id": "kyma-project__cli-1604",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 612,
+          "instance_id": "defi-wonderland__smock-61",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 613,
+          "instance_id": "rust-lang__cargo-14847",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 614,
+          "instance_id": "zcashfoundation__frost-878",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 615,
+          "instance_id": "honeydipper__honeydipper-256",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 616,
+          "instance_id": "cargo-generate__cargo-generate-412",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 617,
+          "instance_id": "getmoto__moto-5847",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 618,
+          "instance_id": "crazy-max__ghaction-docker-meta-23",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 619,
+          "instance_id": "yt-project__unyt-61",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 620,
+          "instance_id": "pytask-dev__pytask-200",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 621,
+          "instance_id": "eslint__doctrine-137",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 622,
+          "instance_id": "backblaze__b2_command_line_tool-259",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 623,
+          "instance_id": "pandas-dev__pandas-61264",
+          "reason": "patch_apply_failed: error: doc/source/whatsnew/v3.0.0.rst: No such file or directory\nerror: web/pandas/community/benchmarks.md: No such file or directory\nerror: web/pandas/config.yml: No such file or directory\nerror: web/pandas/static/img/partners/coiled.svg: No such file or directory\n"
+        },
+        {
+          "upstream_row": 624,
+          "instance_id": "scala-steward-org__scala-steward-1274",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 625,
+          "instance_id": "pypa__setuptools-1547",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 626,
+          "instance_id": "hypothesisworks__hypothesis-2726",
+          "reason": "source_code_license_not_admitted"
+        },
+        {
+          "upstream_row": 627,
+          "instance_id": "typescript-eslint__tslint-to-eslint-config-1719",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 628,
+          "instance_id": "burntsushi__ripgrep-1237",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 629,
+          "instance_id": "tafia__quick-xml-756",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 630,
+          "instance_id": "ovrclk__akash-673",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 631,
+          "instance_id": "lukeautry__tsoa-428",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 633,
+          "instance_id": "ajalt__mordant-28",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 634,
+          "instance_id": "influxdata__influxdb-java-674",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 635,
+          "instance_id": "codeceptjs__codeceptjs-3214",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 636,
+          "instance_id": "buttercup__buttercup-core-339",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 637,
+          "instance_id": "softwaremill__jox-85",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 638,
+          "instance_id": "neurodatawithoutborders__pynwb-1004",
+          "reason": "issue_exceeds_context_budget"
+        },
+        {
+          "upstream_row": 639,
+          "instance_id": "eslint__eslint-9626",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 640,
+          "instance_id": "open-sauced__app-2373",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 642,
+          "instance_id": "starship__starship-2307",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 643,
+          "instance_id": "swc-project__swc-8730",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 644,
+          "instance_id": "qiskit__qiskit-terra-8288",
+          "reason": "snapshot_resource_budget_exceeded"
+        },
+        {
+          "upstream_row": 645,
+          "instance_id": "libgit2__git2go-743",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 646,
+          "instance_id": "mitsuhiko__minijinja-677",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 647,
+          "instance_id": "arco-design__arco-design-161",
+          "reason": "unsupported_patch_operation"
+        },
+        {
+          "upstream_row": 649,
+          "instance_id": "scala-steward-org__scala-steward-2319",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 650,
+          "instance_id": "microsoft__kiota-5842",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 651,
+          "instance_id": "swc-project__swc-9633",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 652,
+          "instance_id": "serverless__serverless-3660",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 653,
+          "instance_id": "prinsfrank__pdfparser-56",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 654,
+          "instance_id": "tetratelabs__wazero-954",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 655,
+          "instance_id": "raphlinus__pulldown-cmark-767",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 656,
+          "instance_id": "cuyz__valinor-610",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 657,
+          "instance_id": "comonicon__comonicon.jl-202",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 659,
+          "instance_id": "maciejhirsz__json-rust-26",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 660,
+          "instance_id": "sveltejs__kit-3570",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 661,
+          "instance_id": "danvergara__dblab-149",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 662,
+          "instance_id": "mehcode__config-rs-354",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 663,
+          "instance_id": "plexis-js__plexis-106",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 664,
+          "instance_id": "colinhacks__zod-4861",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 665,
+          "instance_id": "operator-framework__operator-controller-1885",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 666,
+          "instance_id": "not-an-aardvark__eslint-plugin-eslint-plugin-15",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 667,
+          "instance_id": "eclipse-zenoh__zenoh-1283",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 668,
+          "instance_id": "mgechev__revive-638",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 670,
+          "instance_id": "julialang__juliasyntax.jl-477",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 672,
+          "instance_id": "fuellabs__fuel-vm-240",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 673,
+          "instance_id": "mailgun__mailgun-go-218",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 674,
+          "instance_id": "jump-dev__jump.jl-3152",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 675,
+          "instance_id": "robintail__express-zod-api-664",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 676,
+          "instance_id": "shssoichiro__oxipng-529",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 677,
+          "instance_id": "rust-lang__rust-analyzer-14890",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 678,
+          "instance_id": "sanctuary-js__sanctuary-662",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 679,
+          "instance_id": "whitfin__cachex-403",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 681,
+          "instance_id": "djc__askama-394",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 682,
+          "instance_id": "googleapis__java-bigtable-hbase-4366",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 683,
+          "instance_id": "microsoft__kiota-4514",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 684,
+          "instance_id": "jsonata-js__jsonata-373",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 685,
+          "instance_id": "maizzle__framework-170",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 686,
+          "instance_id": "googlechrome__lighthouse-7007",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 687,
+          "instance_id": "sveltejs__prettier-plugin-svelte-195",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 688,
+          "instance_id": "marigold-ui__marigold-2824",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 689,
+          "instance_id": "misawa__xq-26",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 690,
+          "instance_id": "analysis-dev__diktat-1229",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 692,
+          "instance_id": "jlongster__prettier-672",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 693,
+          "instance_id": "aspp__pelita-604",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 694,
+          "instance_id": "scala-steward-org__scala-steward-3033",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 695,
+          "instance_id": "gcanti__io-ts-types-85",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 696,
+          "instance_id": "ronasit__laravel-swagger-115",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 697,
+          "instance_id": "authts__oidc-client-ts-1291",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 698,
+          "instance_id": "julialang__juliasyntax.jl-52",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 699,
+          "instance_id": "sap__cloud-security-xsuaa-integration-944",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 700,
+          "instance_id": "vaskoz__dailycodingproblem-go-597",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 701,
+          "instance_id": "swiftlang__swift-syntax-3104",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 702,
+          "instance_id": "benhoyt__goawk-230",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 703,
+          "instance_id": "vaskoz__dailycodingproblem-go-808",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 704,
+          "instance_id": "aio-libs__aiohttp-8742",
+          "reason": "repository_token_overflow"
+        },
+        {
+          "upstream_row": 705,
+          "instance_id": "skygeario__skygear-server-1504",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 706,
+          "instance_id": "ember-cli__ember-cli-10525",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 707,
+          "instance_id": "rbusarow__modulecheck-510",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 708,
+          "instance_id": "nock__nock-2810",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 709,
+          "instance_id": "ontodev__robot-138",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 710,
+          "instance_id": "projectevergreen__greenwood-1032",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 711,
+          "instance_id": "nemocas__nemo.jl-1959",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 712,
+          "instance_id": "libgit2__git2go-736",
+          "reason": "non_python"
+        },
+        {
+          "upstream_row": 713,
+          "instance_id": "kozea__weasyprint-1012",
+          "reason": "repository_token_overflow"
+        }
+      ],
+      "sampling_policy": "upstream_order_with_per_repo_quota_and_recorded_resource_stop"
+    },
+    "tokens": {
+      "limits": {
+        "encoder": 2048,
+        "pair_decoder": 2048,
+        "baseline_decoder": 4608
+      }
+    },
+    "split": {
+      "policy": "repo_commit_before_seed_connected_components",
+      "components": 53,
+      "train": 58,
+      "dev": 6,
+      "seed": 17,
+      "dev_fraction_target": 0.1
+    },
+    "training_plan": {
+      "epochs": 1,
+      "batch_size": 1,
+      "accumulation": 4,
+      "updates_full_epoch": 15,
+      "supervised_train_tokens": 42042
+    },
+    "snapshot_policy": "immutable text archive; no functional-quality verification",
+    "target_count": 64,
+    "resource_budget_gib": 2,
+    "multi_file_tasks": 45
+  },
+  "all_six_tokenization_verified": true,
+  "runtime": "Transformers5.19.0"
+}
