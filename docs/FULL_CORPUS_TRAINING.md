@@ -302,3 +302,13 @@ require a newly prepared pool/run identity. Parser warnings are quality signals,
 not functional verification. This local update does not change a running Molab
 kernel, its cells or its data preparation. The current run can finish with its
 existing code; upload the regenerated notebooks for a later run.
+
+
+## Encoder8k default selected by the user (10 October 2026)
+
+Local training notebooks and repository preparation defaults now use 8192
+encoder/retrieval tokens. Paired decoder remains 2048 total; matched baseline
+budget is 10752. New pool names distinguish enc8k_dec2k from prior 2k artifacts;
+historical receipts and cohorts are not rewritten. This changes preparation
+settings and requires a fresh pool/run. It does not establish training VRAM
+feasibility and does not change the live Molab kernel.

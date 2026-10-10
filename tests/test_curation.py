@@ -260,7 +260,7 @@ def test_curated_resume_rejects_runtime_drift(tmp_path, monkeypatch):
         torch.set_num_threads(previous)
 
 
-@pytest.mark.parametrize("encoder,decoder", [(2048, 2048), (4096, 8192)])
+@pytest.mark.parametrize("encoder,decoder", [(2048, 2048), (4096, 8192), (8192, 2048)])
 def test_frozen_budget_matches_all_six_controls(encoder, decoder):
     from bifocalgemma.data.offline_sft import validate_curated_pool_limits
 

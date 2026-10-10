@@ -380,3 +380,11 @@ the same warning totals and identical manifest, including normalization of the
 stopped-target-count reason on fully checkpointed input. [Receipt](data/python_syntax_diagnostics_smoke_20261010.json).
 These are local tests only; the running Molab session was not edited, interrupted
 or reconfigured for this update. Legacy frozen pools are not relabeled warning-free.
+
+
+Encoder budget update (10 October): three local notebooks now use 8,192 encoder/
+retrieval tokens, with paired decoder2,048 and baseline10,752. Named pool/run paths
+prevent reuse of older 2k artifacts. **40 related tests passed**; generators,
+strict marimo, Ruff, type and whitespace checks passed. The matched notebooks
+retain 20 cells /19 identical bodies. These verify configuration/cohort guards,
+not original-model training memory at the new budget. Molab was not changed.

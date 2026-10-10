@@ -70,7 +70,7 @@
   ],
   "unresolved_benchmark_repo_aliases": [],
   "context_policy": "public_issue_bm25_windows_v1",
-  "context_limit": 4096,
+  "context_limit": 8192,
   "training_decoder_limit": 2048,
   "evaluation_max_new_tokens": 8192,
   "execution_default": false,

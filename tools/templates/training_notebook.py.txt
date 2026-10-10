@@ -60,22 +60,22 @@ def _(mo):
     CORPUS_CACHE_DIR = "outputs/full_corpus_raw"
     CORPUS_TOKENIZER_CACHE = "outputs/repository_tokenizers"
     CORPUS_KIND = "repository"  # repository main study / instruction foundation only
-    FOUNDATION_POOL_DIR = "outputs/full_training_pool_v1"
+    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v1"
     REPOSITORY_SOURCE = "swe_rebench_v2"
     REPOSITORY_TARGET_COUNT = 10000
     REPOSITORY_PER_REPO_LIMIT = 50
     REPOSITORY_DISK_GIB = 20
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "full-pool-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
+    RUN_NAME = "enc8k-dec2k-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
     RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
     DATA_SOURCE = "curated_pool"  # frozen full pool; legacy sources are explicit pilots
-    LOCAL_DATA_FILE = "outputs/full_repository_pool_v1"  # directory with manifest/train/dev
+    LOCAL_DATA_FILE = "outputs/full_repository_pool_enc8k_dec2k_v1"  # directory with manifest/train/dev
     RAW_LIMIT = 10000
     TRAIN_LIMIT = 2000
     DEV_LIMIT = 200
     DEV_FRACTION = 0.1
-    ENCODER_LIMIT = 2048
+    ENCODER_LIMIT = 8192
     DECODER_LIMIT = 2048
     BATCH_SIZE = 1
     GRAD_ACCUMULATION = 4

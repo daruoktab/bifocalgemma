@@ -82,7 +82,7 @@ reward model atau test-driven rollout pada training.
 
 Dedup before/after pairs sebelum split. Train/dev dibagi menurut **commit group**,
 bukan repo-disjoint; dataset ini tidak membuktikan generalisasi ke repository baru.
-Pada curated_pool, seluruh train/dev mengikuti manifest dan limit sampling legacy diabaikan. Seed split sudah dibekukan saat kurasi. Initial token gate kini encoder 2048 / decoder 2048; overflow pada frozen pool adalah error, bukan silent filtering. Legacy sources tetap memiliki knob sampling untuk pilot yang dinyatakan eksplisit.
+Pada curated_pool, seluruh train/dev mengikuti manifest dan limit sampling legacy diabaikan. Seed split sudah dibekukan saat kurasi. Token gate lokal kini encoder 8192 / decoder 2048; overflow pada frozen pool adalah error, bukan silent filtering. Legacy sources tetap memiliki knob sampling untuk pilot yang dinyatakan eksplisit.
 Data manifest memuat source revisions, rows/commits/repos/licenses, instruction/pair
 hashes, tokenizer sources/hashes, tokenization fingerprint dan filter counts.
 
@@ -127,7 +127,7 @@ serta checkpoint compatibility.
 maksimum 749, decoder total maksimum 1.113 setelah contract filtering. Setelah stress
 probe GPU aktual, rekomendasi S1 ialah ENCODER_LIMIT=1024 dan DECODER_LIMIT=1536;
 baseline decoder-only total 2048 menampung context+target yang sama. Default notebook
-yang sekarang 2048/2048 sebagai gate awal full-pool; final budget mengikuti distribusi token corpus penuh dan stress GPU. Lihat [full corpus](FULL_CORPUS_TRAINING.md).
+lokal yang sekarang 8192/2048; baseline diberi budget 10752 untuk context dan target yang sama; final budget mengikuti distribusi token corpus penuh dan stress GPU. Lihat [full corpus](FULL_CORPUS_TRAINING.md).
 NextCoder memerlukan profil terpisah: pada sampel 100 Python rows, decoder median 927,
 bukan target kecil yang otomatis muat 512. Jangan mencampurnya lalu diam-diam
 memotong target atau menyimpulkan 97% overflow sampel sebagai statistik populasi.
@@ -227,3 +227,11 @@ controlled baselines.
 
 
 Repository-mode corpus READY now requires v3 visible-context license evidence, in addition to licenses on patched files. Old patch-only prototype pools are rejected; rebuild under the new policy in a new output directory if an old completed pool already exists. Cached source archives are reused; no model download is required for this validation.
+
+
+User-selected encoder budget (10 October 2026): ENCODER_LIMIT=8192 in both family
+notebooks and CONTEXT_LIMIT=8192 in the universal notebook. Paired decoder stays
+2048; baseline total is 10752 (=8192+2048+512). Named pools and run directories
+now carry enc8k_dec2k, so a frozen 2k pool/checkpoint is not silently reused.
+The running Molab notebook remains unchanged; upload these local notebooks for
+a later run. Original-model forward/backward VRAM at this budget is unmeasured.

@@ -7,7 +7,7 @@ admission, and prepared data/scorer checks are not model scores.
 ## What the default training notebook actually consumes
 
 Defaults: DATA_SOURCE=curated_pool, CORPUS_KIND=repository,
-REPOSITORY_SOURCE=swe_rebench_v2, LOCAL_DATA_FILE=outputs/full_repository_pool_v1.
+REPOSITORY_SOURCE=swe_rebench_v2, LOCAL_DATA_FILE=outputs/full_repository_pool_enc8k_dec2k_v1.
 The preparation cell builds the three-source instruction foundation first and
 then the repository pool. **The training cell consumes only the selected frozen
 pool. It does not concatenate all sources or automatically run two-stage SFT.**
@@ -70,10 +70,13 @@ only 7,192 table candidates before stricter gates, so 10,000 is an upper budget,
 not an achievable-count promise. Train/dev uses connected repository/commit/
 before-seed groups with an approximately 10% dev target; final counts are unknown.
 
-Current caps: encoder2,048 /paired decoder2,048 /baseline decoder4,608. Source
+Current local notebook caps (user update, 10 October): encoder8,192 /paired
+decoder2,048 /baseline decoder10,752. Historical 49,259-example counts above
+remain tied to the older 2k/2k/4,608 frozen pool; new 8k pool counts are not yet measured. Source
 profiles show 8,192 paired-decoder coverage of 96.01% for V2 and 98.63% for
-SWE-Fixer. The 8k-encoder/8k-paired-decoder candidate requires original-model
-VRAM testing; it is not today's default. New caps require a new named frozen pool.
+SWE-Fixer. An 8k paired-decoder budget remains a separate candidate requiring
+original-model VRAM testing. The requested encoder8k default does not imply
+that decoder8k has been selected or that training memory has been validated. New caps require a new named frozen pool.
 
 ## Benchmarks: evaluation roles and current implementation status
 
