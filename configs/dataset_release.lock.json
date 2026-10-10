@@ -1,0 +1,8 @@
+{
+  "repo_id": "daruokta/bifocalgemma-data",
+  "revision": "75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2",
+  "private": true,
+  "release_fingerprint": "1e8a77740ce642e273bdd75827e18deffe8122bba88fdc40d41f6fbbe35c388d",
+  "ready_training_collection": "instruction_enc8k_dec2k_v1",
+  "pending_repository_collection": "repository_enc8k_dec2k_v1"
+}

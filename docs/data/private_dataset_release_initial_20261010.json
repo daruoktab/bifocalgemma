@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-10",
+  "repo_id": "daruokta/bifocalgemma-data",
+  "revision": "57706239ecf03de06b417cd87b8e6b7123944216",
+  "private": true,
+  "collections": [
+    "humanevalfix_python_v1",
+    "gsm8k_zero_shot_v1",
+    "gsm8k_eight_shot_v1"
+  ],
+  "public_gsm8k_roundtrip_count": 1319,
+  "gold_downloaded": false,
+  "training_8k_status": "local_curation_running_not_published",
+  "repository_status": "no_final_manifest_available"
+}

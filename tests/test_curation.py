@@ -338,3 +338,51 @@ def test_repository_pool_requires_context_license_policy_and_coverage(tmp_path):
     export_pool(broken, tmp_path / "broken", current)
     with pytest.raises(ValueError, match="context_license_coverage"):
         load_curated_pool(tmp_path / "broken")
+
+
+@pytest.mark.parametrize("disk", [False, True])
+@pytest.mark.parametrize("candidate_shingles", [None, 16])
+def test_overlap_bound_preserves_near_matches_and_heuristic_index(
+    tmp_path, disk, candidate_shingles
+):
+    from bifocalgemma.data.curation import code_shingles
+
+    code = "\n".join(f"value_{i} = {i}" for i in range(100))
+    query = code.replace("value_0 = 0", "value_0 = 999")
+    index = CodeOverlapIndex(
+        candidate_shingles=candidate_shingles,
+        storage_path=tmp_path / "bound.sqlite" if disk else None,
+    )
+    index.add("expected", code)
+    result = index.match(query)
+    assert result is not None and result["reference"] == "expected"
+    left, right = code_shingles(code), code_shingles(query)
+    assert result["similarity"] == len(left & right) / len(left | right)
+    index.close()
+
+
+def test_full_overlap_index_skips_impossible_blob_reads(tmp_path):
+    common = "\n".join(f"shared_{i} = {i}" for i in range(10))
+    reference = common + "\n" + "\n".join(f"reference_{i} = {i}" for i in range(100))
+    query = common + "\n" + "\n".join(f"query_{i} = {i}" for i in range(100))
+    index = CodeOverlapIndex(storage_path=tmp_path / "bound.sqlite")
+    index.add("low_overlap", reference)
+    statements = []
+    index.db.set_trace_callback(statements.append)
+    assert index.match(query) is None
+    assert not any("SELECT grams FROM codes" in statement for statement in statements)
+    index.close()
+
+
+def test_readonly_partial_postings_never_use_full_intersection_bound(tmp_path):
+    code = "\n".join(f"value_{i} = {i}" for i in range(100))
+    query = code.replace("value_0 = 0", "value_0 = 999")
+    path = tmp_path / "partial.sqlite"
+    writer = CodeOverlapIndex(candidate_shingles=16, storage_path=path)
+    writer.add("expected", code)
+    writer.close()
+    # Existing indexes do not carry a postings-completeness marker. The reader
+    # must conservatively keep the old exact-Jaccard comparison, even with default args.
+    reader = CodeOverlapIndex(storage_path=path, read_only=True)
+    assert reader.match(query)["reference"] == "expected"
+    reader.close()

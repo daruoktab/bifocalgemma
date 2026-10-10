@@ -93,6 +93,9 @@ class CodeOverlapIndex:
     ):
         self.threshold = threshold
         self.candidate_shingles = candidate_shingles
+        # Legacy on-disk indexes do not attest complete postings. Read-only
+        # readers conservatively avoid the intersection-count bound.
+        self.full_postings = not candidate_shingles and not read_only
         self.exact = {}
         self.shingles = {}
         self.inverted = defaultdict(set)
@@ -120,6 +123,8 @@ class CodeOverlapIndex:
         signature = code_signature(code)
         grams = code_shingles(code)
         indexed = sorted(grams)[: self.candidate_shingles] if self.candidate_shingles else grams
+        if self.candidate_shingles:
+            self.full_postings = False
         if self.db is not None:
             self.db.execute("INSERT OR IGNORE INTO exact VALUES (?,?)", (signature, identity))
             blob = struct.pack("<" + "Q" * len(grams), *sorted(grams))
@@ -170,7 +175,16 @@ class CodeOverlapIndex:
             counts.update(
                 identity for gram in candidates for identity in self.inverted.get(gram, ())
             )
-        for identity, _ in counts.most_common():
+        for identity, shared_count in counts.most_common():
+            # With full postings, shared_count is the exact intersection. Since
+            # union >= len(grams), this upper bound cannot reject a valid match.
+            # A minimum-hash index observes only partial counts: never bound it.
+            if (
+                self.full_postings
+                and not self.candidate_shingles
+                and shared_count / len(grams) < self.threshold
+            ):
+                continue
             if self.db is not None:
                 blob = self.db.execute(
                     "SELECT grams FROM codes WHERE identity=?", (identity,)

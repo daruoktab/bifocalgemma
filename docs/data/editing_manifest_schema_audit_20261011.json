@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-11",
+  "paired_records": 49296,
+  "paired_run_manifest_unchanged": true,
+  "pool_fingerprint": "2d3a50c12d0521875b073b926771dbaa0327df758dfb6b13bb745aded88ea67d",
+  "repository_raw_export_has_no_pair_hash": true,
+  "real_tokenizer_repository_preparation": [
+    {
+      "experiment": "BifocalGemma-E2B-E2B",
+      "train": 3,
+      "dev": 1,
+      "fingerprint": "d14b82b9a6cfa63e9e0f32611320246201c36af95367486add51a20c1c55be9d"
+    },
+    {
+      "experiment": "BifocalGemma-E4B-E4B",
+      "train": 3,
+      "dev": 1,
+      "fingerprint": "7ed72d766681618b8a1887dd70754690e0006f027a64525d8eec42780ee0bc7c"
+    },
+    {
+      "experiment": "BifocalGemma-E2B-E4B",
+      "train": 3,
+      "dev": 1,
+      "fingerprint": "2bc0361868884909ff30508c89ca3b5cddf67cb9574f4f8cdbe3c5fd660dc153"
+    },
+    {
+      "experiment": "BifocalGemma-E4B-E2B",
+      "train": 3,
+      "dev": 1,
+      "fingerprint": "041c756189b6919de060e9773663b9bbdfcc9b955916f7a67e2e03839d903152"
+    }
+  ],
+  "native_files_unchanged": true,
+  "release_fingerprint": "1e8a77740ce642e273bdd75827e18deffe8122bba88fdc40d41f6fbbe35c388d",
+  "model_weights_loaded": false
+}

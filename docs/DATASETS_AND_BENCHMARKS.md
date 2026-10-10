@@ -6,16 +6,42 @@ admission, and prepared data/scorer checks are not model scores.
 
 ## What the default training notebook actually consumes
 
-Defaults: DATA_SOURCE=curated_pool, CORPUS_KIND=repository,
-REPOSITORY_SOURCE=swe_rebench_v2, LOCAL_DATA_FILE=outputs/full_repository_pool_enc8k_dec2k_v1.
-The preparation cell builds the three-source instruction foundation first and
-then the repository pool. **The training cell consumes only the selected frozen
-pool. It does not concatenate all sources or automatically run two-stage SFT.**
+Current released-stage defaults: DATA_SOURCE=curated_pool, CORPUS_KIND=instruction,
+DATASET_COLLECTION=instruction_enc8k_dec2k_v1,
+LOCAL_DATA_FILE=outputs/full_instruction_pool_enc8k_dec2k_v1.
+The repository study remains pending until its complete corpus is published;
+REPOSITORY_SOURCE=swe_rebench_v2 is retained for that later explicit selection.
+Normal training reuses a local frozen pool or downloads one named collection
+from the separate private HF dataset repo at a full commit SHA. Upstream
+curation runs only when PREPARE_FULL_POOL=True; that explicit mode builds the
+three-source foundation first and then the repository pool. **The training cell consumes only the selected frozen
+pool. The released instruction pool already combines the three admitted editing
+sources; training does not concatenate different frozen pools or automatically
+run instruction-to-repository two-stage SFT.**
 The foundation also supplies provenance and benchmark quarantine/index information.
 Choose CORPUS_KIND=instruction and its foundation path for the instruction-only
 run. Switching datasets is a new run, not optimizer-state resume across different
 manifest fingerprints. RAW_LIMIT/TRAIN_LIMIT/DEV_LIMIT are legacy pilot controls;
 curated_pool consumes all frozen IDs. MAX_STEPS=0 means complete configured epochs.
+
+See [private dataset release guide](DATASET_RELEASES.md) for roles, immutable
+revisions, archive integrity and benchmark/gold separation.
+
+## Current private 8k instruction release
+
+[Private dataset](https://huggingface.co/datasets/daruokta/bifocalgemma-data) at
+revision 75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2: **49,296 examples =44,366 train /4,930 dev**.
+Encoder8192 /paired decoder2048 /baseline10752. Its fingerprint
+2d3a50c12d0521875b073b926771dbaa0327df758dfb6b13bb745aded88ea67d
+exactly matches the completed instruction pool in the uploaded Molab log.
+Native bytes, IDs, splits and hashes are preserved in the release; this is
+file-editing foundation SFT, not completion of repository repair training.
+Current retained source totals: EditPackFT 20,129; CommitPackFT Python 16,507;
+NextCoder Python 12,660. One epoch at batch1/accum4 has 11,092 optimizer updates
+and 16,542,339 supervised train tokens. The published payload occupies
+106,594,291 bytes (~101.7 MiB), including native archives and viewer projections;
+upstream raw caches are not needed by a normal training run.
+See [release receipt](data/private_dataset_release_20261010.json).
 
 ## Instruction foundation: implemented, complete local historical manifest
 
@@ -41,11 +67,11 @@ for source-history evidence. Per-record code license metadata is checked for
 EditPackFT/CommitPackFT, while NextCoder's declared synthetic dataset license
 is retained with its provenance limitation.
 
-## Repository corpus: primary default and optional secondary source
+## Repository corpus: planned primary study and optional secondary source
 
 | Source | Actual raw table | Candidates before snapshot gates | Role and implementation |
 | --- | --- | --- | --- |
-| nebius/SWE-rebench-V2 | 32,079 rows; 7,243 Python | 7,192 after 46 benchmark-repo and 5 lineage exclusions; 685 repos | Default repository SFT source; static snapshot/patch/context/licensing builder implemented, final production pool pending |
+| nebius/SWE-rebench-V2 | 32,079 rows; 7,243 Python | 7,192 after 46 benchmark-repo and 5 lineage exclusions; 685 repos | Retained source for the planned repository SFT stage; static snapshot/patch/context/licensing builder implemented, final production pool pending |
 | internlm/SWE-Fixer-Train-110K | 115,406 rows under the source adapter's Python convention | 114,352 after table gates; 846 repos | Optional source supported by the builder, not automatically mixed into the default pool |
 
 SWE-rebench V2 raw Parquet is 428,839,266 bytes. SWE-Fixer raw JSONL is
@@ -72,7 +98,7 @@ before-seed groups with an approximately 10% dev target; final counts are unknow
 
 Current local notebook caps (user update, 10 October): encoder8,192 /paired
 decoder2,048 /baseline decoder10,752. Historical 49,259-example counts above
-remain tied to the older 2k/2k/4,608 frozen pool; new 8k pool counts are not yet measured. Source
+remain tied to the older 2k/2k/4,608 frozen pool; new released 8k counts are 44,366 train /4,930 dev. Source
 profiles show 8,192 paired-decoder coverage of 96.01% for V2 and 98.63% for
 SWE-Fixer. An 8k paired-decoder budget remains a separate candidate requiring
 original-model VRAM testing. The requested encoder8k default does not imply

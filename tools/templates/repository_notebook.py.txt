@@ -57,17 +57,20 @@ def _():
     EPOCHS = 1
     RESUME_FROM = ""  # checkpoint-v2 path, empty starts a new run
     TRAINING_DATA_MODE = "curated_pool"  # curated_pool / repository_tasks
-    CURATED_POOL_DIR = "outputs/full_repository_pool_enc8k_dec2k_v1"
+    CURATED_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v1"
     FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v1"
     PREPARE_FULL_POOL = False
-    CORPUS_KIND = "repository"
+    DATASET_REPO_ID = "daruokta/bifocalgemma-data"
+    DATASET_REVISION = "75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2"  # Full immutable dataset commit SHA
+    DATASET_COLLECTION = "instruction_enc8k_dec2k_v1"  # Released editing-foundation stage; repository collection remains pending
+    CORPUS_KIND = "instruction"
     REPOSITORY_SOURCE = "swe_rebench_v2"
     REPOSITORY_TARGET_COUNT = 10000
     REPOSITORY_PER_REPO_LIMIT = 50
     REPOSITORY_DISK_GIB = 20
     ACCUMULATION = 4
     HEADROOM_GIB = 16
-    return (RESUME_FROM, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, PREPARE_FULL_POOL, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, SOURCE, EXPERIMENT, ROWS_FILE, PREPARED_DIR, RUN_DIR, PREDICTIONS_FILE, SCORE_FILE, TOKENIZER_CACHE, MODEL_CACHE, ADAPTER_CHECKPOINT, PYTHON_EVAL, RUN_PREPARE, RUN_TRAINING, RUN_GENERATE, RUN_SCORE, VALIDATE_GOLD, ALLOW_CODE_EXECUTION, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, MAX_NEW_TOKENS, GENERATION_DECODER_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, MAX_STEPS, EPOCHS, ACCUMULATION, HEADROOM_GIB)
+    return (RESUME_FROM, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, PREPARE_FULL_POOL, DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, SOURCE, EXPERIMENT, ROWS_FILE, PREPARED_DIR, RUN_DIR, PREDICTIONS_FILE, SCORE_FILE, TOKENIZER_CACHE, MODEL_CACHE, ADAPTER_CHECKPOINT, PYTHON_EVAL, RUN_PREPARE, RUN_TRAINING, RUN_GENERATE, RUN_SCORE, VALIDATE_GOLD, ALLOW_CODE_EXECUTION, FETCH_SOURCE_ROWS, FETCH_TOKENIZERS, ALLOW_GIT_NETWORK, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, MAX_NEW_TOKENS, GENERATION_DECODER_LIMIT, RAW_LIMIT, TASK_LIMIT, PER_REPO_LIMIT, MAX_STEPS, EPOCHS, ACCUMULATION, HEADROOM_GIB)
 
 
 @app.cell
@@ -144,7 +147,7 @@ def _(HfApi, hf_form, mo, os):
 
 
 @app.cell
-def _(PREPARE_FULL_POOL, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, runtime_root, get_experiment, fetch_tokenizer_assets, hf_token, json, mo):
+def _(PREPARE_FULL_POOL, DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOUNDATION_POOL_DIR, CORPUS_KIND, REPOSITORY_SOURCE, REPOSITORY_TARGET_COUNT, REPOSITORY_PER_REPO_LIMIT, REPOSITORY_DISK_GIB, TOKENIZER_CACHE, CONTEXT_LIMIT, TRAIN_DECODER_LIMIT, Path, runtime_root, get_experiment, fetch_tokenizer_assets, hf_token, json, mo):
     from bifocalgemma.data.full_pool import prepare_full_corpus
     from bifocalgemma.data.repository_corpus import prepare_repository_corpus
     from bifocalgemma.data.offline_sft import load_curated_pool, validate_curated_pool_limits
@@ -154,11 +157,16 @@ def _(PREPARE_FULL_POOL, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOU
     if PREPARE_FULL_POOL or (RUN_TRAINING and TRAINING_DATA_MODE == "curated_pool"):
         if CORPUS_KIND not in {"instruction", "repository"}:
             raise ValueError("Choose instruction or repository corpus kind.")
+        if not Path(CURATED_POOL_DIR).exists() and not PREPARE_FULL_POOL:
+            if not DATASET_REVISION or not DATASET_COLLECTION:
+                raise ValueError("Frozen pool missing. Choose a published collection and full dataset commit SHA; upstream curation requires PREPARE_FULL_POOL=True.")
+            from bifocalgemma.data.releases import fetch_collection
+            fetch_collection(DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, CURATED_POOL_DIR, token=hf_token)
         for _name in ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"):
             fetch_tokenizer_assets(get_experiment(_name), Path(TOKENIZER_CACHE), token=hf_token)
         _config = json.loads((runtime_root / "configs/repository_study.json").read_text(encoding="utf-8"))
         _foundation = FOUNDATION_POOL_DIR if CORPUS_KIND == "repository" else CURATED_POOL_DIR
-        if not Path(_foundation).exists():
+        if PREPARE_FULL_POOL and not Path(_foundation).exists():
             prepare_full_corpus("outputs/full_corpus_raw", _foundation, TOKENIZER_CACHE, _config, token=hf_token, encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT)
         if not Path(CURATED_POOL_DIR).exists():
             prepare_repository_corpus("outputs/full_corpus_raw", CURATED_POOL_DIR, FOUNDATION_POOL_DIR, TOKENIZER_CACHE, _config, source=REPOSITORY_SOURCE, token=hf_token, target_count=REPOSITORY_TARGET_COUNT, per_repo_limit=REPOSITORY_PER_REPO_LIMIT, context_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT, disk_budget_gib=REPOSITORY_DISK_GIB, progress=lambda _row: print(json.dumps(_row), flush=True))

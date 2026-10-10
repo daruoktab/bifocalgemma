@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-10",
+  "fixture": "200 reference files /20 low-overlap queries",
+  "identical_results": true,
+  "original_seconds": 0.23621830000774935,
+  "bounded_seconds": 0.07937639998272061,
+  "scope": "Synthetic query cost only, not a total curation speed guarantee. Exact full-postings intersection bounds Jaccard; minimum-hash candidate counts remain unbounded."
+}

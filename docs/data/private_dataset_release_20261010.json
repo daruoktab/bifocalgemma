@@ -1,0 +1,108 @@
+{
+  "repo_id": "daruokta/bifocalgemma-data",
+  "revision": "75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2",
+  "private": true,
+  "release_fingerprint": "1e8a77740ce642e273bdd75827e18deffe8122bba88fdc40d41f6fbbe35c388d",
+  "date": "2026-10-10",
+  "counts": {
+    "instruction_enc8k_dec2k_v1": {
+      "train": 44366,
+      "dev": 4930
+    },
+    "humanevalfix_python_v1": {
+      "test": 164
+    },
+    "gsm8k_zero_shot_v1": {
+      "test": 1319
+    },
+    "gsm8k_eight_shot_v1": {
+      "test": 1319
+    }
+  },
+  "pool_fingerprint": "2d3a50c12d0521875b073b926771dbaa0327df758dfb6b13bb745aded88ea67d",
+  "token_limits": {
+    "encoder": 8192,
+    "pair_decoder": 2048,
+    "baseline_decoder": 10752
+  },
+  "repository_collection_status": "not_published_no_complete_manifest",
+  "benchmark_catalog": [
+    {
+      "name": "HumanEvalFix Python",
+      "status": "prepared_native_scorer_adaptation",
+      "count": 164,
+      "source": [
+        "bigcode/humanevalpack",
+        "9a41762f73a8cb23bb5811b73d5aab164efcf378",
+        "python/test-00000-of-00001.parquet"
+      ],
+      "collection": "humanevalfix_python_v1"
+    },
+    {
+      "name": "GSM8K",
+      "status": "prepared_release_style_scoring",
+      "count": 1319,
+      "revision": "3101c7d5072418e28b9008a6636bde82a006892c",
+      "collections": [
+        "gsm8k_zero_shot_v1",
+        "gsm8k_eight_shot_v1"
+      ]
+    },
+    {
+      "name": "CanItEdit",
+      "status": "quarantine_only_production_scorer_pending",
+      "count": 105,
+      "source": [
+        "nuprl/CanItEdit",
+        "3c07f38b1f9385f3214fcea94d4664c79df0d36a",
+        "data/test-00000-of-00001.parquet"
+      ]
+    },
+    {
+      "name": "RES-Q",
+      "status": "native_environment_and_license_payload_review_pending",
+      "count": 100,
+      "source": [
+        "Qurrent/RES-Q",
+        "c0e850b1c90d1c0eb7d3b2f3c9aa6ec09c2c04fa",
+        "dataset.json"
+      ]
+    },
+    {
+      "name": "RepoQA Python",
+      "status": "local_oracle_window_diagnostic_not_official_protocol_payload_review_pending",
+      "count": 100,
+      "url": "https://github.com/evalplus/repoqa_release/releases/download/2024-06-23/repoqa-2024-06-23.json.gz"
+    },
+    {
+      "name": "CrossCodeEval Python",
+      "status": "non_reference_context_exact_match_adaptation_notice_review_pending",
+      "count": 2665,
+      "url": "https://raw.githubusercontent.com/amazon-science/cceval/40c68d2b7ca2a8eae95d901ac80e6a540a84a53d/data/crosscodeeval_data.tar.xz"
+    },
+    {
+      "name": "repository_enc8k_dec2k_v1",
+      "role": "train",
+      "status": "not_published_incomplete_curation",
+      "source": "nebius/SWE-rebench-V2",
+      "last_logged_accepted": 1597,
+      "last_logged_examined": 16808
+    }
+  ],
+  "source_counts": {
+    "nuprl/EditPackFT": 20129,
+    "microsoft/NextCoderDataset": 12660,
+    "bigcode/commitpackft": 16507
+  },
+  "training_plan": {
+    "epochs": 1,
+    "accumulation": 4,
+    "batch_size": 1,
+    "updates_full_epoch": 11092,
+    "supervised_train_tokens": 16542339,
+    "supervised_dev_tokens": 1767383
+  },
+  "release_bytes": 106594291,
+  "download_roundtrip_verified": true,
+  "matches_molab_log_fingerprint": true
+}

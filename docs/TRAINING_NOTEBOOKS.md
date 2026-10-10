@@ -27,10 +27,10 @@ Asimetris: untied encoder words, learned H projection. PLE tetap separate.
    anonim bila tersedia. Read token cukup untuk unduh; berikan token write bila
    mengaktifkan upload run artifacts ke Hub (HF_UPLOAD_ENABLED=True).
 3. Pilih EXPERIMENT dari keluarga notebook; ubah RUN_NAME untuk eksperimen baru.
-4. Aktifkan **PREPARE_FULL_POOL=True**, biarkan RUN_TRAINING=False. Cell corpus mengunduh sumber pinned, memverifikasi benchmark dan menyiapkan foundation lalu repository corpus.
-5. Periksa tabel READY/counts, lalu ubah **RUN_TRAINING=True** untuk epoch penuh. Default False menjaga
+4. Pilih DATASET_REPO_ID, DATASET_REVISION (full commit SHA), dan DATASET_COLLECTION yang sudah dipublikasikan; sesuaikan CORPUS_KIND serta LOCAL_DATA_FILE. Kurasi dijalankan terpisah di CPU, bukan otomatis saat training. Lihat [dataset releases](DATASET_RELEASES.md).
+5. Aktifkan **RUN_TRAINING=True**; cell dataset mengunduh/memverifikasi pool beku sebelum training, lalu periksa tabel READY/counts. Default False menjaga
    pembukaan notebook/checks tidak langsung mengunduh atau melatih model besar.
-5. Amati preprocessing count, training logs/dev CE, lalu lokasi checkpoint/report.
+6. Amati preprocessing count, training logs/dev CE, lalu lokasi checkpoint/report.
 
 Satu notebook melatih **satu pasangan pada satu run**. Untuk pasangan kedua,
 ubah EXPERIMENT dan jalankan run baru. Menjalankan dua notebook di GPU yang sama
@@ -68,7 +68,7 @@ run aktif kecuali memang hendak memulai ulang rerun boundary.
 
 ## Data dan objective
 
-Default sekarang **curated_pool** dengan CORPUS_KIND=repository, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
+Default release-stage sekarang **curated_pool** dengan CORPUS_KIND=instruction dan koleksi instruction_enc8k_dec2k_v1. Ini pilot editing foundation; studi repository menunggu pool lengkap. Konfigurasi dataset beku, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
 `data/train-00000-of-00001.parquet`. Opsi **CommitPackFT Python** revision
 `fc56fe33c030c6daa414c2b112c932b8eed085e6`, file `data/python/data.jsonl`.
 Pilihan local_jsonl menerima schema old_file/new_file, old_contents/new_contents,

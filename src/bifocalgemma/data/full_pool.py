@@ -299,6 +299,8 @@ def main():
         "--fetch", action="store_true", help="Explicit public dataset downloads; no model weights."
     )
     parser.add_argument("--audit-repository", action="store_true")
+    parser.add_argument("--encoder-limit", type=int, default=8192)
+    parser.add_argument("--decoder-limit", type=int, default=2048)
     args = parser.parse_args()
     if not args.fetch:
         raise ValueError("Use --fetch to authorize pinned public dataset downloads.")
@@ -317,6 +319,8 @@ def main():
         args.tokenizer_cache,
         config,
         audit_repository=args.audit_repository,
+        encoder_limit=args.encoder_limit,
+        decoder_limit=args.decoder_limit,
         progress=progress,
     )
 

@@ -162,3 +162,9 @@ yang belum terverifikasi tetap diberi status demikian.
 Full-corpus admission dan complete-epoch defaults dijelaskan dalam [panduan](docs/FULL_CORPUS_TRAINING.md). Kurasi penuh sedang berjalan; jumlah upstream bukan jumlah yang sudah lolos training admission. Pilot model asli E2B–E2B berhasil 100 steps dengan peak allocated 23,38 GiB; ini belum skor repair.
 
 Manual Molab upload kini menyiapkan corpus melalui cell PREPARE_FULL_POOL. Dependency mengikuti env ai (Torch 2.14.1/cu130, Transformers 5.19.0). Foundation terverifikasi: 44.333 train / 4.926 dev; main repository corpus memakai snapshot berlisensi dan public-issue context. Lihat [panduan](docs/FULL_CORPUS_TRAINING.md).
+
+Dataset releases are staged in the separate private HF dataset repository
+[daruokta/bifocalgemma-data](https://huggingface.co/datasets/daruokta/bifocalgemma-data).
+See [release guide](docs/DATASET_RELEASES.md) for immutable revisions, current
+collection readiness and benchmark/gold separation. Data payloads remain outside
+this Git repository.

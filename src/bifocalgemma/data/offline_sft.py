@@ -105,35 +105,49 @@ def split_editing_records(records, *, seed=17, dev_fraction=0.1, train_limit=200
 
 
 def editing_manifest(records):
-    return [
-        {
-            **{
-                key: row[key]
-                for key in (
-                    "record_type",
-                    "source_revision",
-                    "snapshot_sha256",
-                    "context_selection",
-                )
-                if key in row
-            },
-            **{
-                key: row[key]
-                for key in (
-                    "instance_id",
-                    "group",
-                    "pair_hash",
-                    "instruction_hash",
-                    "path",
-                    "source",
-                    "commit",
-                    "repos",
-                    "license",
-                )
-            },
-        }
-        for row in records
-    ]
+    """Build run metadata from paired-file rows or native repository exports.
+
+    Repository pools intentionally store snapshot/patch identity rather than the
+    paired-file convenience hashes. Normalize a copy only; never rewrite frozen
+    files, cohort IDs or split membership.
+    """
+    manifest = []
+    for raw in records:
+        row = raw
+        if raw.get("record_type") == "repository_patch_v1":
+            row = repository_editing_record(raw)
+            for key in ("pair_hash", "instruction_hash"):
+                if key in raw and raw[key] != row[key]:
+                    raise ValueError("repository_manifest_hash_mismatch:" + key)
+        manifest.append(
+            {
+                **{
+                    key: row[key]
+                    for key in (
+                        "record_type",
+                        "source_revision",
+                        "snapshot_sha256",
+                        "context_selection",
+                    )
+                    if key in row
+                },
+                **{
+                    key: row[key]
+                    for key in (
+                        "instance_id",
+                        "group",
+                        "pair_hash",
+                        "instruction_hash",
+                        "path",
+                        "source",
+                        "commit",
+                        "repos",
+                        "license",
+                    )
+                },
+            }
+        )
+    return manifest
 
 
 def stable_fingerprint(value):
@@ -272,7 +286,11 @@ def validate_curated_pool_limits(manifest, *, encoder_limit, decoder_limit):
 
 def validate_context_license_record(row):
     """Check complete recorded coverage; artifact hashes bind this provenance."""
-    from bifocalgemma.data.curation import PERMITTED_CODE_LICENSES
+    import importlib
+
+    PERMITTED_CODE_LICENSES = importlib.import_module(
+        "bifocalgemma.data.curation"
+    ).PERMITTED_CODE_LICENSES
 
     paths = {window["path"] for window in row.get("context_selection", {}).get("windows", [])}
     evidence = row.get("context_source_code_license_evidence", [])

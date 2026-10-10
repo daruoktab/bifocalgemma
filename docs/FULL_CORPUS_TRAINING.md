@@ -79,7 +79,7 @@ loading; file checksums and instance order are verified before training.
 
 The two matched notebooks retain 20 cells / 19 identical bodies. Their new
 default is `DATA_SOURCE="curated_pool"`, with `LOCAL_DATA_FILE` pointing to the
-pool directory. A separate `PREPARE_FULL_POOL` cell fetches all pinned sources and builds the pool on a fresh Molab session; no checkout/data folder upload is required. `RUN_TRAINING=False` remains the startup guard. `MAX_STEPS=0`
+pool directory. The preparation cell downloads one frozen collection from the private dataset repo at a full commit SHA. `PREPARE_FULL_POOL=True` is an explicit separate CPU curation option; ordinary training never implicitly starts it. See [dataset releases](DATASET_RELEASES.md). `RUN_TRAINING=False` remains the startup guard. `MAX_STEPS=0`
 means all configured epochs over the frozen split; positive values explicitly
 limit updates. `EPOCHS=1`, batch 1, accumulation 4 give approximately
 `ceil(train_examples/4)` optimizer updates. Evaluation/checkpoint intervals default
@@ -127,11 +127,16 @@ not simply setting 32k/8k.
 ## Manual Molab upload
 
 Upload the regenerated symmetric/asymmetric notebook `.py` only. Apply the HF
-read token in its dedicated cell, set PREPARE_FULL_POOL=True, and wait for READY.
-The default CORPUS_KIND=repository first prepares the instruction foundation, then
-SWE-rebench V2 Python before snapshots with issue-only retrieval and static patch
-roundtrips. LOCAL_DATA_FILE defaults to `outputs/full_repository_pool_v1`;
-FOUNDATION_POOL_DIR remains `outputs/full_training_pool_v1`.
+read token, then select DATASET_REPO_ID, DATASET_REVISION and DATASET_COLLECTION.
+The normal run downloads an immutable published pool and does not build snapshots.
+The repository collection is not ready until a complete repository manifest
+is uploaded. Do not silently substitute the instruction foundation.
+Current local limits remain encoder8192 /paired decoder2048 /baseline10752.
+For instruction-only editing, explicitly select its published collection,
+CORPUS_KIND=instruction and the matching LOCAL_DATA_FILE.
+
+The current notebook default selects the published instruction foundation;
+repository curation and its collection are still pending.
 
 The repository budget targets at most 10,000 accepted examples, at most 50 per
 repository, and 20 GiB compressed archives. These are explicit resource controls,
