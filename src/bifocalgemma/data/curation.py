@@ -1,6 +1,5 @@
 """Auditable full-corpus editing admission; never executes source code."""
 
-import ast
 import hashlib
 import io
 import json
@@ -10,6 +9,12 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from bifocalgemma.data.offline_sft import editing_record, stable_fingerprint
+from bifocalgemma.data.python_quality import (
+    SYNTAX_DIAGNOSTICS_POLICY,
+    count_syntax_warnings,
+    empty_syntax_warning_summary,
+    inspect_python_target,
+)
 from bifocalgemma.data.repository import repo_identity
 
 SOURCE_REFS = {
@@ -246,6 +251,7 @@ def curate_paired_sources(
     accepted = []
     rejected = []
     stats = {}
+    warning_stats = {}
     seen_pairs = {}
     near_edits = CodeOverlapIndex(
         threshold=0.95, candidate_shingles=16, storage_path=near_index_path
@@ -255,8 +261,10 @@ def curate_paired_sources(
         if source not in SOURCE_REFS:
             raise ValueError("source_not_admitted: " + source)
         counts = Counter()
+        warning_summary = empty_syntax_warning_summary()
         for offset, raw in enumerate(rows):
             counts["raw"] += 1
+            syntax_diagnostics = []
             try:
                 normalized = nextcoder_row(raw, offset=offset) if source == "nextcoder" else raw
                 row = editing_record(
@@ -282,10 +290,10 @@ def curate_paired_sources(
                     if "\0" in code:
                         raise ValueError("null_byte")
                     if code == row["after"]:
-                        try:
-                            ast.parse(code)
-                        except (SyntaxError, ValueError, RecursionError) as error:
-                            raise ValueError("invalid_target_python_syntax") from error
+                        syntax_diagnostics = inspect_python_target(
+                            code, filename=f"{source}[{offset}]:{row['path']}"
+                        )
+                        count_syntax_warnings(warning_summary, syntax_diagnostics)
                     overlap = benchmark_index.match(code)
                     if overlap:
                         raise ValueError(
@@ -315,6 +323,10 @@ def curate_paired_sources(
                         "before_signature": code_signature(row["before"]),
                         "normalized_pair_hash": pair,
                         "quality_gate": "static_python_parse_not_functional_validation",
+                        "target_syntax_warnings": syntax_diagnostics,
+                        "quality_flags": ["target_has_syntax_warning"]
+                        if syntax_diagnostics
+                        else [],
                     }
                 )
                 row["instance_id"] = stable_fingerprint(
@@ -322,16 +334,29 @@ def curate_paired_sources(
                 )
                 accepted.append(row)
                 counts["accepted"] += 1
+                count_syntax_warnings(warning_summary, syntax_diagnostics, accepted=True)
             except ValueError as error:
                 reason = str(error)
                 counts["rejected:" + reason.split(":")[0]] += 1
-                rejected.append({"source": source, "upstream_row": offset, "reason": reason})
+                rejected.append(
+                    {
+                        "source": source,
+                        "upstream_row": offset,
+                        "reason": reason,
+                        "target_syntax_warnings": syntax_diagnostics,
+                    }
+                )
             if progress and counts["raw"] % 5000 == 0:
-                progress({"source": source, "counts": dict(counts)})
+                progress(
+                    {"source": source, "counts": dict(counts), "syntax_warnings": warning_summary}
+                )
         stats[source] = dict(counts)
+        warning_stats[source] = warning_summary
     near_edits.close()
     return accepted, {
         "source_counts": stats,
+        "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
+        "syntax_warning_summary": warning_stats,
         "rejected": rejected,
         "near_duplicate_policy": "exact normalized edit pairs plus within-pool Jaccard >=0.95 (16 minimum-hash shingle candidate heuristic); near benchmark overlap uses token-shingle Jaccard >=0.8; semantic similarity not certified",
     }

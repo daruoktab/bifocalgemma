@@ -21,6 +21,10 @@ from bifocalgemma.data.curation import (
     token_profile,
 )
 from bifocalgemma.data.offline_sft import stable_fingerprint
+from bifocalgemma.data.python_quality import (
+    SYNTAX_DIAGNOSTICS_POLICY,
+    summarize_admitted_warning_records,
+)
 from bifocalgemma.data.repository import read_source_rows, repo_identity
 
 BENCHMARK_FILES = {
@@ -251,6 +255,11 @@ def build_full_pool(
         "source_file_sha256": {k: [file_digest(p) for p in source_files[k]] for k in SOURCE_REFS},
         "benchmark_quarantine": benchmark_report,
         "admission": admission,
+        "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
+        "final_cohort_syntax_warnings": {
+            "train": summarize_admitted_warning_records(train),
+            "dev": summarize_admitted_warning_records(dev),
+        },
         "tokens": profile,
         "split": split,
         "training_plan": {

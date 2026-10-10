@@ -279,3 +279,26 @@ Historical four/64-task adapter receipts continue to describe their original
 validation scope; they are not license-complete SFT approval. A separate
 [four-real-task v3 check](data/repository_context_license_smoke_v3_20261009.json)
 verifies the strengthened exporter and consumer using cached immutable source.
+
+
+## Parser warning diagnostics (10 October 2026)
+
+Local code now captures AST-emitted SyntaxWarning per target, retaining category,
+kind, source/row or task/file identity and line number. Target bytes, patches,
+normalization hashes and acceptance criteria are unchanged. SyntaxError,
+ValueError and RecursionError still fail the syntax gate; other warning
+categories are re-emitted after the scoped capture. No target source is executed.
+
+Instruction progress/report summaries distinguish all parsed warning-bearing
+examples from admitted examples; final train/dev summaries describe the cohort
+after token caps. Records keep target_syntax_warnings and quality_flags. Repository
+outcomes checkpoint these diagnostics and rebuild summaries on resume. Its ledger
+version is repository_archive_v4_syntax_diagnostics so old unmeasured outcomes
+cannot silently become "warning-free" v4 records.
+
+Existing frozen pools remain immutable and show not_collected_in_this_frozen_pool
+in the notebook's READY table if they predate these diagnostics. New diagnostics
+require a newly prepared pool/run identity. Parser warnings are quality signals,
+not functional verification. This local update does not change a running Molab
+kernel, its cells or its data preparation. The current run can finish with its
+existing code; upload the regenerated notebooks for a later run.

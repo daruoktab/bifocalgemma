@@ -1,6 +1,5 @@
 """Pinned text Git archives and licensed, issue-only repository SFT admission."""
 
-import ast
 import hashlib
 import http.client
 import json
@@ -23,6 +22,12 @@ from bifocalgemma.data.curation import (
 )
 from bifocalgemma.data.offline_sft import load_curated_pool, stable_fingerprint
 from bifocalgemma.data.patches import patch_paths, safe_repo_path
+from bifocalgemma.data.python_quality import (
+    SYNTAX_DIAGNOSTICS_POLICY,
+    count_syntax_warnings,
+    empty_syntax_warning_summary,
+    inspect_python_target,
+)
 from bifocalgemma.data.repository import (
     prepare_repository_record_with_snapshot,
     read_source_rows,
@@ -385,6 +390,7 @@ def build_repository_corpus(
         EXPERIMENT_SPECS[0].decoder, Path(tokenizer_cache)
     )
     counts = Counter()
+    warning_summary = empty_syntax_warning_summary()
     accepted = []
     exclusions = []
     repo_counts = Counter()
@@ -398,7 +404,8 @@ def build_repository_corpus(
         "context_limit": context_limit,
         "decoder_limit": decoder_limit,
         "disk_budget_gib": disk_budget_gib,
-        "admission_version": "repository_archive_v3_context_licenses",
+        "admission_version": "repository_archive_v4_syntax_diagnostics",
+        "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
         "study_config_fingerprint": stable_fingerprint(study_config),
         "tokenizer_assets_fingerprint": stable_fingerprint(
             [encoder_assets, other_encoder_assets, decoder_assets]
@@ -416,6 +423,7 @@ def build_repository_corpus(
     for offset, outcome in ledger.rows():
         last_offset = offset
         counts["examined"] += 1
+        count_syntax_warnings(warning_summary, outcome.get("target_syntax_warnings", []))
         if outcome.get("lineage"):
             seen.add(outcome["lineage"])
         if "record" in outcome:
@@ -423,6 +431,9 @@ def build_repository_corpus(
             accepted.append(record)
             repo_counts[record["canonical_repos"][0]] += 1
             counts["accepted"] += 1
+            count_syntax_warnings(
+                warning_summary, record.get("target_syntax_warnings", []), accepted=True
+            )
         else:
             exclusions.append(outcome["exclusion"])
             counts["rejected:" + outcome["exclusion"]["reason"].split(":")[0]] += 1
@@ -436,6 +447,7 @@ def build_repository_corpus(
             break
         counts["examined"] += 1
         outcome = {}
+        syntax_diagnostics = []
         identifier = str(raw.get("instance_id", offset))
         try:
             task = repository_task_from_row(source, raw)
@@ -478,10 +490,11 @@ def build_repository_corpus(
                     if code and index.match(code):
                         raise ValueError("benchmark_code_overlap")
                 if path.endswith(".py") and path in fixed_files:
-                    try:
-                        ast.parse(fixed_files[path])
-                    except (SyntaxError, ValueError, RecursionError) as error:
-                        raise ValueError("invalid_target_python_syntax") from error
+                    syntax_diagnostics.extend(
+                        inspect_python_target(
+                            fixed_files[path], filename=f"{task.instance_id}:{path}"
+                        )
+                    )
             pair = tokenize_repository_record(
                 row,
                 EXPERIMENT_SPECS[0],
@@ -517,17 +530,22 @@ def build_repository_corpus(
                     - 1,
                 },
                 changed_file_count=len(patch_paths(task.target_patch)),
+                target_syntax_warnings=syntax_diagnostics,
+                quality_flags=["target_has_syntax_warning"] if syntax_diagnostics else [],
             )
             accepted.append(row)
             outcome["record"] = row
             repo_counts[canonical] += 1
             counts["accepted"] += 1
+            count_syntax_warnings(warning_summary, syntax_diagnostics)
+            count_syntax_warnings(warning_summary, syntax_diagnostics, accepted=True)
             if progress:
                 progress(
                     {
                         "repository_corpus": source,
                         "counts": dict(counts),
                         "last_accepted": identifier,
+                        "syntax_warnings": warning_summary,
                     }
                 )
         except (
@@ -543,6 +561,8 @@ def build_repository_corpus(
             exclusion = {"upstream_row": offset, "instance_id": identifier, "reason": reason}
             exclusions.append(exclusion)
             outcome["exclusion"] = exclusion
+            count_syntax_warnings(warning_summary, syntax_diagnostics)
+        outcome["target_syntax_warnings"] = syntax_diagnostics
         ledger.save(offset, outcome)
         if (
             sum(p.stat().st_size for p in (cache / "archives").glob("*") if p.is_file())
@@ -553,11 +573,15 @@ def build_repository_corpus(
         if len(accepted) >= target_count:
             counts["stopped_target_count"] += 1
             break
+    if len(accepted) >= target_count:
+        counts["stopped_target_count"] = 1
     ledger.close()
     index.close()
     train, dev, split = split_connected_records(accepted)
     report = {
         "source": source,
+        "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
+        "syntax_warning_summary": warning_summary,
         "preparation_settings": settings,
         "source_file_sha256": file_digest(rows_file),
         "foundation_fingerprint": foundation["fingerprint"],

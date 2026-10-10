@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-10",
+  "scope": "Four real cached repository records; warning capture and resume aggregation, not repair quality or a server mutation.",
+  "manifest_fingerprint": "819697dd926fc7cf69cc5f47b4ac1f79e4767b1925a5d143bdb1a85c505a9610",
+  "unchanged_target_and_existing_record_fields": true,
+  "warning_summary": {
+    "parsed_targets_with_warnings": 1,
+    "parsed_warning_events": 2,
+    "parsed_by_kind": {
+      "invalid_escape_sequence": 2
+    },
+    "accepted_targets_with_warnings": 1,
+    "accepted_warning_events": 2,
+    "accepted_by_kind": {
+      "invalid_escape_sequence": 2
+    }
+  },
+  "resume_manifest_identical": true,
+  "admission_version": "repository_archive_v4_syntax_diagnostics"
+}

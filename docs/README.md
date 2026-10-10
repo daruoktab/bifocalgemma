@@ -61,3 +61,6 @@ yang disertakan. Config/checksum resmi dan contoh synthetic dibedakan dengan jel
 
 
 [GSM8K supplementary evaluation and context budgets](GSM8K_CONTEXT.md) documents the executable pinned adapter, math generation/scoring workflow, full 1,319-case tokenizer validation, and the separate larger-window GPU gate.
+
+
+[Dataset and benchmark inventory from current code](DATASETS_AND_BENCHMARKS.md) distinguishes the default repository SFT pool, optional instruction runs, conditional sources, mandatory quarantine artifacts, implemented scorers and pending adapters.

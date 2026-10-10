@@ -1,125 +1,140 @@
-# Dataset dan Benchmark: Offline Code Editing / Repair SFT
+# Dataset and benchmark inventory from current code
 
-Recipe aktif diperbarui **7 Oktober 2026**: SFT `instruksi + kode sebelum edit → patch`.
-Data preparation dan tuning berjalan dari file lokal, tanpa RL, reward model,
-agent rollouts, VM, atau Docker sebagai prasyarat. Environment `ai` tetap dipakai;
-kebutuhan GPU pretrained ditentukan oleh profiling, terpisah dari kebutuhan VM.
+Checked 10 October 2026 against source dispatch, notebook defaults, frozen local
+manifests and adapter/scorer implementations. Raw-source counts are not training
+admission, and prepared data/scorer checks are not model scores.
 
-Analisis resource dan keputusan lengkap ada di [paket Molab](MOLAB_DATA_EVALUATION_PLAN.md),
-dengan [hasil profiling](data/molab_data_profile_20261007.json). Pilihan aktif: EditPackFT
-untuk SFT; HumanEvalFix-docs Python sebagai functional benchmark utama setelah runner
-siap. CanItEdit memakai dependency gate/subset native; CrossCodeEval adalah diagnostic.
+## What the default training notebook actually consumes
 
-## Scope studi akhir setelah pencarian luas
+Defaults: DATA_SOURCE=curated_pool, CORPUS_KIND=repository,
+REPOSITORY_SOURCE=swe_rebench_v2, LOCAL_DATA_FILE=outputs/full_repository_pool_v1.
+The preparation cell builds the three-source instruction foundation first and
+then the repository pool. **The training cell consumes only the selected frozen
+pool. It does not concatenate all sources or automatically run two-stage SFT.**
+The foundation also supplies provenance and benchmark quarantine/index information.
+Choose CORPUS_KIND=instruction and its foundation path for the instruction-only
+run. Switching datasets is a new run, not optimizer-state resume across different
+manifest fingerprints. RAW_LIMIT/TRAIN_LIMIT/DEV_LIMIT are legacy pilot controls;
+curated_pool consumes all frozen IDs. MAX_STEPS=0 means complete configured epochs.
 
-Untuk mempertahankan klaim repository encoding, shortlist core repo SFT adalah
-SWE-Fixer raw issue/patch atau SWE-rebench V2 Python dengan static Git snapshots.
-RES-Q Python (95 tasks) menjadi kandidat main repository-editing evaluation; RepoQA
-Python (100 tasks) reader diagnostic. HumanEvalFix tetap kontrol repair kecil.
-RES-Q bukan seluruhnya bug repair; native gold execution dan compatibility belum
-dijalankan. [Riset lengkap](RESEARCH_REPOSITORY_DATA_AND_BENCHMARKS.md) menyimpan
-schema, ukuran, profil, lisensi, batas oracle context dan pekerjaan adapter.
-Pilihan ini merupakan target studi akhir, bukan backend yang otomatis tersedia.
+## Instruction foundation: implemented, complete local historical manifest
 
-## Dataset untuk tahap awal
+| Source | Raw release used | Format / input and target | Retained after all historical gates | Raw cache size |
+| --- | ---: | --- | ---: | ---: |
+| nuprl/EditPackFT | 22,602 Python edits | Parquet; old/new file contents plus editing instruction | 18,086 train +2,043 dev =20,129 | 48,124,127 bytes |
+| bigcode/commitpackft (Python) | 56,025 | JSONL; old/new code, commit subject/message, repository and license metadata | 14,803 train +1,704 dev =16,507 | 135,858,935 bytes |
+| microsoft/NextCoderDataset | 381,123 mixed-language rows; 45,837 Python | Six Arrow shards; prompt/completion fenced-code adapter, synthetic instruction editing | 11,444 train +1,179 dev =12,623 | 2,627,226,320 bytes, all six shards |
 
-| Sumber | Peran aktif | Field / batas |
-| --- | --- | --- |
-| [EditPackFT](https://huggingface.co/datasets/nuprl/EditPackFT) | Primary pilot instruction editing Python | `instruction`, `old_contents`, `new_contents`, file paths, commit/repo/license tersedia; sekitar 22.602 records dan 48,1 MB Parquet pada pemeriksaan metadata 6 Oktober. Tidak semua edit adalah verified bug fix. |
-| [CommitPackFT Python](https://huggingface.co/datasets/bigcode/commitpackft) | Tambahan opsional setelah dedup/quality audit | `subject`, `old_contents`, `new_contents`, paths, commit/repo/license; 56.025 records, sekitar 136 MB JSONL. Commit message tidak otomatis merupakan issue yang baik atau bug fix yang teruji. |
-| Static multi-file records lokal | Tahap lanjutan untuk repository understanding | Semua file sebelum edit diberikan sebagai snapshot; instruksi + target patch. Records dengan full snapshot dapat dipakai tanpa menjalankan environment repository. Corpus riil belum tersedia. |
+Historical final pool: **49,259 examples =44,333 train /4,926 dev**, 16,513,084
+supervised train tokens, 11,084 optimizer updates for one epoch at batch1/accum4.
+The export occupies 479,291,101 bytes including train/dev and manifest; indexes
+and source caches are additional. See [frozen receipt](data/full_instruction_pool_20261009.json).
+These counts describe that immutable build, not the running Molab build or a
+new syntax-diagnostics build before its manifest exists.
 
-Mulai dengan EditPackFT saja. Profil seluruh 22.602 raw records menghasilkan 22.583
-records setelah contract filtering, encoder maksimum 749 dan decoder total maksimum
-1.113 token. Rekomendasi S1 adalah encoder 1.024 / decoder 1.536 dan baseline total 2.048,
-setelah real-model memory stress; notebook saat ini masih default 2.048/512.
-NextCoder Python menjadi tambahan tahap kedua sesudah adapter/Arrow conversion,
-profiling dan dedup seed: sampel 100 rows berisi hanya 34 unique pairs dan membutuhkan
-decoder lebih panjang. InstructCoder/code review tetap kandidat bersyarat.
+All three adapters produce unified-diff targets. Paired models receive the old
+code/instruction context in the encoder; baselines receive the same visible
+information in their decoder prefix. These are primarily file editing tasks,
+not complete repository snapshots or exclusively bug fixes. NextCoder has no
+verified original-repository lineage; synthetic metadata is not a substitute
+for source-history evidence. Per-record code license metadata is checked for
+EditPackFT/CommitPackFT, while NextCoder's declared synthetic dataset license
+is retained with its provenance limitation.
 
-CommitPackFT dapat ditambahkan kemudian. CommitPackFT bukan campuran otomatis: keduanya memakai
-sumber commit GitHub yang dapat overlap. Audit commit IDs, before/after pairs dan
-near-duplicates sebelum menambah data. Angka rows/bytes adalah upstream metadata,
-bukan ukuran train split setelah filtering; revision dipin saat data diambil.
+## Repository corpus: primary default and optional secondary source
 
-Adapter [EditPackFTAdapter / CommitPackFTAdapter](../src/bifocalgemma/data/adapters.py)
-masih slot D04, belum downloader/converter production. Input hanya old_contents
-serta instruction/subject; target unified diff diturunkan dari before → after.
-Jangan memakai field `content` siap pakai atau `ndiff` sebagai input karena dapat
-memuat kode setelah edit/jawaban. Untuk pilot, gunakan modification pada path sama;
-rename/add/delete memerlukan kontrak adapter tambahan dan tidak dipaksakan menjadi
-contoh modification biasa.
+| Source | Actual raw table | Candidates before snapshot gates | Role and implementation |
+| --- | --- | --- | --- |
+| nebius/SWE-rebench-V2 | 32,079 rows; 7,243 Python | 7,192 after 46 benchmark-repo and 5 lineage exclusions; 685 repos | Default repository SFT source; static snapshot/patch/context/licensing builder implemented, final production pool pending |
+| internlm/SWE-Fixer-Train-110K | 115,406 rows under the source adapter's Python convention | 114,352 after table gates; 846 repos | Optional source supported by the builder, not automatically mixed into the default pool |
 
-Cross entropy hanya pada patch dan closing token. Patch application/rekonstruksi
-before→after dapat diverifikasi pada data preparation tanpa mengeksekusi kode
-repository. Syntax check adalah diagnostik; keberhasilan apply/syntax bukan bukti
-perbaikan fungsional. Tidak ada reward dari test execution pada training loop.
+SWE-rebench V2 raw Parquet is 428,839,266 bytes. SWE-Fixer raw JSONL is
+1,471,204,778 bytes. Before-repository archives are additional and dominate the
+storage budget. Dataset metadata is CC-BY-4.0 for V2 /MIT for SWE-Fixer in our
+provenance, but **source-code licenses are checked independently**. All SWE-Fixer
+table rows lacked source-code license metadata; its language field is absent in
+the inspected schema, so the adapter convention is not per-file Python proof.
 
-## Sasaran tuning dan batas klaim
+Input: released public issue plus BM25-selected windows from the pinned before
+snapshot. Hints, test patches, gold file identities and repair targets do not
+select the training context. Target: the released repair unified diff. The
+builder verifies static patch application, repaired Python AST, source-code
+licenses for patched and all selected context files, and benchmark overlap.
+No repository code or tests execute during preparation. Static validation does
+not establish a functional repair. Missing binaries, links and non-UTF8 assets
+remain explicit limits of text-only archives.
 
-- Mengikuti instruksi edit, menjaga format unified diff, dan mempertahankan bagian
-  kode yang tidak perlu diubah.
-- Memanfaatkan context encoder dan membandingkan empat pasangan dengan E2B-IT/E4B-IT.
-- Awal studi memakai single-file editing; klaim lintas file memerlukan static
-  multi-file records dan matched held-out evaluation tersendiri.
-- EditPackFT/CommitPackFT tidak boleh dilabeli corpus verified repair seluruhnya.
-  Laporkan bug-fix subset dan general editing secara terpisah bila dikurasi.
+Resource defaults: at most 10,000 accepted tasks, 50/repo, 20 GiB archive cache;
+individual archives <=100 MB and text snapshots <=50 MB /5,000 files. V2 has
+only 7,192 table candidates before stricter gates, so 10,000 is an upper budget,
+not an achievable-count promise. Train/dev uses connected repository/commit/
+before-seed groups with an approximately 10% dev target; final counts are unknown.
 
-## Evaluasi yang sesuai dengan tahap ini
+Current caps: encoder2,048 /paired decoder2,048 /baseline decoder4,608. Source
+profiles show 8,192 paired-decoder coverage of 96.01% for V2 and 98.63% for
+SWE-Fixer. The 8k-encoder/8k-paired-decoder candidate requires original-model
+VRAM testing; it is not today's default. New caps require a new named frozen pool.
 
-| Evaluasi | Penggunaan | Kebutuhan |
-| --- | --- | --- |
-| Held-out offline editing | Primary validation awal: patch apply/reconstruction, exact edited-code match, format/syntax, held-out CE | File lokal; tidak mengeksekusi repository atau memakai VM |
-| [HumanEvalFix-docs Python / HumanEvalPack](https://github.com/bigcode-project/octopack) | Functional unit-level repair setelah generation/scorer siap | Inference dan test execution terpisah. Python native scorer dapat digunakan bila kompatibel; runner masih perlu diintegrasikan, tidak menjalankan tes dalam training |
-| [CanItEdit](https://github.com/nuprl/CanItEdit) | Instruction-editing tambahan, 105 program / dua instruction styles | Official scorer memakai container dan old dependencies; native subset 83 tanpa non-stdlib imports terdeteksi belum divalidasi tests. Tidak disebut full official score |
-| [CrossCodeEval](https://github.com/amazon-science/cceval) | Diagnostik context lintas file melalui completion EM/similarity | Pinned preprocessed context/scorer; tidak disebut repair resolved rate |
+## Benchmarks: evaluation roles and current implementation status
 
-Held-out CE dan exact match membantu diagnosis, tetapi bukan pengganti functional
-pass rate. Jika functional benchmark belum dijalankan, laporkan hasil sebagai
-editing diagnostics saja. Exact match dapat menolak patch alternatif yang benar.
-[BigCode harness](https://github.com/bigcode-project/bigcode-evaluation-harness)
-memisahkan generation dan CPU evaluation; Docker tersedia sebagai opsi eksekusi.
-Kompatibilitas scorer Python di Windows/Conda tetap perlu diperiksa, tidak dijamin
-hanya karena data berupa Python.
+All evaluation data stays outside the training pools. Five code benchmarks are
+already mandatory quarantine inputs; that alone does not mean all five have a
+production evaluation runner.
 
-## Sumber yang ditunda dari jalur utama
+| Benchmark | Released/selected task count | Purpose | Actual implementation / limit |
+| --- | ---: | --- | --- |
+| HumanEvalFix Python, bigcode/humanevalpack | 164 | Function-level bug repair | Unified-diff adapter and native Python test scorer implemented; 164 gold repairs passed the local scorer check. Original-model scores and official runtime parity remain pending. |
+| CanItEdit | 105 | Instruction-following code editing | Actual before/after data is quarantined. Dedicated production prepare/scoring adapter is not implemented in repository_study.py yet; proposed repair/editing evaluation, not an already enabled runner. |
+| RES-Q | 100 released, 95 Python /5 JS | Repository-level repair/editing | Source adapter exists; native Python execution is opt-in and needs task-specific environments/dependencies. Complete real gold/harness validation is pending; JS is not covered by the Python runner. |
+| RepoQA Python | 100 | Retrieve a function described in natural language | Adapted diagnostic implemented. Current shortened windows are centered on the known function span and intentionally contain the answer. This is an oracle-window reader diagnostic, not full-repository long-context search or the official RepoQA protocol. |
+| CrossCodeEval Python | 2,665 across 471 encoded repo slugs | Cross-file next-statement completion | Non-reference precomputed cross-file context adapter; adapted exact code match. Official identifier/parser metrics are not implemented. |
+| GSM8K | 1,319 test, 7,473 train for optional demos | Arithmetic reasoning retention before/after coding SFT | Pinned prepare/generate/score CLI implemented; zero-shot and 8-shot use identical frozen test IDs. First-eight train examples supply demos only. Release-style first #### numeric-string extraction, comma removal, fixed denominator; no calculator/RL/VM. Model accuracy remains unmeasured. |
 
-[SWE-smith Python](https://huggingface.co/datasets/SWE-bench/SWE-smith-py),
-[SWE-Gym](https://huggingface.co/datasets/SWE-Gym/SWE-Gym),
-[SWE-smith trajectories](https://huggingface.co/datasets/SWE-bench/SWE-smith-trajectories),
-serta SWE-bench Lite/Verified tetap referensi/opsi lanjutan. Mereka tidak menjadi
-prasyarat pilot yang dipilih. SWE-smith dapat dipakai untuk SFT; tidak otomatis
-memerlukan RL. Penyiapan executable task environments dan benchmark Docker adalah
-bagian yang tidak sesuai dengan preferensi pipeline awal tanpa VM.
+RepoQA and CrossCodeEval scores are adapted_exact_code_match with
+ official_benchmark_score=False. Do not compare them directly with published
+upstream scores. RepoQA's answer-centered crop is a material protocol limitation,
+not evidence of long-context dependency understanding. HumanEvalFix's gold check
+validates the scorer only. RES-Q is low infrastructure only for tasks whose native
+environments actually work; it is not yet certified VM-free for every task.
 
-D06 [kontrak arah patch SWE-smith](NATIVE_LOCAL_VALIDATION.md#d06--kontrak-lokal-swe-smith)
-tetap utility lokal yang sudah diuji. Itu tidak mengaktifkan environment task.
-A01 agent loop dan E01 SWE-bench Docker harness menjadi optional placeholders;
-CLI evaluate lama tetap fail-fast pada E01. Tidak ada backend evaluator offline
-production yang diam-diam disimpulkan tersedia dari perubahan recipe ini.
+GSM8K measured maxima under the declared protocol: 222 zero-shot prompt tokens,
+1,280 eight-shot prompt tokens, 301 cleaned reference-answer tokens. Generation
+may be longer; its candidate budget is 2k input /2k new tokens, total decoder4k.
+It uses a math prompt/scorer, never the repair prompt. See [GSM8K guide](GSM8K_CONTEXT.md).
 
-## Filtering dan reproducibility
+## Excluded, conditional and registry-only names
 
-1. Catat source revision, commit, repo set, file paths, license, before/after hashes,
-   target patch hash, token lengths, split dan filter reasons.
-2. Dedup lintas sumber; grouped train/dev/test berdasarkan repo/commit, termasuk
-   seluruh aliases repo dalam field `repos`. Jangan pisahkan record satu commit
-   ke split berbeda. Audit benchmark overlap sebelum evaluation final.
-3. Pertahankan old code sebagai input dan after/patch sebagai target. Tolak records
-   kosong/tidak berubah, paths tidak didukung, atau patch yang tidak merekonstruksi after.
-4. Gunakan context selection/token limits yang sama secara metodologis pada enam
-   model. Overflow saat ini ditolak oleh D03; tidak ada gold-based selection.
-5. Simpan attribution/license; dataset card tidak menggantikan lisensi kode asal.
-   Filtering adaptasi sendiri tidak menghapus kemungkinan pretraining contamination.
+InstructCoder and github-codereview are not in SOURCE_REFS, so they are not in the
+active full instruction pool. Code-Feedback and SWE-smith-py are excluded from
+this recipe. SWE-Gym, R2E-Gym, RepoExec, DevEval and SWE-bench appear in the
+research/provenance registry but are not active training-source dispatch here.
+T5Gemma/T5Gemma2 are prior art, not benchmark baselines in the six-model matrix.
 
-## Urutan pengerjaan
+The matrix remains E2B-base/E2B-IT, E4B-base/E4B-IT, E2B-base/E4B-IT,
+E4B-base/E2B-IT, plus E2B-IT and E4B-IT decoder-only baselines. Same frozen
+cohort per experiment, batch1, accumulation4, attention LoRA rank16/alpha32,
+ordinary words/PLE frozen, default LR2e-5 and warmup5. Symmetric pairs share
+ordinary embeddings; asymmetric pairs train one alignment projection. One model
+per run; no automatic concurrent training, RL, distillation or teacher model.
 
-Native tiny M07 dan offline tokenizer D03 → D04 paired-file adapter/manifest →
-M04/M05 pretrained transfer dan T03 profiling → direct patch SFT / S01 checkpoint →
-I01 patch generation → held-out editing diagnostics → functional Python evaluation →
-static multi-file study. Tidak ada tahap RL atau VM pada jalur tuning.
 
-Direct SFT tetap hipotesis: [T5Gemma 2](https://arxiv.org/html/2512.14856v2) memakai
-adaptasi UL2 sebelumnya. Data yang lebih sederhana mengurangi kebutuhan environment,
-tidak otomatis menjawab apakah adaptasi arsitektur berhasil. PLE + tied words BF16
-sendiri 9,5/11,75 GiB pada pasangan simetris; profiling GPU tetap diperlukan.
+## Research background and limitations retained from earlier planning
+
+Earlier rationale and native dependency checks remain in
+[Molab data/evaluation plan](MOLAB_DATA_EVALUATION_PLAN.md),
+[repository-data research](RESEARCH_REPOSITORY_DATA_AND_BENCHMARKS.md), and
+[SWE-smith direction contract](NATIVE_LOCAL_VALIDATION.md). Their historical
+"planned" or "pilot" statements must be read alongside the current dispatch
+inventory above. CanItEdit's earlier 83-case non-stdlib-import screen is only
+a dependency heuristic; it is not a validated native functional subset.
+
+SWE-smith supports SFT and does not inherently require RL; its executable
+environment/harness is the additional infrastructure excluded from this recipe.
+Native Python execution is opt-in and is not a security sandbox. Functional
+pass rate cannot be inferred from patch application, AST parsing or held-out CE.
+Exact match can reject a different but correct repair. Pretraining contamination
+is not certified away by repository/code-overlap filters.
+
+Direct base-encoder/IT-decoder SFT remains a research hypothesis, not a result
+implied by T5Gemma2's UL2-adapted architecture. Real pretrained memory and repair
+quality must be measured independently of data-preparation/scorer checks.

@@ -1439,7 +1439,7 @@ def _(PREPARE_FULL_POOL, RUN_TRAINING, DATA_SOURCE, LOCAL_DATA_FILE, CORPUS_CACH
         if _kind != CORPUS_KIND:
             raise ValueError("Pool directory has another corpus kind; select the correct directory.")
         _limits = importlib.import_module("bifocalgemma.data.offline_sft").validate_curated_pool_limits(_manifest, encoder_limit=ENCODER_LIMIT, decoder_limit=DECODER_LIMIT)
-        corpus_pool_status = {"status": "READY", "limits": _limits, "path": LOCAL_DATA_FILE, "train": len(_manifest["record_ids"]["train"]), "dev": len(_manifest["record_ids"]["dev"]), "full_epoch_updates": _manifest["report"]["training_plan"]["updates_full_epoch"], "fingerprint": _manifest["fingerprint"]}
+        corpus_pool_status = {"status": "READY", "syntax_diagnostics": _manifest["report"].get("syntax_diagnostics_policy", "not_collected_in_this_frozen_pool"), "limits": _limits, "path": LOCAL_DATA_FILE, "train": len(_manifest["record_ids"]["train"]), "dev": len(_manifest["record_ids"]["dev"]), "full_epoch_updates": _manifest["report"]["training_plan"]["updates_full_epoch"], "fingerprint": _manifest["fingerprint"]}
     mo.vstack([mo.md("## Full corpus preparation\nFull instruction foundation is curated first. Repository mode then materializes pinned before snapshots, verifies licenses/patches and selects issue-only context. Model weights are not loaded here."), mo.ui.table([corpus_pool_status], selection=None)])
     return (corpus_pool_status,)
 

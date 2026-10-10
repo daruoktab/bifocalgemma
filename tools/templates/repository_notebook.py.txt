@@ -167,7 +167,7 @@ def _(PREPARE_FULL_POOL, RUN_TRAINING, TRAINING_DATA_MODE, CURATED_POOL_DIR, FOU
         if _kind != CORPUS_KIND:
             raise ValueError("Selected pool directory belongs to another corpus kind.")
         _limits = validate_curated_pool_limits(_manifest, encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT)
-        full_pool_status = {"status": "READY", "limits": _limits, "train": len(_rows["train"]), "dev": len(_rows["dev"]), "fingerprint": _manifest["fingerprint"]}
+        full_pool_status = {"status": "READY", "syntax_diagnostics": _manifest["report"].get("syntax_diagnostics_policy", "not_collected_in_this_frozen_pool"), "limits": _limits, "train": len(_rows["train"]), "dev": len(_rows["dev"]), "fingerprint": _manifest["fingerprint"]}
     mo.vstack([mo.md("## Full corpus (all six configurations)"), mo.ui.table([full_pool_status], selection=None)])
     return (full_pool_status, prepare_curated_training, fit_curated_sft)
 

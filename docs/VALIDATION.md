@@ -363,3 +363,20 @@ previous v3 output. The optimized worker resumed the same ledger at offset
 1551, preserving all 154 accepted records. [Receipt](data/repository_snapshot_reuse_20261009.json).
 Generator checks, strict marimo, Ruff, type and whitespace checks passed. No
 pipeline-wide speed ratio or GPU-hour saving is inferred from the small profile.
+
+
+## Local AST warning diagnostics — 10 Oktober 2026
+
+**43 related curation/archive/notebook tests passed** after introducing scoped
+AST SyntaxWarning capture. Tests verify no source execution, unchanged target
+bytes, explicit file/row/line attribution, restored warning filters, retained
+SyntaxError rejection, visible non-Syntax warnings, and final-cohort summaries
+separate from pre-cap admission. Three notebook generators/strict checks, Ruff,
+type and whitespace checks pass.
+
+A cached four-real-task v4 check retained every existing record/target field and
+recorded two invalid-escape warnings on one admitted task. Resume reconstructed
+the same warning totals and identical manifest, including normalization of the
+stopped-target-count reason on fully checkpointed input. [Receipt](data/python_syntax_diagnostics_smoke_20261010.json).
+These are local tests only; the running Molab session was not edited, interrupted
+or reconfigured for this update. Legacy frozen pools are not relabeled warning-free.
