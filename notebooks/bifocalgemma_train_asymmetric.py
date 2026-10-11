@@ -37,9 +37,10 @@ def _():
     # BifocalGemma Â· Offline LoRA SFT
     Dua notebook ini memakai jumlah, urutan, dan isi cell yang sama.
     Pilih pasangan di control center, Apply HF token bila diperlukan,
-    pilih koleksi dataset beku dan commit SHA, lalu RUN_TRAINING. Kurasi terpisah memakai PREPARE_FULL_POOL. Pipeline: full editing pool â†’ patch-only SFT
+    Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full editing pool â†’ patch-only SFT
     â†’ held-out loss â†’ adapter checkpoint + optimizer/data cursor resume.
-    Default tidak memulai training atau model/data download secara otomatis.
+    Default menjalankan satu epoch penuh dan upload artefak setelah selesai.
+    Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
     """)
     return (mo,)
 
@@ -56,33 +57,21 @@ def _(mo):
         "asymmetric": ("BifocalGemma-E2B-E4B", "BifocalGemma-E4B-E2B"),
     }
     assert FAMILY in PAIR_OPTIONS and EXPERIMENT in PAIR_OPTIONS[FAMILY]
-    RUN_TRAINING = False
-    PREPARE_FULL_POOL = False  # Explicit separate curation; never implied by RUN_TRAINING
+    RUN_TRAINING = True
     DATASET_REPO_ID = "daruokta/bifocalgemma-data"
     DATASET_REVISION = "d34a19b3badc0120755495c68227cba038819cd7"  # Full immutable Hub commit SHA, from dataset release receipt
     DATASET_COLLECTION = "instruction_enc8k_dec2k_v2"  # Released editing-foundation stage; repository collection remains pending
-    CORPUS_CACHE_DIR = "outputs/full_corpus_raw"
     CORPUS_TOKENIZER_CACHE = "outputs/repository_tokenizers"
     CORPUS_KIND = (
         "instruction"  # Current released stage: editing foundation; repository study is pending
     )
-    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v2"
-    REPOSITORY_SOURCE = "swe_rebench_v2"
-    REPOSITORY_TARGET_COUNT = 10000
-    REPOSITORY_PER_REPO_LIMIT = 50
-    REPOSITORY_DISK_GIB = 20
     DEVICE = "auto"
     PRECISION = "auto"
     RUN_NAME = "enc8k-dec2k-v2"  # Ubah untuk run baru; directory existing tidak ditimpa.
     RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
-    DATA_SOURCE = "curated_pool"  # frozen full pool; legacy sources are explicit pilots
     LOCAL_DATA_FILE = (
         "outputs/full_instruction_pool_enc8k_dec2k_v2"  # directory with manifest/train/dev
     )
-    RAW_LIMIT = 10000
-    TRAIN_LIMIT = 2000
-    DEV_LIMIT = 200
-    DEV_FRACTION = 0.1
     ENCODER_LIMIT = 8192
     DECODER_LIMIT = 2048
     BATCH_SIZE = 1
@@ -96,7 +85,7 @@ def _(mo):
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
     HF_REPO_ID = "daruokta/bifocalgemma-sft"
-    HF_UPLOAD_ENABLED = False
+    HF_UPLOAD_ENABLED = True
     mo.md(
         f"## 1 Â· Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}, HF_UPLOAD={HF_UPLOAD_ENABLED}."
     )
@@ -106,28 +95,16 @@ def _(mo):
         OUTPUT_ROOT,
         PAIR_OPTIONS,
         RUN_TRAINING,
-        PREPARE_FULL_POOL,
         DATASET_REPO_ID,
         DATASET_REVISION,
         DATASET_COLLECTION,
-        CORPUS_CACHE_DIR,
         CORPUS_TOKENIZER_CACHE,
         CORPUS_KIND,
-        FOUNDATION_POOL_DIR,
-        REPOSITORY_SOURCE,
-        REPOSITORY_TARGET_COUNT,
-        REPOSITORY_PER_REPO_LIMIT,
-        REPOSITORY_DISK_GIB,
         DEVICE,
         PRECISION,
         RUN_NAME,
         RESUME_FROM,
-        DATA_SOURCE,
         LOCAL_DATA_FILE,
-        RAW_LIMIT,
-        TRAIN_LIMIT,
-        DEV_LIMIT,
-        DEV_FRACTION,
         ENCODER_LIMIT,
         DECODER_LIMIT,
         BATCH_SIZE,
@@ -1950,7 +1927,6 @@ def _(DEVICE, PRECISION, mo):
                                 "Restart runtime to load the new corpus source version."
                             )
     _sys.path.insert(0, str(corpus_runtime_root / "src"))
-    corpus_api = importlib.import_module("bifocalgemma.data.full_pool")
     corpus_assets_api = importlib.import_module("bifocalgemma.repository_study")
     corpus_config_api = importlib.import_module("bifocalgemma.config")
 
@@ -2011,7 +1987,6 @@ def _(DEVICE, PRECISION, mo):
         dtype,
         environment,
         corpus_runtime_root,
-        corpus_api,
         corpus_assets_api,
         corpus_config_api,
     )
@@ -3596,46 +3571,6 @@ def _(
                 ):
                     raise ValueError("repository_context_license_not_admitted")
 
-    DATA_SOURCES = {
-        "editpackft": {
-            "id": "nuprl/EditPackFT",
-            "revision": "067b4c882f44eca19329fedd275438fc3c060f3f",
-            "file": "data/train-00000-of-00001.parquet",
-        },
-        "commitpackft_python": {
-            "id": "bigcode/commitpackft",
-            "revision": "fc56fe33c030c6daa414c2b112c932b8eed085e6",
-            "file": "data/python/data.jsonl",
-        },
-    }
-
-    def dataset_rows(source, local_file, cache_dir):
-        if source == "local_jsonl":
-            path = Path(local_file)
-        else:
-            if source not in DATA_SOURCES:
-                raise ValueError("Unknown DATA_SOURCE.")
-            ref = DATA_SOURCES[source]
-            path = Path(
-                hf_hub_download(
-                    ref["id"],
-                    ref["file"],
-                    repo_type="dataset",
-                    revision=ref["revision"],
-                    cache_dir=cache_dir,
-                    token=hf_download_token,
-                )
-            )
-        if path.suffix == ".parquet":
-            parquet = importlib.import_module("pyarrow.parquet")
-            for chunk in parquet.ParquetFile(path).iter_batches(batch_size=256):
-                yield from chunk.to_pylist()
-        else:
-            with path.open(encoding="utf-8") as stream:
-                for line in stream:
-                    if line.strip():
-                        yield json.loads(line)
-
     def tokenize_editing_row(row, spec, encoder, decoder, encoder_limit, decoder_limit):
         context = (
             row.get("context")
@@ -3677,43 +3612,14 @@ def _(
             raise ValueError("token_overflow")
         return TokenizedRepairExample(row["instance_id"], encoder_ids, prefix_ids, target_ids)
 
-    def prepare_training_data(
-        spec,
-        source,
-        local_file,
-        cache_dir,
-        raw_limit,
-        train_limit,
-        dev_limit,
-        dev_fraction,
-        encoder_limit,
-        decoder_limit,
-        seed,
-    ):
+    def prepare_training_data(spec, local_file, cache_dir, encoder_limit, decoder_limit, seed):
         if not 1 <= encoder_limit <= 131072 or not 1 <= decoder_limit <= 131072:
             raise ValueError("Invalid token limits.")
-        pool_manifest = None
-        if source == "curated_pool":
-            frozen_rows, pool_manifest = load_curated_pool(local_file)
-            train_rows, dev_rows = frozen_rows["train"], frozen_rows["dev"]
-            records = train_rows + dev_rows
-            filters = {}
-        else:
-            semantic_source = (
-                "commitpackft_python" if source == "commitpackft_python" else "editpackft"
-            )
-            records, filters = prepare_editing_records(
-                dataset_rows(source, local_file, cache_dir),
-                source=semantic_source,
-                raw_limit=raw_limit,
-            )
-            train_rows, dev_rows = split_editing_records(
-                records,
-                seed=seed,
-                dev_fraction=dev_fraction,
-                train_limit=train_limit,
-                dev_limit=dev_limit,
-            )
+        source = "curated_pool"
+        frozen_rows, pool_manifest = load_curated_pool(local_file)
+        train_rows, dev_rows = frozen_rows["train"], frozen_rows["dev"]
+        records = train_rows + dev_rows
+        filters = {}
         assert spec.encoder is not None
         enc_ref = CHECKPOINTS[spec.encoder.size]["encoder"]
         dec_ref = CHECKPOINTS[spec.decoder.size]["decoder"]
@@ -3737,25 +3643,17 @@ def _(
                         row, spec, encoder, decoder, encoder_limit, decoder_limit
                     )
                 except ValueError as error:
-                    if source == "curated_pool":
-                        raise ValueError(
-                            "Frozen pool rejected by tokenizer; rebuild pool or correct limits."
-                        ) from error
-                    token_filters[str(error)] += 1
-                    continue
+                    raise ValueError(
+                        "Frozen pool rejected by tokenizer; check its revision and token limits."
+                    ) from error
                 tokenized[split].append(item)
                 kept[split].append(row)
         if not all(tokenized.values()):
             raise ValueError("Empty split after token filtering.")
         manifest = {
             "source": source,
-            "source_ref": DATA_SOURCES.get(source),
-            "split_policy": (
-                "canonical_repository_group_holdout"
-                if source == "local_jsonl"
-                and all(r.get("record_type") == "repository_patch_v1" for r in records)
-                else "commit_group_holdout_not_repo_disjoint"
-            ),
+            "source_ref": None,
+            "split_policy": pool_manifest["report"]["split"]["policy"],
             "seed": seed,
             "encoder_limit": encoder_limit,
             "decoder_limit": decoder_limit,
@@ -3787,11 +3685,9 @@ def _(
         return tokenized["train"], tokenized["dev"], manifest
 
     mo.md(
-        "## 8 Â· Data / tokenisasi\nEditPackFT atau JSONL lokal, commit holdout, dedup, explicit overflow filtering."
+        "## 8 Â· Data / tokenisasi\nSeluruh train/dev dari koleksi HF beku; overflow ditolak dan split tidak diubah."
     )
     return (
-        DATA_SOURCES,
-        dataset_rows,
         editing_record,
         prepare_editing_records,
         split_editing_records,
@@ -3803,113 +3699,44 @@ def _(
 
 @app.cell
 def _(
-    PREPARE_FULL_POOL,
     RUN_TRAINING,
-    DATA_SOURCE,
     DATASET_REPO_ID,
     DATASET_REVISION,
     DATASET_COLLECTION,
     LOCAL_DATA_FILE,
-    CORPUS_CACHE_DIR,
     CORPUS_TOKENIZER_CACHE,
     CORPUS_KIND,
-    FOUNDATION_POOL_DIR,
-    REPOSITORY_SOURCE,
-    REPOSITORY_TARGET_COUNT,
-    REPOSITORY_PER_REPO_LIMIT,
-    REPOSITORY_DISK_GIB,
     ENCODER_LIMIT,
     DECODER_LIMIT,
     Path,
     importlib,
-    corpus_runtime_root,
-    corpus_api,
     corpus_assets_api,
     corpus_config_api,
-    json,
     hf_download_token,
     mo,
 ):
-    # Frozen data is prepared outside Molab; upstream curation requires explicit opt-in.
+    # Only a published immutable HF collection; every existing cache is verified.
     corpus_pool_status = {"status": "DISABLED", "path": LOCAL_DATA_FILE}
-    if PREPARE_FULL_POOL or (RUN_TRAINING and DATA_SOURCE == "curated_pool"):
-        if DATA_SOURCE != "curated_pool":
-            raise ValueError("Full corpus preparation requires DATA_SOURCE=curated_pool.")
-        if CORPUS_KIND not in {"instruction", "repository"}:
-            raise ValueError("Choose instruction or repository corpus kind.")
-        if not PREPARE_FULL_POOL:
-            if not DATASET_REVISION or not DATASET_COLLECTION:
-                raise ValueError(
-                    "Frozen pool missing. Select a published dataset collection and full commit SHA; curation is a separate PREPARE_FULL_POOL=True operation."
-                )
-            _release_api = importlib.import_module("bifocalgemma.data.releases")
-            _release_api.fetch_collection(
-                DATASET_REPO_ID,
-                DATASET_REVISION,
-                DATASET_COLLECTION,
-                LOCAL_DATA_FILE,
-                token=hf_download_token,
-            )
-        if PREPARE_FULL_POOL and not Path(LOCAL_DATA_FILE).exists():
-            for _experiment in ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"):
-                corpus_assets_api.fetch_tokenizer_assets(
-                    corpus_config_api.get_experiment(_experiment),
-                    Path(CORPUS_TOKENIZER_CACHE),
-                    token=hf_download_token,
-                )
-            _config = json.loads(
-                (corpus_runtime_root / "configs/repository_study.json").read_text(encoding="utf-8")
-            )
-
-            def _corpus_progress(_row):
-                print(json.dumps(_row), flush=True)
-
-            _foundation_dir = (
-                FOUNDATION_POOL_DIR if CORPUS_KIND == "repository" else LOCAL_DATA_FILE
-            )
-            if not Path(_foundation_dir).exists():
-                corpus_api.prepare_full_corpus(
-                    CORPUS_CACHE_DIR,
-                    _foundation_dir,
-                    CORPUS_TOKENIZER_CACHE,
-                    _config,
-                    token=hf_download_token,
-                    encoder_limit=ENCODER_LIMIT,
-                    decoder_limit=DECODER_LIMIT,
-                    progress=_corpus_progress,
-                )
-            if CORPUS_KIND == "repository":
-                importlib.import_module(
-                    "bifocalgemma.data.repository_corpus"
-                ).prepare_repository_corpus(
-                    CORPUS_CACHE_DIR,
-                    LOCAL_DATA_FILE,
-                    FOUNDATION_POOL_DIR,
-                    CORPUS_TOKENIZER_CACHE,
-                    _config,
-                    source=REPOSITORY_SOURCE,
-                    token=hf_download_token,
-                    target_count=REPOSITORY_TARGET_COUNT,
-                    per_repo_limit=REPOSITORY_PER_REPO_LIMIT,
-                    context_limit=ENCODER_LIMIT,
-                    decoder_limit=DECODER_LIMIT,
-                    disk_budget_gib=REPOSITORY_DISK_GIB,
-                    progress=_corpus_progress,
-                )
+    if RUN_TRAINING:
+        _release_api = importlib.import_module("bifocalgemma.data.releases")
+        _release_api.fetch_collection(
+            DATASET_REPO_ID,
+            DATASET_REVISION,
+            DATASET_COLLECTION,
+            LOCAL_DATA_FILE,
+            token=hf_download_token,
+        )
         _rows, _manifest = importlib.import_module(
             "bifocalgemma.data.offline_sft"
         ).load_curated_pool(LOCAL_DATA_FILE)
         _kind = "repository" if "snapshot_policy" in _manifest["report"] else "instruction"
         if _kind != CORPUS_KIND:
-            raise ValueError(
-                "Pool directory has another corpus kind; select the correct directory."
-            )
+            raise ValueError("Selected HF collection has another corpus kind.")
         _limits = importlib.import_module(
             "bifocalgemma.data.offline_sft"
         ).validate_curated_pool_limits(
             _manifest, encoder_limit=ENCODER_LIMIT, decoder_limit=DECODER_LIMIT
         )
-        # Small tokenizer assets still need verification; no dataset/source archive fetch here.
         for _experiment in ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"):
             corpus_assets_api.fetch_tokenizer_assets(
                 corpus_config_api.get_experiment(_experiment),
@@ -3931,7 +3758,7 @@ def _(
     mo.vstack(
         [
             mo.md(
-                "## Frozen dataset / explicit curation\nTraining reuses a local pool or downloads one pinned collection from the private dataset repo. Upstream curation runs only with PREPARE_FULL_POOL=True. Repository and instruction experiments remain distinct."
+                "## Frozen HF dataset\nDownload or verify the pinned collection, then train on all frozen train/dev IDs. Dataset curation is performed separately via the local CLI."
             ),
             mo.ui.table([corpus_pool_status], selection=None),
         ]
@@ -4383,43 +4210,37 @@ def _(
 @app.cell
 def _(
     CACHE_DIR,
-    DATA_SOURCE,
     DECODER_LIMIT,
-    DEV_FRACTION,
-    DEV_LIMIT,
     ENCODER_LIMIT,
     LOCAL_DATA_FILE,
-    RAW_LIMIT,
     SEED,
-    TRAIN_LIMIT,
     prepare_training_data,
     training_guard,
     training_spec,
     corpus_pool_status,
     mo,
 ):
-    # 11. PREPARE DATA â€” changes here do not modify notebook architecture code.
-    train_examples, dev_examples = [], []
-    data_manifest = None
+    train_examples, dev_examples, data_manifest = [], [], {"status": "DISABLED"}
     if training_guard is None:
-        if DATA_SOURCE == "curated_pool" and corpus_pool_status["status"] != "READY":
-            raise ValueError("Complete full corpus preparation first.")
+        if corpus_pool_status["status"] != "READY":
+            raise ValueError("Load the pinned HF dataset first.")
         train_examples, dev_examples, data_manifest = prepare_training_data(
-            training_spec,
-            DATA_SOURCE,
-            LOCAL_DATA_FILE,
-            CACHE_DIR,
-            RAW_LIMIT,
-            TRAIN_LIMIT,
-            DEV_LIMIT,
-            DEV_FRACTION,
-            ENCODER_LIMIT,
-            DECODER_LIMIT,
-            SEED,
+            training_spec, LOCAL_DATA_FILE, CACHE_DIR, ENCODER_LIMIT, DECODER_LIMIT, SEED
         )
-    mo.md(
-        f"## 11 Â· Dataset\nTrain: **{len(train_examples)}**, dev: **{len(dev_examples)}**. "
-        + ("Prepared." if data_manifest else "Disabled/guarded; no dataset fetched.")
+    mo.vstack(
+        [
+            mo.md("## 11 · Tokenized train/dev"),
+            mo.ui.table(
+                [
+                    {
+                        "train": len(train_examples),
+                        "dev": len(dev_examples),
+                        "fingerprint": data_manifest.get("fingerprint"),
+                    }
+                ],
+                selection=None,
+            ),
+        ]
     )
     return (
         train_examples,
@@ -4606,18 +4427,6 @@ def _(
         "reason": "HF_UPLOAD_ENABLED=False",
     }
     if HF_UPLOAD_ENABLED:
-        if not HF_REPO_ID or not str(HF_REPO_ID).strip():
-            raise ValueError("HF_REPO_ID tidak boleh kosong bila HF_UPLOAD_ENABLED diaktifkan.")
-        if not hf_download_token:
-            raise RuntimeError(
-                "HF token diperlukan untuk upload ke Hugging Face Hub; isi token write pada cell"
-                " token atau set environment HF_TOKEN."
-            )
-        if auth_info.get("role") == "read":
-            raise RuntimeError(
-                "HF token hanya memiliki akses read; upload ke Hub membutuhkan token dengan akses"
-                " write."
-            )
         if training_result.get("status") != "COMPLETED":
             upload_result = {
                 "status": "SKIPPED",
@@ -4636,6 +4445,18 @@ def _(
                 "reason": f"Run directory `{run_dir}` is empty or does not exist.",
             }
         else:
+            if not HF_REPO_ID or not str(HF_REPO_ID).strip():
+                raise ValueError("HF_REPO_ID tidak boleh kosong bila HF_UPLOAD_ENABLED diaktifkan.")
+            if not hf_download_token:
+                raise RuntimeError(
+                    "HF token diperlukan untuk upload ke Hugging Face Hub; isi token write pada cell"
+                    " token atau set environment HF_TOKEN."
+                )
+            if auth_info.get("role") == "read":
+                raise RuntimeError(
+                    "HF token hanya memiliki akses read; upload ke Hub membutuhkan token dengan akses"
+                    " write."
+                )
             api = HfApi(token=hf_download_token)
             api.create_repo(repo_id=HF_REPO_ID, repo_type="model", exist_ok=True)
             commit_url = api.upload_folder(

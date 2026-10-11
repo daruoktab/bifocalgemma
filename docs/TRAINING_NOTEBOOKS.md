@@ -23,13 +23,15 @@ Asimetris: untied encoder words, learned H projection. PLE tetap separate.
 ## Cara memulai
 
 1. Unggah salah satu file .py ke Molab; file standalone tidak perlu checkout repo.
-2. Apply HF token pada cell input/apply yang terpisah, atau gunakan akses publik
-   anonim bila tersedia. Read token cukup untuk unduh; berikan token write bila
-   mengaktifkan upload run artifacts ke Hub (HF_UPLOAD_ENABLED=True).
+2. Apply HF token write pada cell input/apply yang terpisah. Dataset private dan
+   checkpoint gated membutuhkan akses unduh; upload aktif secara default membutuhkan
+   akses write ke repo model tujuan.
 3. Pilih EXPERIMENT dari keluarga notebook; ubah RUN_NAME untuk eksperimen baru.
 4. Pilih DATASET_REPO_ID, DATASET_REVISION (full commit SHA), dan DATASET_COLLECTION yang sudah dipublikasikan; sesuaikan CORPUS_KIND serta LOCAL_DATA_FILE. Kurasi dijalankan terpisah di CPU, bukan otomatis saat training. Lihat [dataset releases](DATASET_RELEASES.md).
-5. Aktifkan **RUN_TRAINING=True**; cell dataset mengunduh/memverifikasi pool beku sebelum training, lalu periksa tabel READY/counts. Default False menjaga
-   pembukaan notebook/checks tidak langsung mengunduh atau melatih model besar.
+5. Default **RUN_TRAINING=True**, **HF_UPLOAD_ENABLED=True**, **MAX_STEPS=0**,
+   **EPOCHS=1**: seluruh split dilatih, dev loss dihitung, kemudian artefak run selesai
+   diupload. Ubah kedua flag menjadi False bila ingin menonaktifkan aksinya. Periksa
+   tabel dataset READY: 40.706 train /4.524 dev sebelum training.
 6. Amati preprocessing count, training logs/dev CE, lalu lokasi checkpoint/report.
 
 Satu notebook melatih **satu pasangan pada satu run**. Untuk pasangan kedua,
@@ -52,8 +54,8 @@ kapasitas 96 GB selalu kosong. Setting training default berbeda dari micro probe
 | 8 | Native model builder |
 | 9 | Pretrained transfer dan attention LoRA |
 | 10 | Training policy: dua profil dan meta group table |
-| 11 | Data conversion, split dan tokenization helpers |
-| 12 | Full corpus preparation: bundled source, foundation, licensed snapshots |
+| 11 | Frozen-pool loading, manifest dan tokenization helpers |
+| 12 | Download/verifikasi koleksi HF beku dan cache tokenizer |
 | 13 | Training/checkpoint/resume helpers |
 | 14 | Preflight metadata/VRAM guard |
 | 15 | Frozen data tokenization |
@@ -68,23 +70,18 @@ run aktif kecuali memang hendak memulai ulang rerun boundary.
 
 ## Data dan objective
 
-Default release-stage sekarang **curated_pool** dengan CORPUS_KIND=instruction dan koleksi instruction_enc8k_dec2k_v2. Ini pilot editing foundation; studi repository menunggu pool lengkap. Konfigurasi dataset beku, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
-`data/train-00000-of-00001.parquet`. Opsi **CommitPackFT Python** revision
-`fc56fe33c030c6daa414c2b112c932b8eed085e6`, file `data/python/data.jsonl`.
-Pilihan local_jsonl menerima schema old_file/new_file, old_contents/new_contents,
-instruction, commit/repos/license. Subject dipakai oleh pilihan CommitPackFT Python.
+Notebook hanya menerima koleksi dataset HF beku pada commit SHA yang terkunci.
+Default instruction_enc8k_dec2k_v2 mempunyai 40.706 train /4.524 dev. Tidak ada
+pilihan raw-source, local_jsonl, sampling pilot atau kurasi ulang dalam notebook.
+Semua IDs dan split mengikuti manifest; input before/context saja, target unified diff.
+Kurasi dan pembuatan dataset dilakukan terpisah melalui CLI lokal yang dijelaskan
+pada [panduan rilis](DATASET_RELEASES.md).
 
-Input hanya instruction + kode before. Target unified diff diturunkan dari before
-→ after; field content/ndiff tidak dipakai sebagai input. Existing-file modifications
-saja; rename/add/delete/hidden metadata/quoted path ditolak. Diff tanpa final newline
-mempunyai sentinel Git yang benar. Tidak ada execution environment, VM, Docker, RL,
-reward model atau test-driven rollout pada training.
+Split v2 menghubungkan repository, commit/seed, alias sumber, serta struktur kode.
+Tidak ada re-splitting saat run. Batas encoder8.192 /paired decoder2.048 tetap;
+overflow dataset beku adalah error. Dependency helper mempertahankan hash/manifest
+run yang sama untuk cohort v2, sehingga perubahan default UI tidak mengganti data.
 
-Dedup before/after pairs sebelum split. Train/dev dibagi menurut **commit group**,
-bukan repo-disjoint; dataset ini tidak membuktikan generalisasi ke repository baru.
-Pada curated_pool, seluruh train/dev mengikuti manifest dan limit sampling legacy diabaikan. Seed split sudah dibekukan saat kurasi. Token gate lokal kini encoder 8192 / decoder 2048; overflow pada frozen pool adalah error, bukan silent filtering. Legacy sources tetap memiliki knob sampling untuk pilot yang dinyatakan eksplisit.
-Data manifest memuat source revisions, rows/commits/repos/licenses, instruction/pair
-hashes, tokenizer sources/hashes, tokenization fingerprint dan filter counts.
 
 Token-weighted patch CE hanya pada target/closing turn, shift sekali, prefix/pad -100.
 Gradient accumulation memakai proporsi supervised tokens per window supaya target
@@ -179,7 +176,7 @@ belum dijalankan dari sesi lokal. Dev CE bukan functional repair benchmark.
 ## Upload ke Hugging Face Hub
 
 - Target repo: `HF_REPO_ID = "daruokta/bifocalgemma-sft"`.
-- Kontrol: `HF_UPLOAD_ENABLED` (default `False`).
+- Kontrol: `HF_UPLOAD_ENABLED` (default `True`).
 - Struktur folder di dalam repo: dua folder tingkat atas `symmetric` dan `asymmetric`
   (mengikuti parameter `FAMILY`), di dalamnya terdapat folder experiment dan run:
   `path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"`.
@@ -210,20 +207,18 @@ formatter deterministik dan --check gagal bila file generated drift. File upload
 standalone tetap bisa diedit di Molab; saat pairing live, gunakan runtime cm API,
 kemudian sinkronkan perubahan umum ke template sebelum regeneration lokal.
 
-Validasi lokal: dua graph disabled, sepuluh notebook pytest tests (lima per notebook), tests diff/split,
+Validasi lokal memakai import/graph checks tanpa mengeksekusi training, sepuluh notebook pytest tests (lima per notebook), tests diff/split,
 token-weighted accumulation, checkpoint checksums/compatibility/run overwrite, serta
 native tiny LoRA resume pada kedua keluarga. Model/data asli belum dilatih oleh
 notebook baru ini; jalankan pilot di Molab dan catat hasilnya terpisah.
 
-## Repository exports — 8 Oktober 2026
+## Repository exports
 
-DATA_SOURCE=local_jsonl kini menerima prepared `repository_patch_v1` train records
-dengan public context, target diff dan source/snapshot provenance. Eval records
-dan gold-context flags ditolak. Legacy paired-file input tetap kompatibel; dua
-notebooks tetap19/18 parity. Preparation/repository-group splitting dijelaskan pada
-[implementation guide](REPOSITORY_STUDY_IMPLEMENTATION.md). Notebook repository
-menyediakan all-six-model matched eligibility dan decoder-only SFT policy untuk
-controlled baselines.
+Helper mendukung repository_patch_v1 di dalam koleksi HF beku saat corpus tersebut
+telah dipublikasikan. Eval records dan gold-context flags ditolak. Native snapshot
+identity serta pair/instruction hashes dipertahankan. Pilihan upload JSONL mentah
+tidak tersedia di notebook; CLI preparer tetap tersedia untuk membangun dataset
+terpisah. Kedua notebook tetap20 cell dengan19 identik.
 
 
 Repository-mode corpus READY now requires v3 visible-context license evidence, in addition to licenses on patched files. Old patch-only prototype pools are rejected; rebuild under the new policy in a new output directory if an old completed pool already exists. Cached source archives are reused; no model download is required for this validation.

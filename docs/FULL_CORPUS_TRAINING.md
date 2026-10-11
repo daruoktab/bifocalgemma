@@ -78,8 +78,8 @@ loading; file checksums and instance order are verified before training.
 ## Notebook recipe
 
 The two matched notebooks retain 20 cells / 19 identical bodies. Their new
-default is `DATA_SOURCE="curated_pool"`, with `LOCAL_DATA_FILE` pointing to the
-pool directory. The preparation cell downloads one frozen collection from the private dataset repo at a full commit SHA. `PREPARE_FULL_POOL=True` is an explicit separate CPU curation option; ordinary training never implicitly starts it. See [dataset releases](DATASET_RELEASES.md). `RUN_TRAINING=False` remains the startup guard. `MAX_STEPS=0`
+training uses a frozen HF collection, with `LOCAL_DATA_FILE` pointing to the
+pool directory. The preparation cell downloads one frozen collection from the private dataset repo at a full commit SHA. Curation runs through the local CLI; its toggle and raw-source choices have been removed from notebooks. See [dataset releases](DATASET_RELEASES.md). `RUN_TRAINING=True` and family-notebook `HF_UPLOAD_ENABLED=True` are defaults; users can disable either flag. `MAX_STEPS=0`
 means all configured epochs over the frozen split; positive values explicitly
 limit updates. `EPOCHS=1`, batch 1, accumulation 4 give approximately
 `ceil(train_examples/4)` optimizer updates. Evaluation/checkpoint intervals default

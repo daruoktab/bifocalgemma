@@ -251,7 +251,7 @@ class TestNotebookCellParity(unittest.TestCase):
         for family in ("symmetric", "asymmetric"):
             text = (root / f"notebooks/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
             self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
-            self.assertIn("HF_UPLOAD_ENABLED = False", text)
+            self.assertIn("HF_UPLOAD_ENABLED = True", text)
             self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)
             self.assertIn("upload_folder", text)
 

@@ -142,7 +142,6 @@ def test_generated_preparation_consumes_frozen_raw_repository_pool(tmp_path, ind
         "load_curated_pool": load_curated_pool,
         "repository_editing_record": repository_editing_record,
         "stable_fingerprint": stable_fingerprint,
-        "DATA_SOURCES": {},
         "CHECKPOINTS": {
             ref.size: {"encoder": asdict(ref), "decoder": asdict(ref)}
             for ref in (spec.encoder, spec.decoder)
@@ -163,9 +162,7 @@ def test_generated_preparation_consumes_frozen_raw_repository_pool(tmp_path, ind
             ),
             namespace,
         )
-    train, dev, manifest = namespace["prepare_training_data"](
-        spec, "curated_pool", root, tmp_path, 2, 1, 1, 0.1, 8192, 2048, 17
-    )
+    train, dev, manifest = namespace["prepare_training_data"](spec, root, tmp_path, 8192, 2048, 17)
     assert [row.instance_id for row in train] == pool["record_ids"]["train"]
     assert [row.instance_id for row in dev] == pool["record_ids"]["dev"]
     assert manifest["curated_pool_fingerprint"] == pool["fingerprint"]

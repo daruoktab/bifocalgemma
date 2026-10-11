@@ -239,8 +239,8 @@ HF repo tetap private; main tepat lima Parquet v2; immutable v1 masih dapat diak
 
 Ketiga notebook lokal mengunci SHA baru. Dua notebook family tetap20 cell dengan19
 body identik; perbedaan hanya tiga control defaults. Cache yang sudah ada tidak lagi
-melewati validasi fingerprint. RUN_TRAINING=False, PREPARE_FULL_POOL=False dan run name
-v2 mencegah otomatis mengulang curation atau mencampur checkpoint lama.
+melewati validasi fingerprint. Default terbaru RUN_TRAINING=True dan HF_UPLOAD_ENABLED=True. Kurasi tidak tersedia
+di notebook; run name v2 serta verifikasi fingerprint memisahkan cohort/checkpoint lama.
 
 Audit berjalan memakai env ai: Python3.13.16, Transformers5.19.0, tokenizers0.23.3,
 huggingface_hub2.2.0, PyArrow25.0.1. Validasi statis tidak mengeksekusi source training.

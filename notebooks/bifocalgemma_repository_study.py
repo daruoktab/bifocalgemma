@@ -21,7 +21,7 @@ def _():
     import marimo as mo
 
     mo.md(
-        "# BifocalGemma · Repository study\nPrepare → SFT → generate → native score. Default actions disabled; fixture is synthetic. Eager generation has no temporal cache. Native Python execution is opt-in and is not a security sandbox."
+        "# BifocalGemma · Repository study\nPrepare → SFT → generate → native score. Full-epoch training defaults to enabled using the pinned HF dataset; generation/scoring are separate actions. Eager generation has no temporal cache. Native Python execution is opt-in and is not a security sandbox."
     )
     return (mo,)
 
@@ -33,7 +33,7 @@ def _():
     EXPERIMENT = "BifocalGemma-E2B-E2B"
     ROWS_FILE = ""
     PREPARED_DIR = "outputs/repository_study/prepared_enc8k"
-    RUN_DIR = "outputs/repository_study/training_enc8k_dec2k_v1"
+    RUN_DIR = "outputs/repository_study/training_enc8k_dec2k_v2"
     PREDICTIONS_FILE = "outputs/repository_study/predictions.jsonl"
     SCORE_FILE = "outputs/repository_study/score.json"
     TOKENIZER_CACHE = "outputs/repository_tokenizers"
@@ -41,7 +41,7 @@ def _():
     ADAPTER_CHECKPOINT = ""
     PYTHON_EVAL = ""
     RUN_PREPARE = False
-    RUN_TRAINING = False
+    RUN_TRAINING = True
     RUN_GENERATE = False
     RUN_SCORE = False
     VALIDATE_GOLD = False
@@ -59,36 +59,22 @@ def _():
     MAX_STEPS = 0  # 0 = complete configured epochs
     EPOCHS = 1
     RESUME_FROM = ""  # checkpoint-v2 path, empty starts a new run
-    TRAINING_DATA_MODE = "curated_pool"  # curated_pool / repository_tasks
     CURATED_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v2"
-    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v2"
-    PREPARE_FULL_POOL = False
     DATASET_REPO_ID = "daruokta/bifocalgemma-data"
     DATASET_REVISION = (
         "d34a19b3badc0120755495c68227cba038819cd7"  # Full immutable dataset commit SHA
     )
     DATASET_COLLECTION = "instruction_enc8k_dec2k_v2"  # Released editing-foundation stage; repository collection remains pending
     CORPUS_KIND = "instruction"
-    REPOSITORY_SOURCE = "swe_rebench_v2"
-    REPOSITORY_TARGET_COUNT = 10000
-    REPOSITORY_PER_REPO_LIMIT = 50
-    REPOSITORY_DISK_GIB = 20
     ACCUMULATION = 4
     HEADROOM_GIB = 16
     return (
         RESUME_FROM,
-        TRAINING_DATA_MODE,
         CURATED_POOL_DIR,
-        FOUNDATION_POOL_DIR,
-        PREPARE_FULL_POOL,
         DATASET_REPO_ID,
         DATASET_REVISION,
         DATASET_COLLECTION,
         CORPUS_KIND,
-        REPOSITORY_SOURCE,
-        REPOSITORY_TARGET_COUNT,
-        REPOSITORY_PER_REPO_LIMIT,
-        REPOSITORY_DISK_GIB,
         SOURCE,
         EXPERIMENT,
         ROWS_FILE,
@@ -1893,7 +1879,6 @@ def _(mo):
         write_json,
     )
     from bifocalgemma.training.memory_probe import tensor_bytes
-    from bifocalgemma.training.repository_sft import fit_repository_sft, prepare_repository_training
 
     environment = {
         "torch": str(torch.__version__),
@@ -1922,8 +1907,6 @@ def _(mo):
         build_native_model,
         load_local_native_model,
         tensor_bytes,
-        prepare_repository_training,
-        fit_repository_sft,
         SOURCE_REVISIONS,
     )
 
@@ -1950,92 +1933,39 @@ def _(HfApi, hf_form, mo, os):
 
 @app.cell
 def _(
-    PREPARE_FULL_POOL,
     DATASET_REPO_ID,
     DATASET_REVISION,
     DATASET_COLLECTION,
     RUN_TRAINING,
-    TRAINING_DATA_MODE,
     CURATED_POOL_DIR,
-    FOUNDATION_POOL_DIR,
     CORPUS_KIND,
-    REPOSITORY_SOURCE,
-    REPOSITORY_TARGET_COUNT,
-    REPOSITORY_PER_REPO_LIMIT,
-    REPOSITORY_DISK_GIB,
     TOKENIZER_CACHE,
     CONTEXT_LIMIT,
     TRAIN_DECODER_LIMIT,
     Path,
-    runtime_root,
     get_experiment,
     fetch_tokenizer_assets,
     hf_token,
-    json,
     mo,
 ):
-    from bifocalgemma.data.full_pool import prepare_full_corpus
     from bifocalgemma.data.offline_sft import load_curated_pool, validate_curated_pool_limits
-    from bifocalgemma.data.repository_corpus import prepare_repository_corpus
+    from bifocalgemma.data.releases import fetch_collection
     from bifocalgemma.training.curated_sft import fit_curated_sft, prepare_curated_training
 
     full_pool_status = {"status": "DISABLED"}
-    if PREPARE_FULL_POOL or (RUN_TRAINING and TRAINING_DATA_MODE == "curated_pool"):
-        if CORPUS_KIND not in {"instruction", "repository"}:
-            raise ValueError("Choose instruction or repository corpus kind.")
-        if not PREPARE_FULL_POOL:
-            if not DATASET_REVISION or not DATASET_COLLECTION:
-                raise ValueError(
-                    "Frozen pool missing. Choose a published collection and full dataset commit SHA; upstream curation requires PREPARE_FULL_POOL=True."
-                )
-            from bifocalgemma.data.releases import fetch_collection
-
-            fetch_collection(
-                DATASET_REPO_ID,
-                DATASET_REVISION,
-                DATASET_COLLECTION,
-                CURATED_POOL_DIR,
-                token=hf_token,
-            )
-        for _name in ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"):
-            fetch_tokenizer_assets(get_experiment(_name), Path(TOKENIZER_CACHE), token=hf_token)
-        _config = json.loads(
-            (runtime_root / "configs/repository_study.json").read_text(encoding="utf-8")
+    if RUN_TRAINING:
+        fetch_collection(
+            DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, CURATED_POOL_DIR, token=hf_token
         )
-        _foundation = FOUNDATION_POOL_DIR if CORPUS_KIND == "repository" else CURATED_POOL_DIR
-        if PREPARE_FULL_POOL and not Path(_foundation).exists():
-            prepare_full_corpus(
-                "outputs/full_corpus_raw",
-                _foundation,
-                TOKENIZER_CACHE,
-                _config,
-                token=hf_token,
-                encoder_limit=CONTEXT_LIMIT,
-                decoder_limit=TRAIN_DECODER_LIMIT,
-            )
-        if not Path(CURATED_POOL_DIR).exists():
-            prepare_repository_corpus(
-                "outputs/full_corpus_raw",
-                CURATED_POOL_DIR,
-                FOUNDATION_POOL_DIR,
-                TOKENIZER_CACHE,
-                _config,
-                source=REPOSITORY_SOURCE,
-                token=hf_token,
-                target_count=REPOSITORY_TARGET_COUNT,
-                per_repo_limit=REPOSITORY_PER_REPO_LIMIT,
-                context_limit=CONTEXT_LIMIT,
-                decoder_limit=TRAIN_DECODER_LIMIT,
-                disk_budget_gib=REPOSITORY_DISK_GIB,
-                progress=lambda _row: print(json.dumps(_row), flush=True),
-            )
         _rows, _manifest = load_curated_pool(CURATED_POOL_DIR)
         _kind = "repository" if "snapshot_policy" in _manifest["report"] else "instruction"
         if _kind != CORPUS_KIND:
-            raise ValueError("Selected pool directory belongs to another corpus kind.")
+            raise ValueError("Selected HF collection has another corpus kind.")
         _limits = validate_curated_pool_limits(
             _manifest, encoder_limit=CONTEXT_LIMIT, decoder_limit=TRAIN_DECODER_LIMIT
         )
+        for _name in ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"):
+            fetch_tokenizer_assets(get_experiment(_name), Path(TOKENIZER_CACHE), token=hf_token)
         full_pool_status = {
             "status": "READY",
             "syntax_diagnostics": _manifest["report"].get(
@@ -2048,7 +1978,7 @@ def _(
         }
     mo.vstack(
         [
-            mo.md("## Full corpus (all six configurations)"),
+            mo.md("## Frozen HF corpus (all six configurations)"),
             mo.ui.table([full_pool_status], selection=None),
         ]
     )
@@ -2147,43 +2077,24 @@ def _(
 @app.cell
 def _(
     RUN_TRAINING,
-    TRAINING_DATA_MODE,
     CURATED_POOL_DIR,
     full_pool_status,
     prepare_curated_training,
-    PREPARED_DIR,
     EXPERIMENT,
     TOKENIZER_CACHE,
-    CONTEXT_LIMIT,
-    TRAIN_DECODER_LIMIT,
-    Path,
     get_experiment,
-    prepare_repository_training,
-    preparation_result,
     mo,
 ):
     train_data = dev_data = training_manifest = None
-    if RUN_TRAINING and TRAINING_DATA_MODE == "curated_pool":
+    if RUN_TRAINING:
         if full_pool_status["status"] != "READY":
-            raise ValueError("Full corpus is not ready.")
+            raise ValueError("Load the pinned HF dataset first.")
         train_data, dev_data, training_manifest = prepare_curated_training(
             get_experiment(EXPERIMENT), CURATED_POOL_DIR, TOKENIZER_CACHE
         )
-    elif RUN_TRAINING and TRAINING_DATA_MODE == "repository_tasks":
-        train_data, dev_data, training_manifest = prepare_repository_training(
-            Path(PREPARED_DIR) / "train.jsonl",
-            get_experiment(EXPERIMENT),
-            Path(TOKENIZER_CACHE),
-            encoder_limit=CONTEXT_LIMIT,
-            decoder_limit=TRAIN_DECODER_LIMIT,
-        )
     mo.md(
         "## 6 · Matched cohort/tokenization\n"
-        + (
-            "Train/dev prepared with repo grouping and all-six-model eligibility."
-            if training_manifest
-            else "Training disabled."
-        )
+        + ("All frozen train/dev IDs prepared." if training_manifest else "Training disabled.")
     )
     return (train_data, dev_data, training_manifest)
 
@@ -2253,7 +2164,6 @@ def _(
 def _(
     RUN_TRAINING,
     RESUME_FROM,
-    TRAINING_DATA_MODE,
     fit_curated_sft,
     RUN_DIR,
     EXPERIMENT,
@@ -2268,7 +2178,6 @@ def _(
     Path,
     get_experiment,
     load_local_native_model,
-    fit_repository_sft,
     write_json,
     torch,
     mo,
@@ -2283,33 +2192,17 @@ def _(
             get_experiment(EXPERIMENT), model_paths[0], model_paths[1]
         )
         try:
-            if TRAINING_DATA_MODE == "curated_pool":
-                training_result = fit_curated_sft(
-                    _model,
-                    train_data,
-                    dev_data,
-                    Path(RUN_DIR),
-                    training_manifest,
-                    max_steps=MAX_STEPS or None,
-                    epochs=EPOCHS,
-                    accumulation=ACCUMULATION,
-                    resume_from=RESUME_FROM or None,
-                )
-            else:
-                _budget = (
-                    MAX_STEPS or ((len(train_data) + ACCUMULATION - 1) // ACCUMULATION) * EPOCHS
-                )
-                training_result = fit_repository_sft(
-                    _model,
-                    train_data,
-                    dev_data,
-                    Path(RUN_DIR),
-                    training_manifest,
-                    max_steps=_budget,
-                    epochs=EPOCHS,
-                    accumulation=ACCUMULATION,
-                    resume_from=RESUME_FROM or None,
-                )
+            training_result = fit_curated_sft(
+                _model,
+                train_data,
+                dev_data,
+                Path(RUN_DIR),
+                training_manifest,
+                max_steps=MAX_STEPS or None,
+                epochs=EPOCHS,
+                accumulation=ACCUMULATION,
+                resume_from=RESUME_FROM or None,
+            )
             write_json(Path(RUN_DIR) / "data_manifest.json", training_manifest)
             write_json(Path(RUN_DIR) / "training_report.json", training_result)
             write_json(Path(RUN_DIR) / "model_provenance.json", _provenance)

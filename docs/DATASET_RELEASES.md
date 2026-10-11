@@ -88,7 +88,9 @@ Even an existing local directory is verified against the selected HF collection.
 
 Evaluation gold requires --include-gold with --role eval. Eval directories must be new,
 so protocols cannot be mixed silently. Normal notebook training downloads one frozen
-named collection; upstream curation requires explicit PREPARE_FULL_POOL=True.
+named collection. Curation is available through the separate local CLI only;
+training notebooks have no curation toggle or raw-source fallback. Full-epoch
+training and family-notebook upload default to enabled and can be set to False.
 
 ## Not yet ready
 

@@ -59,8 +59,8 @@ lagi dan selalu menyatakan mode synthetic, bukan benchmark score.
 [Notebook standalone](notebooks/bifocalgemma_repository_study.py) menyiapkan
 source-pinned repo exports, matched-cohort SFT keenam model, checkpoint v2 inference,
 greedy patch/function/completion generation, serta opt-in native scoring.
-Default actions/network/execution disabled. Dua training notebooks tetap 20 cell
-dengan 18 isi identik dan menerima repository train exports melalui local_jsonl.
+Training defaults to a complete epoch; family-notebook artifact upload is enabled. Generation/scoring remain separate actions. Dua training notebooks tetap 20 cell
+dengan 19 isi identik dan menerima train exports melalui koleksi HF beku.
 
 Validation nyata: synthetic pipeline smoke, RepoQA Python100 prepared, dan
 HumanEvalFix 164/164 gold reference repairs lolos native ai scorer. Ini **bukan
@@ -125,7 +125,7 @@ Dua notebook khusus **training** tersedia:
 [simetris](notebooks/bifocalgemma_train_symmetric.py) dan
 [asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 20 cell,
 19 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
-EditPackFT/JSONL → LoRA SFT → dev loss → checkpoint/resume. RUN_TRAINING=False
+Pinned private HF dataset → LoRA SFT → dev loss → checkpoint/resume/upload. RUN_TRAINING=True
 saat pertama dibuka. [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.
 
@@ -163,9 +163,11 @@ Kontributor: [daruoktab](https://github.com/daruoktab) dan [attmhd](https://gith
 Kode memakai [Apache License 2.0](LICENSE). [Ketentuan kompetisi](docs/COMPETITION_GUIDE.md)
 yang belum terverifikasi tetap diberi status demikian.
 
-Full-corpus admission dan complete-epoch defaults dijelaskan dalam [panduan](docs/FULL_CORPUS_TRAINING.md). Kurasi penuh sedang berjalan; jumlah upstream bukan jumlah yang sudah lolos training admission. Pilot model asli E2B–E2B berhasil 100 steps dengan peak allocated 23,38 GiB; ini belum skor repair.
-
-Manual Molab upload kini menyiapkan corpus melalui cell PREPARE_FULL_POOL. Dependency mengikuti env ai (Torch 2.14.1/cu130, Transformers 5.19.0). Foundation terverifikasi: 44.333 train / 4.926 dev; main repository corpus memakai snapshot berlisensi dan public-issue context. Lihat [panduan](docs/FULL_CORPUS_TRAINING.md).
+Notebook Molab selalu mengambil koleksi dataset beku dari HF; tidak ada kurasi ulang
+atau pilihan raw-source di notebook. Default satu epoch penuh dan upload artefak run
+selesai aktif. Pengguna dapat mengubah RUN_TRAINING/HF_UPLOAD_ENABLED menjadi False.
+Dataset v2:40.706 train /4.524 dev; corpus repository utama masih pending.
+Lihat [panduan notebook](docs/TRAINING_NOTEBOOKS.md).
 
 Dataset releases are staged in the separate private HF dataset repository
 [daruokta/bifocalgemma-data](https://huggingface.co/datasets/daruokta/bifocalgemma-data).
