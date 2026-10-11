@@ -7,7 +7,7 @@ is replaced. Same-forward shared KV includes both self and cross branches.
 import json
 from importlib.metadata import version
 from importlib.resources import files
-from typing import cast
+from typing import Callable, cast
 
 import torch
 import torch.nn as nn
@@ -23,7 +23,7 @@ from bifocalgemma.config import ExperimentSpec, ModelSize
 from bifocalgemma.contracts import ModelOutput, Seq2SeqBatch, TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
 from bifocalgemma.models.merged_attention import build_joint_visibility
-from bifocalgemma.training.objectives import patch_cross_entropy
+from bifocalgemma.training.objectives import chunked_linear_cross_entropy, patch_cross_entropy
 
 
 def native_config(size: ModelSize, *, tiny: bool = True, encoder: bool = False):
@@ -116,6 +116,8 @@ class NativeTinyModel(nn.Module):
     def __init__(self, spec: ExperimentSpec, *, tiny: bool = True):
         super().__init__()
         self.spec = spec
+        self.loss_chunk_size = None
+        self._stage_callback: Callable | None = None
         self.decoder = Gemma4TextModel(native_config(spec.decoder.size, tiny=tiny))
         self.encoder = (
             Gemma4TextModel(native_config(spec.encoder.size, tiny=tiny, encoder=True))
@@ -163,6 +165,8 @@ class NativeTinyModel(nn.Module):
             return self.decoder.embed_tokens.weight.new_empty(
                 input_ids.shape[0], 0, self.decoder.config.hidden_size
             )
+        if self._stage_callback is not None:
+            self._stage_callback({"stage": "encoder_forward"})
         hidden = self.encoder(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -172,7 +176,7 @@ class NativeTinyModel(nn.Module):
         # No padding states enter K/V, including batches with wholly masked context.
         return self.encoder_projection(hidden).masked_fill(~attention_mask.bool()[..., None], 0)
 
-    def decode_logits(
+    def _decode_hidden(
         self,
         input_ids,
         decoder_mask,
@@ -197,6 +201,8 @@ class NativeTinyModel(nn.Module):
             )
         elif encoder_states is not None or encoder_mask is not None:
             raise ValueError("Decoder-only baseline cannot receive encoder states.")
+        if self._stage_callback is not None:
+            self._stage_callback({"stage": "decoder_forward"})
         hidden = self.decoder(
             input_ids=input_ids,
             attention_mask=decoder_mask,
@@ -206,6 +212,20 @@ class NativeTinyModel(nn.Module):
         ).last_hidden_state
         if last_token_only:
             hidden = hidden[:, -1:]
+        return hidden
+
+    def decode_logits(
+        self,
+        input_ids,
+        decoder_mask,
+        encoder_states=None,
+        encoder_mask=None,
+        *,
+        last_token_only=False,
+    ):
+        hidden = self._decode_hidden(
+            input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=last_token_only
+        )
         logits = self.lm_head(hidden)
         cap = self.decoder.config.final_logit_softcapping
         if cap is not None:
@@ -217,7 +237,7 @@ class NativeTinyModel(nn.Module):
             input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=True
         )
 
-    def forward(self, batch: Seq2SeqBatch) -> ModelOutput:
+    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:
         if self.encoder is None:
             if batch.encoder_input_ids.shape[1] != 0:
                 raise ValueError("Baseline requires an empty encoder sequence.")
@@ -225,10 +245,27 @@ class NativeTinyModel(nn.Module):
         else:
             hidden = self.encode_context(batch.encoder_input_ids, batch.encoder_attention_mask)
             mask = batch.encoder_attention_mask
+        if not return_logits and self.loss_chunk_size is not None:
+            decoder_hidden = self._decode_hidden(
+                batch.decoder_input_ids, batch.decoder_attention_mask, hidden, mask
+            )
+            if self._stage_callback is not None:
+                self._stage_callback({"stage": "loss_forward"})
+            loss = chunked_linear_cross_entropy(
+                decoder_hidden,
+                self.lm_head.weight,
+                batch.labels,
+                chunk_size=self.loss_chunk_size,
+                softcap=self.decoder.config.final_logit_softcapping,
+            )
+            return ModelOutput(None, loss)
         logits = self.decode_logits(
             batch.decoder_input_ids, batch.decoder_attention_mask, hidden, mask
         )
         return ModelOutput(logits, patch_cross_entropy(logits, batch.labels))
+
+    def forward_loss(self, batch: Seq2SeqBatch) -> ModelOutput:
+        return self.forward(batch, return_logits=False)
 
 
 def build_native_tiny_model(spec: ExperimentSpec) -> NativeTinyModel:

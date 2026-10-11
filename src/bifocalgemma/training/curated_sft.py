@@ -78,6 +78,8 @@ def fit_curated_sft(
     resume_from=None,
     progress=None,
     seed=17,
+    event_callback=None,
+    memory_policy=None,
 ):
     """One run/model, all epochs by default; checkpoint v2 supports explicit resume."""
     if epochs < 1 or batch_size < 1 or accumulation < 1 or not train or not dev:
@@ -93,6 +95,13 @@ def fit_curated_sft(
     )
     policy = default_training_profiles()[family]
     configure_policy_model(model, policy)
+    from bifocalgemma.models.memory_efficient import (
+        configure_memory_efficient_training,
+        run_training_memory_preflight,
+    )
+
+    configure_memory_efficient_training(model, memory_policy)
+    memory_preflight = run_training_memory_preflight(model, train, progress=event_callback)
     from importlib.metadata import version
 
     import torch
@@ -133,9 +142,11 @@ def fit_curated_sft(
         save_every=save_every,
         resume_from=resume_from,
         progress=progress,
+        event_callback=event_callback,
         seed=seed,
         data_manifest=manifest,
     )
+    result["memory_preflight"] = memory_preflight
     result["planned_full_epoch_updates"] = planned_updates
     result["explicit_max_steps"] = max_steps
     return result

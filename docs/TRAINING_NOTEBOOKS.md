@@ -20,6 +20,15 @@ mengikuti spec runtime dari kode model yang **sama**, sehingga tidak memerlukan
 cell arsitektur berbeda. Simetris: tied ordinary words, Identity projection.
 Asimetris: untied encoder words, learned H projection. PLE tetap separate.
 
+## Optimasi memori dan monitor — 11 Oktober 2026
+
+Default sekarang memakai layer checkpointing, tiled attention FP32 (termasuk head512),
+chunked loss train/dev, dan preflight panjang maksimum tanpa optimizer update.
+RUN_NAME baru: enc8k-dec2k-v2-mem1. GPU/RAM, tahap, loss chart, validasi,
+checkpoint dan failure diagnostics tampil pada monitor; events/history/monitor.html
+disimpan untuk inspeksi. Tidak ada quantization, pengurangan scope atau context.
+Lihat [recipe dan monitoring](MEMORY_EFFICIENT_TRAINING.md).
+
 ## Cara memulai
 
 1. Unggah salah satu file .py ke Molab; file standalone tidak perlu checkout repo.

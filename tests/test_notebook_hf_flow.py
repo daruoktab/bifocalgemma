@@ -2,6 +2,7 @@
 
 import ast
 import copy
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +13,8 @@ PATHS = [
     ROOT / "notebooks" / f"bifocalgemma_train_{family}.py" for family in ("symmetric", "asymmetric")
 ]
 MO = SimpleNamespace(
+    status=SimpleNamespace(spinner=lambda **kwargs: nullcontext()),
+    output=SimpleNamespace(replace=lambda value: None),
     md=lambda text: text,
     vstack=lambda items: None,
     ui=SimpleNamespace(table=lambda rows, **kw: rows),

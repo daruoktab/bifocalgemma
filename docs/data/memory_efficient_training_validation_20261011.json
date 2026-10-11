@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-11",
+  "base_commit": "52dbd6b460f656091bb0042584cf90a32612c543",
+  "scope": "local implementation and verification; no Molab execution",
+  "pytest_full": {
+    "passed": 207,
+    "skipped": 2,
+    "seconds": 274.21,
+    "skip_reason": "BIFOCALGEMMA_TOKENIZER_CACHE not configured for two real-offline-tokenizer tests"
+  },
+  "final_ui_regression": {
+    "passed": 13
+  },
+  "checks": {
+    "generator_check": "passed",
+    "marimo_check_strict": "passed",
+    "ruff": "passed",
+    "ty_source_ai_env": "passed",
+    "git_diff_check": "passed"
+  },
+  "notebook_parity": {
+    "cells_each": 20,
+    "identical_cells": 19,
+    "different_cells": [
+      1
+    ]
+  },
+  "runtime_recipe": {
+    "encoder_limit": 8192,
+    "decoder_limit": 2048,
+    "query_chunk": 128,
+    "loss_chunk": 128,
+    "kv_gradient_accumulation": "float32",
+    "layer_checkpointing": "non-reentrant",
+    "quantization": false,
+    "ple_offload": false,
+    "run_name": "enc8k-dec2k-v2-mem1"
+  },
+  "preflight": "actual encoder/decoder/joint maxima + combined shape; no optimizer step; RNG/mode restored",
+  "ui_validation": {
+    "real_marimo_fixture_export": "passed",
+    "desktop_1280_horizontal_overflow": false,
+    "mobile_520_horizontal_overflow": false,
+    "preview_is_synthetic": true
+  },
+  "pretrained_gpu_measurements": "pending user Molab execution; no total VRAM savings or E4B-E4B fit claimed",
+  "file_sha256": {
+    "notebooks\\bifocalgemma_train_symmetric.py": "58acd91167958158a22166aac601097ff7b2c93982f790c22671a6c489e47f8f",
+    "notebooks\\bifocalgemma_train_asymmetric.py": "c8d87865b045f988f8d577e9916e09676e39b327aeaf5a028263340ac1f794a9",
+    "src\\bifocalgemma\\models\\memory_efficient.py": "e052ad3a4cd549a7895ab912c2b7556c26df616106f673afd3006a9771ff651e",
+    "src\\bifocalgemma\\training\\telemetry.py": "3ec86e678f359af969703b754b65ede1e25e727eb11e07460c324272655b7977"
+  }
+}

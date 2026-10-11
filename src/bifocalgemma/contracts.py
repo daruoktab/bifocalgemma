@@ -73,7 +73,7 @@ class Seq2SeqBatch:
 
 @dataclass
 class ModelOutput:
-    logits: torch.Tensor
+    logits: torch.Tensor | None
     loss: torch.Tensor | None
 
 

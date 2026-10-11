@@ -30,7 +30,7 @@ def _():
     EXPERIMENT = "BifocalGemma-E2B-E2B"
     ROWS_FILE = ""
     PREPARED_DIR = "outputs/repository_study/prepared_enc8k"
-    RUN_DIR = "outputs/repository_study/training_enc8k_dec2k_v2"
+    RUN_DIR = "outputs/repository_study/training_enc8k_dec2k_v2_mem1"
     PREDICTIONS_FILE = "outputs/repository_study/predictions.jsonl"
     SCORE_FILE = "outputs/repository_study/score.json"
     TOKENIZER_CACHE = "outputs/repository_tokenizers"
@@ -223,6 +223,8 @@ def _(RUN_TRAINING, RUN_GENERATE, training_manifest, EXPERIMENT, MODEL_CACHE, HE
 
 @app.cell
 def _(RUN_TRAINING, RESUME_FROM, fit_curated_sft, RUN_DIR, EXPERIMENT, MAX_STEPS, EPOCHS, ACCUMULATION, model_paths, model_guard, training_manifest, train_data, dev_data, Path, get_experiment, load_local_native_model, write_json, torch, mo):
+    from bifocalgemma.training.telemetry import TrainingDashboard
+    _dashboard = TrainingDashboard(mo, experiment=EXPERIMENT, device="cuda" if torch.cuda.is_available() else None)
     training_result = {"status": "DISABLED", "reason": model_guard}
     if RUN_TRAINING and model_paths:
         if not RESUME_FROM and Path(RUN_DIR).exists() and any(Path(RUN_DIR).iterdir()):
@@ -231,7 +233,8 @@ def _(RUN_TRAINING, RESUME_FROM, fit_curated_sft, RUN_DIR, EXPERIMENT, MAX_STEPS
             raise ValueError("Prepare matched train/dev data first.")
         _model, _provenance = load_local_native_model(get_experiment(EXPERIMENT), model_paths[0], model_paths[1])
         try:
-            training_result = fit_curated_sft(_model, train_data, dev_data, Path(RUN_DIR), training_manifest, max_steps=MAX_STEPS or None, epochs=EPOCHS, accumulation=ACCUMULATION, resume_from=RESUME_FROM or None)
+            _dashboard({"stage":"model_loaded"})
+            training_result = fit_curated_sft(_model, train_data, dev_data, Path(RUN_DIR), training_manifest, max_steps=MAX_STEPS or None, epochs=EPOCHS, accumulation=ACCUMULATION, resume_from=RESUME_FROM or None, event_callback=_dashboard)
             write_json(Path(RUN_DIR) / "data_manifest.json", training_manifest)
             write_json(Path(RUN_DIR) / "training_report.json", training_result)
             write_json(Path(RUN_DIR) / "model_provenance.json", _provenance)

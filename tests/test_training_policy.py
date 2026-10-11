@@ -130,7 +130,21 @@ class TestTrainingPolicy(unittest.TestCase):
                 # Wall-clock diagnostics vary; every training-semantic field must match.
                 def semantic(rows):
                     return [
-                        {k: v for k, v in row.items() if k not in {"step_seconds", "eval_seconds"}}
+                        {
+                            k: v
+                            for k, v in row.items()
+                            if k
+                            not in {
+                                "step_seconds",
+                                "eval_seconds",
+                                "forward_seconds",
+                                "backward_seconds",
+                                "optimizer_seconds",
+                                "target_tokens_per_second",
+                                "eta_train_seconds",
+                            }
+                            and not k.startswith(("ram_", "gpu_"))
+                        }
                         for row in rows
                     ]
 

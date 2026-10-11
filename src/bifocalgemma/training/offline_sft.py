@@ -159,26 +159,99 @@ def restore_sft_checkpoint(
     return state
 
 
-def evaluate_sft_loss(model, examples, *, batch_size, device):
+def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=None, step=0):
     previous = model.training
     model.eval()
-    total, tokens = 0.0, 0
+    total, tokens, by_source = 0.0, 0, {}
+    if event_callback:
+        event_callback(
+            {
+                "stage": "validation_started",
+                "step": step,
+                "eval_examples_done": 0,
+                "eval_examples_total": len(examples),
+            }
+        )
     try:
         with torch.no_grad():
             for start in range(0, len(examples), batch_size):
-                batch = RepairCollator()(examples[start : start + batch_size]).to(device)
-                output = model(batch)
+                items = examples[start : start + batch_size]
+                batch = RepairCollator()(items).to(device)
+                # Save ID/length before execution so a failed validation batch is reproducible.
+                if event_callback:
+                    event_callback(
+                        {
+                            "stage": "validation_batch",
+                            "step": step,
+                            "instance_ids": [x.instance_id for x in items],
+                            "encoder_tokens": batch.encoder_input_ids.shape[1],
+                            "decoder_tokens": batch.decoder_input_ids.shape[1],
+                            "batch_target_tokens": int((batch.labels != -100).sum()),
+                        }
+                    )
+                output = (
+                    model.forward_loss(batch) if hasattr(model, "forward_loss") else model(batch)
+                )
                 assert output.loss is not None
                 if not bool(torch.isfinite(output.loss)):
                     raise RuntimeError("Nonfinite held-out loss.")
                 count = int((batch.labels != -100).sum())
-                total += output.loss.detach().item() * count
+                loss_sum = output.loss.detach().item() * count
+                total += loss_sum
                 tokens += count
+                sources = {x.metadata.get("source", "unknown") for x in items}
+                source = next(iter(sources)) if len(sources) == 1 else "mixed_batch"
+                entry = by_source.setdefault(
+                    source, {"loss_sum": 0.0, "supervised_tokens": 0, "examples": 0}
+                )
+                entry["loss_sum"] += loss_sum
+                entry["supervised_tokens"] += count
+                entry["examples"] += len(items)
+                del output, batch
+                done = start + len(items)
+                if event_callback and (
+                    start == 0 or done == len(examples) or done % (25 * batch_size) == 0
+                ):
+                    event_callback(
+                        {
+                            "stage": "validation_progress",
+                            "step": step,
+                            "eval_examples_done": done,
+                            "eval_examples_total": len(examples),
+                            "eval_running_loss": total / tokens if tokens else None,
+                            "eval_target_tokens": tokens,
+                        }
+                    )
     finally:
         model.train(previous)
     if not tokens:
         raise ValueError("Held-out split has no supervised tokens.")
-    return {"loss": total / tokens, "supervised_tokens": tokens, "examples": len(examples)}
+    result = {
+        "loss": total / tokens,
+        "supervised_tokens": tokens,
+        "examples": len(examples),
+        "by_source": {
+            name: {
+                "loss": v["loss_sum"] / v["supervised_tokens"],
+                "supervised_tokens": v["supervised_tokens"],
+                "examples": v["examples"],
+            }
+            for name, v in by_source.items()
+            if v["supervised_tokens"]
+        },
+    }
+    if event_callback:
+        event_callback(
+            {
+                "stage": "validation_complete",
+                "step": step,
+                "dev_loss": result["loss"],
+                "eval_examples_done": len(examples),
+                "eval_examples_total": len(examples),
+                "eval": result,
+            }
+        )
+    return result
 
 
 def fit_offline_sft(
@@ -202,12 +275,15 @@ def fit_offline_sft(
     progress=None,
     data_manifest=None,
     training_policy=None,
+    event_callback=None,
 ):
     import time
+    import traceback
+
+    from bifocalgemma.training.telemetry import TrainingDashboard, append_event, resource_snapshot
 
     segment_started = time.perf_counter()
-    evaluation_seconds = 0.0
-    checkpoint_seconds = 0.0
+    evaluation_seconds = checkpoint_seconds = 0.0
     if (
         min(max_steps, epochs, batch_size, accumulation, eval_every, save_every) < 1
         or learning_rate <= 0
@@ -224,6 +300,8 @@ def fit_offline_sft(
     parameters = [p for p in model.parameters() if p.requires_grad]
     if not parameters:
         raise ValueError("No trainable parameters.")
+    if getattr(model, "memory_policy", None):
+        compatibility = {**compatibility, "memory_policy": copy.deepcopy(model.memory_policy)}
     checkpoint_format = "bifocalgemma_notebook_sft_v1"
     if training_policy is None:
         optimizer = torch.optim.AdamW(parameters, lr=learning_rate, weight_decay=0.0, foreach=False)
@@ -240,6 +318,7 @@ def fit_offline_sft(
     order = list(range(len(train)))
     random.Random(seed).shuffle(order)
     state: dict = {"global_step": 0, "epoch": 0, "order": order, "cursor": 0, "history": []}
+    # All resume validation precedes changes to run metadata or diagnostics.
     if resume_from:
         state = restore_sft_checkpoint(
             model,
@@ -254,90 +333,210 @@ def fit_offline_sft(
             json.dumps(data_manifest, indent=2), encoding="utf-8"
         )
     (root / "run_config.json").write_text(json.dumps(compatibility, indent=2), encoding="utf-8")
+    log_file = root / "history.jsonl"
+    if resume_from:
+        log_file.write_text(
+            "".join(json.dumps(r) + "\n" for r in state["history"]), encoding="utf-8"
+        )
     model.train()
     checkpoints = []
+    last_checkpoint = str(resume_from) if resume_from else None
     last_checkpoint_step = state["global_step"] if resume_from else -1
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats(device)
-    log_file = root / "history.jsonl"
-    while state["global_step"] < max_steps and state["epoch"] < epochs:
-        if state["cursor"] >= len(state["order"]):
-            state["epoch"] += 1
-            if state["epoch"] >= epochs:
-                break
-            state["order"] = list(range(len(train)))
-            random.Random(seed + state["epoch"]).shuffle(state["order"])
-            state["cursor"] = 0
-        step_started = time.perf_counter()
-        micro_batches = []
-        for micro in range(accumulation):
-            if state["cursor"] >= len(state["order"]):
-                break
-            indices = state["order"][state["cursor"] : state["cursor"] + batch_size]
-            state["cursor"] += len(indices)
-            micro_batches.append(RepairCollator()([train[index] for index in indices]))
-        token_count = sum(int((batch.labels != -100).sum()) for batch in micro_batches)
-        if not token_count:
-            raise ValueError("No supervised tokens in optimizer window.")
-        optimizer.zero_grad(set_to_none=True)
-        mean_loss = 0.0
-        for batch_cpu in micro_batches:
-            batch = batch_cpu.to(device)
-            output = model(batch)
-            assert output.loss is not None
-            if not bool(torch.isfinite(output.loss)):
-                raise RuntimeError("Nonfinite training loss.")
-            count = int((batch_cpu.labels != -100).sum())
-            (output.loss * (count / token_count)).backward()
-            mean_loss += output.loss.detach().item() * (count / token_count)
-            del output, batch
-        gradients = [p.grad for p in parameters if p.grad is not None]
-        if not gradients or not all(bool(torch.isfinite(g).all()) for g in gradients):
-            raise RuntimeError("Missing/nonfinite training gradients.")
-        norm = torch.nn.utils.clip_grad_norm_(parameters, clip_norm, foreach=False)
-        if not bool(torch.isfinite(norm)):
-            raise RuntimeError("Nonfinite gradient norm.")
-        rates = None
-        fraction = min(1.0, (state["global_step"] + 1) / warmup_steps) if warmup_steps else 1.0
-        if training_policy is None:
-            for group in optimizer.param_groups:
-                group["lr"] = learning_rate * fraction
-        else:
-            rates = update_policy_learning_rates(optimizer, state["global_step"])
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-        del gradients, micro_batches
-        state["global_step"] += 1
+    latest_batch = {}
+    phase = "run_started"
+    if event_callback is None:
+        event_callback = TrainingDashboard(None, device=device)
+
+    def emit(event):
+        nonlocal phase, latest_batch
+        phase = event["stage"]
+        if "instance_ids" in event:
+            latest_batch = {
+                k: event[k]
+                for k in ("instance_ids", "encoder_tokens", "decoder_tokens", "batch_target_tokens")
+                if k in event
+            }
         row = {
             "step": state["global_step"],
-            "epoch": state["epoch"],
-            "train_loss": mean_loss,
-            "target_tokens": token_count,
-            "learning_rate": learning_rate * fraction,
-            "gradient_norm": norm.detach().item(),
+            "epoch_fraction": state["epoch"] + state["cursor"] / len(train),
+            "max_steps": max_steps,
+            "accumulation": accumulation,
+            "elapsed_seconds": time.perf_counter() - segment_started,
+            **event,
+            **resource_snapshot(device),
         }
-        if device.type == "cuda":
-            torch.cuda.synchronize(device)
-        row["step_seconds"] = time.perf_counter() - step_started
-        if rates is not None:
-            row.pop("learning_rate")
-            row["learning_rates"] = rates
-        if state["global_step"] % eval_every == 0:
-            eval_started = time.perf_counter()
-            row["eval"] = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
-            row["eval_seconds"] = time.perf_counter() - eval_started
-            evaluation_seconds += row["eval_seconds"]
-        if device.type == "cuda":
-            row["peak_allocated_gib"] = torch.cuda.max_memory_allocated(device) / 2**30
-        state["history"].append(row)
-        with log_file.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(row) + "\n")
-        if progress:
-            progress(row)
-        if state["global_step"] % save_every == 0:
-            checkpoint_started = time.perf_counter()
-            checkpoints.append(
-                save_sft_checkpoint(
+        payload = append_event(root / "events.jsonl", row)
+        if event_callback:
+            event_callback(payload)
+        return payload
+
+    old_callback = getattr(model, "_stage_callback", None)
+
+    def model_stage(event):
+        # Suppress per-stack validation events; validation counters remain visible.
+        if model.training:
+            emit(event)
+
+    model._stage_callback = model_stage
+    try:
+        emit(
+            {
+                "stage": "run_started",
+                "run_dir": str(root.resolve()),
+                "train_examples": len(train),
+                "dev_examples": len(dev),
+                "last_checkpoint": last_checkpoint,
+                "memory_policy": getattr(model, "memory_policy", None),
+                **getattr(model, "memory_policy", {}),
+                "history": state["history"],
+            }
+        )
+        while state["global_step"] < max_steps and state["epoch"] < epochs:
+            if state["cursor"] >= len(state["order"]):
+                state["epoch"] += 1
+                if state["epoch"] >= epochs:
+                    break
+                state["order"] = list(range(len(train)))
+                random.Random(seed + state["epoch"]).shuffle(state["order"])
+                state["cursor"] = 0
+            step_started = time.perf_counter()
+            micro_batches, item_batches = [], []
+            for micro in range(accumulation):
+                if state["cursor"] >= len(state["order"]):
+                    break
+                indices = state["order"][state["cursor"] : state["cursor"] + batch_size]
+                state["cursor"] += len(indices)
+                items = [train[index] for index in indices]
+                item_batches.append(items)
+                micro_batches.append(RepairCollator()(items))
+            token_count = sum(int((batch.labels != -100).sum()) for batch in micro_batches)
+            if not token_count:
+                raise ValueError("No supervised tokens in optimizer window.")
+            optimizer.zero_grad(set_to_none=True)
+            mean_loss, window_sources, phase_times = (
+                0.0,
+                {},
+                {"forward_seconds": 0.0, "backward_seconds": 0.0},
+            )
+            for micro, (batch_cpu, items) in enumerate(
+                zip(micro_batches, item_batches, strict=True), 1
+            ):
+                batch = batch_cpu.to(device)
+                count = int((batch_cpu.labels != -100).sum())
+                emit(
+                    {
+                        "stage": "microbatch_started",
+                        "microbatch": micro,
+                        "instance_ids": [x.instance_id for x in items],
+                        "encoder_tokens": batch.encoder_input_ids.shape[1],
+                        "decoder_tokens": batch.decoder_input_ids.shape[1],
+                        "batch_target_tokens": count,
+                        "optimizer_window_target_tokens": token_count,
+                    }
+                )
+                phase_started = time.perf_counter()
+                emit({"stage": "forward_started"})
+                output = (
+                    model.forward_loss(batch) if hasattr(model, "forward_loss") else model(batch)
+                )
+                assert output.loss is not None
+                if not bool(torch.isfinite(output.loss)):
+                    raise RuntimeError("Nonfinite training loss.")
+                phase_times["forward_seconds"] += time.perf_counter() - phase_started
+                emit({"stage": "backward_started"})
+                phase_started = time.perf_counter()
+                (output.loss * (count / token_count)).backward()
+                if device.type == "cuda":
+                    torch.cuda.synchronize(device)
+                phase_times["backward_seconds"] += time.perf_counter() - phase_started
+                batch_loss = output.loss.detach().item()
+                mean_loss += batch_loss * (count / token_count)
+                sources = {x.metadata.get("source", "unknown") for x in items}
+                source = next(iter(sources)) if len(sources) == 1 else "mixed_batch"
+                entry = window_sources.setdefault(source, {"loss_sum": 0.0, "supervised_tokens": 0})
+                entry["loss_sum"] += batch_loss * count
+                entry["supervised_tokens"] += count
+                del output, batch
+                emit({"stage": "microbatch_complete", "microbatch": micro})
+            gradients = [p.grad for p in parameters if p.grad is not None]
+            if not gradients or not all(bool(torch.isfinite(g).all()) for g in gradients):
+                raise RuntimeError("Missing/nonfinite training gradients.")
+            norm = torch.nn.utils.clip_grad_norm_(parameters, clip_norm, foreach=False)
+            if not bool(torch.isfinite(norm)):
+                raise RuntimeError("Nonfinite gradient norm.")
+            fraction = min(1.0, (state["global_step"] + 1) / warmup_steps) if warmup_steps else 1.0
+            if training_policy is None:
+                for group in optimizer.param_groups:
+                    group["lr"] = learning_rate * fraction
+                rates = {"default": learning_rate * fraction}
+            else:
+                rates = update_policy_learning_rates(optimizer, state["global_step"])
+            emit({"stage": "optimizer_started", "learning_rates": rates})
+            optimizer_started = time.perf_counter()
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            if device.type == "cuda":
+                torch.cuda.synchronize(device)
+            phase_times["optimizer_seconds"] = time.perf_counter() - optimizer_started
+            del gradients, micro_batches
+            state["global_step"] += 1
+            seconds = time.perf_counter() - step_started
+            row = {
+                "step": state["global_step"],
+                "epoch": state["epoch"],
+                "epoch_fraction": state["epoch"] + state["cursor"] / len(train),
+                "train_loss": mean_loss,
+                "target_tokens": token_count,
+                "gradient_norm": norm.detach().item(),
+                "step_seconds": seconds,
+                **phase_times,
+                "target_tokens_per_second": token_count / seconds,
+                "by_source": {
+                    name: {
+                        "loss": v["loss_sum"] / v["supervised_tokens"],
+                        "supervised_tokens": v["supervised_tokens"],
+                    }
+                    for name, v in window_sources.items()
+                },
+                "last_batch": latest_batch,
+                **resource_snapshot(device),
+            }
+            if training_policy is None:
+                row["learning_rate"] = rates["default"]
+            else:
+                row["learning_rates"] = rates
+            if device.type == "cuda":
+                row["peak_allocated_gib"] = torch.cuda.max_memory_allocated(device) / 2**30
+            recent_times = [r.get("step_seconds", seconds) for r in state["history"][-19:]] + [
+                seconds
+            ]
+            row["eta_train_seconds"] = (
+                sum(recent_times) / len(recent_times) * max(0, max_steps - state["global_step"])
+            )
+            emit({"stage": "optimizer_step_complete", **row, "learning_rates": rates})
+            if state["global_step"] % eval_every == 0:
+                started = time.perf_counter()
+                row["eval"] = evaluate_sft_loss(
+                    model,
+                    dev,
+                    batch_size=batch_size,
+                    device=device,
+                    event_callback=emit,
+                    step=state["global_step"],
+                )
+                row["eval_seconds"] = time.perf_counter() - started
+                evaluation_seconds += row["eval_seconds"]
+            state["history"].append(row)
+            with log_file.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(row, allow_nan=False) + "\n")
+            if progress:
+                progress(row)
+            if state["global_step"] % save_every == 0:
+                started = time.perf_counter()
+                emit({"stage": "checkpoint_started"})
+                last_checkpoint = save_sft_checkpoint(
                     model,
                     optimizer,
                     state,
@@ -345,43 +544,113 @@ def fit_offline_sft(
                     compatibility,
                     checkpoint_format=checkpoint_format,
                 )
-            )
-            checkpoint_seconds += time.perf_counter() - checkpoint_started
-            last_checkpoint_step = state["global_step"]
-    eval_started = time.perf_counter()
-    evaluation = evaluate_sft_loss(model, dev, batch_size=batch_size, device=device)
-    evaluation_seconds += time.perf_counter() - eval_started
-    if state["global_step"] != last_checkpoint_step:
-        checkpoint_started = time.perf_counter()
-        checkpoints.append(
-            save_sft_checkpoint(
+                checkpoints.append(last_checkpoint)
+                checkpoint_seconds += time.perf_counter() - started
+                last_checkpoint_step = state["global_step"]
+                emit(
+                    {
+                        "stage": "checkpoint_complete",
+                        "last_checkpoint": last_checkpoint,
+                        "checkpoint_seconds": time.perf_counter() - started,
+                    }
+                )
+        started = time.perf_counter()
+        evaluation = evaluate_sft_loss(
+            model,
+            dev,
+            batch_size=batch_size,
+            device=device,
+            event_callback=emit,
+            step=state["global_step"],
+        )
+        evaluation_seconds += time.perf_counter() - started
+        if state["global_step"] != last_checkpoint_step:
+            started = time.perf_counter()
+            emit({"stage": "checkpoint_started"})
+            last_checkpoint = save_sft_checkpoint(
                 model, optimizer, state, root, compatibility, checkpoint_format=checkpoint_format
             )
-        )
-        checkpoint_seconds += time.perf_counter() - checkpoint_started
-    return {
-        "timing": {
-            "segment_wall_seconds": time.perf_counter() - segment_started,
+            checkpoints.append(last_checkpoint)
+            checkpoint_seconds += time.perf_counter() - started
+            emit(
+                {
+                    "stage": "checkpoint_complete",
+                    "last_checkpoint": last_checkpoint,
+                    "checkpoint_seconds": time.perf_counter() - started,
+                }
+            )
+        result = {
+            "status": "COMPLETED",
+            "global_step": state["global_step"],
+            "epoch": state["epoch"],
+            "history": state["history"],
+            "held_out_eval": evaluation,
+            "checkpoints": checkpoints,
+            "resume_from": str(resume_from) if resume_from else None,
+            "checkpoint_format": checkpoint_format,
+            "memory_policy": getattr(model, "memory_policy", None),
+            "training_policy": copy.deepcopy(training_policy),
+            "last_checkpoint": last_checkpoint,
+            "segment_seconds": time.perf_counter() - segment_started,
             "segment_evaluation_seconds": evaluation_seconds,
             "segment_checkpoint_seconds": checkpoint_seconds,
-        },
-        "status": "COMPLETED",
-        "global_step": state["global_step"],
-        "epoch": state["epoch"],
-        "history": state["history"],
-        "held_out_eval": evaluation,
-        "checkpoints": checkpoints,
-        "resume_from": str(resume_from) if resume_from else None,
-        "peak_allocated_bytes": torch.cuda.max_memory_allocated(device)
-        if device.type == "cuda"
-        else None,
-        "peak_reserved_bytes": torch.cuda.max_memory_reserved(device)
-        if device.type == "cuda"
-        else None,
-        "functional_benchmark_run": False,
-        "checkpoint_format": checkpoint_format,
-        "training_policy": copy.deepcopy(training_policy),
-        "optimizer_groups": optimizer_group_manifest(optimizer.param_groups)
-        if training_policy is not None
-        else None,
-    }
+            "peak_allocated_bytes": torch.cuda.max_memory_allocated(device)
+            if device.type == "cuda"
+            else None,
+            "peak_reserved_bytes": torch.cuda.max_memory_reserved(device)
+            if device.type == "cuda"
+            else None,
+            "resources": resource_snapshot(device),
+            "events_file": str(root / "events.jsonl"),
+            "monitor_file": str(root / "monitor.html"),
+        }
+        result["timing"] = {
+            "segment_wall_seconds": result["segment_seconds"],
+            "segment_evaluation_seconds": evaluation_seconds,
+            "segment_checkpoint_seconds": checkpoint_seconds,
+        }
+        result["functional_benchmark_run"] = False
+        result["optimizer_groups"] = (
+            optimizer_group_manifest(optimizer.param_groups)
+            if training_policy is not None
+            else None
+        )
+        (root / "training_report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        emit(
+            {
+                "stage": "completed",
+                "dev_loss": evaluation["loss"],
+                "last_checkpoint": last_checkpoint,
+            }
+        )
+        return result
+    except BaseException as exc:
+        failed_stage = phase
+        failure = {
+            "status": "INTERRUPTED" if isinstance(exc, KeyboardInterrupt) else "FAILED",
+            "stage": failed_stage,
+            "global_step": state["global_step"],
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+            "last_checkpoint": last_checkpoint,
+            "last_batch": latest_batch,
+            "traceback": traceback.format_exc(),
+            "resources": resource_snapshot(device),
+        }
+        (root / "failure.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+        emit(
+            {
+                "stage": "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed",
+                "failed_stage": failed_stage,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "last_checkpoint": last_checkpoint,
+                **latest_batch,
+            }
+        )
+        model.zero_grad(set_to_none=True)
+        optimizer.state.clear()
+        traceback.clear_frames(exc.__traceback__)
+        raise
+    finally:
+        model._stage_callback = old_callback

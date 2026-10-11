@@ -64,7 +64,7 @@ def _(mo):
     CORPUS_KIND = "instruction"  # Current released stage: editing foundation; repository study is pending
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "enc8k-dec2k-v2"  # Ubah untuk run baru; directory existing tidak ditimpa.
+    RUN_NAME = "enc8k-dec2k-v2-mem1"  # Ubah untuk run baru; directory existing tidak ditimpa.
     RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
     LOCAL_DATA_FILE = "outputs/full_instruction_pool_enc8k_dec2k_v2"  # directory with manifest/train/dev
     ENCODER_LIMIT = 8192
@@ -76,6 +76,7 @@ def _(mo):
     MAX_GRAD_NORM = 1.0
     EVAL_EVERY = 500
     SAVE_EVERY = 500
+    MEMORY_POLICY = {"version": "tiled_recompute_v1", "attention_backend": "tiled_eager_fp32", "query_chunk_size": 128, "loss_chunk_size": 128, "gradient_checkpointing": True, "ple_offload": False, "kv_gradient_accumulation": "float32"}
     HEADROOM_GIB = 16
     SEED = 17
     CACHE_DIR = "outputs/hf_cache"
@@ -109,6 +110,7 @@ def _(mo):
         MAX_GRAD_NORM,
         EVAL_EVERY,
         SAVE_EVERY,
+        MEMORY_POLICY,
         HEADROOM_GIB,
         SEED,
         CACHE_DIR,
@@ -717,239 +719,31 @@ def _(torch, F, mo):
 
 
 @app.cell
-def _(Gemma4TextAttention, apply_rotary_pos_emb, repeat_kv, nn, torch, mo):
-    # 5. MERGED ATTENTION â€” native proyeksi/norm + satu joint softmax.
-    def build_joint_visibility(
-        encoder_valid: torch.Tensor,
-        decoder_valid: torch.Tensor,
-        self_window: int | None = None,
-    ) -> torch.Tensor:
-        """Keys are [decoder, encoder]; decoder causal/windowed, encoder globally visible."""
-        if encoder_valid.ndim != 2 or decoder_valid.ndim != 2:
-            raise ValueError("Validity masks must have [batch, sequence] shape.")
-        if encoder_valid.shape[0] != decoder_valid.shape[0]:
-            raise ValueError("Encoder and decoder batch sizes differ.")
-        if self_window is not None and self_window <= 0:
-            raise ValueError("Self-attention window must be positive.")
-        length = decoder_valid.shape[1]
-        positions = torch.arange(length, device=decoder_valid.device)
-        visibility = positions[None, :] <= positions[:, None]
-        if self_window is not None:
-            visibility &= positions[None, :] > positions[:, None] - self_window
-        self_visible = visibility[None] & decoder_valid.bool()[:, None, :]
-        cross_visible = encoder_valid.bool()[:, None, :].expand(-1, length, -1)
-        return (
-            torch.cat((self_visible, cross_visible), dim=-1)[:, None]
-            & decoder_valid.bool()[:, None, :, None]
-        )
-
-    class NativeMergedAttention(Gemma4TextAttention):
-        """Preserve native parameter names and KV owners; concatenate after self RoPE."""
-
-        def forward(
-            self,
-            hidden_states,
-            position_embeddings,
-            attention_mask,
-            shared_kv_states,
-            past_key_values=None,
-            *,
-            encoder_hidden_states=None,
-            encoder_valid=None,
-            decoder_valid=None,
-            **kwargs,
-        ):
-            if past_key_values is not None:
-                raise ValueError("Native tiny merged attention does not support temporal cache.")
-            if encoder_hidden_states is None or encoder_valid is None or decoder_valid is None:
-                raise ValueError(
-                    "Merged attention requires explicit encoder states and validity masks."
-                )
-            batch, length, _ = hidden_states.shape
-            shape = (batch, length, -1, self.head_dim)
-            cos, sin = position_embeddings
-            query = self.q_norm(self.q_proj(hidden_states).view(shape))
-            query = apply_rotary_pos_emb(query, cos, sin, unsqueeze_dim=2).transpose(1, 2)
-            if self.is_kv_shared_layer:
-                key, value = shared_kv_states[self.layer_type]
-            else:
-                assert self.v_proj is not None
-                key = self.k_norm(self.k_proj(hidden_states).view(shape))
-                key = apply_rotary_pos_emb(key, cos, sin, unsqueeze_dim=2).transpose(1, 2)
-                value = self.v_norm(self.v_proj(hidden_states).view(shape)).transpose(1, 2)
-                cross_shape = (
-                    batch,
-                    encoder_hidden_states.shape[1],
-                    self.config.per_layer_config[self.layer_idx].num_key_value_heads,
-                    self.head_dim,
-                )
-                cross_key = self.k_norm(self.k_proj(encoder_hidden_states).view(cross_shape))
-                cross_value = self.v_norm(self.v_proj(encoder_hidden_states).view(cross_shape))
-                key = torch.cat((key, cross_key.transpose(1, 2)), dim=2)
-                value = torch.cat((value, cross_value.transpose(1, 2)), dim=2)
-            if self.store_full_length_kv:
-                shared_kv_states[self.layer_type] = (key, value)
-            allowed = build_joint_visibility(encoder_valid, decoder_valid, self.sliding_window)
-            key = repeat_kv(key, self.num_key_value_groups)
-            value = repeat_kv(value, self.num_key_value_groups)
-            scores = torch.matmul(query, key.transpose(-1, -2)) * self.scaling
-            scores = scores.masked_fill(~allowed, float("-inf"))
-            scores = torch.where(allowed.any(-1, keepdim=True), scores, torch.zeros_like(scores))
-            probabilities = scores.softmax(-1, dtype=torch.float32).to(query.dtype)
-            probabilities = probabilities.masked_fill(~allowed, 0)
-            probabilities = nn.functional.dropout(
-                probabilities, p=float(self.attention_dropout or 0.0), training=self.training
-            )
-            result = (probabilities @ value).transpose(1, 2).contiguous().reshape(batch, length, -1)
-            return self.o_proj(result), None
-
-    mo.md(
-        "## 5 Â· Merged attention\nSelf keys causal/windowed; encoder keys global. Shared layers menggunakan KV pemiliknya."
-    )
-    return (
-        build_joint_visibility,
-        NativeMergedAttention,
-    )
+def _(mo):
+    from bifocalgemma.models.native import NativeMergedAttention
+    from bifocalgemma.models.merged_attention import build_joint_visibility
+    mo.md("## 5 · Attention reference\nSatu joint softmax; self causal/windowed dan encoder global. Training memakai tiled FP32 dengan recompute dari implementasi bersama.")
+    return (NativeMergedAttention, build_joint_visibility)
 
 
 @app.cell
-def _(
-    Gemma4TextModel,
-    Gemma4TextDecoderLayer,
-    ModelOutput,
-    NativeMergedAttention,
-    Seq2SeqBatch,
-    cast,
-    native_config,
-    nn,
-    patch_cross_entropy,
-    torch,
-    mo,
-):
-    # 6. MODEL BUILDER â€” encoder bidirectional + decoder native; tying simetris.
-    class ArchitectureModel(nn.Module):
-        """Native full-depth text stacks at reduced width; never a pretrained model."""
+def _(torch, mo):
+    # Native architecture is shared with the bundled package: one maintained implementation.
+    from bifocalgemma.models.native import NativeTinyModel
+    from bifocalgemma.models.memory_efficient import configure_memory_efficient_training, run_training_memory_preflight
+    from bifocalgemma.training.telemetry import TrainingDashboard, resource_snapshot
 
-        def __init__(self, spec, *, tiny=True):
-            super().__init__()
-            self.spec = spec
-            self.decoder = Gemma4TextModel(native_config(spec.decoder.size, tiny=tiny))
-            self.encoder = (
-                Gemma4TextModel(native_config(spec.encoder.size, tiny=tiny, encoder=True))
-                if spec.encoder
-                else None
-            )
-            width = self.decoder.config.hidden_size
-            self.encoder_projection = None
-            if self.encoder is not None:
-                enc_width = self.encoder.config.hidden_size
-                self.encoder_projection = (
-                    nn.Identity() if enc_width == width else nn.Linear(enc_width, width, bias=False)
-                )
-                for index, layer in enumerate(self.decoder.layers):
-                    layer = cast(Gemma4TextDecoderLayer, layer)
-                    attention = NativeMergedAttention(self.decoder.config, index)
-                    attention.load_state_dict(layer.self_attn.state_dict(), strict=True)
-                    layer.self_attn = attention
-            self.lm_head = nn.Linear(width, self.decoder.config.vocab_size, bias=False)
-            self._tie_words()
-
-        def _tie_words(self):
-            self.lm_head.weight = self.decoder.embed_tokens.weight
-            if self.encoder is not None and self.spec.tie_encoder_decoder_words:
-                self.encoder.embed_tokens.weight = self.decoder.embed_tokens.weight
-
-        def _apply(self, fn, recurse=True):
-            super()._apply(fn, recurse=recurse)
-            self._tie_words()
-            return self
-
-        def load_state_dict(self, state_dict, strict=True, assign=False):
-            result = super().load_state_dict(state_dict, strict=strict, assign=assign)
-            self._tie_words()
-            return result
-
-        @staticmethod
-        def _positions(mask):
-            return (mask.long().cumsum(-1) - 1).clamp_min(0)
-
-        def encode_context(self, input_ids, attention_mask):
-            if self.encoder is None or self.encoder_projection is None:
-                raise ValueError("Decoder-only baseline has no encoder.")
-            if input_ids.shape[1] == 0:
-                return self.decoder.embed_tokens.weight.new_empty(
-                    input_ids.shape[0], 0, self.decoder.config.hidden_size
-                )
-            hidden = self.encoder(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                position_ids=self._positions(attention_mask),
-                use_cache=False,
-            ).last_hidden_state
-            # No padding states enter K/V, including batches with wholly masked context.
-            return self.encoder_projection(hidden).masked_fill(~attention_mask.bool()[..., None], 0)
-
-        def decode_logits(self, input_ids, decoder_mask, encoder_states=None, encoder_mask=None):
-            kwargs = {}
-            if self.encoder is not None:
-                if encoder_states is None:
-                    encoder_states = self.decoder.embed_tokens.weight.new_empty(
-                        input_ids.shape[0], 0, self.decoder.config.hidden_size
-                    )
-                    encoder_mask = decoder_mask.new_zeros((input_ids.shape[0], 0))
-                if encoder_mask is None or encoder_mask.shape != encoder_states.shape[:2]:
-                    raise ValueError("Encoder mask must match encoder states.")
-                kwargs = dict(
-                    encoder_hidden_states=encoder_states,
-                    encoder_valid=encoder_mask,
-                    decoder_valid=decoder_mask,
-                )
-            elif encoder_states is not None or encoder_mask is not None:
-                raise ValueError("Decoder-only baseline cannot receive encoder states.")
-            hidden = self.decoder(
-                input_ids=input_ids,
-                attention_mask=decoder_mask,
-                position_ids=self._positions(decoder_mask),
-                use_cache=False,
-                **kwargs,
-            ).last_hidden_state
-            logits = self.lm_head(hidden)
-            cap = self.decoder.config.final_logit_softcapping
-            if cap is not None:
-                logits = torch.tanh(logits / cap) * cap
-            return logits
-
-        def forward(self, batch: Seq2SeqBatch) -> ModelOutput:
-            if self.encoder is None:
-                if batch.encoder_input_ids.shape[1] != 0:
-                    raise ValueError("Baseline requires an empty encoder sequence.")
-                hidden, mask = None, None
-            else:
-                hidden = self.encode_context(batch.encoder_input_ids, batch.encoder_attention_mask)
-                mask = batch.encoder_attention_mask
-            logits = self.decode_logits(
-                batch.decoder_input_ids, batch.decoder_attention_mask, hidden, mask
-            )
-            return ModelOutput(logits, patch_cross_entropy(logits, batch.labels))
-
+    ArchitectureModel = NativeTinyModel
     def build_model(spec, device, dtype, *, tiny=True):
         previous_dtype = torch.get_default_dtype()
         try:
             torch.set_default_dtype(dtype)
-            # Full-size optional run allocates directly on CUDA in BF16.
             with torch.device(device):
-                model = ArchitectureModel(spec, tiny=tiny)
+                return ArchitectureModel(spec, tiny=tiny)
         finally:
             torch.set_default_dtype(previous_dtype)
-        return model
-
-    mo.md(
-        "## 6 Â· Perakitan model\nSatu alignment projection asimetris; ordinary words simetris tied, PLE terpisah."
-    )
-    return (
-        ArchitectureModel,
-        build_model,
-    )
+    mo.md("## 6 · Model builder\nEncoder base + decoder IT; tying simetris, alignment asimetris, PLE terpisah. Optimasi memori tidak mengubah dimensi.")
+    return (ArchitectureModel, build_model, configure_memory_efficient_training, run_training_memory_preflight, TrainingDashboard, resource_snapshot)
 
 
 @app.cell
@@ -1197,7 +991,7 @@ def _(Path, build_model, experiment_spec, gc, hashlib, hf_download_token, hf_hub
         return paths
 
 
-    def load_pretrained_probe(spec, cache_dir, seed):
+    def load_pretrained_probe(spec, cache_dir, seed, progress=None):
         torch.manual_seed(seed)
         decoder_ref = CHECKPOINTS[spec.decoder.size]["decoder"]
         encoder_ref = CHECKPOINTS[spec.encoder.size]["encoder"] if spec.encoder else None
@@ -1205,6 +999,7 @@ def _(Path, build_model, experiment_spec, gc, hashlib, hf_download_token, hf_hub
         source_files = []
         # Cache/config validation happens before destination GPU allocation.
         for ref in refs:
+            if progress: progress({"stage": "checkpoint_download", "message": ref["model_id"]})
             assets = verified_assets(ref, cache_dir)
             print(f"Downloading/caching checkpoint {ref['model_id']} @ {ref['revision']} ...")
             weights = Path(
@@ -1217,7 +1012,9 @@ def _(Path, build_model, experiment_spec, gc, hashlib, hf_download_token, hf_hub
                 )
             )
             source_files.append((ref, assets, weights))
+        if progress: progress({"stage": "model_allocation", "message": spec.name})
         model = build_model(spec, "cuda", torch.bfloat16, tiny=False)
+        if progress: progress({"stage": "checkpoint_transfer", "message": "decoder IT / encoder base"})
         mappings = []
         mappings.append(
             {
@@ -1318,10 +1115,10 @@ def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, 
         if encoder_ids[0]!=2 or prefix_ids[0]!=2 or not target_ids or target_ids[-1]!=106:
             raise ValueError("special_token_policy")
         if len(encoder_ids)>encoder_limit or len(full_ids)-1>decoder_limit:raise ValueError("token_overflow")
-        return TokenizedRepairExample(row["instance_id"],encoder_ids,prefix_ids,target_ids)
+        return TokenizedRepairExample(row["instance_id"],encoder_ids,prefix_ids,target_ids,metadata={"source":row.get("source","unknown")})
 
 
-    def prepare_training_data(spec,local_file,cache_dir,encoder_limit,decoder_limit,seed):
+    def prepare_training_data(spec,local_file,cache_dir,encoder_limit,decoder_limit,seed,progress=None):
         if not 1<=encoder_limit<=131072 or not 1<=decoder_limit<=131072:
             raise ValueError("Invalid token limits.")
         source = "curated_pool"
@@ -1339,7 +1136,8 @@ def _(AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, RepairCollator, 
         tokenized,kept = {},{}
         for split,rows in (("train",train_rows),("dev",dev_rows)):
             tokenized[split]=[];kept[split]=[]
-            for row in rows:
+            for index,row in enumerate(rows,1):
+                if progress and (index == 1 or index % 250 == 0 or index == len(rows)): progress({"stage":"tokenization","message":f"{split}: {index:,}/{len(rows):,}","data_split":split,"items_done":index,"items_total":len(rows)})
                 try:item=tokenize_editing_row(row,spec,encoder,decoder,encoder_limit,decoder_limit)
                 except ValueError as error:
                     raise ValueError("Frozen pool rejected by tokenizer; check its revision and token limits.") from error
@@ -1369,7 +1167,8 @@ def _(RUN_TRAINING, DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, LOCAL
     corpus_pool_status = {"status": "DISABLED", "path": LOCAL_DATA_FILE}
     if RUN_TRAINING:
         _release_api = importlib.import_module("bifocalgemma.data.releases")
-        _release_api.fetch_collection(DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, LOCAL_DATA_FILE, token=hf_download_token)
+        with mo.status.spinner(title="Mengunduh / memverifikasi koleksi HF beku…"):
+            _release_api.fetch_collection(DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, LOCAL_DATA_FILE, token=hf_download_token)
         _rows, _manifest = importlib.import_module("bifocalgemma.data.offline_sft").load_curated_pool(LOCAL_DATA_FILE)
         _kind = "repository" if "snapshot_policy" in _manifest["report"] else "instruction"
         if _kind != CORPUS_KIND:
@@ -1407,66 +1206,87 @@ def _(EXPERIMENT, FAMILY, HEADROOM_GIB, training_policy, RUN_TRAINING, device, e
 
 
 @app.cell
-def _(CACHE_DIR, DECODER_LIMIT, ENCODER_LIMIT, LOCAL_DATA_FILE, SEED, prepare_training_data, training_guard, training_spec, corpus_pool_status, mo):
+def _(CACHE_DIR, DECODER_LIMIT, ENCODER_LIMIT, LOCAL_DATA_FILE, SEED, prepare_training_data, training_guard, training_spec, corpus_pool_status, TrainingDashboard, mo):
     train_examples,dev_examples,data_manifest=[],[],{"status":"DISABLED"}
     if training_guard is None:
         if corpus_pool_status["status"] != "READY":
             raise ValueError("Load the pinned HF dataset first.")
+        _data_dashboard = TrainingDashboard(mo, experiment=training_spec.name)
         train_examples,dev_examples,data_manifest=prepare_training_data(training_spec,
-            LOCAL_DATA_FILE,CACHE_DIR,ENCODER_LIMIT,DECODER_LIMIT,SEED)
+            LOCAL_DATA_FILE,CACHE_DIR,ENCODER_LIMIT,DECODER_LIMIT,SEED,progress=_data_dashboard)
+    _data_rows = [{"split":name,"examples":len(items),"max_encoder_tokens":max((len(x.encoder_ids) for x in items),default=0),"max_decoder_tokens":max((len(x.decoder_prefix_ids)+len(x.target_ids)-1 for x in items),default=0),"target_tokens":sum(len(x.target_ids) for x in items)} for name,items in (("train",train_examples),("dev",dev_examples))]
+    mo.output.append(mo.ui.table(_data_rows, selection=None))
     mo.vstack([mo.md("## 11 · Tokenized train/dev"),mo.ui.table([{"train":len(train_examples),"dev":len(dev_examples),"fingerprint":data_manifest.get("fingerprint")}],selection=None)])
     return (train_examples,dev_examples,data_manifest,)
 
 
 @app.cell
-def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMULATION, MAX_GRAD_NORM, MAX_STEPS, OUTPUT_ROOT, Path, RESUME_FROM, RUN_NAME, SAVE_EVERY, SEED, auth_info, configure_policy_model, training_policy, data_manifest, dev_examples, environment, fit_offline_sft, gc, json, load_pretrained_probe, mo, torch, train_examples, training_guard, training_spec):
-    # 12. TRAIN â€” models/optimizer stay owned by this rerun boundary.
-    training_result = {"status":"DISABLED","reason":training_guard}
-    run_dir = Path(OUTPUT_ROOT)/EXPERIMENT/RUN_NAME
+def _(BATCH_SIZE, CACHE_DIR, EPOCHS, EVAL_EVERY, EXPERIMENT, FAMILY, GRAD_ACCUMULATION, MAX_GRAD_NORM, MAX_STEPS, MEMORY_POLICY, OUTPUT_ROOT, Path, RESUME_FROM, RUN_NAME, SAVE_EVERY, SEED, auth_info, configure_memory_efficient_training, configure_policy_model, training_policy, data_manifest, dev_examples, environment, fit_offline_sft, gc, json, load_pretrained_probe, mo, resource_snapshot, torch, train_examples, training_guard, training_spec, TrainingDashboard, run_training_memory_preflight):
+    training_result = {"status": "DISABLED", "reason": training_guard}
+    run_dir = Path(OUTPUT_ROOT) / EXPERIMENT / RUN_NAME
+    training_dashboard = TrainingDashboard(mo, experiment=EXPERIMENT, device="cuda")
     if training_guard is None:
-        effective_max_steps = MAX_STEPS or ((len(train_examples)+BATCH_SIZE*GRAD_ACCUMULATION-1)//(BATCH_SIZE*GRAD_ACCUMULATION))*EPOCHS
-        if effective_max_steps < 1:raise ValueError("Invalid complete-epoch training budget.")
-        if data_manifest is None:raise ValueError("Prepare data first.")
+        effective_max_steps = MAX_STEPS or ((len(train_examples) + BATCH_SIZE * GRAD_ACCUMULATION - 1) // (BATCH_SIZE * GRAD_ACCUMULATION)) * EPOCHS
+        if effective_max_steps < 1 or data_manifest is None:
+            raise ValueError("Prepare data and a valid complete-epoch budget first.")
         if not RESUME_FROM and run_dir.exists() and any(run_dir.iterdir()):
             raise FileExistsError("Choose a new RUN_NAME or RESUME_FROM; refusing artifact overwrite.")
-        model,provenance = load_pretrained_probe(training_spec,CACHE_DIR,SEED)
+        training_dashboard({"stage": "checkpoint_loading", "max_steps": effective_max_steps, **resource_snapshot("cuda")})
+        torch.cuda.reset_peak_memory_stats()
+        model = None
         try:
-            scope=configure_policy_model(model,training_policy)
-            compatibility={"architecture":"bifocalgemma_notebook_sft_v2","family":FAMILY,
-                "experiment":EXPERIMENT,"sources":provenance,"data_fingerprint":data_manifest["fingerprint"],
-                "training_policy":training_policy,"batch_size":BATCH_SIZE,"accumulation":GRAD_ACCUMULATION,
-                "clip_norm":MAX_GRAD_NORM,
-                "seed":SEED,"torch":str(torch.__version__),"transformers":environment["transformers"]}
+            model, provenance = load_pretrained_probe(training_spec, CACHE_DIR, SEED, progress=training_dashboard)
+            scope = configure_policy_model(model, training_policy)
+            memory_policy = configure_memory_efficient_training(model, MEMORY_POLICY)
+            training_dashboard({"stage": "adapters_ready", **memory_policy, **resource_snapshot("cuda")})
+            memory_preflight = run_training_memory_preflight(model, train_examples, progress=training_dashboard)
+            compatibility = {"architecture": "bifocalgemma_notebook_sft_v2", "family": FAMILY,
+                "experiment": EXPERIMENT, "sources": provenance, "data_fingerprint": data_manifest["fingerprint"],
+                "training_policy": training_policy, "memory_policy": memory_policy,
+                "batch_size": BATCH_SIZE, "accumulation": GRAD_ACCUMULATION, "clip_norm": MAX_GRAD_NORM,
+                "seed": SEED, "torch": str(torch.__version__), "transformers": environment["transformers"]}
             def progress(row):
-                message=f"step {row['step']}/{effective_max_steps} Â· train CE {row['train_loss']:.4f}"
-                if "eval" in row:message+=f" Â· dev CE {row['eval']['loss']:.4f}"
-                if "learning_rates" in row:message+=" Â· LR "+", ".join(f"{name}={lr:.2g}" for name,lr in row["learning_rates"].items())
-                if "peak_allocated_gib" in row:message+=f" Â· VRAM {row['peak_allocated_gib']:.2f} GiB"
-                print(message)
-            # Manifest files are written inside the trainer after the run-directory guard.
-            training_result=fit_offline_sft(model,train_examples,dev_examples,run_dir,compatibility,
-                max_steps=effective_max_steps,epochs=EPOCHS,batch_size=BATCH_SIZE,accumulation=GRAD_ACCUMULATION,
-                training_policy=training_policy,clip_norm=MAX_GRAD_NORM,
-                eval_every=EVAL_EVERY,save_every=SAVE_EVERY,seed=SEED,resume_from=RESUME_FROM or None,
-                progress=progress,data_manifest=data_manifest)
-            training_result.update({"experiment":EXPERIMENT,"family":FAMILY,"scope":scope,
-                "provenance":provenance,"environment":environment,"authentication":auth_info,
-                "data_fingerprint":data_manifest["fingerprint"]})
-            (run_dir/"data_manifest.json").write_text(json.dumps(data_manifest,indent=2),encoding="utf-8")
-            (run_dir/"training_report.json").write_text(json.dumps(training_result,indent=2),encoding="utf-8")
+                if row["step"] == 1 or row["step"] % 10 == 0 or "eval" in row:
+                    message = f"step {row['step']}/{effective_max_steps} · train CE {row['train_loss']:.5f}"
+                    if "eval" in row:
+                        message += f" · dev CE {row['eval']['loss']:.5f}"
+                    message += f" · {row['step_seconds']:.1f}s · {row['target_tokens_per_second']:.0f} target tok/s"
+                    if "gpu_allocated_gib" in row:
+                        message += f" · GPU {row['gpu_allocated_gib']:.2f} / peak {row['gpu_peak_allocated_gib']:.2f} GiB"
+                    print(message, flush=True)
+            training_result = fit_offline_sft(model, train_examples, dev_examples, run_dir, compatibility,
+                max_steps=effective_max_steps, epochs=EPOCHS, batch_size=BATCH_SIZE, accumulation=GRAD_ACCUMULATION,
+                training_policy=training_policy, clip_norm=MAX_GRAD_NORM,
+                eval_every=EVAL_EVERY, save_every=SAVE_EVERY, seed=SEED, resume_from=RESUME_FROM or None,
+                progress=progress, event_callback=training_dashboard, data_manifest=data_manifest)
+            training_result.update({"experiment": EXPERIMENT, "family": FAMILY, "scope": scope,
+                "provenance": provenance, "environment": environment, "authentication": auth_info,
+                "data_fingerprint": data_manifest["fingerprint"], "memory_preflight": memory_preflight})
+            (run_dir / "training_report.json").write_text(json.dumps(training_result, indent=2), encoding="utf-8")
+        except BaseException as error:
+            if training_dashboard.run_dir is None:
+                _diagnostics = Path(OUTPUT_ROOT) / "diagnostics" / EXPERIMENT / RUN_NAME
+                _diagnostics.mkdir(parents=True, exist_ok=True)
+                (_diagnostics / "failure.json").write_text(json.dumps({"status":"FAILED","stage":training_dashboard.state.get("stage"),"error_type":type(error).__name__,"error":str(error),"last_batch":{k:training_dashboard.state.get(k) for k in ("instance_ids","encoder_tokens","decoder_tokens")}},indent=2),encoding="utf-8")
+                training_dashboard.run_dir = _diagnostics
+            training_dashboard({"stage": "failed", "error_type": type(error).__name__, "error": str(error), **resource_snapshot("cuda")})
+            import traceback as _training_traceback
+            _training_traceback.clear_frames(error.__traceback__)
+            raise
         finally:
             del model
             gc.collect()
             torch.cuda.empty_cache()
-    mo.md("## 12 Â· Training\nStatus: **"+training_result["status"]+"**")
-    return (training_result, run_dir,)
+    else:
+        mo.output.replace(mo.md("Training disabled / preflight blocked: " + str(training_guard)))
+    return (training_result, run_dir, training_dashboard)
 
 
 @app.cell
 def _(mo, run_dir, training_result):
     # 13. RESULTS â€” cheap presentation separated from training.
     result_summary={key:training_result.get(key) for key in (
-        "status","global_step","held_out_eval","peak_allocated_bytes","peak_reserved_bytes","checkpoints")}
+        "status","global_step","held_out_eval","peak_allocated_bytes","peak_reserved_bytes","last_checkpoint","segment_seconds","memory_policy","events_file","monitor_file")}
     mo.vstack([mo.md(f"## 13 Â· Summary\nArtifacts: `{run_dir}`"),mo.ui.table([result_summary],selection=None)])
     return (result_summary,)
 
@@ -1485,6 +1305,7 @@ def _(
     run_dir,
     training_result,
 ):
+    from bifocalgemma.training.telemetry import append_event
     # 14. HUB UPLOAD â€” upload run artifacts to Hugging Face Hub under {FAMILY}/{EXPERIMENT}/{RUN_NAME}.
     upload_result = {
         "status": "DISABLED",
@@ -1525,15 +1346,23 @@ def _(
                     "HF token hanya memiliki akses read; upload ke Hub membutuhkan token dengan akses"
                     " write."
                 )
-            api = HfApi(token=hf_download_token)
-            api.create_repo(repo_id=HF_REPO_ID, repo_type="model", exist_ok=True)
-            commit_url = api.upload_folder(
-                folder_path=str(run_dir),
-                repo_id=HF_REPO_ID,
-                repo_type="model",
-                path_in_repo=f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
-                commit_message=f"Upload artifacts for {FAMILY}/{EXPERIMENT}/{RUN_NAME}",
-            )
+            mo.output.replace(mo.md("## Uploading run artifacts to Hugging Face…"))
+            append_event(run_dir / "events.jsonl", {"stage":"upload_started","repo_id":HF_REPO_ID})
+            try:
+                api = HfApi(token=hf_download_token)
+                api.create_repo(repo_id=HF_REPO_ID, repo_type="model", exist_ok=True)
+                commit_url = api.upload_folder(
+                    folder_path=str(run_dir),
+                    repo_id=HF_REPO_ID,
+                    repo_type="model",
+                    path_in_repo=f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+                    commit_message=f"Upload artifacts for {FAMILY}/{EXPERIMENT}/{RUN_NAME}",
+                )
+                append_event(run_dir / "events.jsonl", {"stage":"upload_complete","repo_id":HF_REPO_ID,"commit_url":str(commit_url)})
+            except Exception as error:
+                append_event(run_dir / "events.jsonl", {"stage":"upload_failed","error_type":type(error).__name__,"error":str(error)})
+                mo.output.replace(mo.md("Upload gagal; artefak training lokal tetap tersedia."))
+                raise
             upload_result = {
                 "status": "COMPLETED",
                 "repo_id": HF_REPO_ID,

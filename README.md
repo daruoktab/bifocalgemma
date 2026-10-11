@@ -129,6 +129,13 @@ Pinned private HF dataset → LoRA SFT → dev loss → checkpoint/resume/upload
 saat pertama dibuka. [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.
 
+Default training kini memakai **checkpointing + tiled attention FP32 + chunked loss**
+untuk menjaga recipe pada input8K/output2K. Monitor live menampilkan tahap, train/dev CE,
+progres validasi, GPU/RAM, throughput, LR dan checkpoint/error. Preflight panjang maksimum
+menjalankan forward/backward tanpa memperbarui bobot. Lihat
+[training hemat VRAM](docs/MEMORY_EFFICIENT_TRAINING.md); penghematan pretrained dan
+kelayakan E4B–E4B pada96GB tetap harus diukur di Molab.
+
 ## Setup dari checkout baru
 
 ```powershell

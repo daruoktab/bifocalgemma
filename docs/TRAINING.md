@@ -123,6 +123,14 @@ Ini prototype profiling, bukan penyelesaian production trainer/cache/checkpoint.
 
 [Training notebooks](TRAINING_NOTEBOOKS.md) menyediakan jalur pilot paired-file
 editing → pretrained attention LoRA SFT → held-out CE → adapter/optimizer/RNG/cursor
-checkpoint resume. Keluarga simetris/asimetris memakai 18 cell yang sama, dengan
-17 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
-RUN_TRAINING default False. CLI production train_direct_sft tetap placeholder.
+checkpoint resume. Keluarga simetris/asimetris memakai 20 cell yang sama, dengan
+19 isi cell identik. Shared data/training helpers telah diuji pada tiny fixtures;
+RUN_TRAINING default True. CLI production train_direct_sft tetap placeholder.
+
+
+## Recipe memori notebook — 11 Oktober 2026
+
+Kedua keluarga memakai tiled attention FP32, checkpointing non-reentrant dan chunked
+loss train/dev. Cohort/context/LoRA policy tetap. Monitor dan event log mencatat
+tahap serta GPU/RAM; worst-shape preflight tidak melakukan optimizer update.
+Lihat [detail implementasi](MEMORY_EFFICIENT_TRAINING.md).
