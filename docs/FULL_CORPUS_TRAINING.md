@@ -317,3 +317,22 @@ budget is 10752. New pool names distinguish enc8k_dec2k from prior 2k artifacts;
 historical receipts and cohorts are not rewritten. This changes preparation
 settings and requires a fresh pool/run. It does not establish training VRAM
 feasibility and does not change the live Molab kernel.
+
+
+## Current v2 remediation policy (11 October 2026)
+
+The default frozen dataset is instruction_enc8k_dec2k_v2. Historical counts
+above describe their named earlier builds; use [the v2 audit](DATASET_REMEDIATION_V2.md)
+for current counts and measurements. Normal training consumes the pinned private
+HF release, including validation of an already existing local directory.
+
+Fresh instruction builds now apply event and AST-pair dedup, preserve discarded
+repository/commit lineage, quarantine conflicting targets, exclude doc/format-only
+edits from this cohort, and reject target SyntaxWarnings. Python normalization
+retains INDENT/DEDENT/NEWLINE; LF-only diff generation matches Git line counting.
+Old persisted overlap indexes must be rebuilt under the new normalization policy.
+
+NextCoder retains MIT dataset metadata but marks source-code license unknown;
+synthetic seed hashes are not Git commits. Private staging does not settle
+underlying code attribution. All training records are auxiliary single-file
+editing candidates; static checks do not prove bug repair or functional quality.

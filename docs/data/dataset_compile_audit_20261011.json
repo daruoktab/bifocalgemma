@@ -1,0 +1,466 @@
+{
+  "records": 45303,
+  "source_counts": {
+    "nextcoder": 12544,
+    "editpackft": 17396,
+    "commitpackft_python": 15363
+  },
+  "after_compile_errors": [
+    {
+      "instance_id": "b7a00f728631fa080e8d196d9f8a05f5421569c948781b0aad8159b2404199ce",
+      "error": "no binding for nonlocal 'user_balances' found (solution.py, line 11)"
+    },
+    {
+      "instance_id": "f36e62781e31fa16512a772bd111ea244ad94df50c26dfcf161ec669dd683979",
+      "error": "'await' outside async function (solution.py, line 92)"
+    },
+    {
+      "instance_id": "97667929841709df35efbe6a4a37b97541b96181b1d6d45c9c9e34bf262d4f12",
+      "error": "'return' outside function (array/move_zeros_to_end.py, line 21)"
+    },
+    {
+      "instance_id": "7da83590766523cd1af83277c825a2da47de19e3954f635986a1433b1a352a91",
+      "error": "name 'max_product' is parameter and nonlocal (solution.py, line 20)"
+    },
+    {
+      "instance_id": "288a586880e10d51ea52a2f8e7377d8d6dab3b798e29e7b1adf5317a80fa8877",
+      "error": "assignment expression cannot rebind comprehension iteration variable 'clip_left' (solution.py, line 15)"
+    },
+    {
+      "instance_id": "d4868739ed3f8a5ac2a879cda97aaf79de60263270ef8324274d3534f7885a91",
+      "error": "import * only allowed at module level (falafel/tests/test_api_generator.py, line 9)"
+    },
+    {
+      "instance_id": "a99e75b4a05de67e22f0d1ec268159da9d574a251b5bb26212ca779454f46768",
+      "error": "from __future__ imports must occur at the beginning of the file (cupy/array_api/_typing.py, line 12)"
+    },
+    {
+      "instance_id": "46946ab34fe6e2a6786d6613bfdcfacbf763fc49e82b02d8533406b3ea6f7daf",
+      "error": "keyword argument repeated: version (setup.py, line 6)"
+    },
+    {
+      "instance_id": "ec505550dfa0e6fd9a8a978998c2bce217af7e18581ee4c63ac15713077586ab",
+      "error": "future feature absolute_imports is not defined (pysuru/api.py, line 8)"
+    },
+    {
+      "instance_id": "e3faf338a1e78d0f1b380c5a6839d92915b3eb970e06bcfe7f8ed65c9365cd9f",
+      "error": "'return' outside function (train.py, line 17)"
+    },
+    {
+      "instance_id": "0630b52c030a53fec4b8dc0ed466c1dbe716f123b4ec12b49ba68be2d522afbb",
+      "error": "no binding for nonlocal 'max_value' found (solution.py, line 26)"
+    },
+    {
+      "instance_id": "e03b206c2cc8da3c48794caf371f142587dddd1961ac7b8c168eeda177276423",
+      "error": "'return' outside function (dependencies.py, line 14)"
+    },
+    {
+      "instance_id": "bfd108bc4fbd2cade33ffac2842f42bf91c4622104f24d72cbffbaabfddaf6b0",
+      "error": "'await' outside function (solution.py, line 55)"
+    },
+    {
+      "instance_id": "2056af74117aaea06092c6fb5d612b250befcab99eca9ad685d01b89fbcabf41",
+      "error": "keyword argument repeated: license (setup.py, line 27)"
+    },
+    {
+      "instance_id": "26aa66911f209ec265cf245ecd757e572ed973cc54f8d3033d4750229cb976d6",
+      "error": "keyword argument repeated: license (setup.py, line 30)"
+    },
+    {
+      "instance_id": "7566aac6dd57b61f24fe56a61c3e26fbdc12165008a62cc707e6bb72902fb893",
+      "error": "from __future__ imports must occur at the beginning of the file (benchmarks/numpy-bench.py, line 5)"
+    },
+    {
+      "instance_id": "c39c0fd36fcbcfa50bacae3dcae5e3abdf18375d9c93ab14d69e50f7ab59e188",
+      "error": "keyword argument repeated: platforms (setup.py, line 14)"
+    }
+  ],
+  "after_compile_warnings": [
+    {
+      "instance_id": "787ba005be5dab156c096852d3371c7aa8e93584b4b2acb9b41d4f2ab83020c0",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "dee741913b642287c2ac2817772459e65f9566576ed87f83bc205499f3b52949",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "512994975b95426717e8242bd4d95e93577bc0983b30308b4612da7777138442",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "40d398bb0eabd1047e176170e114af50f3de1027c38c7ca8b1e28899a88457ef",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "007dbabac340d6500bebcd8141bf021712f96915fef7c90b5d4bd310a0ad9270",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "f869db22b25d7d22a80792ad4d7c77abd58d5fc1ff548de5c1d2e5a3afc0b066",
+      "warnings": [
+        "'tuple' object is not callable; perhaps you missed a comma?"
+      ]
+    },
+    {
+      "instance_id": "854f623ac6326bb869ecf6550bc8f231a637ead7d9052834a6adae280359d269",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "818bded5378416d3b989af3d8d0da7b4065b3c4fb34a6e7e590bc499f1c7735b",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "7a1e71995e2a406f3cf5fe1654bf8a61cb5a0adfd02b993ef93dbe2811f6fa13",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "e531d64c51a14dbaab8fba77bd04b0aaf5530f2fea25fbdbfe86d48e3be5be5c",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "3b79c49cde3721daf09818159ea1c4b4e17e2ac7d87ac600ed37910d8b5a484d",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "f1f6d447629bb35f0e406dba6d6ef889fbede6cac71463331d9715bad5d39158",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "6a78123d0a69e70aa5e32f6eea6b31716e7dd9f54311369c1033386c0eae120a",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "67375307546b7f8e80298df1bb14bb7e48e495e25e6961b98bf59c324106f793",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "9f7b517c62dc6b8373ed991633f2f91082f79519b51dab7577fa6553c7c3f685",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "594843856f0a4b645c7fe1dff9208e8d1693094c1ea8a6b2e5c8f137e5a33f6c",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "dc063b5ef7cde6d15ebb07d6093a29ce482ef416cdc4429f8eb45c760cba7f8d",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "56ed95e823bec4a77181cf082edd986209c0966feaab69d13b909c14fcf01544",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "b49dee0eae3ef1880f1feb518e7ea32f55d4c3de0bc07239060236c3a8be592e",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "3a88ead644f885a0f7100c1fe65563c873a36663326409c69bc1c3c37cd636ab",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "5736ae47490b78593205fc6bd986427df3ec7041f8cd79a7fdd85bbf800fae89",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "e42ed83ced9a85a2f215f851c6228ce85ec518d4934d361f1bee86100ead0c1c",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "27b51c90227204c2671831d323ac4a5b2a8b673119cf40bd9f1f03df9bcfee12",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "0c679b3c4546d2b9f58fdbc2e4e4189a141add361762bd26d7bceb1b4a9fbf29",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?",
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "a1920ef206b2569357ea81f31fec815a4df20758ea8e5c91443631b08815db4f",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "2f1398f2925b4dbcfd0cd585d59dc26f5efe51424190b7342b6c2e22864efa74",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "f642fd78a3efa8f20d7685685466411875edd1e81e526a361ea890ed996b7b17",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "de36bf998ac98e60c480c400899328d3807d86a93467dafaa4f3e0432e1a6986",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "fc71932b3f711df5664b237508d19207eaa5e938f3a766910c7396c938f0a84a",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "0682b094ee40dc3229be42bca838d08d43ef70eefe791bf9ab83a338dd51f292",
+      "warnings": [
+        "'tuple' object is not callable; perhaps you missed a comma?"
+      ]
+    },
+    {
+      "instance_id": "abc6e96ace52e5cb962eb5e6306f75105ebbec0f3532b344f1ec5ad19c4a2713",
+      "warnings": [
+        "'tuple' object is not callable; perhaps you missed a comma?"
+      ]
+    },
+    {
+      "instance_id": "be809eba382d936dab04967ba30d10dd8fc4e01b24dc6ded1cdfa7a2f9d81619",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?",
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "afc88ac2e7bbfc7b8bccee6a48f2a9e819dcca2b723c1138cd4cca49f6c48790",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?",
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "f998297f3834e85b2bd13c2949df591697a91abf6e874a4a8f2d16f6a8c7cc32",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "9a5fd7ae0c07293a8804bcdbd4468f9dd86a72736a858daed49318ffa1aacd1f",
+      "warnings": [
+        "assertion is always true, perhaps remove parentheses?",
+        "assertion is always true, perhaps remove parentheses?",
+        "assertion is always true, perhaps remove parentheses?"
+      ]
+    },
+    {
+      "instance_id": "540b5674b68d318f268f5f1245ed82d7a2f16d852385fd7d6e4ffd84b2a02099",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?",
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?",
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "ed0001a9a8000ad682547d623e36c3215c86de67b446736da82c5aed44aff221",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "33ab8717843888027ff69d735415192f200ad0188cc1542716fad4c0039027ba",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "11f1bf1bcca90b2d684f4515451ca10c7e168cf8996fb38a76ce7b85c9a5c3c8",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "8eb2a71b97cc50c3483d8e1c094bd72e40d5f56f4eff5a692535b6fb1c42c3be",
+      "warnings": [
+        "\"is\" with 'int' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "cb2db7eb4767def7e3da33dfc9c90756b2adcdc4749d1ed84857d787f76a7f59",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "4343234ff1681a5fe7f4edbfa1389732f8f204038e6a7fae920a225c6783de20",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?",
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "369173ee9e5e09a98f9cf0bcc38763e3962ff49e3930107bb72111c6e5f95442",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "adecb3c676ade1faddef9180b4bcea10d62db215954720a66e63b7ff72cf1c7c",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "e121ef1e008721a06a2e0c55eae85f67ede298361d2cd00a18d03078478a0060",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "b7c02b015627b27e8167f3873eb8cd5350bf2b93b5bfc35184ec406f8f4569cd",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "aed9640603048373df799a97fee50b5ebd3d84c4f124267c4efe35c3fbf4ea9a",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "57e8cc3d6310b4ed41aab00eca2530a41efd71a73ba8bb891a795b633d9d4375",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "d9dc3aab8dc20ef04fe9054a1df3f449112723e26fd52241654570163bc5be0f",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "25073c78b40af7ca09908c33640bb452972f30ba7b410c0ebf3b75d657836fb6",
+      "warnings": [
+        "\"is not\" with 'str' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "4047ad95d2369e8cfa822e9be58ef12a38df86e53bb3b01e294e16bf11fcf8d8",
+      "warnings": [
+        "assertion is always true, perhaps remove parentheses?",
+        "assertion is always true, perhaps remove parentheses?"
+      ]
+    },
+    {
+      "instance_id": "cf78e8da387bfe682e252f2d06f2fa8f3a927576c221b085c12e36ed621ab28a",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "668322007a83dbc8cb813793b661db7ba8105ffe0da7ffc617e2ebd8423bc891",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "e69d8cf6b220d2343323989a7ddc60b3075e3d85612c073997d7d9c9e474bfa1",
+      "warnings": [
+        "\"is not\" with 'int' literal. Did you mean \"!=\"?"
+      ]
+    },
+    {
+      "instance_id": "e8fc9c8dd033738f5c3bdfab1179b06a70aa2ef7728a45b5a98b752ff3fc90d3",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?",
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    },
+    {
+      "instance_id": "15d0df980bc2ea02def0053fe9af619e71db28f04c0ddbacb7284d9b723447b9",
+      "warnings": [
+        "\"is\" with 'str' literal. Did you mean \"==\"?"
+      ]
+    }
+  ],
+  "invalid_git_commit_metadata": []
+}

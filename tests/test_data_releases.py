@@ -222,3 +222,26 @@ def test_publish_refuses_public_repo_before_upload(monkeypatch, tmp_path):
     monkeypatch.setattr(huggingface_hub, "HfApi", Api)
     with pytest.raises(ValueError, match="public repo"):
         publish_release(output, "owner/data")
+
+
+def test_existing_local_pool_cannot_bypass_pinned_identity(monkeypatch, tmp_path):
+    import huggingface_hub
+
+    from bifocalgemma.data.offline_sft import stable_fingerprint
+    from bifocalgemma.data.releases import fetch_collection
+
+    _, published = release(tmp_path)
+    monkeypatch.setattr(
+        huggingface_hub, "hf_hub_download", lambda repo, name, **kw: str(published / name)
+    )
+    destination = tmp_path / "download"
+    fetch_collection("owner/data", "a" * 40, "foundation", destination)
+    path = destination / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["report"]["other_release"] = True
+    manifest["fingerprint"] = stable_fingerprint(
+        {k: v for k, v in manifest.items() if k != "fingerprint"}
+    )
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="existing_pool_has_another_fingerprint"):
+        fetch_collection("owner/data", "a" * 40, "foundation", destination)

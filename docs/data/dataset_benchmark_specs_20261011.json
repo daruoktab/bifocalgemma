@@ -1,0 +1,130 @@
+{
+  "gsm8k_zero_shot_v2": {
+    "count": 1319,
+    "shots": 0,
+    "unique_questions": 1319,
+    "token_quantiles": {
+      "encoder": {
+        "p50": 63,
+        "p95": 109,
+        "p99": 131,
+        "max": 195
+      },
+      "paired_decoder_prefix": {
+        "p50": 34,
+        "p95": 34,
+        "p99": 34,
+        "max": 34
+      },
+      "baseline_decoder_prefix": {
+        "p50": 90,
+        "p95": 136,
+        "p99": 158,
+        "max": 222
+      },
+      "gold_numeric_answer": {
+        "p50": 2,
+        "p95": 4,
+        "p99": 6,
+        "max": 7
+      }
+    },
+    "gold_numeric_scorer_check": {
+      "correct": 1319,
+      "total": 1319,
+      "purpose": "scorer_validation_not_model_score"
+    },
+    "demonstration_prefix_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "source_files": {
+      "train": [
+        "17f347dc51477c50d4efb83959dbb7c56297aba886e5544ee2aaed3024813465",
+        7473
+      ],
+      "test": [
+        "3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14",
+        1319
+      ]
+    },
+    "protocol": {
+      "instruction": "Solve the math problem step by step. End with #### followed by the final numeric answer.",
+      "enable_thinking": false,
+      "calculator": false,
+      "tools": false,
+      "decoding": "greedy",
+      "metric": "release_regex_string_accuracy",
+      "test_answers_in_input": false
+    }
+  },
+  "gsm8k_eight_shot_v2": {
+    "count": 1319,
+    "shots": 8,
+    "unique_questions": 1319,
+    "token_quantiles": {
+      "encoder": {
+        "p50": 1121,
+        "p95": 1167,
+        "p99": 1189,
+        "max": 1253
+      },
+      "paired_decoder_prefix": {
+        "p50": 34,
+        "p95": 34,
+        "p99": 34,
+        "max": 34
+      },
+      "baseline_decoder_prefix": {
+        "p50": 1148,
+        "p95": 1194,
+        "p99": 1216,
+        "max": 1280
+      },
+      "gold_numeric_answer": {
+        "p50": 2,
+        "p95": 4,
+        "p99": 6,
+        "max": 7
+      }
+    },
+    "gold_numeric_scorer_check": {
+      "correct": 1319,
+      "total": 1319,
+      "purpose": "scorer_validation_not_model_score"
+    },
+    "demonstration_prefix_sha256": "3a6aa2f06771ce24d241ef16f4e4380b1a5bc4fad523b36d2f2d400b01802a99",
+    "source_files": {
+      "train": [
+        "17f347dc51477c50d4efb83959dbb7c56297aba886e5544ee2aaed3024813465",
+        7473
+      ],
+      "test": [
+        "3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14",
+        1319
+      ]
+    },
+    "protocol": {
+      "instruction": "Solve the math problem step by step. End with #### followed by the final numeric answer.",
+      "enable_thinking": false,
+      "calculator": false,
+      "tools": false,
+      "decoding": "greedy",
+      "metric": "release_regex_string_accuracy",
+      "test_answers_in_input": false
+    }
+  },
+  "humanevalfix_python_v2": {
+    "count": 164,
+    "gold_patch_raw_token_quantiles": {
+      "p50": 112,
+      "p95": 175,
+      "p99": 203,
+      "max": 231
+    },
+    "context_raw_token_quantiles": {
+      "p50": 216,
+      "p95": 425,
+      "p99": 493,
+      "max": 645
+    },
+    "all_gold_tests_passed": true
+  }
+}

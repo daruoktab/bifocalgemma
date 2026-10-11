@@ -1,47 +1,8 @@
-# Dataset and benchmark inventory from current code
+# Dataset and benchmark inventory
 
-Checked 10 October 2026 against source dispatch, notebook defaults, frozen local
-manifests and adapter/scorer implementations. Raw-source counts are not training
-admission, and prepared data/scorer checks are not model scores.
+Current defaults use instruction_enc8k_dec2k_v2 from the private HF repository at the commit in [the lock](../configs/dataset_release.lock.json). **45,230 auxiliary single-file editing records: 40,706 train /4,524 dev**. Three credited sources are EditPackFT, CommitPackFT Python and NextCoder Python. Encoder cap8,192 /paired decoder2,048 /baseline decoder10,752; fresh real-tokenizer profiling and static compile/patch checks are documented in [the v2 audit](DATASET_REMEDIATION_V2.md). Historical sections below describe their named earlier builds and source research; they are not current release counts.
 
-## What the default training notebook actually consumes
-
-Current released-stage defaults: DATA_SOURCE=curated_pool, CORPUS_KIND=instruction,
-DATASET_COLLECTION=instruction_enc8k_dec2k_v1,
-LOCAL_DATA_FILE=outputs/full_instruction_pool_enc8k_dec2k_v1.
-The repository study remains pending until its complete corpus is published;
-REPOSITORY_SOURCE=swe_rebench_v2 is retained for that later explicit selection.
-Normal training reuses a local frozen pool or downloads one named collection
-from the separate private HF dataset repo at a full commit SHA. Upstream
-curation runs only when PREPARE_FULL_POOL=True; that explicit mode builds the
-three-source foundation first and then the repository pool. **The training cell consumes only the selected frozen
-pool. The released instruction pool already combines the three admitted editing
-sources; training does not concatenate different frozen pools or automatically
-run instruction-to-repository two-stage SFT.**
-The foundation also supplies provenance and benchmark quarantine/index information.
-Choose CORPUS_KIND=instruction and its foundation path for the instruction-only
-run. Switching datasets is a new run, not optimizer-state resume across different
-manifest fingerprints. RAW_LIMIT/TRAIN_LIMIT/DEV_LIMIT are legacy pilot controls;
-curated_pool consumes all frozen IDs. MAX_STEPS=0 means complete configured epochs.
-
-See [private dataset release guide](DATASET_RELEASES.md) for roles, immutable
-revisions, archive integrity and benchmark/gold separation.
-
-## Current private 8k instruction release
-
-[Private dataset](https://huggingface.co/datasets/daruokta/bifocalgemma-data) at
-revision 75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2: **49,296 examples =44,366 train /4,930 dev**.
-Encoder8192 /paired decoder2048 /baseline10752. Its fingerprint
-2d3a50c12d0521875b073b926771dbaa0327df758dfb6b13bb745aded88ea67d
-exactly matches the completed instruction pool in the uploaded Molab log.
-Native bytes, IDs, splits and hashes are preserved in the release; this is
-file-editing foundation SFT, not completion of repository repair training.
-Current retained source totals: EditPackFT 20,129; CommitPackFT Python 16,507;
-NextCoder Python 12,660. One epoch at batch1/accum4 has 11,092 optimizer updates
-and 16,542,339 supervised train tokens. The published payload occupies
-106,594,291 bytes (~101.7 MiB), including native archives and viewer projections;
-upstream raw caches are not needed by a normal training run.
-See [release receipt](data/private_dataset_release_20261010.json).
+The training cell consumes the selected frozen collection only. An existing local directory must match the pinned collection fingerprint. MAX_STEPS=0 completes configured epochs; v2 requires a new run, not optimizer resume from v1. HumanEvalFix164 and GSM8K1,319 unique questions in two protocols are the published evaluation artifacts. Other catalog entries and the repository corpus remain pending.
 
 ## Instruction foundation: implemented, complete local historical manifest
 
@@ -98,7 +59,7 @@ before-seed groups with an approximately 10% dev target; final counts are unknow
 
 Current local notebook caps (user update, 10 October): encoder8,192 /paired
 decoder2,048 /baseline decoder10,752. Historical 49,259-example counts above
-remain tied to the older 2k/2k/4,608 frozen pool; new released 8k counts are 44,366 train /4,930 dev. Source
+remain tied to the older 2k/2k/4,608 frozen pool; the superseded v1 8k release had 44,366 train /4,930 dev; current v2 has 40,706 train /4,524 dev. Source
 profiles show 8,192 paired-decoder coverage of 96.01% for V2 and 98.63% for
 SWE-Fixer. An 8k paired-decoder budget remains a separate candidate requiring
 original-model VRAM testing. The requested encoder8k default does not imply

@@ -54,12 +54,29 @@ def archive_files(root, names, output):
     }
 
 
-def write_view(path, records, *, training):
-    """Stable viewer schema; full training provenance remains in the original pool."""
+def write_view(path, records, *, training, protocol=None, shots=None):
+    """Lossless public rows plus explicit viewer fields; eval gold stays separate."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    columns = ["instance_id", "role", "source", "instruction", "context", "provenance_json"]
+    columns = [
+        "instance_id",
+        "role",
+        "source",
+        "instruction",
+        "context",
+        "provenance_json",
+        "question",
+        "shots",
+        "protocol_json",
+        "task_scope",
+        "research_role",
+        "edit_kind",
+        "path",
+        "before",
+        "after",
+        "record_json",
+    ]
     if training:
         columns.append("target_patch")
     schema = pa.schema([(name, pa.string()) for name in columns])
@@ -71,6 +88,21 @@ def write_view(path, records, *, training):
                 "role": row["role"],
                 "source": str(row.get("source", row.get("benchmark", ""))),
                 "instruction": row.get("instruction", ""),
+                "question": row.get("question", ""),
+                "shots": str(shots) if shots is not None else "",
+                "protocol_json": json.dumps(protocol or {}, sort_keys=True),
+                "task_scope": row.get(
+                    "task_scope", "math_question" if "question" in row else "single_file_context"
+                ),
+                "research_role": row.get(
+                    "research_role",
+                    "evaluation" if not training else "auxiliary_single_file_editing",
+                ),
+                "edit_kind": row.get("edit_kind", ""),
+                "path": row.get("path", ""),
+                "before": row.get("before", "") if training else "",
+                "after": row.get("after", "") if training else "",
+                "record_json": json.dumps(row, sort_keys=True, ensure_ascii=False),
                 "context": row.get("context", ""),
                 "provenance_json": json.dumps(
                     {
@@ -79,6 +111,13 @@ def write_view(path, records, *, training):
                             "source_revision",
                             "dataset_license",
                             "code_license",
+                            "code_license_verification",
+                            "provenance_type",
+                            "git_commit",
+                            "seed_program_hash",
+                            "commit_kind",
+                            "normalization_policy",
+                            "patch_line_policy",
                             "upstream_row",
                             "canonical_repos",
                             "commit",
@@ -135,7 +174,14 @@ def build_release(spec_path, output):
                 audit_split_disjointness(split_rows)
                 archives = {
                     "public": archive_files(
-                        root, ["train.jsonl", "dev.jsonl", "manifest.json"], directory / "pool.zip"
+                        root,
+                        ["train.jsonl", "dev.jsonl", "manifest.json"]
+                        + (
+                            ["remediation_ledger.jsonl"]
+                            if (root / "remediation_ledger.jsonl").exists()
+                            else []
+                        ),
+                        directory / "pool.zip",
                     )
                 }
                 counts = {key: len(value) for key, value in split_rows.items()}
@@ -168,6 +214,10 @@ def build_release(spec_path, output):
                     "source_counts": sources,
                     "code_licenses": licenses,
                     "functional_quality_verified": False,
+                    "research_role": manifest["report"].get(
+                        "research_role", "auxiliary_single_file_editing"
+                    ),
+                    "remediation": manifest["report"].get("remediation"),
                 }
             elif entry["kind"] in {"gsm8k", "prepared_code_eval"}:
                 if entry["kind"] == "gsm8k":
@@ -225,7 +275,16 @@ def build_release(spec_path, output):
                     "public": archive_files(root, public_names, directory / "public.zip"),
                     "gold": archive_files(root, gold_names, directory / "gold.zip"),
                 }
-                write_view(views / "test.parquet", public, training=False)
+                write_view(
+                    views / "test.parquet",
+                    public,
+                    training=False,
+                    protocol=evidence.get(
+                        "protocol",
+                        {"official_protocol": False, "adaptation": "native_diff_output_adapter"},
+                    ),
+                    shots=evidence.get("shots"),
+                )
                 counts, role = {"test": len(public)}, "eval"
                 configs.append(
                     {
@@ -257,8 +316,26 @@ def build_release(spec_path, output):
             destination = stage / "notices" / (name + ".txt")
             destination.parent.mkdir(exist_ok=True)
             shutil.copyfile(notice["file"], destination)
+        audit_artifacts = {}
+        for entry in spec.get("audits", []):
+            name = entry["name"]
+            if not NAME.fullmatch(name) or name in audit_artifacts:
+                raise ValueError("invalid_audit_artifact_name")
+            source = Path(entry["file"])
+            json.loads(source.read_text(encoding="utf-8"))
+            destination = stage / "audits" / (name + ".json")
+            destination.parent.mkdir(exist_ok=True)
+            shutil.copyfile(source, destination)
+            audit_artifacts[name] = {
+                "path": destination.relative_to(stage).as_posix(),
+                "sha256": digest(destination),
+                "bytes": destination.stat().st_size,
+            }
         release = {
             "format": FORMAT,
+            "viewer_schema_version": 2,
+            "audits": audit_artifacts,
+            "supersedes_revision": spec.get("supersedes_revision"),
             "name": spec["name"],
             "collections": collections,
             "benchmark_catalog": spec.get("benchmark_catalog", []),
@@ -318,6 +395,7 @@ def audit_split_disjointness(split_rows):
         current = set()
         for row in records:
             current.update("repo:" + value for value in row.get("canonical_repos", []))
+            current.update("structure:" + value for value in row.get("split_keys", []))
             for key in ("commit", "before_signature", "normalized_pair_hash"):
                 if row.get(key):
                     current.add(key + ":" + row[key])
@@ -360,8 +438,11 @@ def write_card(root, release, configs):
             "Use a full Hub commit SHA and verify release/file hashes before loading.",
             "Training downloads never select eval collections; eval gold needs explicit "
             "include_gold=True. All gold is still accessible to repo collaborators.",
-            "The viewer is a convenience projection. Native ZIPs preserve original pool "
-            "and scorer schemas, IDs and bytes.",
+            "Viewer schema v2 exposes question, shots, protocol and lossless record_json. "
+            "Native ZIPs preserve scorer/pool schemas, IDs and bytes. GSM8K protocols "
+            "share 1,319 test questions intentionally; they are not 2,638 unique tasks.",
+            "Training is auxiliary single-file editing, not a repository repair corpus. "
+            "NextCoder seed code licensing and original repository lineage are unresolved.",
             "Benchmark configs are adaptations; official protocol parity and model quality "
             "are not established. Registry-only benchmarks are not ready evaluators.",
             "See release.json for status and limits; do not relabel a 2k cohort as 8k.",
@@ -484,11 +565,13 @@ def fetch_collection(
     return manifest
 
 
-def publish_release(directory, repo_id):
+def publish_release(directory, repo_id, *, replace_current=False, expected_parent=None):
     """Create/upload only a private dataset owned by the authenticated account."""
     from huggingface_hub import HfApi
 
     release = verify_release(directory)
+    if expected_parent is not None and not REVISION.fullmatch(expected_parent):
+        raise ValueError("expected_parent_must_be_full_commit_sha")
     api = HfApi()
     owner = api.whoami()["name"]
     if repo_id.split("/")[0] != owner or len(repo_id.split("/")) != 2:
@@ -498,13 +581,18 @@ def publish_release(directory, repo_id):
             raise ValueError("Refusing to upload private release into a public repo.")
     else:
         api.create_repo(repo_id, repo_type="dataset", private=True, exist_ok=False)
-    if not api.dataset_info(repo_id).private:
+    current = api.dataset_info(repo_id)
+    if not current.private:
         raise ValueError("Dataset privacy verification failed.")
+    if expected_parent is not None and current.sha != expected_parent:
+        raise ValueError("dataset_head_changed_before_publish")
     commit = api.upload_folder(
         repo_id=repo_id,
         repo_type="dataset",
         folder_path=directory,
-        commit_message="Add frozen curated training and evaluation release",
+        commit_message="Publish corrected frozen dataset release",
+        delete_patterns=["collections/**", "notices/**"] if replace_current else None,
+        parent_commit=expected_parent,
         allow_patterns=list(
             json.loads((Path(directory) / "inventory.json").read_text(encoding="utf-8"))
         )
@@ -530,6 +618,8 @@ def main():
     publish = commands.add_parser("publish")
     publish.add_argument("--directory", type=Path, required=True)
     publish.add_argument("--repo", required=True)
+    publish.add_argument("--replace-current", action="store_true")
+    publish.add_argument("--expected-parent")
     fetch = commands.add_parser("fetch")
     fetch.add_argument("--repo", required=True)
     fetch.add_argument("--revision", required=True)
@@ -546,7 +636,16 @@ def main():
             )
         )
     elif args.command == "publish":
-        print(json.dumps(publish_release(args.directory, args.repo)))
+        print(
+            json.dumps(
+                publish_release(
+                    args.directory,
+                    args.repo,
+                    replace_current=args.replace_current,
+                    expected_parent=args.expected_parent,
+                )
+            )
+        )
     else:
         result = fetch_collection(
             args.repo,

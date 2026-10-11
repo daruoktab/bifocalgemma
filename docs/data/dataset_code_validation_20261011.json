@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-11",
+  "pytest": {
+    "passed": 114,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 180.67,
+    "scope": [
+      "data_remediation",
+      "data_releases",
+      "curation",
+      "editing_manifest",
+      "offline_data_real_tokenizers",
+      "gsm8k",
+      "offline_sft_training",
+      "training_policy",
+      "repository_corpus",
+      "repository_study"
+    ]
+  },
+  "generator_check": true,
+  "marimo_check_strict": true,
+  "ruff": true,
+  "type_check": true,
+  "git_diff_check": true,
+  "matched_notebooks": {
+    "cells_each": 20,
+    "identical_cells": 19,
+    "different_control_defaults": 3
+  },
+  "model_weights_loaded": false,
+  "molab_execution": false
+}

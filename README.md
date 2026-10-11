@@ -11,11 +11,15 @@ codebase serta perbaikan bug lintas file. Rancangan aktif memakai **encoder Gemm
 base + decoder Gemma 4 IT**, langsung dibangun dengan merged attention, lalu
 supervised fine-tuning. Teacher network dan distillation bersifat opsional.
 
-Tuning awal memakai **offline instruction-to-patch SFT**, dengan EditPackFT sebagai
-data utama dan CommitPackFT Python opsional setelah dedup. Data berupa kode sebelum
-edit + instruksi + target patch. **RL dan VM/Docker tidak diperlukan pada jalur
-tuning**; agent rollouts/SWE-bench environments ditunda. Single-file editing pilot
-akan dilanjutkan dengan static multi-file data untuk menguji pemahaman codebase.
+Tuning awal memakai **offline instruction-to-patch SFT** dari rilis dataset private
+yang dikurasi bersama: EditPackFT, CommitPackFT Python, dan NextCoder Python.
+Input berupa kode sebelum edit + instruksi; target berupa unified diff. Cohort v2
+menghapus event/struktur edit duplikat, mengarantina target ambigu, dan memisahkan
+train/dev melalui komponen repository, commit/seed serta struktur kode.
+**RL dan VM/Docker tidak diperlukan pada jalur tuning.** Data ini tetap auxiliary
+single-file editing; corpus repository lintas file belum diterbitkan. Lisensi kode
+seed sintetis NextCoder belum terverifikasi. Lihat
+[audit dataset v2](docs/DATASET_REMEDIATION_V2.md) untuk angka dan batas verifikasinya.
 
 ## Matriks penelitian
 

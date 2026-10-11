@@ -57,12 +57,12 @@ def _():
     EPOCHS = 1
     RESUME_FROM = ""  # checkpoint-v2 path, empty starts a new run
     TRAINING_DATA_MODE = "curated_pool"  # curated_pool / repository_tasks
-    CURATED_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v1"
-    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v1"
+    CURATED_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v2"
+    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v2"
     PREPARE_FULL_POOL = False
     DATASET_REPO_ID = "daruokta/bifocalgemma-data"
-    DATASET_REVISION = "75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2"  # Full immutable dataset commit SHA
-    DATASET_COLLECTION = "instruction_enc8k_dec2k_v1"  # Released editing-foundation stage; repository collection remains pending
+    DATASET_REVISION = "d34a19b3badc0120755495c68227cba038819cd7"  # Full immutable dataset commit SHA
+    DATASET_COLLECTION = "instruction_enc8k_dec2k_v2"  # Released editing-foundation stage; repository collection remains pending
     CORPUS_KIND = "instruction"
     REPOSITORY_SOURCE = "swe_rebench_v2"
     REPOSITORY_TARGET_COUNT = 10000
@@ -157,7 +157,7 @@ def _(PREPARE_FULL_POOL, DATASET_REPO_ID, DATASET_REVISION, DATASET_COLLECTION, 
     if PREPARE_FULL_POOL or (RUN_TRAINING and TRAINING_DATA_MODE == "curated_pool"):
         if CORPUS_KIND not in {"instruction", "repository"}:
             raise ValueError("Choose instruction or repository corpus kind.")
-        if not Path(CURATED_POOL_DIR).exists() and not PREPARE_FULL_POOL:
+        if not PREPARE_FULL_POOL:
             if not DATASET_REVISION or not DATASET_COLLECTION:
                 raise ValueError("Frozen pool missing. Choose a published collection and full dataset commit SHA; upstream curation requires PREPARE_FULL_POOL=True.")
             from bifocalgemma.data.releases import fetch_collection

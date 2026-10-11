@@ -1,0 +1,6 @@
+{
+  "examined": 45303,
+  "benchmark_ast_cores": 3846,
+  "matches": [],
+  "policy": "exact_AST_pair_side_without_docstrings; primary_task_code_all_nonempty; other_snippets_min32_tokens; semantic_or_fragment_contamination_not_certified"
+}

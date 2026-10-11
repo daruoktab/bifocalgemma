@@ -17,6 +17,8 @@ from bifocalgemma.data.python_quality import (
 )
 from bifocalgemma.data.repository import repo_identity
 
+NORMALIZATION_POLICY = "python_structure_preserving_v2"
+
 SOURCE_REFS = {
     "editpackft": {
         "id": "nuprl/EditPackFT",
@@ -46,24 +48,25 @@ PERMITTED_CODE_LICENSES = {
 
 
 def code_tokens(code):
-    """Ignore formatting/comments, retain literals and identifier spelling."""
+    """Ignore comments/indent width; retain statement and block boundaries."""
     ignored = {
         tokenize.ENCODING,
         tokenize.ENDMARKER,
         tokenize.COMMENT,
         tokenize.NL,
-        tokenize.NEWLINE,
-        tokenize.INDENT,
-        tokenize.DEDENT,
     }
     try:
         return tuple(
-            t.string
+            (
+                tokenize.tok_name[t.type]
+                if t.type in {tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT}
+                else t.string
+            )
             for t in tokenize.generate_tokens(io.StringIO(code).readline)
             if t.type not in ignored
         )
     except (tokenize.TokenError, IndentationError, SyntaxError):
-        return tuple(re.findall(r"\w+|[^\w\s]", code))
+        return ("UNPARSEABLE_SOURCE", code)
 
 
 def code_signature(code):
@@ -107,6 +110,18 @@ class CodeOverlapIndex:
             path.parent.mkdir(parents=True, exist_ok=True)
             if read_only:
                 self.db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+                try:
+                    policy = self.db.execute(
+                        "SELECT value FROM metadata WHERE key='normalization'"
+                    ).fetchone()
+                except sqlite3.OperationalError as error:
+                    self.db.close()
+                    raise ValueError(
+                        "benchmark_index_normalization_mismatch: rebuild the index"
+                    ) from error
+                if policy != (NORMALIZATION_POLICY,):
+                    self.db.close()
+                    raise ValueError("benchmark_index_normalization_mismatch: rebuild the index")
                 for table in ("exact", "codes", "postings"):
                     if self.db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] < 1:
                         raise ValueError("Incomplete benchmark index.")
@@ -115,6 +130,11 @@ class CodeOverlapIndex:
             # This is a disposable index, never a raw dataset or curated export.
             self.db.executescript(
                 "DROP TABLE IF EXISTS codes; DROP TABLE IF EXISTS postings; DROP TABLE IF EXISTS exact; CREATE TABLE codes(identity TEXT PRIMARY KEY, grams BLOB); CREATE TABLE exact(signature TEXT PRIMARY KEY, identity TEXT); CREATE TABLE postings(gram INTEGER,identity TEXT,PRIMARY KEY(gram,identity)) WITHOUT ROWID;"
+            )
+            self.db.execute("CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT)")
+            self.db.execute(
+                "INSERT OR REPLACE INTO metadata VALUES ('normalization',?)",
+                (NORMALIZATION_POLICY,),
             )
 
     def add(self, identity, code):
@@ -245,7 +265,9 @@ def nextcoder_row(raw, *, offset):
         "new_contents": after,
         "instruction": instruction,
         "commit": code_signature(before),
-        "license": "mit",
+        "license": "unknown",
+        "dataset_license": "mit",
+        "provenance_type": "synthetic_edit_from_unresolved_seed",
         "repos": "",
         "upstream_row": offset,
     }
@@ -287,7 +309,9 @@ def curate_paired_sources(
                 if not row["path"].endswith(".py"):
                     raise ValueError("non_python_path")
                 license_name = row["license"].strip().lower()
-                if license_name not in PERMITTED_CODE_LICENSES:
+                if license_name not in PERMITTED_CODE_LICENSES and not (
+                    source == "nextcoder" and license_name == "unknown"
+                ):
                     raise ValueError("code_license_not_admitted:" + license_name)
                 repos = [
                     repo_identity(x.strip(), aliases)
@@ -331,6 +355,14 @@ def curate_paired_sources(
                         "source_revision": SOURCE_REFS[source]["revision"],
                         "dataset_license": SOURCE_REFS[source]["dataset_license"],
                         "code_license": license_name,
+                        "code_license_verification": "unverified_original_seed"
+                        if source == "nextcoder"
+                        else "upstream_row_declared_not_checkout_verified",
+                        "provenance_type": "synthetic_edit_from_unresolved_seed"
+                        if source == "nextcoder"
+                        else "upstream_git_export",
+                        "git_commit": None if source == "nextcoder" else row["commit"],
+                        "seed_program_hash": row["commit"] if source == "nextcoder" else None,
                         "role": "train",
                         "upstream_row": offset,
                         "canonical_repos": repos,
@@ -394,6 +426,7 @@ def split_connected_records(records, *, seed=17, dev_fraction=0.1):
         keys += ["repo:" + repo for repo in row["canonical_repos"]]
         # Commit hashes shared across forks/sources must remain together.
         keys += ["commit:" + row["commit"]]
+        keys += ["structure:" + key for key in row.get("split_keys", [])]
         for key in keys:
             if key in seen:
                 parent[find(i)] = find(seen[key])

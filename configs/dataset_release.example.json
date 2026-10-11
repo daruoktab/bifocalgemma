@@ -1,28 +1,28 @@
 {
-  "name": "bifocalgemma-private-data-20261010-v1",
-  "date": "2026-10-10",
+  "name": "bifocalgemma-private-data-20261011-v2",
+  "date": "2026-10-11",
   "curator": "daruokta",
   "collections": [
     {
-      "name": "instruction_enc8k_dec2k_v1",
+      "name": "instruction_enc8k_dec2k_v2",
       "kind": "curated_pool",
-      "directory": "outputs/full_instruction_pool_enc8k_dec2k_release_v1",
-      "description": "Three-source editing foundation, encoder8192/decoder2048, no functional quality claim."
+      "directory": "outputs/instruction_enc8k_dec2k_v2_final",
+      "description": "V2 auxiliary single-file editing; event/AST dedup and ambiguity quarantine, fresh real-tokenizer profiling; no functional quality claim."
     },
     {
-      "name": "humanevalfix_python_v1",
+      "name": "humanevalfix_python_v2",
       "kind": "prepared_code_eval",
       "directory": "outputs/humanevalfix_prepared",
       "description": "164 Python repair tasks; native scorer adaptation, official runtime parity pending."
     },
     {
-      "name": "gsm8k_zero_shot_v1",
+      "name": "gsm8k_zero_shot_v2",
       "kind": "gsm8k",
       "directory": "outputs/gsm8k_zero_shot_v1",
       "description": "1319 evaluation tasks; release-style numeric answer scoring, zero shot."
     },
     {
-      "name": "gsm8k_eight_shot_v1",
+      "name": "gsm8k_eight_shot_v2",
       "kind": "gsm8k",
       "directory": "outputs/gsm8k_eight_shot_v1",
       "description": "Same evaluation IDs, first eight upstream train rows as demos only."

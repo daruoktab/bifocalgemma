@@ -9,6 +9,12 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 
+def git_text_lines(text):
+    """Git counts LF delimiters only; CR/formfeed/Unicode separators stay in content."""
+    pieces = text.split("\n")
+    return [line + "\n" for line in pieces[:-1]] + ([pieces[-1]] if pieces[-1] else [])
+
+
 def editing_record(raw: dict, *, source: str) -> dict:
     if raw.get("record_type") == "repository_patch_v1":
         return repository_editing_record(raw)
@@ -34,8 +40,8 @@ def editing_record(raw: dict, *, source: str) -> dict:
         raise ValueError("unsupported_path")
     lines = list(
         difflib.unified_diff(
-            before.splitlines(keepends=True),
-            after.splitlines(keepends=True),
+            git_text_lines(before),
+            git_text_lines(after),
             fromfile=f"a/{path}",
             tofile=f"b/{path}",
             lineterm="\n",

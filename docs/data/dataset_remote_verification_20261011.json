@@ -1,0 +1,50 @@
+{
+  "repo_id": "daruokta/bifocalgemma-data",
+  "revision": "d34a19b3badc0120755495c68227cba038819cd7",
+  "private": true,
+  "inventory_files_verified": 26,
+  "collections": {
+    "instruction_enc8k_dec2k_v2": {
+      "role": "train",
+      "counts": {
+        "train": 40706,
+        "dev": 4524
+      },
+      "fingerprint": "6d4aaaa7688af41559de679562a209c5a0faf38eeac0ef5aaa817a9908c4d769",
+      "gold_downloaded": false
+    },
+    "humanevalfix_python_v2": {
+      "role": "eval",
+      "counts": {
+        "test": 164
+      },
+      "fingerprint": null,
+      "gold_downloaded": true
+    },
+    "gsm8k_zero_shot_v2": {
+      "role": "eval",
+      "counts": {
+        "test": 1319
+      },
+      "fingerprint": null,
+      "gold_downloaded": true
+    },
+    "gsm8k_eight_shot_v2": {
+      "role": "eval",
+      "counts": {
+        "test": 1319
+      },
+      "fingerprint": null,
+      "gold_downloaded": true
+    }
+  },
+  "default_public_fetch_has_no_gold": true,
+  "main_parquet_files": [
+    "collections/gsm8k_eight_shot_v2/view/test.parquet",
+    "collections/gsm8k_zero_shot_v2/view/test.parquet",
+    "collections/humanevalfix_python_v2/view/test.parquet",
+    "collections/instruction_enc8k_dec2k_v2/view/dev.parquet",
+    "collections/instruction_enc8k_dec2k_v2/view/train.parquet"
+  ],
+  "v1_history_available": true
+}

@@ -68,7 +68,7 @@ run aktif kecuali memang hendak memulai ulang rerun boundary.
 
 ## Data dan objective
 
-Default release-stage sekarang **curated_pool** dengan CORPUS_KIND=instruction dan koleksi instruction_enc8k_dec2k_v1. Ini pilot editing foundation; studi repository menunggu pool lengkap. Konfigurasi dataset beku, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
+Default release-stage sekarang **curated_pool** dengan CORPUS_KIND=instruction dan koleksi instruction_enc8k_dec2k_v2. Ini pilot editing foundation; studi repository menunggu pool lengkap. Konfigurasi dataset beku, mengikuti [panduan full corpus](FULL_CORPUS_TRAINING.md). Manifest menentukan seluruh split; `MAX_STEPS=0` menyelesaikan epoch yang dikonfigurasi. Legacy pilot **EditPackFT** revision `067b4c882f44eca19329fedd275438fc3c060f3f`, file
 `data/train-00000-of-00001.parquet`. Opsi **CommitPackFT Python** revision
 `fc56fe33c030c6daa414c2b112c932b8eed085e6`, file `data/python/data.jsonl`.
 Pilihan local_jsonl menerima schema old_file/new_file, old_contents/new_contents,

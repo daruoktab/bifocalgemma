@@ -1,4 +1,4 @@
-"""Full licensed instruction pool, benchmark quarantine and repository-source audit."""
+"""Auxiliary instruction pool, explicit license status and benchmark quarantine."""
 
 import gzip
 import json
@@ -22,9 +22,9 @@ from bifocalgemma.data.curation import (
 )
 from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.python_quality import (
-    SYNTAX_DIAGNOSTICS_POLICY,
     summarize_admitted_warning_records,
 )
+from bifocalgemma.data.remediation import audit_rows, remediate_records
 from bifocalgemma.data.repository import read_source_rows, repo_identity
 
 BENCHMARK_FILES = {
@@ -238,6 +238,9 @@ def build_full_pool(
         aliases=study_config["repo_aliases"],
         progress=progress,
     )
+    records, remediation_ledger, remediation_rejected = remediate_records(
+        records, progress=progress
+    )
     eligible, profile = token_profile(
         records,
         encoder,
@@ -254,8 +257,15 @@ def build_full_pool(
         "sources": SOURCE_REFS,
         "source_file_sha256": {k: [file_digest(p) for p in source_files[k]] for k in SOURCE_REFS},
         "benchmark_quarantine": benchmark_report,
-        "admission": admission,
-        "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
+        "parent_admission_before_remediation": admission,
+        "research_role": "auxiliary_single_file_editing",
+        "remediation": {
+            "policy": "event_and_structure_remediation_v2",
+            "retained_records": len(eligible),
+            "rejected": remediation_rejected,
+            "audit": audit_rows({"train": train, "dev": dev}),
+        },
+        "syntax_diagnostics_policy": "v2_ast_and_compile_warning_free_targets",
         "final_cohort_syntax_warnings": {
             "train": summarize_admitted_warning_records(train),
             "dev": summarize_admitted_warning_records(dev),
@@ -275,6 +285,9 @@ def build_full_pool(
         "functional_quality_verified": False,
     }
     manifest = export_pool(train + dev, output, report)
+    Path(output, "remediation_ledger.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in remediation_ledger), encoding="utf-8"
+    )
     if progress:
         progress(
             {

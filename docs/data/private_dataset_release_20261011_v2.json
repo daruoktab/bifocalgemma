@@ -1,0 +1,43 @@
+{
+  "repo_id": "daruokta/bifocalgemma-data",
+  "revision": "d34a19b3badc0120755495c68227cba038819cd7",
+  "private": true,
+  "release_fingerprint": "8ebbd10a5ce83d58fb2e4cc4ae9f989a57c22011b441ab7df821cd1e43b04400",
+  "date": "2026-10-11",
+  "ready_training_collection": "instruction_enc8k_dec2k_v2",
+  "pending_repository_collection": "repository_enc8k_dec2k_v1",
+  "supersedes_revision": "75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2",
+  "counts": {
+    "instruction_enc8k_dec2k_v2": {
+      "train": 40706,
+      "dev": 4524
+    },
+    "humanevalfix_python_v2": {
+      "test": 164
+    },
+    "gsm8k_zero_shot_v2": {
+      "test": 1319
+    },
+    "gsm8k_eight_shot_v2": {
+      "test": 1319
+    }
+  },
+  "pool_fingerprint": "6d4aaaa7688af41559de679562a209c5a0faf38eeac0ef5aaa817a9908c4d769",
+  "release_bytes": 206399063,
+  "training_archive_bytes": 61950538,
+  "remote_roundtrip_verified": true,
+  "benchmark_public_gold_archives_byte_identical_to_v1": true,
+  "validation_environment": {
+    "python": "3.13.16",
+    "transformers": "5.19.0",
+    "tokenizers": "0.23.3",
+    "huggingface_hub": "2.2.0",
+    "pyarrow": "25.0.1"
+  },
+  "limitations": [
+    "training static checks are not functional validation",
+    "NextCoder original seed code licensing unresolved",
+    "semantic and pretraining contamination not certified",
+    "repository corpus and remaining benchmark catalog entries pending"
+  ]
+}

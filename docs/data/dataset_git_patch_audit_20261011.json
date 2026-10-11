@@ -1,0 +1,7 @@
+{
+  "checked": 45303,
+  "passed": 45303,
+  "changed_patches": 8,
+  "identity": "36014fcb1d2cdb45e45810076908cb8209a5a589263fa9d5e8df1e8cab422cea",
+  "scope": "git_apply_check_apply_byte_exact_after_all_records; no code execution"
+}

@@ -1,135 +1,103 @@
-# Private curated dataset repository
 
-Data releases belong in **daruokta/bifocalgemma-data** on Hugging Face (dataset,
-private), separately from this GitHub code/model repository. The logged-in HF
-namespace is daruokta, which differs from the GitHub account daruoktab.
+# Private curated dataset releases
 
-## Why freeze before Molab
+The active data repository is [daruokta/bifocalgemma-data](https://huggingface.co/datasets/daruokta/bifocalgemma-data), **private**.
+The code/model repository remains [daruoktab/bifocalgemma](https://github.com/daruoktab/bifocalgemma).
+[dataset_release.lock.json](../configs/dataset_release.lock.json) records the exact immutable Hub commit.
 
-Curate and validate once on CPU, then upload completed pools and evaluation
-artifacts. Molab downloads one named collection at one full Hub commit SHA.
-It does not repeat upstream downloads, snapshot materialization or curation when
-RUN_TRAINING is enabled. Tokenization remains necessary for the selected model.
+## Current v2 release
 
-The uploaded October 10 log proves completion of an 8k instruction pool
-(fingerprint 2d3a50c12d0521875b073b926771dbaa0327df758dfb6b13bb745aded88ea67d).
-Its final repository progress event is 1,597 accepted /16,808 examined, with no
-final repository manifest. Those are intermediate counts, not a frozen release.
-A log cannot reconstruct the missing repository-task payloads or train/dev IDs.
+| Collection | Role | Records |
+| --- | --- | ---: |
+| instruction_enc8k_dec2k_v2 | Auxiliary single-file editing SFT | 40,706 train +4,524 dev |
+| humanevalfix_python_v2 | Native Python repair evaluation adaptation | 164 |
+| gsm8k_zero_shot_v2 | Math retention evaluation, zero-shot | 1,319 |
+| gsm8k_eight_shot_v2 | Same math questions with eight demonstrations | 1,319 |
 
-The local 8k instruction rebuild completed: **44,366 train +4,930 dev**. Its
-fingerprint exactly matches the logged completed Molab instruction pool. Release
-revision: 75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2. See
-[verified receipt](data/private_dataset_release_20261010.json).
-The local 8k build is independently curated from cached upstream artifacts;
-its own hashes are authoritative, even if they differ from the Molab log.
+GSM8K has **1,319 unique test questions across both protocols**, not 2,638 unique tasks.
+The v2 viewer shows question, shots and protocol explicitly. Training remains three-source
+single-file editing; repository repair is a separate unfinished corpus. See the
+[detailed remediation audit](DATASET_REMEDIATION_V2.md).
 
-## Layout and boundaries
+V1 at commit 75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2 remains available for historical
+reproducibility. Its 49,296 records and earlier validation claims are superseded for
+new training. Current main contains v2 collections only; history is not rewritten.
+Changing dataset version requires a new run; do not resume v1 optimizer state against v2.
 
-- release.json: roles, collection kinds, native archive hashes and member hashes,
-  counts, cohort token limits, provenance and benchmark status.
-- collections/<training-name>/pool.zip: exact train.jsonl, dev.jsonl and manifest.json.
-- collections/<benchmark-name>/public.zip: scorer-ready public inputs and required snapshots.
-- collections/<benchmark-name>/gold.zip: scoring references, explicitly opted in.
-- collections/<name>/view/*.parquet: a small stable viewer schema. Training targets
-  appear only in training views; benchmark views contain public inputs only.
-- notices/: pinned upstream cards and license texts. No blanket relicense of code.
-- inventory.json: SHA256 and byte sizes for every release file.
+## Layout and contracts
 
-Gold separation is a loader contract, **not access control** inside a private
-repo: collaborators can download gold. Generation must use public inputs only.
-The dev split is for tuning; evaluation benchmarks are never converted to train.
-The six configurations must use the same frozen cohort.
+- release.json: roles, counts, native archive/member hashes, evidence and benchmark status.
+- collections/<training-name>/pool.zip: train.jsonl, dev.jsonl, manifest.json and rejection ledger.
+- collections/<benchmark-name>/public.zip: target-free public inputs and required snapshots.
+- collections/<benchmark-name>/gold.zip: scoring references, opt-in only.
+- collections/<name>/view/*.parquet: explicit typed columns plus lossless record_json.
+- audits/: frozen CPU validation reports; notices/: exact credited source cards/license bytes.
+- inventory.json: SHA256 and byte count for every packaged file.
 
-## Build, publish and consume
+Native container format names retain _v1 for reader compatibility; v2 collection names,
+dataset_schema_version=2 on training rows, viewer_schema_version=2 and explicit policies
+identify the corrected cohort. Source text is preserved; corrected patches use LF-only
+Git line counting. Archive hashes bind the exact payloads, not merely row counts.
 
-Use env ai. No GPU, model weights, RL or VM is needed for release packaging.
-Copy configs/dataset_release.example.json to outputs/dataset_release_spec.json
-and fill its paths/notices after CPU curation. Production source cards and license
-texts must be retained; the example contains no dataset payloads.
+Gold separation is a loader contract, **not access control**: private collaborators
+can access gold. Generation uses public inputs only. Training views contain targets;
+evaluation views never contain answer, gold_patch, target_patch or test code.
+Explicit HF configs prevent automatic concatenation of archives and different protocols.
 
-To curate a new 8k instruction pool (pinned public downloads are explicit):
+NextCoder has MIT dataset metadata, unresolved original repository lineage and unknown
+source-code license. Its legacy synthetic grouping hash is not a Git commit or a
+verified original-code revision. Per-record upstream code licenses for Git exports are
+declarations, not certification of the original checkout or complete notices.
 
-```powershell
-python -m bifocalgemma.data.full_pool --fetch --tokenizer-cache <verified-cache-root> --encoder-limit 8192 --decoder-limit 2048 --output outputs/full_instruction_pool_enc8k_dec2k_release_v1
-```
+## Build and audit
 
-The tokenizer root must hold the audited four Gemma tokenizer assets. This CLI
-never downloads model weights. Use a new output directory for each build.
+Use conda env ai; no model weights, GPU training, RL or VM is required.
 
 ```powershell
 $env:PYTHONPATH = 'src'
-python -m bifocalgemma.data.releases build --spec outputs/dataset_release_spec.json --output outputs/dataset_release_v1
-python -m bifocalgemma.data.releases publish --directory outputs/dataset_release_v1 --repo daruokta/bifocalgemma-data
-python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <full-commit-sha> --collection instruction_enc8k_dec2k_v1 --output outputs/full_instruction_pool_enc8k_dec2k_v1
+python -m bifocalgemma.data.remediation --source <frozen-v1-pool> --output <new-pool> --tokenizer-cache <verified-tokenizer-cache>
+python -m bifocalgemma.data.releases build --spec <filled-release-spec.json> --output <new-release-directory>
+python tools/audit_dataset_release.py --pool <new-pool> --release <new-release-directory> --tokenizer-cache <verified-tokenizer-cache> --output <audit-report.json>
 ```
 
-Publishing refuses a public destination. Revisions such as main are rejected by
-the consumer. Fetch verifies archive SHA256, explicit member names, sizes,
-member hashes and the original curated-pool fingerprint, then installs atomically.
-An existing training pool must match the selected collection fingerprint.
+The remediation CLI rejects reuse of an output directory. Changed targets require
+fresh verified tokenizer profiling. A fresh full-corpus build applies the same event,
+structure, ambiguity, warning and compile gates. Older overlap indexes must be rebuilt
+under python_structure_preserving_v2.
 
-Benchmark fetch is separate:
+The full audit checks canonical patch hashes and applies **every** target with Git,
+compares byte-exact after contents, verifies tokenizer assets/equivalence, rejects
+overflow and compares every Parquet row against the native archive. An explicit
+--reuse-validated-pool-audits mode binds a later viewer audit to completed frozen
+patch/token evidence and unchanged subset identities; it does not invent fresh checks.
+See the receipt for the actual mode used for this release.
+
+## Publish and download
 
 ```powershell
-python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <full-commit-sha> --collection gsm8k_zero_shot_v1 --role eval --output outputs/gsm8k_inputs
-python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <full-commit-sha> --collection gsm8k_zero_shot_v1 --role eval --include-gold --output outputs/gsm8k_scoring
+python -m bifocalgemma.data.releases publish --directory <new-release-directory> --repo daruokta/bifocalgemma-data --replace-current --expected-parent <previous-full-sha>
+python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <locked-full-sha> --collection instruction_enc8k_dec2k_v2 --output outputs/full_instruction_pool_enc8k_dec2k_v2
+python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <locked-full-sha> --collection gsm8k_zero_shot_v2 --role eval --output outputs/gsm8k_v2_public
 ```
 
-Default fetch cannot select an eval collection as train. Training fetch has no
-gold option. Eval directories with existing contents are rejected rather than
-silently mixing protocols. The Hub viewer's explicit configs prevent a recursive
-glob from concatenating training, benchmark inputs and scoring references.
-See [HF configuration documentation](https://huggingface.co/docs/hub/datasets-data-files-configuration).
+Publishing refuses a public destination and can enforce the expected parent commit.
+Replacement changes current collection files in one versioned commit; old revisions
+remain retrievable. The consumer rejects moving revisions such as main, wrong roles,
+unsafe archive paths, corrupt bytes and a local training cache with another fingerprint.
+Even an existing local directory is verified against the selected HF collection.
 
-## Training notebooks
+Evaluation gold requires --include-gold with --role eval. Eval directories must be new,
+so protocols cannot be mixed silently. Normal notebook training downloads one frozen
+named collection; upstream curation requires explicit PREPARE_FULL_POOL=True.
 
-The matched preparation cell loads a local frozen pool or downloads a named
-collection from DATASET_REPO_ID at DATASET_REVISION. Curation is a separate,
-explicit PREPARE_FULL_POOL=True operation. A normal training run never silently
-builds a missing foundation or starts repository snapshot downloads.
+## Not yet ready
 
-Only select a collection with matching CORPUS_KIND and token limits. Selecting
-instruction foundation is a separate editing experiment, not completion of the
-repository study. The default current stage explicitly selects instruction_enc8k_dec2k_v1,
-CORPUS_KIND=instruction, and its matching local path. The repository collection remains pending until a
-complete licensed snapshot/context/patch cohort is produced and uploaded.
-No incomplete ledger or synthetic smoke pool should be substituted for it.
+repository_enc8k_dec2k_v1 has no complete production manifest. CanItEdit, RES-Q,
+RepoQA and CrossCodeEval are quarantine/catalog references with their documented
+scorer, environment or licensing work still pending. They are not silently counted
+as published benchmarks. Native HumanEvalFix scoring is an adaptation; Python runtime
+parity with the original release and model quality are not established by gold checks.
 
-## Benchmark release status
-
-HumanEvalFix Python and GSM8K have local prepared artifacts and scorer checks.
-These are adapted protocols, not proof of model quality or official runtime parity.
-RepoQA is currently an answer-centered oracle-window diagnostic. CrossCodeEval
-uses precomputed non-reference retrieval and adapted exact match. Their official
-protocols and source-code notice coverage still need separate verification.
-CanItEdit has quarantine artifacts but no production scorer here; RES-Q needs
-native task dependency/harness validation. Catalog entries without admitted
-payloads are references only, never reported as ready evaluation.
-
-Freeze eval IDs and reference hashes before model experiments. Preserve upstream
-benchmarks rather than claiming newly authored benchmarks. Native execution is
-opt-in; static AST/patch checks do not prove functional repair.
-
-## Repository manifest compatibility fix (11 October 2026)
-
-Native repository_patch_v1 exports do not store the paired-file convenience
-fields pair_hash and instruction_hash. The notebook previously indexed those
-fields directly after tokenization and could fail with KeyError: pair_hash.
-The shared editing_manifest now normalizes a temporary repository record using
-its existing snapshot/patch contract. Hashes bind snapshot_sha256 plus the exact
-target patch, and the normalized instruction. Dataset bytes, IDs, splits and
-frozen-pool fingerprints are preserved. Already stored conflicting repository
-hashes are rejected; eval records remain prohibited from training manifests.
-
-All 49,296 published paired records produce the same run manifest as before.
-The actual generated preparation helper also passes on a four-record native
-repository export with real audited tokenizers for E2B-E2B, E4B-E4B, E2B-E4B
-and E4B-E2B, without loading pretrained model weights. This validates the data
-contract, not model training or repair quality. See
-[schema audit](data/editing_manifest_schema_audit_20261011.json).
-
-Normal notebook training still downloads the named instruction collection from
-our private HF dataset repository at the locked commit. The repository corpus
-and the other pending benchmark payloads remain separate unfinished stages;
-this client fix does not certify them as ready datasets.
+The earlier repository KeyError: pair_hash fix remains in place: editing_manifest
+normalizes native repository exports in a temporary copy, preserving source bytes,
+IDs and snapshot/patch identity. That schema fix alone does not finish the repository corpus.

@@ -58,22 +58,22 @@ def _(mo):
     RUN_TRAINING = False
     PREPARE_FULL_POOL = False  # Explicit separate curation; never implied by RUN_TRAINING
     DATASET_REPO_ID = "daruokta/bifocalgemma-data"
-    DATASET_REVISION = "75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2"  # Full immutable Hub commit SHA, from dataset release receipt
-    DATASET_COLLECTION = "instruction_enc8k_dec2k_v1"  # Released editing-foundation stage; repository collection remains pending
+    DATASET_REVISION = "d34a19b3badc0120755495c68227cba038819cd7"  # Full immutable Hub commit SHA, from dataset release receipt
+    DATASET_COLLECTION = "instruction_enc8k_dec2k_v2"  # Released editing-foundation stage; repository collection remains pending
     CORPUS_CACHE_DIR = "outputs/full_corpus_raw"
     CORPUS_TOKENIZER_CACHE = "outputs/repository_tokenizers"
     CORPUS_KIND = "instruction"  # Current released stage: editing foundation; repository study is pending
-    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v1"
+    FOUNDATION_POOL_DIR = "outputs/full_instruction_pool_enc8k_dec2k_v2"
     REPOSITORY_SOURCE = "swe_rebench_v2"
     REPOSITORY_TARGET_COUNT = 10000
     REPOSITORY_PER_REPO_LIMIT = 50
     REPOSITORY_DISK_GIB = 20
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "enc8k-dec2k-v1"  # Ubah untuk run baru; directory existing tidak ditimpa.
+    RUN_NAME = "enc8k-dec2k-v2"  # Ubah untuk run baru; directory existing tidak ditimpa.
     RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
     DATA_SOURCE = "curated_pool"  # frozen full pool; legacy sources are explicit pilots
-    LOCAL_DATA_FILE = "outputs/full_instruction_pool_enc8k_dec2k_v1"  # directory with manifest/train/dev
+    LOCAL_DATA_FILE = "outputs/full_instruction_pool_enc8k_dec2k_v2"  # directory with manifest/train/dev
     RAW_LIMIT = 10000
     TRAIN_LIMIT = 2000
     DEV_LIMIT = 200
@@ -1429,7 +1429,7 @@ def _(PREPARE_FULL_POOL, RUN_TRAINING, DATA_SOURCE, DATASET_REPO_ID, DATASET_REV
             raise ValueError("Full corpus preparation requires DATA_SOURCE=curated_pool.")
         if CORPUS_KIND not in {"instruction", "repository"}:
             raise ValueError("Choose instruction or repository corpus kind.")
-        if not Path(LOCAL_DATA_FILE).exists() and not PREPARE_FULL_POOL:
+        if not PREPARE_FULL_POOL:
             if not DATASET_REVISION or not DATASET_COLLECTION:
                 raise ValueError("Frozen pool missing. Select a published dataset collection and full commit SHA; curation is a separate PREPARE_FULL_POOL=True operation.")
             _release_api = importlib.import_module("bifocalgemma.data.releases")

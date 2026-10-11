@@ -1,0 +1,124 @@
+{
+  "pool_fingerprint": "6d4aaaa7688af41559de679562a209c5a0faf38eeac0ef5aaa817a9908c4d769",
+  "counts": {
+    "train": 40706,
+    "dev": 4524
+  },
+  "source_counts": {
+    "commitpackft_python": {
+      "train": {
+        "records": 13767,
+        "target_tokens": 2703449
+      },
+      "dev": {
+        "records": 1565,
+        "target_tokens": 307868
+      }
+    },
+    "editpackft": {
+      "train": {
+        "records": 15613,
+        "target_tokens": 3928528
+      },
+      "dev": {
+        "records": 1748,
+        "target_tokens": 441983
+      }
+    },
+    "nextcoder": {
+      "train": {
+        "records": 11326,
+        "target_tokens": 9041449
+      },
+      "dev": {
+        "records": 1211,
+        "target_tokens": 959271
+      }
+    }
+  },
+  "code_license_counts": {
+    "unknown": 12537,
+    "apache-2.0": 5850,
+    "bsd-3-clause": 6558,
+    "mit": 17561,
+    "bsd-2-clause": 1992,
+    "unlicense": 248,
+    "isc": 390,
+    "cc0-1.0": 94
+  },
+  "edit_kind_counts": {
+    "substantive_edit_candidate": 44294,
+    "syntax_adaptation_candidate": 936
+  },
+  "token_quantiles": {
+    "encoder": {
+      "p50": 323,
+      "p95": 1056,
+      "p99": 1540,
+      "max": 6309
+    },
+    "pair_decoder": {
+      "p50": 276,
+      "p95": 1334,
+      "p99": 1844,
+      "max": 2048
+    },
+    "target": {
+      "p50": 238,
+      "p95": 1170,
+      "p99": 1692,
+      "max": 1935
+    },
+    "baseline_decoder": {
+      "p50": 564,
+      "p95": 2129,
+      "p99": 2741,
+      "max": 7400
+    },
+    "encoder_E2B": {
+      "p50": 323,
+      "p95": 1056,
+      "p99": 1540,
+      "max": 6309
+    },
+    "encoder_E4B": {
+      "p50": 323,
+      "p95": 1056,
+      "p99": 1540,
+      "max": 6309
+    }
+  },
+  "training": {
+    "epochs": 1,
+    "batch_size": 1,
+    "accumulation": 4,
+    "updates_full_epoch": 10177,
+    "supervised_train_tokens": 15673426,
+    "supervised_dev_tokens": 1709122
+  },
+  "removed": {
+    "documentation_or_format_only": 1617,
+    "after_syntax_warning": 308,
+    "duplicate_git_or_seed_event": 1900,
+    "ambiguous_git_event_variants": 104,
+    "ambiguous_visible_input": 12,
+    "duplicate_structural_edit": 52,
+    "corrected_patch_token_overflow": 0,
+    "after_compile_syntax_warning": 56,
+    "after_compile_error": 17
+  },
+  "split": {
+    "policy": "repo_commit_seed_and_structural_code_components_v2",
+    "components": 26200,
+    "train": 40706,
+    "dev": 4524,
+    "seed": 17,
+    "dev_fraction_target": 0.1
+  },
+  "accounting": {
+    "input": 49296,
+    "retained": 45230,
+    "discarded_unique": 4066,
+    "exact_partition": true
+  }
+}
