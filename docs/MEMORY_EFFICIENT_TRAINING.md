@@ -1,15 +1,17 @@
 # Training hemat VRAM dan monitor Molab
 
-Recipe ini dipakai kedua notebook keluarga dan jalur curated SFT repository study.
+Recipe ini dipakai ketiga notebook training dan jalur curated SFT repository study.
 Tujuannya mengurangi retensi aktivasi tanpa mengubah cohort, context, trainable scope,
-atau objective patch CE. Satu pasangan per run; tidak memindahkan aktivasi/PLE ke RAM30GB.
+atau objective target CE. Satu model resident pada satu waktu; tidak memindahkan
+aktivasi/PLE ke RAM30GB. Dua model tiap notebook dijalankan berurutan dengan
+[stage resume](SEQUENTIAL_TRAINING.md).
 
 ## Setting default
 
 ```python
-RUN_NAME = "enc8k-dec2k-v2-mem1"
-ENCODER_LIMIT = 8192
-DECODER_LIMIT = 2048
+RUN_NAME = "enc32k-dec8k-context-v3-seq1"
+ENCODER_LIMIT = 32768
+DECODER_LIMIT = 8192  # shifted decoder input, termasuk prefix
 BATCH_SIZE = 1
 GRAD_ACCUMULATION = 4
 RUN_TRAINING = True
@@ -29,8 +31,13 @@ MEMORY_POLICY = {
 
 Word/PLE frozen; LoRA rank16/alpha32, LR/warmup/group sama. Simetris memakai
 shared ordinary word embeddings/Identity; asimetris learned projection.
-Alignment tetap dilatih pada asimetris. Kedua notebook tetap20 cell/19 identik,
+Alignment tetap dilatih pada asimetris. Ketiga notebook tetap20 cell/19 identik,
 dengan tiga default control center berbeda.
+
+Angka VRAM pretrained dari run8K/2K adalah hasil historis, bukan proyeksi otomatis
+untuk32K/8K. Preflight maksimum/joint shape harus lulus untuk model dan dataset baru.
+Token cache int32 mmap mengurangi RAM; ia tidak mengurangi token objective atau
+memindahkan aktivasi training ke CPU. Baseline total decoder allowance41472.
 
 ## Implementasi
 

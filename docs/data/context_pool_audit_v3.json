@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-13",
+  "pool": {
+    "pool_fingerprint": "6af7686d768519d8292b08e77bbbb82ca4c1042f5d0a42c446e546b00faab916",
+    "counts": {
+      "train": 44408,
+      "dev": 4934
+    },
+    "tasks": {
+      "repair": 45572,
+      "localization": 1285,
+      "completion": 2485
+    },
+    "task_scopes": {
+      "single_file_context": 44956,
+      "cross_file_context": 4384,
+      "single_file_context_with_snapshot": 2
+    },
+    "tokens": {
+      "train": {
+        "encoder": 47758770,
+        "pair_decoder": 20405380,
+        "target": 16681401,
+        "baseline_decoder": 65162741
+      },
+      "dev": {
+        "encoder": 5164870,
+        "pair_decoder": 2212957,
+        "target": 1773593,
+        "baseline_decoder": 7018967
+      }
+    },
+    "token_quantiles": {
+      "train": {
+        "encoder": {
+          "p50": 343,
+          "p95": 7367,
+          "p99": 12480,
+          "max": 32767
+        },
+        "pair_decoder": {
+          "p50": 279,
+          "p95": 1354,
+          "p99": 1879,
+          "max": 5804
+        },
+        "target": {
+          "p50": 232,
+          "p95": 1163,
+          "p99": 1710,
+          "max": 5757
+        },
+        "baseline_decoder": {
+          "p50": 597,
+          "p95": 7802,
+          "p99": 12770,
+          "max": 33204
+        }
+      },
+      "dev": {
+        "encoder": {
+          "p50": 339,
+          "p95": 7959,
+          "p99": 11549,
+          "max": 25122
+        },
+        "pair_decoder": {
+          "p50": 270,
+          "p95": 1322,
+          "p99": 1876,
+          "max": 6207
+        },
+        "target": {
+          "p50": 223,
+          "p95": 1100,
+          "p99": 1640,
+          "max": 2679
+        },
+        "baseline_decoder": {
+          "p50": 590,
+          "p95": 8200,
+          "p99": 11757,
+          "max": 25230
+        }
+      }
+    },
+    "checks": {
+      "foundation_byte_unchanged_patch_proof_subset": 44956,
+      "foundation_targets_fresh_compile_warning_free": 44956,
+      "localization_visibility_verified": 1285,
+      "completion_masking_and_snapshot_verified": 2485,
+      "repository_patch_applied": 616
+    },
+    "limits": {
+      "encoder": 32768,
+      "pair_decoder": 8192,
+      "baseline_decoder": 41472
+    },
+    "unique_pairs": 49342,
+    "foundation_fingerprint": "6d4aaaa7688af41559de679562a209c5a0faf38eeac0ef5aaa817a9908c4d769",
+    "foundation_git_patch_evidence": "byte-identical subset of published all-record Git apply/after-byte proof",
+    "split_disjointness": true,
+    "functional_quality_verified": false
+  },
+  "fingerprint": "7a6e526154edba8283563fcef283d6569423f7eb6b4c5b5dbeb25d40ef4b4374"
+}

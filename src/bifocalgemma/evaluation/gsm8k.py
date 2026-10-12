@@ -260,7 +260,7 @@ def generate_gsm8k(
     max_total_decoder_tokens=4096,
 ):
     """Generate from public inputs only; no gold argument or code execution."""
-    from bifocalgemma.data.tokenization import load_verified_tokenizer
+    from bifocalgemma.data.tokenization import decode_text, load_verified_tokenizer
     from bifocalgemma.inference.generation import greedy_decode
 
     if model.spec != spec:
@@ -286,7 +286,7 @@ def generate_gsm8k(
         yield {
             "instance_id": row["instance_id"],
             "experiment": spec.name,
-            "completion": decoder.decode(ids, skip_special_tokens=False),
+            "completion": decode_text(decoder, ids, skip_special_tokens=False),
             "status": "OK",
             "stop_reason": generated.stop_reason,
         }

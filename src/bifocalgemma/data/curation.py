@@ -7,6 +7,7 @@ import re
 import tokenize
 from collections import Counter, defaultdict
 from pathlib import Path
+from typing import Any, TypedDict
 
 from bifocalgemma.data.offline_sft import editing_record, stable_fingerprint
 from bifocalgemma.data.python_quality import (
@@ -84,6 +85,12 @@ def code_shingles(code, width=8):
     )
 
 
+class CodeOverlapMatch(TypedDict):
+    kind: str
+    reference: str
+    similarity: float
+
+
 class CodeOverlapIndex:
     """Exact checks and token-shingle Jaccard, optionally backed by SQLite.
 
@@ -96,6 +103,7 @@ class CodeOverlapIndex:
     ):
         self.threshold = threshold
         self.candidate_shingles = candidate_shingles
+        self.read_only = read_only
         # Legacy on-disk indexes do not attest complete postings. Read-only
         # readers conservatively avoid the intersection-count bound.
         self.full_postings = not candidate_shingles and not read_only
@@ -125,6 +133,14 @@ class CodeOverlapIndex:
                 for table in ("exact", "codes", "postings"):
                     if self.db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] < 1:
                         raise ValueError("Incomplete benchmark index.")
+                attestation = self.db.execute(
+                    "SELECT value FROM metadata WHERE key='full_postings'"
+                ).fetchone()
+                if attestation not in (("true",), ("false",)):
+                    raise ValueError("Benchmark index has no completed-build attestation.")
+                self.full_postings = not candidate_shingles and self.db.execute(
+                    "SELECT value FROM metadata WHERE key='full_postings'"
+                ).fetchone() == ("true",)
                 return
             self.db = sqlite3.connect(path)
             # This is a disposable index, never a raw dataset or curated export.
@@ -132,6 +148,7 @@ class CodeOverlapIndex:
                 "DROP TABLE IF EXISTS codes; DROP TABLE IF EXISTS postings; DROP TABLE IF EXISTS exact; CREATE TABLE codes(identity TEXT PRIMARY KEY, grams BLOB); CREATE TABLE exact(signature TEXT PRIMARY KEY, identity TEXT); CREATE TABLE postings(gram INTEGER,identity TEXT,PRIMARY KEY(gram,identity)) WITHOUT ROWID;"
             )
             self.db.execute("CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT)")
+            self.db.execute("DELETE FROM metadata WHERE key='full_postings'")
             self.db.execute(
                 "INSERT OR REPLACE INTO metadata VALUES ('normalization',?)",
                 (NORMALIZATION_POLICY,),
@@ -159,7 +176,7 @@ class CodeOverlapIndex:
             for gram in indexed:
                 self.inverted[gram].add(identity)
 
-    def match(self, code):
+    def match(self, code) -> CodeOverlapMatch | None:
         import struct
 
         signature = code_signature(code)
@@ -224,6 +241,11 @@ class CodeOverlapIndex:
 
     def close(self):
         if self.db is not None:
+            if not self.read_only:
+                self.db.execute(
+                    "INSERT OR REPLACE INTO metadata VALUES ('full_postings',?)",
+                    ("true" if self.full_postings else "false",),
+                )
             self.db.commit()
             self.db.close()
             self.db = None
@@ -501,7 +523,7 @@ def token_profile(
     baseline_limit=4608,
     progress=None,
     additional_encoder=None,
-):
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Profile every unique row before freezing one paired/baseline cohort."""
     from bifocalgemma.config import EXPERIMENT_SPECS
     from bifocalgemma.training.repository_sft import tokenize_repository_record

@@ -253,7 +253,9 @@ class TestNotebookCellParity(unittest.TestCase):
             self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
             self.assertIn("HF_UPLOAD_ENABLED = True", text)
             self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)
-            self.assertIn("upload_folder", text)
+            self.assertIn("run_sequential_pipeline", text)
+            self.assertIn("CHECKPOINT_UPLOAD_ENABLED = True", text)
+            self.assertIn("SAVE_TOTAL_LIMIT = 2", text)
 
     def test_notebooks_marimo_graph_has_no_duplicate_definitions(self):
         import importlib.util

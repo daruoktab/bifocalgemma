@@ -39,6 +39,32 @@ def resource_snapshot(device=None):
             gpu_free_gib=free / 2**30,
             gpu_total_gib=total / 2**30,
         )
+    # Linux container limits can be much smaller than the host RAM reported by psutil.
+    for limit_path, usage_path in (
+        ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+        (
+            "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+            "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+        ),
+    ):
+        try:
+            raw = Path(limit_path).read_text().strip()
+            if raw == "max":
+                continue
+            limit = int(raw) / 2**30
+            usage = int(Path(usage_path).read_text().strip()) / 2**30
+            if limit < sample.get("ram_total_gib", float("inf")):
+                sample.update(
+                    ram_total_gib=limit,
+                    ram_limit_gib=limit,
+                    ram_cgroup_used_gib=usage,
+                    ram_available_gib=min(
+                        sample.get("ram_available_gib", limit), max(0, limit - usage)
+                    ),
+                )
+            break
+        except (OSError, ValueError):
+            continue
     return sample
 
 
@@ -103,6 +129,7 @@ def render_dashboard(state, history, recent):
     step, maximum = int(state.get("step", 0)), max(1, int(state.get("max_steps", 1)))
     percent = min(100, 100 * step / maximum)
     cards = [
+        ("Model berurutan", f"{state.get('model_index', 1)} / {state.get('model_total', 1)}"),
         ("Optimizer step", f"{step:,} / {maximum:,}"),
         ("Epoch", number(state.get("epoch_fraction"), 3)),
         ("Train CE", number(state.get("train_loss"), 5)),
@@ -133,6 +160,18 @@ def render_dashboard(state, history, recent):
             max(1, state.get("eval_examples_total", 1)),
         )
         dev_progress = f'<p>Validasi: {done:,} / {total:,} contoh · CE sementara {number(state.get("eval_running_loss"), 5)}</p><progress max="{total}" value="{done}"></progress>'
+    if state.get("stage", "").startswith("benchmark"):
+        done, total = state.get("items_done", 0), max(1, state.get("items_total", 1))
+        latest = state.get("last_prediction", {})
+        dev_progress = (
+            f"<p>Benchmark {esc(state.get('benchmark', ''))}: {done:,} / {total:,} · "
+            f"Benar {state.get('benchmark_correct', 0):,} · "
+            f"Waktu {format_duration(state.get('benchmark_elapsed_seconds'))} · "
+            f"ETA {format_duration(state.get('benchmark_eta_seconds'))}</p>"
+            f'<progress max="{total}" value="{done}"></progress>'
+            f"<details open><summary>Prediksi terakhir · {esc(latest.get('status', ''))}</summary>"
+            f'<pre style="white-space:pre-wrap">{esc(latest.get("completion", "")[:2000])}</pre></details>'
+        )
     lr = " · ".join(f"{esc(k)}={v:.3g}" for k, v in state.get("learning_rates", {}).items()) or "—"
     rows = "".join(
         f"<tr><td>{esc(row.get('timestamp_utc', ''))}</td><td>{esc(row.get('stage', ''))}</td><td>{esc(row.get('message', row.get('step', '')))}</td></tr>"
@@ -143,6 +182,19 @@ def render_dashboard(state, history, recent):
         if state.get("error_type")
         else ""
     )
+    breakdown = ""
+    for key, title in (
+        ("by_source", "Validation per sumber"),
+        ("by_task_type", "Validation per objective"),
+    ):
+        values = state.get("eval", {}).get(key, {})
+        if values:
+            table = "".join(
+                f"<tr><td>{esc(name)}</td><td>{number(item.get('loss'), 5)}</td>"
+                f"<td>{item.get('examples', 0):,}</td><td>{item.get('supervised_tokens', 0):,}</td></tr>"
+                for name, item in sorted(values.items())
+            )
+            breakdown += f"<details open><summary>{title}</summary><table><thead><tr><th>Group</th><th>CE</th><th>Examples</th><th>Target tokens</th></tr></thead><tbody>{table}</tbody></table></details>"
     return f"""<style>
     .bgm {{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:16px;padding:22px}}
     .bgm h2 {{margin:0 0 8px;font-size:23px}} .bgm .muted {{color:#94a3b8;font-size:12px}}
@@ -160,7 +212,7 @@ def render_dashboard(state, history, recent):
     <progress max="{maximum}" value="{step}"></progress><p class="muted">{percent:.2f}% optimizer budget · Dev, checkpoint, dan upload terlihat sebagai tahap terpisah.</p>
     <p>{esc(state.get("message", ""))}</p>
     <p class="muted">Train {esc(state.get("train_examples", "—"))} · Dev {esc(state.get("dev_examples", "—"))} · Query chunk {esc(state.get("query_chunk_size", "—"))} · Loss chunk {esc(state.get("loss_chunk_size", "—"))}</p>
-    {error}{dev_progress}<div class="grid">{card_html}</div>
+    {error}{dev_progress}<div class="grid">{card_html}</div>{breakdown}
     <p class="muted">LR: {lr} · Microbatch {esc(state.get("microbatch", "—"))}/{esc(state.get("accumulation", "—"))}
     · Encoder {esc(state.get("encoder_tokens", "—"))} · Decoder {esc(state.get("decoder_tokens", "—"))} · Target {esc(state.get("batch_target_tokens", "—"))}</p>
     <p class="muted">Backend: {esc(state.get("attention_backend", "—"))} · Layer checkpointing: {esc(state.get("gradient_checkpointing", "—"))}

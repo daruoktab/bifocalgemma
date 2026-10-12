@@ -2,17 +2,40 @@
 
 import io
 import tarfile
+from types import SimpleNamespace
 
 import pytest
 
 from bifocalgemma.data.curation import CodeOverlapIndex
 from bifocalgemma.data.repository_corpus import (
+    ArchiveSnapshotStore,
     patch_license_evidence,
     read_text_archive,
     recognize_license,
 )
 
 MIT = 'Permission is hereby granted, free of charge, to any person obtaining a copy. THE SOFTWARE IS PROVIDED "AS IS".'
+
+
+def test_failed_download_removes_partial_bytes(tmp_path, monkeypatch):
+    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: io.BytesIO(b"x" * 32))
+    store = ArchiveSnapshotStore(tmp_path, allow_network=True, max_archive_bytes=16)
+    with pytest.raises(ValueError, match="archive_download_budget_exceeded"):
+        store.fetch_archive(SimpleNamespace(repo="owner/repo", base_commit="a" * 40))
+    assert not list(tmp_path.iterdir())
+
+
+def test_complete_posting_attestation_survives_read_only_reopen(tmp_path):
+    path = tmp_path / "new-index.sqlite"
+    writer = CodeOverlapIndex(storage_path=path)
+    first = "\n".join(f"value_{i} = {i}" for i in range(30))
+    writer.add("benchmark", first)
+    expected = writer.match(first.replace("value_29 = 29", "value_29 = 30"))
+    writer.close()
+    reader = CodeOverlapIndex(storage_path=path, read_only=True)
+    assert reader.full_postings is True
+    assert reader.match(first.replace("value_29 = 29", "value_29 = 30")) == expected
+    reader.close()
 
 
 def archive(path, contents, commit="a" * 40):
@@ -59,7 +82,8 @@ def test_read_only_index_cannot_clear_or_write(tmp_path):
     index.add("benchmark", code)
     index.close()
     reopened = CodeOverlapIndex(storage_path=path, read_only=True)
-    assert reopened.match(code)["reference"] == "benchmark"
+    match = reopened.match(code)
+    assert match is not None and match["reference"] == "benchmark"
     import sqlite3
 
     with pytest.raises(sqlite3.OperationalError):

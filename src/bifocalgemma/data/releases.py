@@ -72,13 +72,18 @@ def write_view(path, records, *, training, protocol=None, shots=None):
         "task_scope",
         "research_role",
         "edit_kind",
+        "task_type",
+        "condition",
+        "completion_kind",
+        "max_encoder_tokens",
+        "max_new_tokens",
         "path",
         "before",
         "after",
         "record_json",
     ]
     if training:
-        columns.append("target_patch")
+        columns.extend(["target_patch", "target_text"])
     schema = pa.schema([(name, pa.string()) for name in columns])
     batch = []
     with pq.ParquetWriter(path, schema, compression="zstd") as writer:
@@ -99,6 +104,11 @@ def write_view(path, records, *, training, protocol=None, shots=None):
                     "evaluation" if not training else "auxiliary_single_file_editing",
                 ),
                 "edit_kind": row.get("edit_kind", ""),
+                "task_type": row.get("task_type", "repair"),
+                "condition": row.get("condition", ""),
+                "completion_kind": row.get("completion_kind", ""),
+                "max_encoder_tokens": str(row.get("max_encoder_tokens", "")),
+                "max_new_tokens": str(row.get("max_new_tokens", "")),
                 "path": row.get("path", ""),
                 "before": row.get("before", "") if training else "",
                 "after": row.get("after", "") if training else "",
@@ -139,7 +149,9 @@ def write_view(path, records, *, training, protocol=None, shots=None):
                         f"### Instruction\n{row['instruction']}\n\n"
                         f"### File: {row['path']}\n{row['before']}"
                     )
-                item["target_patch"] = row["target_patch"]
+                item["target_patch"] = row.get("target_patch", "")
+                item["target_text"] = row.get("target_text", row.get("target_patch", ""))
+                item["task_type"] = row.get("task_type", "repair")
             batch.append(item)
             if len(batch) == 256:
                 writer.write_table(pa.Table.from_pylist(batch, schema=schema), row_group_size=256)
@@ -245,6 +257,13 @@ def build_release(spec_path, output):
                     evidence = {
                         "preparation_report": manifest,
                         "official_protocol": False,
+                        "protocol": manifest.get(
+                            "protocol",
+                            {
+                                "official_protocol": False,
+                                "adaptation": "native_diff_output_adapter",
+                            },
+                        ),
                         "snapshot_patch_checks": validate_code_eval_snapshots(
                             root, public, private
                         ),
@@ -266,6 +285,12 @@ def build_release(spec_path, output):
                             "answer",
                             "reference",
                             "test_code",
+                            "test_script",
+                            "correct_answer",
+                            "correct_letter",
+                            "target_text",
+                            "groundtruth",
+                            "is_hard",
                         )
                     )
                     for row in public
@@ -333,7 +358,7 @@ def build_release(spec_path, output):
             }
         release = {
             "format": FORMAT,
-            "viewer_schema_version": 2,
+            "viewer_schema_version": 3,
             "audits": audit_artifacts,
             "supersedes_revision": spec.get("supersedes_revision"),
             "name": spec["name"],
@@ -438,10 +463,10 @@ def write_card(root, release, configs):
             "Use a full Hub commit SHA and verify release/file hashes before loading.",
             "Training downloads never select eval collections; eval gold needs explicit "
             "include_gold=True. All gold is still accessible to repo collaborators.",
-            "Viewer schema v2 exposes question, shots, protocol and lossless record_json. "
+            "Viewer schema v3 exposes task_type, condition, budgets, question, shots, protocol and lossless record_json. "
             "Native ZIPs preserve scorer/pool schemas, IDs and bytes. GSM8K protocols "
             "share 1,319 test questions intentionally; they are not 2,638 unique tasks.",
-            "Training is auxiliary single-file editing, not a repository repair corpus. "
+            "Training collection roles distinguish editing foundation from repository dependency tasks. "
             "NextCoder seed code licensing and original repository lineage are unresolved.",
             "Benchmark configs are adaptations; official protocol parity and model quality "
             "are not established. Registry-only benchmarks are not ready evaluators.",
@@ -545,7 +570,14 @@ def fetch_collection(
             if manifest["fingerprint"] != item["evidence"]["pool_fingerprint"]:
                 raise ValueError("existing_pool_has_another_fingerprint")
             return manifest
-        raise FileExistsError("Choose a new evaluation download directory.")
+        for key in ("public", "gold") if include_gold else ("public",):
+            for name, evidence in item["archives"][key]["members"].items():
+                path = (output / name).resolve()
+                if not path.is_relative_to(output.resolve()) or not path.is_file():
+                    raise ValueError("existing_eval_collection_missing_file")
+                if digest(path) != evidence["sha256"]:
+                    raise ValueError("existing_eval_collection_integrity")
+        return {"collection": collection, "role": "eval", "include_gold": include_gold}
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=output.parent) as temporary:
         stage = Path(temporary)

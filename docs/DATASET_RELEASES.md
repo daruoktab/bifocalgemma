@@ -1,105 +1,96 @@
-
 # Private curated dataset releases
 
-The active data repository is [daruokta/bifocalgemma-data](https://huggingface.co/datasets/daruokta/bifocalgemma-data), **private**.
-The code/model repository remains [daruoktab/bifocalgemma](https://github.com/daruoktab/bifocalgemma).
-[dataset_release.lock.json](../configs/dataset_release.lock.json) records the exact immutable Hub commit.
+The data repository is [daruokta/bifocalgemma-data](https://huggingface.co/datasets/daruokta/bifocalgemma-data),
+private. Code and model artifacts remain separate.
+[dataset_release.lock.json](../configs/dataset_release.lock.json) binds the immutable
+Hub revision, training collection and release fingerprint.
 
-## Current v2 release
+## Context v3
 
-| Collection | Role | Records |
-| --- | --- | ---: |
-| instruction_enc8k_dec2k_v2 | Auxiliary single-file editing SFT | 40,706 train +4,524 dev |
-| humanevalfix_python_v2 | Native Python repair evaluation adaptation | 164 |
-| gsm8k_zero_shot_v2 | Math retention evaluation, zero-shot | 1,319 |
-| gsm8k_eight_shot_v2 | Same math questions with eight demonstrations | 1,319 |
+The active training collection is `mixed_context_enc32k_dec8k_v3`:
+**44,408 train /4,934 dev**, 49,342 records total. It combines 44,956 verified editing
+foundation records with 4,386 repository repair/localization/completion records.
+The training split contains16,681,401 supervised target tokens. Limits are32768
+encoder,8192 prefix-inclusive shifted paired decoder and41472 baseline decoder.
 
-GSM8K has **1,319 unique test questions across both protocols**, not 2,638 unique tasks.
-The v2 viewer shows question, shots and protocol explicitly. Training remains three-source
-single-file editing; repository repair is a separate unfinished corpus. See the
-[detailed remediation audit](DATASET_REMEDIATION_V2.md).
+The release contains one training config and eight evaluation configs. The default
+suite covers30,600 case/protocol runs per model, with shared question IDs across
+SWE-QA conditions and GSM8K shot protocols. Counts are not a claim of independent
+tasks or model quality. See [the detailed v3 specification](CONTEXT_DATA_RELEASE_V3.md)
+for sources, task counts, token distributions, exclusions and evaluation adaptations.
 
-V1 at commit 75ea23ff82d54d6d0f663a33c1f0108ea5b59fc2 remains available for historical
-reproducibility. Its 49,296 records and earlier validation claims are superseded for
-new training. Current main contains v2 collections only; history is not rewritten.
-Changing dataset version requires a new run; do not resume v1 optimizer state against v2.
+V2 at `d34a19b3badc0120755495c68227cba038819cd7` remains available in history:
+40,706 train /4,524 dev single-file editing examples, HumanEvalFix164 and two GSM8K
+protocols over1,319 test questions. V3 starts from that verified foundation rather
+than the45,303-row intermediate folder. Historical v1/v2 data are not concatenated
+into the current training config. A changed cohort requires a fresh RUN_NAME;
+old optimizer/cursor state must not resume against v3.
 
 ## Layout and contracts
 
-- release.json: roles, counts, native archive/member hashes, evidence and benchmark status.
-- collections/<training-name>/pool.zip: train.jsonl, dev.jsonl, manifest.json and rejection ledger.
-- collections/<benchmark-name>/public.zip: target-free public inputs and required snapshots.
-- collections/<benchmark-name>/gold.zip: scoring references, opt-in only.
-- collections/<name>/view/*.parquet: explicit typed columns plus lossless record_json.
-- audits/: frozen CPU validation reports; notices/: exact credited source cards/license bytes.
-- inventory.json: SHA256 and byte count for every packaged file.
+- `release.json`: roles, counts, archive/member hashes, evidence and benchmark status.
+- `collections/<training-name>/pool.zip`: train/dev JSONL and the frozen manifest.
+- `collections/<benchmark-name>/public.zip`: target-free model inputs and required snapshots.
+- `collections/<benchmark-name>/gold.zip`: scoring references, downloaded explicitly.
+- `collections/<name>/view/*.parquet`: typed fields and lossless `record_json`.
+- `audits/`: frozen validation evidence; `notices/`: credited cards and exact license bytes.
+- `inventory.json`: SHA256 and byte count for every packaged file.
 
-Native container format names retain _v1 for reader compatibility; v2 collection names,
-dataset_schema_version=2 on training rows, viewer_schema_version=2 and explicit policies
-identify the corrected cohort. Source text is preserved; corrected patches use LF-only
-Git line counting. Archive hashes bind the exact payloads, not merely row counts.
+Viewer schema v3 exposes `task_type`, `target_text`, condition, context budgets,
+question, shots and protocol. Repair targets are unified diffs; localization and
+completion targets must be read from target_text according to task_type. Different
+objectives may share context without being duplicate input/target examples.
 
-Gold separation is a loader contract, **not access control**: private collaborators
-can access gold. Generation uses public inputs only. Training views contain targets;
-evaluation views never contain answer, gold_patch, target_patch or test code.
-Explicit HF configs prevent automatic concatenation of archives and different protocols.
-
-NextCoder has MIT dataset metadata, unresolved original repository lineage and unknown
-source-code license. Its legacy synthetic grouping hash is not a Git commit or a
-verified original-code revision. Per-record upstream code licenses for Git exports are
-declarations, not certification of the original checkout or complete notices.
+Gold separation is a loader contract, not access control. Repo collaborators can
+read gold; generation receives public inputs only. Training configs contain targets,
+evaluation views do not. Explicit HF configs prevent automatic concatenation of
+different protocols, and consumers verify one named collection at one full SHA.
 
 ## Build and audit
 
-Use conda env ai; no model weights, GPU training, RL or VM is required.
+Use env ai, without pretrained weight downloads or GPU training:
 
 ```powershell
-$env:PYTHONPATH = 'src'
-python -m bifocalgemma.data.remediation --source <frozen-v1-pool> --output <new-pool> --tokenizer-cache <verified-tokenizer-cache>
-python -m bifocalgemma.data.releases build --spec <filled-release-spec.json> --output <new-release-directory>
-python tools/audit_dataset_release.py --pool <new-pool> --release <new-release-directory> --tokenizer-cache <verified-tokenizer-cache> --output <audit-report.json>
+python tools/prepare_context_data.py benchmarks
+python tools/prepare_context_data.py repository
+python tools/prepare_context_data.py tasks
+python tools/prepare_context_data.py mix
+python tools/audit_context_tokens.py
+python tools/audit_context_tokens.py --legacy-only
+python tools/build_context_release.py
 ```
 
-The remediation CLI rejects reuse of an output directory. Changed targets require
-fresh verified tokenizer profiling. A fresh full-corpus build applies the same event,
-structure, ambiguity, warning and compile gates. Older overlap indexes must be rebuilt
-under python_structure_preserving_v2.
+Pinned source caches and the byte-verified v2 foundation are prerequisites. Outputs
+are immutable; completed directories are not overwritten. Repository admission has
+per-outcome SQLite recovery. `--cached-snapshots-only` resumes admission without
+repeating downloads; unavailable archives remain explicit exclusions.
 
-The full audit checks canonical patch hashes and applies **every** target with Git,
-compares byte-exact after contents, verifies tokenizer assets/equivalence, rejects
-overflow and compares every Parquet row against the native archive. An explicit
---reuse-validated-pool-audits mode binds a later viewer audit to completed frozen
-patch/token evidence and unchanged subset identities; it does not invent fresh checks.
-See the receipt for the actual mode used for this release.
+The mixed audit verifies every row, unique pairs, split disjointness and visible
+context licenses. Foundation inputs/targets are byte-identical to the verified Git
+patch/after-byte proof and compile warning-free. Repository targets apply against
+the pinned buggy snapshot; completion masks exclude the target and its AST body is
+warning-free. Every Parquet record is compared with its native archive row.
 
-## Publish and download
+These checks do not establish functional SWE-rebench quality or semantic/pretraining
+decontamination. NextCoder seed lineage/code licensing and benchmark snippet licenses
+are not independently certified. Keep upstream notices and per-record provenance;
+there is no blanket source-code license for the mixed release.
+
+## Publication and download
 
 ```powershell
-python -m bifocalgemma.data.releases publish --directory <new-release-directory> --repo daruokta/bifocalgemma-data --replace-current --expected-parent <previous-full-sha>
-python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <locked-full-sha> --collection instruction_enc8k_dec2k_v2 --output outputs/full_instruction_pool_enc8k_dec2k_v2
-python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <locked-full-sha> --collection gsm8k_zero_shot_v2 --role eval --output outputs/gsm8k_v2_public
+$env:PYTHONPATH='src'
+python -m bifocalgemma.data.releases publish --directory outputs/dataset_release_context32k_v3 --repo daruokta/bifocalgemma-data --replace-current --expected-parent d34a19b3badc0120755495c68227cba038819cd7
+python -m bifocalgemma.data.releases fetch --repo daruokta/bifocalgemma-data --revision <locked-full-sha> --collection mixed_context_enc32k_dec8k_v3 --output outputs/mixed_context_enc32k_dec8k_v3
 ```
 
-Publishing refuses a public destination and can enforce the expected parent commit.
-Replacement changes current collection files in one versioned commit; old revisions
-remain retrievable. The consumer rejects moving revisions such as main, wrong roles,
-unsafe archive paths, corrupt bytes and a local training cache with another fingerprint.
-Even an existing local directory is verified against the selected HF collection.
+Publication verifies owner/privacy and expected parent. Replacement changes the
+current config tree in one versioned commit while preserving prior revisions.
+Consumers reject moving revisions, wrong roles, unsafe paths and corrupt bytes.
+An existing cache must match the selected collection fingerprint. Eval caches can
+be reused after verifying all selected members; include_gold is opt-in.
 
-Evaluation gold requires --include-gold with --role eval. Eval directories must be new,
-so protocols cannot be mixed silently. Normal notebook training downloads one frozen
-named collection. Curation is available through the separate local CLI only;
-training notebooks have no curation toggle or raw-source fallback. Full-epoch
-training and family-notebook upload default to enabled and can be set to False.
-
-## Not yet ready
-
-repository_enc8k_dec2k_v1 has no complete production manifest. CanItEdit, RES-Q,
-RepoQA and CrossCodeEval are quarantine/catalog references with their documented
-scorer, environment or licensing work still pending. They are not silently counted
-as published benchmarks. Native HumanEvalFix scoring is an adaptation; Python runtime
-parity with the original release and model quality are not established by gold checks.
-
-The earlier repository KeyError: pair_hash fix remains in place: editing_manifest
-normalizes native repository exports in a temporary copy, preserving source bytes,
-IDs and snapshot/patch identity. That schema fix alone does not finish the repository corpus.
+The three training notebooks consume the curated HF release and perform full SFT,
+upload, benchmark, upload and then the next model. They have no source-curation or
+sampling fallback. Full-run/upload flags default True and can be disabled by the
+user. See [sequential execution and checkpoint recovery](SEQUENTIAL_TRAINING.md).

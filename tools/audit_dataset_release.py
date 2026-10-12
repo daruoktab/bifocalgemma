@@ -8,6 +8,7 @@ import tempfile
 import zipfile
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from bifocalgemma.config import EXPERIMENT_SPECS
 from bifocalgemma.data.curation import token_profile
@@ -101,7 +102,7 @@ def quantiles(values):
 def audit(pool, release_dir, tokenizer_cache, *, reuse_validated=False):
     splits, manifest = load_curated_pool(pool)
     records = splits["train"] + splits["dev"]
-    report = {
+    report: dict[str, Any] = {
         "pool_fingerprint": manifest["fingerprint"],
         "counts": {k: len(v) for k, v in splits.items()},
         "sources": {},

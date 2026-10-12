@@ -1,8 +1,8 @@
 # Dataset and benchmark inventory
 
-Current defaults use instruction_enc8k_dec2k_v2 from the private HF repository at the commit in [the lock](../configs/dataset_release.lock.json). **45,230 auxiliary single-file editing records: 40,706 train /4,524 dev**. Three credited sources are EditPackFT, CommitPackFT Python and NextCoder Python. Encoder cap8,192 /paired decoder2,048 /baseline decoder10,752; fresh real-tokenizer profiling and static compile/patch checks are documented in [the v2 audit](DATASET_REMEDIATION_V2.md). Historical sections below describe their named earlier builds and source research; they are not current release counts.
+Current defaults use **mixed_context_enc32k_dec8k_v3**, pinned in [the release lock](../configs/dataset_release.lock.json): **44,408 train /4,934 dev**, encoder32K and paired decoder8K. Eight evaluation protocols are published. See [the current specification](CONTEXT_DATA_RELEASE_V3.md) and [sequential training](SEQUENTIAL_TRAINING.md).
 
-The training cell consumes the selected frozen collection only. An existing local directory must match the pinned collection fingerprint. MAX_STEPS=0 completes configured epochs; v2 requires a new run, not optimizer resume from v1. HumanEvalFix164 and GSM8K1,319 unique questions in two protocols are the published evaluation artifacts. Other catalog entries and the repository corpus remain pending.
+The source inventories and earlier counts below are historical research records, not the current release specification. Earlier pending-status statements are superseded only for collections explicitly listed in the v3 specification.
 
 ## Instruction foundation: implemented, complete local historical manifest
 

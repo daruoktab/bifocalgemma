@@ -120,6 +120,10 @@ def editing_manifest(records):
     manifest = []
     for raw in records:
         row = raw
+        if raw.get("record_type") == "context_sft_v1":
+            from bifocalgemma.data.context_tasks import normalize_context_task
+
+            row = normalize_context_task(raw)
         if raw.get("record_type") == "repository_patch_v1":
             row = repository_editing_record(raw)
             for key in ("pair_hash", "instruction_hash"):
@@ -245,7 +249,12 @@ def load_curated_pool(directory):
             if row["instance_id"] in all_ids:
                 raise ValueError("curated_pool_duplicate_identity")
             all_ids.add(row["instance_id"])
-            if row.get("record_type") == "repository_patch_v1":
+            if row.get("record_type") == "context_sft_v1":
+                from bifocalgemma.data.context_tasks import normalize_context_task
+
+                normalize_context_task(row)
+                validate_context_license_record(row)
+            elif row.get("record_type") == "repository_patch_v1":
                 repository_editing_record(row)
                 if repository_pool:
                     validate_context_license_record(row)

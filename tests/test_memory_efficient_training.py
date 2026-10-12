@@ -68,6 +68,7 @@ def test_full_stack_loss_logits_and_adapter_gradients_match_eager(index):
     assert reference.logits is not None and actual_logits.logits is not None
     torch.testing.assert_close(actual_logits.logits, reference.logits, atol=2e-5, rtol=2e-5)
     loss_only = optimized.forward_loss(batch)
+    assert reference.loss is not None and loss_only.loss is not None
     assert loss_only.logits is None
     torch.testing.assert_close(loss_only.loss, reference.loss, atol=2e-6, rtol=2e-6)
     reference.loss.backward()
@@ -78,6 +79,7 @@ def test_full_stack_loss_logits_and_adapter_gradients_match_eager(index):
         expected, actual = parameter.grad, opt_params[name].grad
         assert (expected is None) == (actual is None), name
         if expected is not None:
+            assert actual is not None
             assert torch.isfinite(actual).all()
             # Tiling changes floating-point summation, notably near cancellations.
             # Bound both vector relative error and worst element relative to gradient scale.
@@ -334,6 +336,7 @@ def test_mixed_precision_backbone_fp32_adapters_match_native(index):
     batch = RepairCollator()(examples(index))
     reference = eager(batch)
     actual = optimized.forward_loss(batch)
+    assert reference.loss is not None and actual.loss is not None
     torch.testing.assert_close(actual.loss, reference.loss, atol=2e-6, rtol=2e-6)
     reference.loss.backward()
     actual.loss.backward()
@@ -342,6 +345,7 @@ def test_mixed_precision_backbone_fp32_adapters_match_native(index):
         q = dict(optimized.named_parameters())[name]
         assert (p.grad is None) == (q.grad is None)
         if p.grad is not None:
+            assert q.grad is not None
             assert torch.isfinite(q.grad).all()
             squared_error += float((p.grad.float() - q.grad.float()).square().sum())
             squared_reference += float(p.grad.float().square().sum())

@@ -6,7 +6,11 @@ import torch
 
 from bifocalgemma.config import ExperimentSpec
 from bifocalgemma.contracts import RepairExample, RepairPrediction
-from bifocalgemma.data.tokenization import format_encoder_context, load_verified_tokenizer
+from bifocalgemma.data.tokenization import (
+    decode_text,
+    format_encoder_context,
+    load_verified_tokenizer,
+)
 from bifocalgemma.scaffold import FeatureNotReadyError
 
 
@@ -141,7 +145,7 @@ def generate_patch(
     ids = generated.token_ids
     if ids and ids[-1] in (1, 106, 50):
         ids = ids[:-1]
-    patch = decoder.decode(ids, skip_special_tokens=False)
+    patch = decode_text(decoder, ids, skip_special_tokens=False)
     return RepairPrediction(example.instance_id, spec.name, patch)
 
 
@@ -185,4 +189,4 @@ def generate_diagnostic_text(
         if generated.token_ids and generated.token_ids[-1] in (1, 106, 50)
         else generated.token_ids
     )
-    return decoder.decode(ids, skip_special_tokens=False), generated.stop_reason
+    return decode_text(decoder, ids, skip_special_tokens=False), generated.stop_reason

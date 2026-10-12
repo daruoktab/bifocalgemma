@@ -42,5 +42,7 @@ def apply_word_embedding_policy(
         saved = 0
         if encoder.weight is decoder.weight:
             raise ValueError("Untied policy received an already shared encoder/decoder parameter.")
-    decoder_lm_head.weight = decoder.weight
+    if not isinstance(decoder.weight, nn.Parameter):
+        raise ValueError("Decoder word weight must be a registered Parameter for tying.")
+    decoder_lm_head.register_parameter("weight", decoder.weight)
     return EmbeddingPolicyResult(tie_encoder_decoder, saved, "decoder_it")

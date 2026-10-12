@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VARIANTS = {
     "symmetric": ("BifocalGemma-E2B-E2B", "outputs/training_symmetric"),
     "asymmetric": ("BifocalGemma-E2B-E4B", "outputs/training_asymmetric"),
+    "baseline": ("Gemma-4-E2B-IT", "outputs/training_baseline"),
 }
 
 
@@ -40,7 +41,8 @@ def render(family):
     payload, bundle_sha = source_bundle(ROOT)
     template = template.replace("{{BUNDLE_PAYLOAD}}", payload).replace("{{BUNDLE_SHA}}", bundle_sha)
     experiment, output = VARIANTS[family]
-    template = template.replace('FAMILY = "symmetric"', f'FAMILY = "{family}"', 1)
+    policy_family = "decoder_only" if family == "baseline" else family
+    template = template.replace('FAMILY = "symmetric"', f'FAMILY = "{policy_family}"', 1)
     template = template.replace(
         'EXPERIMENT = "BifocalGemma-E2B-E2B"', f'EXPERIMENT = "{experiment}"', 1
     )

@@ -116,7 +116,7 @@ class FakeTokenizer:
         return messages[0]["content"]
 
     def decode(self, ids, **kwargs):
-        assert ids == (7,)
+        assert tuple(ids) == (7,)
         return "#### 2"
 
 

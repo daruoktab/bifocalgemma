@@ -62,6 +62,7 @@ class TestGemma4EdgeTopology(unittest.TestCase):
                     model = Gemma4TextModel(config)
                 self.assertTrue(all(parameter.is_meta for parameter in model.parameters()))
                 self.assertEqual(len(model.layers), expected["layers"])
+                assert config.layer_types is not None
                 self.assertEqual(config.layer_types.count("sliding_attention"), expected["local"])
                 self.assertEqual(config.layer_types.count("full_attention"), 7)
                 self.assertEqual(config.num_key_value_heads, expected["kv_heads"])

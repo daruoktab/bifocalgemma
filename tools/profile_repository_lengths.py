@@ -66,6 +66,8 @@ def profile(source, rows_file, tokenizer_cache):
             enable_thinking=False,
         )
         prefix_ids = decoder.encode(prefix, add_special_tokens=False)
+        if not isinstance(full, str):
+            raise ValueError("Single-conversation template must return text.")
         full_ids = decoder.encode(full.rstrip(), add_special_tokens=False)
         if full_ids[: len(prefix_ids)] != prefix_ids:
             counts["prefix_target_boundary"] += 1

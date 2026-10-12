@@ -11,15 +11,18 @@ codebase serta perbaikan bug lintas file. Rancangan aktif memakai **encoder Gemm
 base + decoder Gemma 4 IT**, langsung dibangun dengan merged attention, lalu
 supervised fine-tuning. Teacher network dan distillation bersifat opsional.
 
-Tuning awal memakai **offline instruction-to-patch SFT** dari rilis dataset private
-yang dikurasi bersama: EditPackFT, CommitPackFT Python, dan NextCoder Python.
+Fondasi tuning memakai **offline instruction-to-patch SFT** dari dataset private
+EditPackFT, CommitPackFT Python, dan NextCoder Python.
 Input berupa kode sebelum edit + instruksi; target berupa unified diff. Cohort v2
 menghapus event/struktur edit duplikat, mengarantina target ambigu, dan memisahkan
 train/dev melalui komponen repository, commit/seed serta struktur kode.
 **RL dan VM/Docker tidak diperlukan pada jalur tuning.** Data ini tetap auxiliary
-single-file editing; corpus repository lintas file belum diterbitkan. Lisensi kode
+single-file editing. Perluasan v3 menambahkan repair, localization dan dependency
+completion dari snapshot pre-fix SWE-rebench, serta benchmark context lintas file;
+status rilis beku tercatat di [dataset releases](docs/DATASET_RELEASES.md). Lisensi kode
 seed sintetis NextCoder belum terverifikasi. Lihat
-[audit dataset v2](docs/DATASET_REMEDIATION_V2.md) untuk angka dan batas verifikasinya.
+[audit dataset v2](docs/DATASET_REMEDIATION_V2.md) untuk fondasi, serta
+[context data v3](docs/CONTEXT_DATA_RELEASE_V3.md) untuk pool49.342 contoh dan benchmark baru.
 
 ## Matriks penelitian
 
@@ -46,7 +49,8 @@ menjelaskan kontrol dan confound symmetric-only tying.
 | Implemented | Registry/config, collator, word tying, CE, serializer, verified offline tokenization, local patch normalization, repository exports/context selection | Utilitas sesuai kontraknya; dataset fetching/harness terpisah |
 | Reference | Joint-softmax merged attention, GQA, asymmetric projection, tiny assembly | Prototipe numerik kecil; short native greedy generation/scorer tersedia, optimized cache/backend pending |
 | Native tiny | Full-depth Gemma encoder/merged decoder dan dua baseline, random weights | PLE/RoPE/KV sharing terintegrasi pada dimensi kecil |
-| Placeholder | Pretrained weight/production/cache integration, dataset fetching/AST, production trainer, agent, Docker harness dan general checkpoint factory | Signature dan acceptance criteria ada; fail secara eksplisit |
+| Offline SFT | Original text checkpoint loading, attention LoRA, tiled/recomputed training, v2 optimizer resume, sequential upload/evaluation | Recipe terimplementasi; hasil kualitas pretrained harus diukur di Molab |
+| Placeholder | Temporal-cache/kernel optimization, agent loop, Docker harness dan general checkpoint factory | Signature dan acceptance criteria ada; fail secara eksplisit |
 | Optional | Separated gated bridge dan distillation slot | Bukan recipe training default |
 
 Tidak ada checkpoint BifocalGemma pretrained, training data besar, atau hasil code
@@ -59,8 +63,9 @@ lagi dan selalu menyatakan mode synthetic, bukan benchmark score.
 [Notebook standalone](notebooks/bifocalgemma_repository_study.py) menyiapkan
 source-pinned repo exports, matched-cohort SFT keenam model, checkpoint v2 inference,
 greedy patch/function/completion generation, serta opt-in native scoring.
-Training defaults to a complete epoch; family-notebook artifact upload is enabled. Generation/scoring remain separate actions. Dua training notebooks tetap 20 cell
-dengan 19 isi identik dan menerima train exports melalui koleksi HF beku.
+Notebook study menyediakan generation/scoring terpisah. Tiga training notebooks
+menjalankan full training → upload → benchmark → upload secara berurutan;
+masing-masing 20 cell dengan 19 isi identik dan menerima koleksi HF beku.
 
 Validation nyata: synthetic pipeline smoke, RepoQA Python100 prepared, dan
 HumanEvalFix 164/164 gold reference repairs lolos native ai scorer. Ini **bukan
@@ -82,9 +87,10 @@ python -m bifocalgemma validate-config --config configs/experiments.json
 python -m bifocalgemma smoke --experiment all --device cpu
 python -m bifocalgemma smoke-native --experiment all --device cpu
 python -m unittest discover -s tests
-ruff check .
+pyrefly check
+ty check
+ruff check --fix
 ruff format --check .
-ty check .
 ```
 
 Perintah tersebut tidak mengunduh bobot model. smoke melakukan satu synthetic
@@ -121,27 +127,33 @@ encoder base / decoder IT dan attention LoRA, lalu menaikkan jumlah model reside
 runtime Molab. [Panduan pretrained probe](docs/PRETRAINED_GPU_PROBE.md) menjelaskan
 download/cache, provenance, optimizer policy dan interpretasi PASS/OOM/guard.
 
-Dua notebook khusus **training** tersedia:
-[simetris](notebooks/bifocalgemma_train_symmetric.py) dan
-[asimetris](notebooks/bifocalgemma_train_asymmetric.py). Keduanya 20 cell,
+Tiga notebook khusus **training** tersedia:
+[simetris](notebooks/bifocalgemma_train_symmetric.py),
+[asimetris](notebooks/bifocalgemma_train_asymmetric.py), dan
+[baseline](notebooks/bifocalgemma_train_baseline.py). Masing-masing 20 cell,
 19 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
-Pinned private HF dataset → LoRA SFT → dev loss → checkpoint/resume/upload. RUN_TRAINING=True
-saat pertama dibuka. [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
+Pinned private HF dataset → LoRA SFT → dev loss → upload → benchmark → upload.
+RUN_TRAINING, RUN_BENCHMARKS dan upload default True. Satu model resident;
+dua checkpoint terakhir per model/run disimpan, dengan resume stage dan prediksi.
+[Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.
 
 Default training kini memakai **checkpointing + tiled attention FP32 + chunked loss**
-untuk menjaga recipe pada input8K/output2K. Monitor live menampilkan tahap, train/dev CE,
+untuk menjaga objective pada input sampai32K dan shifted decoder budget8K termasuk
+prefix. Baseline total budget41472; overflow ditolak tanpa pemotongan diam-diam.
+Monitor live menampilkan model/tahap, train/dev CE,
 progres validasi, GPU/RAM, throughput, LR dan checkpoint/error. Preflight panjang maksimum
 menjalankan forward/backward tanpa memperbarui bobot. Lihat
 [training hemat VRAM](docs/MEMORY_EFFICIENT_TRAINING.md); penghematan pretrained dan
-kelayakan E4B–E4B pada96GB tetap harus diukur di Molab.
+kelayakan keenam konfigurasi pada32K/8K tetap harus diukur di Molab.
+[Sequential training](docs/SEQUENTIAL_TRAINING.md) menjelaskan durabilitas dan RAM cache.
 
 ## Setup dari checkout baru
 
 ```powershell
 git clone https://github.com/daruoktab/bifocalgemma.git
 cd bifocalgemma
-conda create -n ai python=3.12
+conda create -n ai python=3.13
 conda activate ai
 python -m pip install -e ".[dev]"
 ```

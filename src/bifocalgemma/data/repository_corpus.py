@@ -10,6 +10,7 @@ import urllib.request
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from bifocalgemma.contracts import RepositoryFile, RepositorySnapshot
 from bifocalgemma.data.curation import (
@@ -54,7 +55,8 @@ class ArchiveSnapshotStore:
         self.max_snapshot_bytes = max_snapshot_bytes
         self.max_files = max_files
 
-    def snapshot(self, task):
+    def fetch_archive(self, task):
+        """Fetch bytes only; snapshot() still performs the full archive/content audit."""
         identity = repo_identity(task.repo)
         digest = hashlib.sha256((identity + "@" + task.base_commit).encode()).hexdigest()
         path = self.root / (digest + ".tar.gz")
@@ -62,32 +64,42 @@ class ArchiveSnapshotStore:
             if not self.allow_network:
                 raise FileNotFoundError("Pinned snapshot archive is missing.")
             self.root.mkdir(parents=True, exist_ok=True)
-            temporary = path.with_suffix(".partial")
-            for attempt in range(3):
-                try:
-                    with urllib.request.urlopen(
-                        f"https://codeload.github.com/{identity}/tar.gz/{task.base_commit}",
-                        timeout=45,
-                    ) as response:
-                        total = 0
-                        with temporary.open("wb") as handle:
-                            while chunk := response.read(1024 * 1024):
-                                total += len(chunk)
-                                if total > self.max_archive_bytes:
-                                    raise ValueError("archive_download_budget_exceeded")
-                                handle.write(chunk)
-                    break
-                except (
-                    http.client.HTTPException,
-                    urllib.error.URLError,
-                    TimeoutError,
-                    ConnectionError,
-                ) as error:
-                    if attempt == 2:
-                        raise ValueError("snapshot_download_transport_failure") from error
-            temporary.replace(path)
+            from uuid import uuid4
+
+            temporary = path.with_suffix("." + uuid4().hex + ".partial")
+            try:
+                for attempt in range(3):
+                    try:
+                        with urllib.request.urlopen(
+                            f"https://codeload.github.com/{identity}/tar.gz/{task.base_commit}",
+                            timeout=45,
+                        ) as response:
+                            total = 0
+                            with temporary.open("wb") as handle:
+                                while chunk := response.read(1024 * 1024):
+                                    total += len(chunk)
+                                    if total > self.max_archive_bytes:
+                                        raise ValueError("archive_download_budget_exceeded")
+                                    handle.write(chunk)
+                        break
+                    except (
+                        http.client.HTTPException,
+                        urllib.error.URLError,
+                        TimeoutError,
+                        ConnectionError,
+                    ) as error:
+                        if attempt == 2:
+                            raise ValueError("snapshot_download_transport_failure") from error
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
         if path.stat().st_size > self.max_archive_bytes:
             raise ValueError("archive_download_budget_exceeded")
+        return path
+
+    def snapshot(self, task):
+        identity = repo_identity(task.repo)
+        path = self.fetch_archive(task)
         snapshot, coverage = read_text_archive(
             path,
             identity,
@@ -353,6 +365,7 @@ def build_repository_corpus(
     disk_budget_gib=40,
     allow_network=False,
     progress=None,
+    benchmark_index_path=None,
 ):
     """Freeze a resource-bounded corpus; every exclusion is a recorded outcome."""
     import platform
@@ -368,7 +381,10 @@ def build_repository_corpus(
         raise ValueError("invalid_corpus_budget")
     _, foundation = load_curated_pool(foundation_dir)
     registry = foundation["report"]["benchmark_quarantine"]
-    blocked = set(registry["blocked_repositories"])
+    blocked = set(registry["blocked_repositories"]) | {
+        repo_identity(repo, study_config["repo_aliases"])
+        for repo in study_config.get("blocked_repos", [])
+    }
     slugs = set(registry["crosscodeeval_repository_slugs"])
     aliases = study_config["repo_aliases"]
     output = Path(output)
@@ -376,9 +392,23 @@ def build_repository_corpus(
         raise FileExistsError("Refusing to overwrite repository corpus.")
     cache = Path(cache)
     cache.mkdir(parents=True, exist_ok=True)
+
+    def archive_cache_bytes():
+        return sum(p.stat().st_size for p in (cache / "archives").glob("*") if p.is_file())
+
+    # Offline admission never writes archives. Scanning thousands of files after
+    # every row is quadratic filesystem work, with no new information in that mode.
+    initial_archive_bytes = archive_cache_bytes()
+    if initial_archive_bytes > disk_budget_gib * 2**30:
+        raise ValueError("Initial archive cache exceeds the declared disk budget.")
     # Read-only opening cannot clear the already-completed foundation index.
+    benchmark_index_path = (
+        Path(benchmark_index_path)
+        if benchmark_index_path is not None
+        else Path(foundation_dir).parent / "curation_indexes/benchmarks.sqlite"
+    )
     index = CodeOverlapIndex(
-        storage_path=Path(foundation_dir).parent / "curation_indexes/benchmarks.sqlite",
+        storage_path=benchmark_index_path,
         read_only=True,
     )
     store = ArchiveSnapshotStore(cache / "archives", allow_network=allow_network)
@@ -399,6 +429,7 @@ def build_repository_corpus(
         "source": source,
         "source_file_sha256": file_digest(rows_file),
         "foundation_fingerprint": foundation["fingerprint"],
+        "benchmark_index_sha256": file_digest(benchmark_index_path),
         "target_count": target_count,
         "per_repo_limit": per_repo_limit,
         "context_limit": context_limit,
@@ -446,7 +477,7 @@ def build_repository_corpus(
         if len(accepted) >= target_count:
             break
         counts["examined"] += 1
-        outcome = {}
+        outcome: dict[str, Any] = {}
         syntax_diagnostics = []
         identifier = str(raw.get("instance_id", offset))
         try:
@@ -564,10 +595,7 @@ def build_repository_corpus(
             count_syntax_warnings(warning_summary, syntax_diagnostics)
         outcome["target_syntax_warnings"] = syntax_diagnostics
         ledger.save(offset, outcome)
-        if (
-            sum(p.stat().st_size for p in (cache / "archives").glob("*") if p.is_file())
-            > disk_budget_gib * 2**30
-        ):
+        if allow_network and archive_cache_bytes() > disk_budget_gib * 2**30:
             counts["stopped_disk_budget"] += 1
             break
         if len(accepted) >= target_count:

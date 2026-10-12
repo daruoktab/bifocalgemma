@@ -112,16 +112,18 @@ class TestRealOfflineTokenizers(unittest.TestCase):
             with self.subTest(spec=spec.name):
                 item = tokenize_repair_example(self.example, spec, self.cache)
                 decoder, _ = load_verified_tokenizer(spec.decoder, self.cache)
-                target = decoder.decode(item.target_ids, skip_special_tokens=False)
+                target = decoder.decode(list(item.target_ids), skip_special_tokens=False)
                 assert self.example.target_patch is not None
                 self.assertIn(self.example.target_patch.rstrip(), target)
                 self.assertEqual(item.target_ids[-1], 106)
                 self.assertEqual(item.decoder_prefix_ids.count(2), 1)
-                self.assertNotIn("halo 世界", decoder.decode(item.decoder_prefix_ids))
-                self.assertNotIn("halo 世界", decoder.decode(item.encoder_ids))
+                self.assertNotIn("halo 世界", decoder.decode(list(item.decoder_prefix_ids)))
+                self.assertNotIn("halo 世界", decoder.decode(list(item.encoder_ids)))
                 if spec.encoder:
                     self.assertEqual(item.encoder_ids.count(2), 1)
-                    self.assertIn("\treturn 'selamat pagi ☀'", decoder.decode(item.encoder_ids))
+                    self.assertIn(
+                        "\treturn 'selamat pagi ☀'", decoder.decode(list(item.encoder_ids))
+                    )
                 else:
                     self.assertEqual(item.encoder_ids, ())
                 batch = RepairCollator()([item])

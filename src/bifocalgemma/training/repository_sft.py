@@ -11,13 +11,17 @@ from bifocalgemma.data.offline_sft import (
 )
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.data.tokenization import load_verified_tokenizer
-from bifocalgemma.training.offline_sft import fit_offline_sft
-from bifocalgemma.training.policy import configure_policy_model, default_training_profiles
 
 
 def tokenize_repository_record(
     row, spec, encoder, decoder, *, encoder_limit=4096, decoder_limit=8192
 ):
+    if row.get("record_type") == "context_sft_v1":
+        from bifocalgemma.data.context_tasks import tokenize_context_task
+
+        return tokenize_context_task(
+            row, spec, encoder, decoder, encoder_limit=encoder_limit, decoder_limit=decoder_limit
+        )
     if row.get("role") != "train":
         raise ValueError("evaluation_records_are_not_training_data")
     context = row["context"]
@@ -48,7 +52,16 @@ def tokenize_repository_record(
         raise ValueError("repository_special_token_policy")
     if len(encoder_ids) > encoder_limit or len(full_ids) - 1 > decoder_limit:
         raise ValueError("repository_token_overflow")
-    return TokenizedRepairExample(row["instance_id"], encoder_ids, prefix_ids, target)
+    return TokenizedRepairExample(
+        row["instance_id"],
+        encoder_ids,
+        prefix_ids,
+        target,
+        metadata={
+            "source": row.get("source", "unknown"),
+            "task_type": row.get("task_type", "repair"),
+        },
+    )
 
 
 def prepare_repository_training(
@@ -170,6 +183,9 @@ def fit_repository_sft(
     accumulation=4,
     resume_from=None,
 ):
+    from bifocalgemma.training.offline_sft import fit_offline_sft
+    from bifocalgemma.training.policy import configure_policy_model, default_training_profiles
+
     family = (
         "decoder_only"
         if model.encoder is None

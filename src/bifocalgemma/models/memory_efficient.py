@@ -367,15 +367,18 @@ def run_training_memory_preflight(model, examples, *, progress=None):
 
     if not examples or any(p.grad is not None for p in model.parameters()):
         raise ValueError("Preflight requires fresh parameters and nonempty examples.")
-    longest_encoder = max(examples, key=lambda x: len(x.encoder_ids))
-    longest_decoder = max(examples, key=lambda x: len(x.decoder_prefix_ids) + len(x.target_ids))
 
     def cost(item):
         e = len(item.encoder_ids)
         d = len(item.decoder_prefix_ids) + len(item.target_ids) - 1
         return e * e + d * (e + d)
 
-    hardest_joint = max(examples, key=cost)
+    if hasattr(examples, "extreme_examples"):
+        longest_encoder, longest_decoder, hardest_joint = examples.extreme_examples()
+    else:
+        longest_encoder = max(examples, key=lambda x: len(x.encoder_ids))
+        longest_decoder = max(examples, key=lambda x: len(x.decoder_prefix_ids) + len(x.target_ids))
+        hardest_joint = max(examples, key=cost)
     items = {x.instance_id: x for x in (longest_encoder, longest_decoder, hardest_joint)}
     combined = TokenizedRepairExample(
         "shape-only-combined-maxima",

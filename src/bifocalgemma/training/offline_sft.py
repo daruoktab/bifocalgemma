@@ -9,6 +9,7 @@ import hashlib
 import json
 import random
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import torch
@@ -64,6 +65,8 @@ def save_sft_checkpoint(
         for name, p in model.named_parameters()
         if p.requires_grad
     }
+    if not all(bool(torch.isfinite(value).all()) for value in parameters.values()):
+        raise ValueError("Refusing to save nonfinite trainable parameters.")
     save_file(parameters, str(stage / "adapters.safetensors"))
     payload = {
         "optimizer": cpu_tree(optimizer.state_dict()),
@@ -162,7 +165,7 @@ def restore_sft_checkpoint(
 def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=None, step=0):
     previous = model.training
     model.eval()
-    total, tokens, by_source = 0.0, 0, {}
+    total, tokens, by_source, by_task = 0.0, 0, {}, {}
     if event_callback:
         event_callback(
             {
@@ -207,6 +210,14 @@ def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=Non
                 entry["loss_sum"] += loss_sum
                 entry["supervised_tokens"] += count
                 entry["examples"] += len(items)
+                tasks = {x.metadata.get("task_type", "repair") for x in items}
+                task = next(iter(tasks)) if len(tasks) == 1 else "mixed_batch"
+                task_entry = by_task.setdefault(
+                    task, {"loss_sum": 0.0, "supervised_tokens": 0, "examples": 0}
+                )
+                task_entry["loss_sum"] += loss_sum
+                task_entry["supervised_tokens"] += count
+                task_entry["examples"] += len(items)
                 del output, batch
                 done = start + len(items)
                 if event_callback and (
@@ -237,6 +248,15 @@ def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=Non
                 "examples": v["examples"],
             }
             for name, v in by_source.items()
+            if v["supervised_tokens"]
+        },
+        "by_task_type": {
+            name: {
+                "loss": v["loss_sum"] / v["supervised_tokens"],
+                "supervised_tokens": v["supervised_tokens"],
+                "examples": v["examples"],
+            }
+            for name, v in by_task.items()
             if v["supervised_tokens"]
         },
     }
@@ -276,10 +296,13 @@ def fit_offline_sft(
     data_manifest=None,
     training_policy=None,
     event_callback=None,
-):
+    save_total_limit=2,
+    checkpoint_callback=None,
+) -> "dict[str, Any]":
     import time
     import traceback
 
+    from bifocalgemma.training.stages import retained_checkpoints
     from bifocalgemma.training.telemetry import TrainingDashboard, append_event, resource_snapshot
 
     segment_started = time.perf_counter()
@@ -289,7 +312,7 @@ def fit_offline_sft(
         or learning_rate <= 0
     ):
         raise ValueError("Invalid training settings.")
-    if not train or not dev or clip_norm <= 0 or warmup_steps < 0:
+    if not train or not dev or clip_norm <= 0 or warmup_steps < 0 or save_total_limit < 1:
         raise ValueError("Need nonempty train/dev and valid clipping/warmup.")
     root = Path(run_dir)
     if not resume_from and root.exists() and any(root.iterdir()):
@@ -420,6 +443,7 @@ def fit_offline_sft(
                 {},
                 {"forward_seconds": 0.0, "backward_seconds": 0.0},
             )
+            window_tasks = {}
             for micro, (batch_cpu, items) in enumerate(
                 zip(micro_batches, item_batches, strict=True), 1
             ):
@@ -458,6 +482,13 @@ def fit_offline_sft(
                 entry = window_sources.setdefault(source, {"loss_sum": 0.0, "supervised_tokens": 0})
                 entry["loss_sum"] += batch_loss * count
                 entry["supervised_tokens"] += count
+                tasks = {x.metadata.get("task_type", "repair") for x in items}
+                task = next(iter(tasks)) if len(tasks) == 1 else "mixed_batch"
+                task_entry = window_tasks.setdefault(
+                    task, {"loss_sum": 0.0, "supervised_tokens": 0}
+                )
+                task_entry["loss_sum"] += batch_loss * count
+                task_entry["supervised_tokens"] += count
                 del output, batch
                 emit({"stage": "microbatch_complete", "microbatch": micro})
             gradients = [p.grad for p in parameters if p.grad is not None]
@@ -501,6 +532,13 @@ def fit_offline_sft(
                     for name, v in window_sources.items()
                 },
                 "last_batch": latest_batch,
+                "by_task_type": {
+                    name: {
+                        "loss": v["loss_sum"] / v["supervised_tokens"],
+                        "supervised_tokens": v["supervised_tokens"],
+                    }
+                    for name, v in window_tasks.items()
+                },
                 **resource_snapshot(device),
             }
             if training_policy is None:
@@ -544,7 +582,9 @@ def fit_offline_sft(
                     compatibility,
                     checkpoint_format=checkpoint_format,
                 )
-                checkpoints.append(last_checkpoint)
+                checkpoints = retained_checkpoints(root, limit=save_total_limit)
+                if checkpoint_callback:
+                    checkpoint_callback(last_checkpoint)
                 checkpoint_seconds += time.perf_counter() - started
                 last_checkpoint_step = state["global_step"]
                 emit(
@@ -570,7 +610,9 @@ def fit_offline_sft(
             last_checkpoint = save_sft_checkpoint(
                 model, optimizer, state, root, compatibility, checkpoint_format=checkpoint_format
             )
-            checkpoints.append(last_checkpoint)
+            checkpoints = retained_checkpoints(root, limit=save_total_limit)
+            if checkpoint_callback:
+                checkpoint_callback(last_checkpoint)
             checkpoint_seconds += time.perf_counter() - started
             emit(
                 {
@@ -579,6 +621,7 @@ def fit_offline_sft(
                     "checkpoint_seconds": time.perf_counter() - started,
                 }
             )
+        checkpoints = retained_checkpoints(root, limit=save_total_limit)
         result = {
             "status": "COMPLETED",
             "global_step": state["global_step"],

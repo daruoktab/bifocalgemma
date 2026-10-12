@@ -1,0 +1,71 @@
+{
+  "revision": "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23",
+  "private": true,
+  "collections": {
+    "mixed_context_enc32k_dec8k_v3": {
+      "role": "train",
+      "counts": {
+        "train": 44408,
+        "dev": 4934
+      },
+      "verified": true
+    },
+    "humanevalfix_python_v2": {
+      "role": "eval",
+      "counts": {
+        "test": 164
+      },
+      "verified": true
+    },
+    "gsm8k_zero_shot_v2": {
+      "role": "eval",
+      "counts": {
+        "test": 1319
+      },
+      "verified": true
+    },
+    "gsm8k_eight_shot_v2": {
+      "role": "eval",
+      "counts": {
+        "test": 1319
+      },
+      "verified": true
+    },
+    "sweqa_oracle_gemma32k_dec8k_v1": {
+      "role": "eval",
+      "counts": {
+        "test": 9072
+      },
+      "verified": true
+    },
+    "sweqa_noisy_oracle_gemma32k_dec8k_v1": {
+      "role": "eval",
+      "counts": {
+        "test": 9072
+      },
+      "verified": true
+    },
+    "crosscodelong_chunk_gemma32k_dec8k_v1": {
+      "role": "eval",
+      "counts": {
+        "test": 4713
+      },
+      "verified": true
+    },
+    "crosscodelong_function_gemma32k_dec8k_v1": {
+      "role": "eval",
+      "counts": {
+        "test": 4834
+      },
+      "verified": true
+    },
+    "longcodeqa_gemma32k_dec8k_v1": {
+      "role": "eval",
+      "counts": {
+        "test": 107
+      },
+      "verified": true
+    }
+  },
+  "status": "PASS"
+}

@@ -2,6 +2,7 @@
 
 import copy
 import math
+from typing import Any
 
 import torch.nn as nn
 
@@ -91,7 +92,7 @@ def configure_policy_model(model, policy):
     return scope
 
 
-def build_training_groups(model, policy):
+def build_training_groups(model, policy) -> "list[dict[str, Any]]":
     validate_training_policy(policy, model)
     entries = {name: [] for name in ("encoder", "decoder", "alignment")}
     seen = set()

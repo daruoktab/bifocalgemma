@@ -82,9 +82,8 @@ def test_near_matching_and_short_fragment_policy():
     code = "\n".join(f"value_{i} = {i}" for i in range(40))
     index = CodeOverlapIndex(threshold=0.8)
     index.add("reference", code)
-    assert (
-        index.match(code.replace("value_0 = 0", "value_0 = 999"))["kind"] == "token_shingle_jaccard"
-    )
+    match = index.match(code.replace("value_0 = 0", "value_0 = 999"))
+    assert match is not None and match["kind"] == "token_shingle_jaccard"
     assert index.match("value_2 = 2") is None
 
 
@@ -368,6 +367,7 @@ def test_full_overlap_index_skips_impossible_blob_reads(tmp_path):
     index = CodeOverlapIndex(storage_path=tmp_path / "bound.sqlite")
     index.add("low_overlap", reference)
     statements = []
+    assert index.db is not None
     index.db.set_trace_callback(statements.append)
     assert index.match(query) is None
     assert not any("SELECT grams FROM codes" in statement for statement in statements)
@@ -381,8 +381,9 @@ def test_readonly_partial_postings_never_use_full_intersection_bound(tmp_path):
     writer = CodeOverlapIndex(candidate_shingles=16, storage_path=path)
     writer.add("expected", code)
     writer.close()
-    # Existing indexes do not carry a postings-completeness marker. The reader
-    # must conservatively keep the old exact-Jaccard comparison, even with default args.
+    # The writer attests partial postings. Reopening with default args must still
+    # compare exact Jaccard without treating partial counts as a full intersection.
     reader = CodeOverlapIndex(storage_path=path, read_only=True)
-    assert reader.match(query)["reference"] == "expected"
+    match = reader.match(query)
+    assert match is not None and match["reference"] == "expected"
     reader.close()

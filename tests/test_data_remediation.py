@@ -42,7 +42,9 @@ def test_indentation_changes_are_not_identical():
     before = "def f(x):\n    if x:\n        x += 1\n    return x\n"
     after = "def f(x):\n    if x:\n        x += 1\n        return x\n"
     assert code_signature(before) != code_signature(after)
-    assert inspect_structure(before)["core"] != inspect_structure(after)["core"]
+    old_structure, new_structure = inspect_structure(before), inspect_structure(after)
+    assert old_structure is not None and new_structure is not None
+    assert old_structure["core"] != new_structure["core"]
     assert code_signature(before.replace("    ", "  ")) == code_signature(before)
 
 

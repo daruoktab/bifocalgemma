@@ -1,5 +1,7 @@
 # Full-corpus training: admission before SFT
 
+**Historical foundation pipeline, 9 October 2026.** Current full training uses the published [context v3 release](CONTEXT_DATA_RELEASE_V3.md) and [sequential runner](SEQUENTIAL_TRAINING.md). The preparation status and counts below describe the earlier foundation build.
+
 Updated 9 October 2026. The full pool is being prepared; upstream row counts are
 not admitted counts. The successful 100-step run was a smoke test, not the full
 experiment. See the [pilot receipt](data/molab_pilot_20261008.json).

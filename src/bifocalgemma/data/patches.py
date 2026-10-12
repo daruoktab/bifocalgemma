@@ -63,13 +63,15 @@ def git_environment() -> dict[str, str]:
 
 
 def apply_patch_to_snapshot(snapshot: RepositorySnapshot, patch: str) -> RepositorySnapshot:
-    patch_paths(patch)
+    changed_paths = set(patch_paths(patch))
     paths = [safe_repo_path(f.path) for f in snapshot.files]
     if len(set(paths)) != len(paths) or len({p.casefold() for p in paths}) != len(paths):
         raise ValueError("duplicate_or_case_colliding_snapshot_path")
     with tempfile.TemporaryDirectory(prefix="bifocal-patch-") as name:
         root = Path(name).resolve()
         for file in snapshot.files:
+            if file.path not in changed_paths:
+                continue
             destination = (root / file.path).resolve()
             if not destination.is_relative_to(root):
                 raise ValueError("snapshot_path_escape")
@@ -89,22 +91,25 @@ def apply_patch_to_snapshot(snapshot: RepositorySnapshot, patch: str) -> Reposit
                 raise ValueError(
                     "patch_apply_failed: " + result.stderr.decode("utf-8", "replace")[:500]
                 )
-        files = []
+        # Git apply only needs the files named by the already-validated patch.
+        # Preserve every unrelated file byte-for-byte without materializing it.
+        files = {file.path: file for file in snapshot.files if file.path not in changed_paths}
         for path in sorted(root.rglob("*")):
             if path.is_symlink():
                 raise ValueError("patch_created_symlink")
             if path.is_file():
                 if not path.resolve().is_relative_to(root):
                     raise ValueError("patched_path_escape")
-                files.append(
-                    RepositoryFile(
-                        path.relative_to(root).as_posix(), path.read_bytes().decode("utf-8")
-                    )
-                )
+                relative = path.relative_to(root).as_posix()
+                if relative not in changed_paths:
+                    raise ValueError("patch_created_unexpected_path")
+                files[relative] = RepositoryFile(relative, path.read_bytes().decode("utf-8"))
         # TemporaryDirectory owns this exact resolved target; no external paths are removed.
         if root != Path(name).resolve():
             raise ValueError("temporary_root_changed")
-        return RepositorySnapshot(snapshot.repo, snapshot.base_commit, tuple(files))
+        return RepositorySnapshot(
+            snapshot.repo, snapshot.base_commit, tuple(files[k] for k in sorted(files))
+        )
 
 
 def extract_unified_diff(text: str) -> str:

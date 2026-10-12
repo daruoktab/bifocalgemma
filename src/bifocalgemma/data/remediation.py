@@ -9,6 +9,7 @@ import warnings
 from collections import Counter, defaultdict
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from bifocalgemma.data.curation import code_signature, export_pool, split_connected_records
 from bifocalgemma.data.offline_sft import editing_record, load_curated_pool, stable_fingerprint
@@ -100,7 +101,7 @@ def merge_lineage(winner, group):
 def remediate_records(records, *, progress=None):
     ledger = []
     counts = Counter()
-    structures = {}
+    structures: dict[str, tuple[dict[str, Any] | None, dict[str, Any]]] = {}
     events = defaultdict(list)
 
     def reject(row, reason, retained=None):
@@ -138,15 +139,17 @@ def remediate_records(records, *, progress=None):
 
     winners = []
     for group in events.values():
-        pairs = {
-            (
-                structures[r["instance_id"]][0]["core"]
-                if structures[r["instance_id"]][0]
-                else code_signature(r["before"]),
-                structures[r["instance_id"]][1]["core"],
+        pairs = set()
+        for record in group:
+            before_structure, after_structure = structures[record["instance_id"]]
+            pairs.add(
+                (
+                    before_structure["core"]
+                    if before_structure is not None
+                    else code_signature(record["before"]),
+                    after_structure["core"],
+                )
             )
-            for r in group
-        }
         if len(group) > 1 and len(pairs) != 1:
             for row in group:
                 reject(row, "ambiguous_git_event_variants")
@@ -368,7 +371,7 @@ def build_remediated_pool(source, output, *, progress=None, tokenizer_cache=None
         progress({"stage": "split_and_full_audit", "retained": len(selected)})
     train, dev, split = split_connected_records(selected)
     audit = audit_rows({"train": train, "dev": dev})
-    report = copy.deepcopy(old["report"])
+    report: dict[str, Any] = copy.deepcopy(old["report"])
     # V1 admission/profile reports are retained as historical evidence, not
     # falsely rebranded as fresh upstream admission for the corrected cohort.
     report["parent_pool_fingerprint"] = old["fingerprint"]

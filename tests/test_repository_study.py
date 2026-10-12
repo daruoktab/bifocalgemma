@@ -457,8 +457,9 @@ def test_preparation_reuses_one_verified_snapshot_without_changing_export(monkey
             patch=patch,
         ),
     )
-    options = dict(blocked_repos=set(), max_context_tokens=1000)
-    original = repository.prepare_repository_record(task, snapshot, CharacterTokenizer(), **options)
+    original = repository.prepare_repository_record(
+        task, snapshot, CharacterTokenizer(), blocked_repos=set(), max_context_tokens=1000
+    )
     apply = repository.apply_patch_to_snapshot
     calls = []
 
@@ -468,7 +469,7 @@ def test_preparation_reuses_one_verified_snapshot_without_changing_export(monkey
 
     monkeypatch.setattr(repository, "apply_patch_to_snapshot", counted)
     row, hidden, fixed = repository.prepare_repository_record_with_snapshot(
-        task, snapshot, CharacterTokenizer(), **options
+        task, snapshot, CharacterTokenizer(), blocked_repos=set(), max_context_tokens=1000
     )
     assert (row, hidden) == original and len(calls) == 1
     assert canonical_snapshot_hash(fixed) == row["fixed_snapshot_sha256"]

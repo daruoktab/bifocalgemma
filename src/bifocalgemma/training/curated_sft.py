@@ -2,15 +2,16 @@
 
 import math
 from pathlib import Path
+from typing import Any
 
 from bifocalgemma.data.offline_sft import load_curated_pool, stable_fingerprint
 from bifocalgemma.data.tokenization import load_verified_tokenizer
-from bifocalgemma.training.offline_sft import fit_offline_sft
-from bifocalgemma.training.policy import configure_policy_model, default_training_profiles
 from bifocalgemma.training.repository_sft import tokenize_repository_record
 
 
-def prepare_curated_training(spec, pool_directory, tokenizer_cache):
+def prepare_curated_training(
+    spec, pool_directory, tokenizer_cache, *, packed_cache=None, progress=None
+):
     """Consume all frozen IDs in order; no sampling, re-split or overflow dropping."""
     rows, pool = load_curated_pool(pool_directory)
     limits = pool["report"]["tokens"]["limits"]
@@ -20,25 +21,57 @@ def prepare_curated_training(spec, pool_directory, tokenizer_cache):
         if spec.encoder
         else (None, None)
     )
-    outputs = {}
-    for split, items in rows.items():
-        outputs[split] = []
-        for row in items:
-            context = row.get("context") or (
-                f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
-            )
-            tokenized = tokenize_repository_record(
-                {**row, "context": context},
-                spec,
-                encoder,
-                decoder,
-                encoder_limit=limits["encoder"],
-                decoder_limit=limits["pair_decoder"]
-                if spec.encoder
-                else limits["baseline_decoder"],
-            )
-            outputs[split].append(tokenized)
-        if [item.instance_id for item in outputs[split]] != pool["record_ids"][split]:
+    cache_identity = {
+        "pool_fingerprint": pool["fingerprint"],
+        "limits": limits,
+        "encoder_files": enc_manifest["files"] if enc_manifest else None,
+        "decoder_files": dec_manifest["files"],
+        "prompt_recipe": "context_mixture_v1",
+    }
+
+    def tokenize(row):
+        context = row.get("context") or (
+            f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
+        )
+        return tokenize_repository_record(
+            {**row, "context": context},
+            spec,
+            encoder,
+            decoder,
+            encoder_limit=limits["encoder"],
+            decoder_limit=limits["pair_decoder"] if spec.encoder else limits["baseline_decoder"],
+        )
+
+    outputs: dict[str, Any]
+    if packed_cache is not None:
+        from bifocalgemma.data.packed_tokens import build_packed_cache
+
+        outputs, receipt = build_packed_cache(
+            Path(packed_cache) / stable_fingerprint(cache_identity)[:24],
+            cache_identity,
+            rows,
+            tokenize,
+            progress=progress,
+        )
+        tokenized_fingerprint = stable_fingerprint(receipt)
+    else:
+        outputs = {split: [tokenize(row) for row in items] for split, items in rows.items()}
+        tokenized_fingerprint = stable_fingerprint(
+            {
+                split: [
+                    (x.instance_id, x.encoder_ids, x.decoder_prefix_ids, x.target_ids)
+                    for x in items
+                ]
+                for split, items in outputs.items()
+            }
+        )
+    for split, items in outputs.items():
+        identifiers = (
+            [row["instance_id"] for row in items.rows]
+            if hasattr(items, "rows")
+            else [item.instance_id for item in items]
+        )
+        if identifiers != pool["record_ids"][split]:
             raise ValueError("Frozen cohort identity changed during tokenization.")
     manifest = {
         "format": "curated_full_pool_sft_v1",
@@ -47,16 +80,15 @@ def prepare_curated_training(spec, pool_directory, tokenizer_cache):
         "limits": limits,
         "instances": pool["record_ids"],
         "tokenizer_assets": {"encoder": enc_manifest, "decoder": dec_manifest},
-        "pool_report": pool["report"],
-        "tokenized_fingerprint": stable_fingerprint(
-            {
-                split: [
-                    (x.instance_id, x.encoder_ids, x.decoder_prefix_ids, x.target_ids)
-                    for x in items
-                ]
-                for split, items in outputs.items()
-            }
-        ),
+        "pool_report": {
+            key: pool["report"][key]
+            for key in ("research_role", "task_counts", "training_plan", "split")
+            if key in pool["report"]
+        },
+        "tokenized_fingerprint": tokenized_fingerprint,
+        "token_storage": "lossless_int32_disk_cache"
+        if packed_cache is not None
+        else "python_tuples",
     }
     manifest["fingerprint"] = stable_fingerprint(manifest)
     return outputs["train"], outputs["dev"], manifest
@@ -80,8 +112,11 @@ def fit_curated_sft(
     seed=17,
     event_callback=None,
     memory_policy=None,
-):
+) -> dict[str, Any]:
     """One run/model, all epochs by default; checkpoint v2 supports explicit resume."""
+    from bifocalgemma.training.offline_sft import fit_offline_sft
+    from bifocalgemma.training.policy import configure_policy_model, default_training_profiles
+
     if epochs < 1 or batch_size < 1 or accumulation < 1 or not train or not dev:
         raise ValueError("Invalid complete-epoch budget.")
     planned_updates = epochs * math.ceil(len(train) / (batch_size * accumulation))

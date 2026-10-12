@@ -10,6 +10,7 @@ import torch
 
 from bifocalgemma.config import EXPERIMENT_SPECS
 from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.training.memory_probe import ProbeLoRALinear
 from bifocalgemma.training.offline_sft import file_digest, fit_offline_sft
 from bifocalgemma.training.policy import (
     build_training_groups,
@@ -52,7 +53,8 @@ class TestTrainingPolicy(unittest.TestCase):
             policy = self.policy(index)
             model = self.model(index, policy)
             # Extra alias does not create a second optimizer entry.
-            attention = model.decoder.layers[0].self_attn.q_proj
+            attention = model.get_submodule("decoder.layers.0.self_attn.q_proj")
+            assert isinstance(attention, ProbeLoRALinear)
             attention.alias_A = attention.lora_A
             groups = build_training_groups(model, policy)
             ids = [id(p) for group in groups for p in group["params"]]
