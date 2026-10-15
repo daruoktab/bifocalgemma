@@ -1310,7 +1310,7 @@ def _(auth_info, HF_REPO_ID, HF_UPLOAD_ENABLED, mo, training_result):
 
 
 @app.cell
-def _(auth_info, 
+def _(auth_info,
     EXPERIMENT,
     FAMILY,
     HF_REPO_ID,
