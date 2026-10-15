@@ -116,7 +116,7 @@ ty check
 ruff check --fix
 ```
 
-Runtime notebook resume: Python3.12/3.13, Torch2.11.0 CUDA13.0, Transformers5.19.0,
+Runtime notebook run baru: Python3.12/3.13, Torch2.14.1 CUDA13.0, Transformers5.19.0,
 marimo0.25.1; dependency lain terpin di header. Cell setup menginstal ulang sekali
 per environment receipt dan meminta restart jika native library sudah ter-load.
 Notebook mengunci full commit SHA data. Perubahan cohort memerlukan RUN_NAME baru.
@@ -130,9 +130,11 @@ Type stubs YAML/psutil adalah dependency dev dan tidak mengubah runtime training
 
 Cell pertama memakai standard library dan `uv pip --python sys.executable` agar
 instalasi menargetkan kernel notebook. Default `FORCE_REINSTALL=True` memasang ulang
-Torch2.11.0 dari index cu130 dan dependency lain dari PyPI, satu kali per environment
-matching receipt. Torch2.11.0 dipilih untuk melanjutkan checkpoint run sebelumnya;
-versi pengembangan lokal di pyproject tidak otomatis menjadi versi kernel cloud.
+Torch2.14.1 dari index cu130 dan dependency lain dari PyPI, satu kali per environment
+matching receipt. Versi stabil terbaru ini diverifikasi pada15 Oktober2026 melalui
+[metadata PyPI](https://pypi.org/pypi/torch/json) dan
+[index wheel CUDA13.0](https://download.pytorch.org/whl/cu130/torch/).
+Run sekarang dimulai dari awal; pin2.11.0 untuk resume pilot lama sudah diganti.
 
 Receipt berada di `outputs/dependency_setup/`. Jika Torch/NumPy/library native sudah
 ter-load saat instalasi, cell berhenti dan meminta restart kernel. Menjalankan cell
@@ -141,8 +143,10 @@ versi terpasang diverifikasi sehingga tidak terjadi loop reinstall.
 
 Conda base ditolak sebelum instalasi. Python3.12/3.13 diterima; dukungan penuh
 Python3.12 belum dibuktikan melalui regresi pretrained. Cell environment memeriksa
-Torch loaded/installed tepat `2.11.0+cu130` sebelum training. Nama run, data dan
-policy tetap sama untuk auto-resume; checkpoint dari runtime berbeda ditolak.
+Torch loaded/installed tepat `2.14.1+cu130` sebelum training. Run baru memakai
+suffix `-torch2141`; receipt dependency dengan pin lama tidak melewati reinstall.
+Untuk resume run baru, nama run, data dan policy tetap sama; checkpoint dari
+runtime berbeda ditolak.
 
 Untuk ekspor Jupyter tanpa menjalankan notebook:
 

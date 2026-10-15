@@ -6,7 +6,7 @@ Perubahan ini tidak menjalankan training pretrained atau mengubah dataset HF.
 
 ## Default notebook baru
 
-Ketiga notebook memakai run baru `enc32k-dec8k-context-v3-recipes-v1` dengan
+Ketiga notebook memakai run baru `enc32k-dec8k-context-v3-recipes-v1-torch2141` dengan
 base AdamW dan optimized GrokOrScale LoRA. Masing-masing menghasilkan empat
 run dari dua model. [Rancangan comparison](TRAINING_RECIPE_COMPARISON.md)
 merinci optimizer dan interval validation25%/checkpoint10% dari total update.

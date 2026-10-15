@@ -12,7 +12,7 @@ import pytest
 
 from tools.notebook_dependencies import bootstrap_notebook_dependencies
 
-PINS = {"torch": "2.11.0", "numpy": "2.5.3", "marimo": "0.25.1"}
+PINS = {"torch": "2.14.1", "numpy": "2.5.3", "marimo": "0.25.1"}
 
 
 def simulated_environment(monkeypatch):
@@ -32,8 +32,9 @@ def simulated_environment(monkeypatch):
 
     def run(command, **kwargs):
         calls.append(command)
-        if "torch==2.11.0" in command:
-            versions["torch"] = "2.11.0+cu130"
+        torch_pin = next((arg for arg in command if arg.startswith("torch==")), None)
+        if torch_pin:
+            versions["torch"] = torch_pin.removeprefix("torch==") + "+cu130"
         else:
             versions.update(numpy="2.5.3", marimo="0.25.1", PyYAML="6.0.3", psutil="7.0.0")
         return SimpleNamespace(returncode=0)
@@ -69,6 +70,24 @@ def test_preloaded_torch_requires_real_kernel_restart(monkeypatch, tmp_path):
     assert len(calls) == 2
 
 
+def test_new_torch_pin_forces_reinstall_despite_old_receipt_or_matching_install(
+    monkeypatch, tmp_path
+):
+    versions, calls = simulated_environment(monkeypatch)
+    old_pins = {**PINS, "torch": "2.11.0"}
+    bootstrap_notebook_dependencies(old_pins, state_directory=str(tmp_path))
+    assert versions["torch"] == "2.11.0+cu130" and len(calls) == 2
+    # The cloud image may already have the correct version, but no matching
+    # reinstall receipt: FORCE_REINSTALL must still execute the installer.
+    versions["torch"] = "2.14.1+cu130"
+    result = bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
+    assert result["installed_now"] and len(calls) == 4
+    assert "torch==2.14.1" in calls[2] and "--reinstall" in calls[2]
+    assert len(list(tmp_path.glob("*.json"))) == 2
+    again = bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
+    assert not again["installed_now"] and len(calls) == 4
+
+
 def test_conda_base_is_rejected_before_any_install(monkeypatch, tmp_path):
     _, calls = simulated_environment(monkeypatch)
     monkeypatch.setenv("CONDA_DEFAULT_ENV", "base")
@@ -94,7 +113,7 @@ def test_failed_install_cannot_write_success_receipt(monkeypatch, tmp_path):
 def test_cpu_wheel_invalidates_matching_receipt(monkeypatch, tmp_path):
     versions, calls = simulated_environment(monkeypatch)
     bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
-    versions["torch"] = "2.11.0+cpu"
+    versions["torch"] = "2.14.1+cpu"
     assert bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))["installed_now"]
     assert len(calls) == 4
 
@@ -106,7 +125,7 @@ def test_reinstall_cell_is_first_and_native_imports_depend_on_it():
         cells = [node for node in ast.parse(text).body if isinstance(node, ast.FunctionDef)]
         first = ast.get_source_segment(text, cells[0])
         assert first is not None and "FORCE_REINSTALL = True" in first
-        assert '"torch": "2.11.0"' in first
+        assert '"torch": "2.14.1"' in first
         assert "bootstrap_notebook_dependencies(" in first
         assert cells[1].args.args[0].arg == "dependency_runtime"
         native = next(
@@ -118,5 +137,5 @@ def test_reinstall_cell_is_first_and_native_imports_depend_on_it():
             )
         )
         assert "dependency_runtime" in [arg.arg for arg in native.args.args]
-        assert 'torch.__version__ == "2.11.0+cu130"' in text
+        assert 'torch.__version__ == "2.14.1+cu130"' in text
         assert '# requires-python = ">=3.12,<3.14"' in text

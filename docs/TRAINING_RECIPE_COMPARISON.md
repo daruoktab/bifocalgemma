@@ -132,7 +132,9 @@ step dengan budget sama. Validation bukan tambahan optimizer update.
 
 ## Identitas, resume, dan pengujian
 
-`RUN_NAME=enc32k-dec8k-context-v3-recipes-v1`. Path lokal:
+`RUN_NAME=enc32k-dec8k-context-v3-recipes-v1-torch2141`. Torch2.14.1+cu130
+dipasang ulang oleh cell pertama untuk run baru; artefak pilot2.11.0 tidak
+dipakai untuk auto-resume. Path lokal:
 `OUTPUT_ROOT/EXPERIMENT/RUN_NAME/{base|optimized}/`.
 Path HF: `{FAMILY}/{EXPERIMENT}/{RUN_NAME}/{base|optimized}/`.
 Training artifacts/checkpoints, benchmark predictions, stage receipts, serta

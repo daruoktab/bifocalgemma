@@ -126,12 +126,14 @@ establish pretrained model quality. Real tokenizer audits are separate from tiny
 model tests. Original pretrained training/benchmark execution remains a Molab run
 performed by the user after applying the HF write token.
 
-## Dependency bootstrap for interrupted-run recovery
+## Dependency bootstrap for fresh runs
 
 The first cell explicitly reinstalls pinned packages with `uv pip` into the current
-kernel interpreter. Notebook Torch is pinned to **2.11.0+cu130**, matching the uploaded
-interrupted runs; both Python3.12 and3.13 are accepted. Development dependencies in
-the local project remain independent. A receipt avoids repeated reinstall after
+kernel interpreter. Notebook Torch is pinned to **2.14.1+cu130**, the latest stable
+version verified on15 October2026; both Python3.12 and3.13 are accepted. These runs
+start from scratch under a new `-torch2141` run suffix. The old2.11.0 resume pin
+has been replaced. A dependency receipt includes the new pins, so an old receipt
+cannot skip reinstall. A matching receipt avoids repeated reinstall after
 restart, while preloaded native modules force a kernel restart before proceeding.
 No packages are installed into conda base. A runtime mismatch still blocks resume.
 

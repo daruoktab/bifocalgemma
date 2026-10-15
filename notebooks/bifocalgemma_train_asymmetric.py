@@ -2,7 +2,7 @@
 # requires-python = ">=3.12,<3.14"
 # dependencies = [
 #     "marimo==0.25.1",
-#     "torch==2.11.0",
+#     "torch==2.14.1",
 #     "transformers==5.19.0",
 #     "safetensors==0.8.0",
 #     "pyarrow==25.0.1",
@@ -205,7 +205,7 @@ def _():
         return {"status": "READY", "installed_now": True, "versions": versions, **identity}
 
     NOTEBOOK_DEPENDENCY_PINS = {
-        "torch": "2.11.0",  # Match existing CUDA 13.0 checkpoints for resume.
+        "torch": "2.14.1",  # Latest stable verified 2026-10-15; fresh runs.
         "marimo": "0.25.1",
         "transformers": "5.19.0",
         "safetensors": "0.8.0",
@@ -314,7 +314,7 @@ def _(mo):
     CORPUS_KIND = "multitask"
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "enc32k-dec8k-context-v3-recipes-v1"
+    RUN_NAME = "enc32k-dec8k-context-v3-recipes-v1-torch2141"
     RESUME_FROM = ""  # AUTO_RESUME selects the last valid checkpoint per model/recipe.
     LOCAL_DATA_FILE = "outputs/mixed_context_enc32k_dec8k_v3"
     ENCODER_LIMIT = 32768
@@ -426,7 +426,7 @@ def _(DEVICE, PRECISION, dependency_runtime, mo):
         repeat_kv,
     )
 
-    assert torch.__version__ == "2.11.0+cu130", "Restart kernel; gunakan torch==2.11.0 CUDA13.0."
+    assert torch.__version__ == "2.14.1+cu130", "Restart kernel; gunakan torch==2.14.1 CUDA13.0."
     assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
     assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
     assert dependency_runtime["versions"]["torch"] == torch.__version__
