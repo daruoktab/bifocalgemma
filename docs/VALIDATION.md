@@ -17,8 +17,11 @@ belum dijalankan; tes ini tidak membuktikan kualitas repair atau peak VRAM model
 Standalone upload juga diuji dengan menyalin hanya satu notebook ke direktori
 kosong dan menjalankan Python `-I`, tanpa repo atau PYTHONPATH. Source/config
 berhasil dimuat dari ZIP tertanam. Import Gemma4 langsung berhasil pada environment
-lokal Torch2.14.1/Transformers5.19.0. Error wrapper di Molab belum membuktikan akar
-masalah; cell baru menampilkan traceback dependency asli dan versi paket.
+lokal Torch2.14.1/Transformers5.19.0. Traceback asli Molab kemudian mengidentifikasi
+torchvision0.26.0 bawaan server dengan Torch2.14.1+cu130 sebagai sumber error NMS.
+Bootstrap diperbaiki agar memasang torchvision0.29.1+cu130 bersama Torch; guard
+metadata/build, restart, dan tiny CPU compiled-op probe ditambahkan. Ini belum
+mengklaim rerun cloud pengguna berhasil.
 
 Bagian bertanggal berikut mempertahankan hasil dan batas implementasi **pada
 tanggal pemeriksaan tersebut**; beberapa placeholder/default sudah berubah sejak itu.

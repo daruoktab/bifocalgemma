@@ -3,6 +3,7 @@
 # dependencies = [
 #     "marimo==0.25.1",
 #     "torch==2.14.1",
+#     "torchvision==0.29.1",
 #     "transformers==5.19.0",
 #     "safetensors==0.8.0",
 #     "pyarrow==25.0.1",
@@ -16,6 +17,7 @@
 #
 # [tool.uv.sources]
 # torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+# torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
 # [[tool.uv.index]]
 # name = "pytorch-cu130"
 # url = "https://download.pytorch.org/whl/cu130"
@@ -38,6 +40,7 @@ def _():
 
     NOTEBOOK_DEPENDENCY_PINS = {
         "torch": "2.14.1",  # Latest stable verified 2026-10-15; fresh runs.
+        "torchvision": "0.29.1",  # Reinstall together; inherited 0.26.0 breaks native imports.
         "marimo": "0.25.1", "transformers": "5.19.0", "safetensors": "0.8.0",
         "pyarrow": "25.0.1", "pytest": "8.4.2", "huggingface-hub": "1.33.0",
         "tokenizers": "0.23.2", "numpy": "2.5.3",
@@ -210,6 +213,8 @@ def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtim
 
     assert torch.__version__ == "2.14.1+cu130", "Restart kernel; gunakan torch==2.14.1 CUDA13.0."
     assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
+    assert _native_gemma4["torchvision_version"] == "0.29.1+cu130", "Restart kernel; torchvision must match the CUDA13.0 pin."
+    assert version("torchvision") == _native_gemma4["torchvision_version"], "Torchvision loaded/installed mismatch; restart kernel."
     assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
     assert dependency_runtime["versions"]["torch"] == torch.__version__
     torch.set_num_threads(min(4, torch.get_num_threads()))
@@ -240,6 +245,8 @@ def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtim
         "python": platform.python_version(),
         "marimo": version("marimo"),
         "torch": torch.__version__,
+        "torchvision": _native_gemma4["torchvision_version"],
+        "torchvision_path": _native_gemma4["torchvision_file"],
         "transformers": version("transformers"),
         "cuda_build": torch.version.cuda,
         "device": device,

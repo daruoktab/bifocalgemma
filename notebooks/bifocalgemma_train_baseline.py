@@ -3,6 +3,7 @@
 # dependencies = [
 #     "marimo==0.25.1",
 #     "torch==2.14.1",
+#     "torchvision==0.29.1",
 #     "transformers==5.19.0",
 #     "safetensors==0.8.0",
 #     "pyarrow==25.0.1",
@@ -16,6 +17,7 @@
 #
 # [tool.uv.sources]
 # torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+# torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
 # [[tool.uv.index]]
 # name = "pytorch-cu130"
 # url = "https://download.pytorch.org/whl/cu130"
@@ -97,6 +99,14 @@ def _():
         import traceback
 
         try:
+            torch = importlib.import_module("torch")
+            torchvision = importlib.import_module("torchvision")
+            # Prove the compiled extension loads, without allocating GPU memory.
+            torchvision.ops.nms(
+                torch.empty((0, 4), dtype=torch.float32, device="cpu"),
+                torch.empty((0,), dtype=torch.float32, device="cpu"),
+                0.5,
+            )
             configuration = importlib.import_module(
                 "transformers.models.gemma4.configuration_gemma4"
             )
@@ -108,6 +118,8 @@ def _():
                 "Gemma4TextDecoderLayer": modeling.Gemma4TextDecoderLayer,
                 "apply_rotary_pos_emb": modeling.apply_rotary_pos_emb,
                 "repeat_kv": modeling.repeat_kv,
+                "torchvision_version": torchvision.__version__,
+                "torchvision_file": torchvision.__file__,
             }
         except Exception:
             original = traceback.format_exc()
@@ -217,8 +229,9 @@ def _():
                 actual = versions.get(name)
                 if actual is None or actual.split("+")[0] != expected:
                     return False
-            if versions.get("torch") != pins["torch"] + "+cu130":
-                return False
+            for name in ("torch", "torchvision"):
+                if name in pins and versions.get(name) != pins[name] + "+cu130":
+                    return False
             for name, minimum in (("PyYAML", 6), ("psutil", 7)):
                 actual = versions.get(name)
                 if actual is None or int(actual.split(".")[0]) < minimum:
@@ -239,7 +252,15 @@ def _():
 
         critical_loaded = any(
             name in sys.modules
-            for name in ("torch", "numpy", "transformers", "pyarrow", "tokenizers")
+            for name in (
+                "torch",
+                "torchvision",
+                "torchaudio",
+                "numpy",
+                "transformers",
+                "pyarrow",
+                "tokenizers",
+            )
         )
         uv = shutil.which("uv")
         if uv is None:
@@ -268,14 +289,24 @@ def _():
         if reinstall:
             common.append("--reinstall")
         print(f"Dependency setup targets the current kernel: {sys.executable}", flush=True)
-        print(f"Reinstall={reinstall}; Torch={pins['torch']} from CUDA 13.0 index.", flush=True)
+        cuda_packages = [name for name in ("torch", "torchvision") if name in pins]
+        print(
+            f"Reinstall={reinstall}; CUDA 13.0 packages: {', '.join(name + '==' + pins[name] for name in cuda_packages)}.",
+            flush=True,
+        )
         subprocess.run(
-            common + [f"torch=={pins['torch']}", "--index-url", identity["torch_index"]],
+            common
+            + [f"{name}=={pins[name]}" for name in cuda_packages]
+            + ["--index-url", identity["torch_index"]],
             check=True,
         )
         subprocess.run(
             common
-            + [f"{name}=={expected}" for name, expected in pins.items() if name != "torch"]
+            + [
+                f"{name}=={expected}"
+                for name, expected in pins.items()
+                if name not in cuda_packages
+            ]
             + identity["extras"]
             + ["--index-url", "https://pypi.org/simple"],
             check=True,
@@ -311,6 +342,7 @@ def _():
 
     NOTEBOOK_DEPENDENCY_PINS = {
         "torch": "2.14.1",  # Latest stable verified 2026-10-15; fresh runs.
+        "torchvision": "0.29.1",  # Reinstall together; inherited 0.26.0 breaks native imports.
         "marimo": "0.25.1",
         "transformers": "5.19.0",
         "safetensors": "0.8.0",
@@ -3309,6 +3341,12 @@ def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtim
 
     assert torch.__version__ == "2.14.1+cu130", "Restart kernel; gunakan torch==2.14.1 CUDA13.0."
     assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
+    assert _native_gemma4["torchvision_version"] == "0.29.1+cu130", (
+        "Restart kernel; torchvision must match the CUDA13.0 pin."
+    )
+    assert version("torchvision") == _native_gemma4["torchvision_version"], (
+        "Torchvision loaded/installed mismatch; restart kernel."
+    )
     assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
     assert dependency_runtime["versions"]["torch"] == torch.__version__
     torch.set_num_threads(min(4, torch.get_num_threads()))
@@ -3339,6 +3377,8 @@ def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtim
         "python": platform.python_version(),
         "marimo": version("marimo"),
         "torch": torch.__version__,
+        "torchvision": _native_gemma4["torchvision_version"],
+        "torchvision_path": _native_gemma4["torchvision_file"],
         "transformers": version("transformers"),
         "cuda_build": torch.version.cuda,
         "device": device,

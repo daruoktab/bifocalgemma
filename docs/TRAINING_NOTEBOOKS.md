@@ -137,7 +137,7 @@ Type stubs YAML/psutil adalah dependency dev dan tidak mengubah runtime training
 
 Cell pertama memakai standard library dan `uv pip --python sys.executable` agar
 instalasi menargetkan kernel notebook. Default `FORCE_REINSTALL=True` memasang ulang
-Torch2.14.1 dari index cu130 dan dependency lain dari PyPI, satu kali per environment
+Torch2.14.1 **bersama torchvision0.29.1** dari index cu130 dan dependency lain dari PyPI, satu kali per environment
 matching receipt. Versi stabil terbaru ini diverifikasi pada15 Oktober2026 melalui
 [metadata PyPI](https://pypi.org/pypi/torch/json) dan
 [index wheel CUDA13.0](https://download.pytorch.org/whl/cu130/torch/).
@@ -154,6 +154,11 @@ Torch loaded/installed tepat `2.14.1+cu130` sebelum training. Run baru memakai
 suffix `-torch2141`; receipt dependency dengan pin lama tidak melewati reinstall.
 Untuk resume run baru, nama run, data dan policy tetap sama; checkpoint dari
 runtime berbeda ditolak.
+
+Torchvision juga wajib `0.29.1+cu130` dan dipasang di interpreter notebook yang
+sama. Receipt lama tanpa pin torchvision tidak digunakan ulang. Torchvision yang
+sudah ter-load ikut memicu restart guard. Environment menampilkan versi dan path
+torchvision; tiny CPU `torchvision.ops.nms` diperiksa sebelum import Gemma4.
 
 Untuk ekspor Jupyter tanpa menjalankan notebook:
 
@@ -179,3 +184,15 @@ Transformers, Hub, NumPy dan dependency terkait. Tidak ada dependency opsional y
 dihapus atau dipatch berdasarkan dugaan. Kirim seluruh blok `Original traceback`
 untuk diagnosis runtime cloud. Peringatan paket proyek pada notebook lama bukan
 bukti bahwa `bifocalgemma` perlu diinstal dari PyPI.
+
+Traceback Molab15 Oktober2026 membuktikan Torch2.14.1+cu130 berasal dari
+`/tmp/uv-venv`, tetapi torchvision0.26.0 diwarisi dari `/usr/local`. Import config
+Gemma4 melewati `type_validators → video_utils → image_utils → torchvision`, lalu
+gagal karena `operator torchvision::nms does not exist`. Bootstrap kini memasang
+Torch dan torchvision yang cocok **dalam satu perintah CUDA index**. Versi
+torchvision disertakan dalam receipt, PEP723, uv source mapping, pemeriksaan
+loaded/installed, serta metadata environment. Kode tidak membuat operator NMS palsu
+atau mempatch registry Transformers untuk menyembunyikan error.
+
+Sumber versi: [metadata torchvision0.29.1](https://pypi.org/pypi/torchvision/0.29.1/json)
+dan [wheel resmi CUDA13.0](https://download.pytorch.org/whl/cu130/torchvision/).

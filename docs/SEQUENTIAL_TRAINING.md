@@ -137,6 +137,12 @@ cannot skip reinstall. A matching receipt avoids repeated reinstall after
 restart, while preloaded native modules force a kernel restart before proceeding.
 No packages are installed into conda base. A runtime mismatch still blocks resume.
 
+Torchvision is pinned to0.29.1+cu130 and reinstalled in the same CUDA-index
+transaction as Torch. Inherited torchvision0.26.0 in the Molab image caused
+`torchvision::nms` registration to fail during Gemma4 config imports. Both build
+tags are verified; loaded torchvision requires a restart after reinstall.
+A tiny CPU NMS invocation checks the compiled extension before native imports.
+
 ## Next-run scheduler and batching
 
 See [the next-run audit](TRAINING_NEXT_RUN.md). Defaults now use microbatch2,

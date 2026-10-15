@@ -62,6 +62,14 @@ def import_native_gemma4():
     import traceback
 
     try:
+        torch = importlib.import_module("torch")
+        torchvision = importlib.import_module("torchvision")
+        # Prove the compiled extension loads, without allocating GPU memory.
+        torchvision.ops.nms(
+            torch.empty((0, 4), dtype=torch.float32, device="cpu"),
+            torch.empty((0,), dtype=torch.float32, device="cpu"),
+            0.5,
+        )
         configuration = importlib.import_module("transformers.models.gemma4.configuration_gemma4")
         modeling = importlib.import_module("transformers.models.gemma4.modeling_gemma4")
         return {
@@ -71,6 +79,8 @@ def import_native_gemma4():
             "Gemma4TextDecoderLayer": modeling.Gemma4TextDecoderLayer,
             "apply_rotary_pos_emb": modeling.apply_rotary_pos_emb,
             "repeat_kv": modeling.repeat_kv,
+            "torchvision_version": torchvision.__version__,
+            "torchvision_file": torchvision.__file__,
         }
     except Exception:
         original = traceback.format_exc()
@@ -177,8 +187,9 @@ def bootstrap_notebook_dependencies(
             actual = versions.get(name)
             if actual is None or actual.split("+")[0] != expected:
                 return False
-        if versions.get("torch") != pins["torch"] + "+cu130":
-            return False
+        for name in ("torch", "torchvision"):
+            if name in pins and versions.get(name) != pins[name] + "+cu130":
+                return False
         for name, minimum in (("PyYAML", 6), ("psutil", 7)):
             actual = versions.get(name)
             if actual is None or int(actual.split(".")[0]) < minimum:
@@ -198,7 +209,16 @@ def bootstrap_notebook_dependencies(
         return {"status": "READY", "installed_now": False, "versions": versions, **identity}
 
     critical_loaded = any(
-        name in sys.modules for name in ("torch", "numpy", "transformers", "pyarrow", "tokenizers")
+        name in sys.modules
+        for name in (
+            "torch",
+            "torchvision",
+            "torchaudio",
+            "numpy",
+            "transformers",
+            "pyarrow",
+            "tokenizers",
+        )
     )
     uv = shutil.which("uv")
     if uv is None:
@@ -225,14 +245,20 @@ def bootstrap_notebook_dependencies(
     if reinstall:
         common.append("--reinstall")
     print(f"Dependency setup targets the current kernel: {sys.executable}", flush=True)
-    print(f"Reinstall={reinstall}; Torch={pins['torch']} from CUDA 13.0 index.", flush=True)
+    cuda_packages = [name for name in ("torch", "torchvision") if name in pins]
+    print(
+        f"Reinstall={reinstall}; CUDA 13.0 packages: {', '.join(name + '==' + pins[name] for name in cuda_packages)}.",
+        flush=True,
+    )
     subprocess.run(
-        common + [f"torch=={pins['torch']}", "--index-url", identity["torch_index"]],
+        common
+        + [f"{name}=={pins[name]}" for name in cuda_packages]
+        + ["--index-url", identity["torch_index"]],
         check=True,
     )
     subprocess.run(
         common
-        + [f"{name}=={expected}" for name, expected in pins.items() if name != "torch"]
+        + [f"{name}=={expected}" for name, expected in pins.items() if name not in cuda_packages]
         + identity["extras"]
         + ["--index-url", "https://pypi.org/simple"],
         check=True,
