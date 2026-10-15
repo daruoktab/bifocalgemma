@@ -2,6 +2,13 @@
 
 ## Status terbaru — 15 Oktober 2026
 
+Alur awal tiga notebook disusun ulang menjadi import Marimo → setup dependency
+→ form HF token → verifikasi token → control/environment dan pipeline. Cell intro
+tidak lagi bergantung pada `dependency_runtime`. Seluruh cell setelah token
+memiliki auth gate. Tes form belum disubmit/kosong tidak memanggil HF API;
+fixture token valid membuka gate. Dua puluh empat tes bootstrap, urutan, gate,
+isolasi satu file dan parity notebook lulus. Tidak ada training cloud dijalankan.
+
 Tiga notebook training kini memiliki21 cell,20 isi identik, dan masing-masing
 menjalankan dua model × base/optimized. Ekspor ipynb tidak memuat outputs.
 [Perbandingan recipe](TRAINING_RECIPE_COMPARISON.md) menjelaskan default aktif,

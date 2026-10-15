@@ -128,7 +128,7 @@ performed by the user after applying the HF write token.
 
 ## Dependency bootstrap for fresh runs
 
-The first cell explicitly reinstalls pinned packages with `uv pip` into the current
+After the initial Marimo import cell, the setup cell reinstalls pinned packages with `uv pip` into the current
 kernel interpreter. Notebook Torch is pinned to **2.14.1+cu130**, the latest stable
 version verified on15 October2026; both Python3.12 and3.13 are accepted. These runs
 start from scratch under a new `-torch2141` run suffix. The old2.11.0 resume pin
@@ -142,6 +142,13 @@ transaction as Torch. Inherited torchvision0.26.0 in the Molab image caused
 `torchvision::nms` registration to fail during Gemma4 config imports. Both build
 tags are verified; loaded torchvision requires a restart after reinstall.
 A tiny CPU NMS invocation checks the compiled extension before native imports.
+
+Startup order is Marimo → dependency setup → HF token form → token verification
+→ control/environment and the remaining pipeline. Submit the form with Apply,
+then use Run stale. All downstream cells depend on verified authentication;
+an unsubmitted or empty form stops before native model imports or downloads.
+The introductory Marimo cell does not reference `dependency_runtime`, so it can
+always display the setup instructions after a kernel restart.
 
 ## Next-run scheduler and batching
 

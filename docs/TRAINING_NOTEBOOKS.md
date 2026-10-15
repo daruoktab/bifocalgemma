@@ -7,7 +7,7 @@ Masing-masing memiliki **21 cell, 20 isi cell identik**. Perbedaan hanya tiga ba
 control center: `FAMILY`, `EXPERIMENT`, dan `OUTPUT_ROOT`.
 
 **Cukup unggah satu file notebook.** Seluruh source proyek berada dalam bundel
-terkompresi di file tersebut; cell0 memverifikasi checksum, mengekstraknya ke
+terkompresi di file tersebut; cell setup memverifikasi checksum, mengekstraknya ke
 `outputs/corpus_runtime/`, dan mengaktifkan source sebelum import model native.
 Tidak diperlukan checkout repo, editable install, atau paket `bifocalgemma` dari
 PyPI di Molab. Generator memuat simbol bundel melalui import dinamis agar scanner
@@ -36,12 +36,12 @@ untuk token input/apply dan policy.
 
 | Cell | Isi dan tanggung jawab |
 | --- | --- |
-| 0 | Dependency setup: uv pip reinstall, receipt/restart guard, aktivasi bundel source |
-| 1 | Pengantar dan default |
-| 2 | Control center: urutan model, data, limits, batch, epoch, output, upload |
-| 3 | Environment, import native dengan traceback asli, resource/runtime guard |
-| 4 | Form HF token, submit eksplisit |
-| 5 | Apply/verifikasi token; token tidak dicetak ke log |
+| 0 | Import Marimo dan petunjuk penggunaan; tidak bergantung pada hasil setup |
+| 1 | Dependency setup: uv pip reinstall, receipt/restart guard, aktivasi bundel source |
+| 2 | Form HF token setelah setup siap, tanpa import native |
+| 3 | Apply/verifikasi token; token tidak dicetak ke log; berhenti menunggu jika belum disubmit |
+| 4 | Control center: urutan model, data, limits, batch, epoch, output, upload |
+| 5 | Environment, import native dengan traceback asli, resource/runtime guard |
 | 6 | Config native Gemma dan dimensi |
 | 7 | Batch, masking label, shifted token loss |
 | 8 | Reference attention dan backend training bersama |
@@ -57,6 +57,16 @@ untuk token input/apply dan policy.
 | 18 | Hasil per model |
 | 19 | Ringkasan upload yang sudah diverifikasi |
 | 20 | Entrypoint/test notebook |
+
+Jalankan cell0 → cell1, lalu isi HF key dan klik **Apply HF token** pada cell2.
+Setelah itu cukup **Run stale**: verifikasi pada cell3 membuka gate untuk seluruh
+cell4–20. Semua cell berikutnya memerlukan `auth_info["verified"]`; model, data,
+dan training menunggu autentikasi. Tidak ada jalur anonim yang melanjutkan pipeline
+saat form belum disubmit atau token kosong. Token yang tidak valid menghasilkan
+error pada cell verifikasi, sebelum import Gemma4 atau download model.
+
+Jika setup meminta restart kernel, lakukan restart lalu jalankan dua cell awal
+lagi. Receipt mencegah reinstall kedua; form token baru diisi setelah setup siap.
 
 ## Policy dan objective
 
@@ -135,7 +145,7 @@ Type stubs YAML/psutil adalah dependency dev dan tidak mengubah runtime training
 
 ## Upload ulang dan dependency reinstall
 
-Cell pertama memakai standard library dan `uv pip --python sys.executable` agar
+Cell setup (posisi1) memakai standard library dan `uv pip --python sys.executable` agar
 instalasi menargetkan kernel notebook. Default `FORCE_REINSTALL=True` memasang ulang
 Torch2.14.1 **bersama torchvision0.29.1** dari index cu130 dan dependency lain dari PyPI, satu kali per environment
 matching receipt. Versi stabil terbaru ini diverifikasi pada15 Oktober2026 melalui

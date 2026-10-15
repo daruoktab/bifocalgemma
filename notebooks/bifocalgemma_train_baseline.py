@@ -33,9 +33,26 @@ __generated_with = "0.25.1"
 app = marimo.App(width="full")
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
-    # DEPENDENCY SETUP — first cell, before training-library imports.
+    import marimo as mo
+
+    mo.md("""
+    # BifocalGemma · Offline LoRA SFT
+    **Urutan:** jalankan import Marimo → setup dependency → isi dan Apply HF key → **Run stale**.
+    Ketiga notebook memakai jumlah dan urutan cell yang sama; 20 dari 21 isi cell identik.
+    Setelah setup, isi dan Apply HF token, lalu jalankan Run stale.
+    Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full mixed context pool → target-only SFT
+    → held-out loss → adapter checkpoint + optimizer/data cursor resume.
+    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA), empat run berurutan, satu epoch penuh, benchmark penuh dan upload per run. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
+    Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
+    """)
+    return (mo,)
+
+
+@app.cell
+def _(mo):
+    # DEPENDENCY SETUP — after importing marimo, before native/library imports.
     def activate_notebook_bundle(payload, expected_sha, directory="outputs/corpus_runtime"):
         """Activate source embedded in this one notebook, before native imports."""
         import base64
@@ -3128,6 +3145,7 @@ def _():
     )
     _bundle_sha = "4f58035d8e497be8e3b3dc27f5f659fd734c0661926eb7bbe12e7ae8eec281ce"
     corpus_runtime_root = activate_notebook_bundle(_payload, _bundle_sha)
+    mo.md("✅ Dependency dan source notebook siap. Isi HF key, klik Apply, lalu Run stale.")
     return (
         dependency_runtime,
         import_native_gemma4,
@@ -3135,25 +3153,96 @@ def _():
     )
 
 
-@app.cell(hide_code=True)
-def _(dependency_runtime):
-    import marimo as mo
-
+@app.cell
+def _(dependency_runtime, mo):
+    # 2a. HF TOKEN INPUT — available after setup, independent of native/model imports.
     assert dependency_runtime["status"] == "READY"
-    mo.md("""
-    # BifocalGemma · Offline LoRA SFT
-    Ketiga notebook memakai jumlah dan urutan cell yang sama; 20 dari 21 isi cell identik.
-    Pilih pasangan di control center, Apply HF token bila diperlukan,
-    Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full mixed context pool → target-only SFT
-    → held-out loss → adapter checkpoint + optimizer/data cursor resume.
-    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA), empat run berurutan, satu epoch penuh, benchmark penuh dan upload per run. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
-    Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
-    """)
-    return (mo,)
+    hf_token_form = mo.ui.dictionary(
+        {
+            "token": mo.ui.text(
+                label="Hugging Face token (read untuk unduh; write bila upload aktif)",
+                kind="password",
+                placeholder="hf_...",
+                full_width=True,
+            )
+        }
+    ).form(submit_button_label="Apply HF token")
+    mo.vstack([mo.md("## 2a · Hugging Face API token"), hf_token_form])
+    return (hf_token_form,)
 
 
 @app.cell
-def _(mo):
+def _(dependency_runtime, hf_token_form, mo):
+    # 2b. APPLY / VERIFY — explicit token dependency for every Hub/tokenizer call.
+    assert dependency_runtime["status"] == "READY"
+    import os as _auth_os
+
+    from huggingface_hub import HfApi as _AuthHfApi
+    from huggingface_hub.errors import HfHubHTTPError as _AuthHfError
+
+    mo.stop(
+        hf_token_form.value is None, mo.md("⏸️ Isi HF key dan klik Apply HF token, lalu Run stale.")
+    )
+    _token_value = ((hf_token_form.value or {}).get("token", "") or "").strip()
+    token_source = "widget" if _token_value else "environment"
+    if not _token_value:
+        _token_value = _auth_os.environ.get("HF_TOKEN", "").strip()
+    mo.stop(not _token_value, mo.md("⏸️ HF key belum diisi. Masukkan key lalu klik Apply HF token."))
+    hf_download_token = _token_value or False
+    if _token_value:
+        try:
+            _identity = _AuthHfApi(token=_token_value).whoami()
+        except _AuthHfError:
+            raise RuntimeError(
+                "HF token gagal diverifikasi; cek token/akses lalu Apply ulang."
+            ) from None
+        _access_token = (_identity.get("auth") or {}).get("accessToken") or {}
+        _token_role = _access_token.get("role")
+        if not _token_role:
+            _fine_grained = _access_token.get("fineGrained") or {}
+            _scoped = _fine_grained.get("scoped") or []
+            _has_write = any(
+                any("write" in str(perm).lower() for perm in scope_item.get("permissions", []))
+                for scope_item in _scoped
+                if isinstance(scope_item, dict)
+            )
+            if _has_write:
+                _token_role = "write"
+            elif _fine_grained:
+                _token_role = "fine-grained"
+            else:
+                _token_role = "unknown"
+        auth_info = {
+            "mode": "authenticated",
+            "source": token_source,
+            "username": _identity.get("name", "unknown"),
+            "role": _token_role,
+            "verified": True,
+        }
+        if _token_role in {"write", "admin"}:
+            auth_message = (
+                f"HF token terverifikasi (akses {_token_role}). Siap untuk unduh dan upload."
+            )
+        elif _token_role == "read":
+            auth_message = (
+                "HF token terverifikasi (akses read). Siap untuk unduh; gunakan token write bila"
+                " HF_UPLOAD_ENABLED diaktifkan."
+            )
+        else:
+            auth_message = "HF token terverifikasi. Siap digunakan oleh loader dan tokenizer."
+    else:
+        auth_info = {"mode": "anonymous", "source": "none", "role": "none", "verified": False}
+        auth_message = (
+            "Tanpa token: akses anonim untuk checkpoint publik. Isi token lalu klik Apply bila"
+            " diperlukan."
+        )
+    mo.md("## 2b · Apply / verifikasi HF token\n" + auth_message)
+    return (hf_download_token, auth_info)
+
+
+@app.cell
+def _(auth_info, mo):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # 1. CONTROL CENTER — tiga baris ini saja berbeda antar notebook.
     FAMILY = "decoder_only"
     EXPERIMENT = "Gemma-4-E2B-IT"
@@ -3301,7 +3390,10 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtime_root, mo):
+def _(
+    auth_info, DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtime_root, mo
+):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # 2. ENVIRONMENT — dependency setup must finish before native imports.
     _native_gemma4 = import_native_gemma4()
     Gemma4TextConfig = _native_gemma4["Gemma4TextConfig"]
@@ -3438,83 +3530,8 @@ def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtim
 
 
 @app.cell
-def _(mo):
-    # 2a. HF TOKEN INPUT — submit form avoids rerunning models per keystroke.
-    hf_token_form = mo.ui.dictionary(
-        {
-            "token": mo.ui.text(
-                label="Hugging Face token (read untuk unduh; write bila upload aktif)",
-                kind="password",
-                placeholder="hf_...",
-                full_width=True,
-            )
-        }
-    ).form(submit_button_label="Apply HF token")
-    mo.vstack([mo.md("## 2a · Hugging Face API token"), hf_token_form])
-    return (hf_token_form,)
-
-
-@app.cell
-def _(HfApi, HfHubHTTPError, hf_token_form, mo, os):
-    # 2b. APPLY / VERIFY — explicit token dependency for every Hub/tokenizer call.
-    _token_value = ((hf_token_form.value or {}).get("token", "") or "").strip()
-    token_source = "widget" if _token_value else "environment"
-    if not _token_value:
-        _token_value = os.environ.get("HF_TOKEN", "").strip()
-    hf_download_token = _token_value or False
-    if _token_value:
-        try:
-            _identity = HfApi(token=_token_value).whoami()
-        except HfHubHTTPError:
-            raise RuntimeError(
-                "HF token gagal diverifikasi; cek token/akses lalu Apply ulang."
-            ) from None
-        _access_token = (_identity.get("auth") or {}).get("accessToken") or {}
-        _token_role = _access_token.get("role")
-        if not _token_role:
-            _fine_grained = _access_token.get("fineGrained") or {}
-            _scoped = _fine_grained.get("scoped") or []
-            _has_write = any(
-                any("write" in str(perm).lower() for perm in scope_item.get("permissions", []))
-                for scope_item in _scoped
-                if isinstance(scope_item, dict)
-            )
-            if _has_write:
-                _token_role = "write"
-            elif _fine_grained:
-                _token_role = "fine-grained"
-            else:
-                _token_role = "unknown"
-        auth_info = {
-            "mode": "authenticated",
-            "source": token_source,
-            "username": _identity.get("name", "unknown"),
-            "role": _token_role,
-            "verified": True,
-        }
-        if _token_role in {"write", "admin"}:
-            auth_message = (
-                f"HF token terverifikasi (akses {_token_role}). Siap untuk unduh dan upload."
-            )
-        elif _token_role == "read":
-            auth_message = (
-                "HF token terverifikasi (akses read). Siap untuk unduh; gunakan token write bila"
-                " HF_UPLOAD_ENABLED diaktifkan."
-            )
-        else:
-            auth_message = "HF token terverifikasi. Siap digunakan oleh loader dan tokenizer."
-    else:
-        auth_info = {"mode": "anonymous", "source": "none", "role": "none", "verified": False}
-        auth_message = (
-            "Tanpa token: akses anonim untuk checkpoint publik. Isi token lalu klik Apply bila"
-            " diperlukan."
-        )
-    mo.md("## 2b · Apply / verifikasi HF token\n" + auth_message)
-    return (hf_download_token, auth_info)
-
-
-@app.cell
-def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
+def _(auth_info, SimpleNamespace, copy, version, Gemma4TextConfig, mo):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # 3. CONFIG NATIVE — metadata config yang sudah diaudit, tanpa network.
     AUDITED_CONFIGS = {
         "E2B": {
@@ -3748,7 +3765,8 @@ def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
 
 
 @app.cell
-def _(torch, F, mo):
+def _(auth_info, torch, F, mo):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     from dataclasses import dataclass, field
 
     # 4. BATCH & LOSS — synthetic IDs, shift sekali, prefix/padding label -100.
@@ -3887,7 +3905,8 @@ def _(torch, F, mo):
 
 
 @app.cell
-def _(mo):
+def _(auth_info, mo):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     NativeMergedAttention = (
         __import__("importlib").import_module("bifocalgemma.models.native").NativeMergedAttention
     )
@@ -3903,7 +3922,8 @@ def _(mo):
 
 
 @app.cell
-def _(torch, mo):
+def _(auth_info, torch, mo):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # Native architecture is shared with the bundled package: one maintained implementation.
     NativeTinyModel = (
         __import__("importlib").import_module("bifocalgemma.models.native").NativeTinyModel
@@ -3951,6 +3971,7 @@ def _(torch, mo):
 
 @app.cell
 def _(
+    auth_info,
     Path,
     build_model,
     experiment_spec,
@@ -3966,6 +3987,7 @@ def _(
     F,
     mo,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # 7. CHECKPOINT LOADER — original base/IT text weights, shared aliases.
     CHECKPOINTS = {
         "E2B": {
@@ -4277,6 +4299,7 @@ def _(
 
 @app.cell
 def _(
+    auth_info,
     EXPERIMENT,
     FAMILY,
     ProbeLoRALinear,
@@ -4290,6 +4313,8 @@ def _(
     mo,
     Any,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
+
     # 7a. TRAINING POLICY — all family-specific training settings live here.
     class Float32Alignment(nn.Linear):
         """Keep small learned alignment in FP32 while returning backbone dtype."""
@@ -4573,6 +4598,7 @@ def _(
 
 @app.cell
 def _(
+    auth_info,
     AutoTokenizer,
     CHECKPOINTS,
     Counter,
@@ -4591,6 +4617,8 @@ def _(
     verified_assets,
     mo,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
+
     # 8. DATA PREPARATION — target-free inputs; repair/localization/completion targets.
     def git_text_lines(text):
         """Git counts LF delimiters only; CR/formfeed/Unicode separators stay in content."""
@@ -5062,6 +5090,7 @@ def _(
 
 @app.cell
 def _(
+    auth_info,
     RUN_TRAINING,
     RUN_BENCHMARKS,
     DATASET_REPO_ID,
@@ -5079,6 +5108,7 @@ def _(
     hf_download_token,
     mo,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # Only a published immutable HF collection; every existing cache is verified.
     corpus_pool_status = {"status": "DISABLED", "path": LOCAL_DATA_FILE}
     if RUN_TRAINING or RUN_BENCHMARKS:
@@ -5137,6 +5167,7 @@ def _(
 
 @app.cell
 def _(
+    auth_info,
     Path,
     RepairCollator,
     build_training_groups,
@@ -5153,6 +5184,8 @@ def _(
     mo,
     Any,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
+
     # 9. TRAINING / CHECKPOINT — same helper code in both notebooks.
     def file_digest(path):
         digest = hashlib.sha256()
@@ -5923,6 +5956,7 @@ def _(
 
 @app.cell
 def _(
+    auth_info,
     EXPERIMENT,
     FAMILY,
     HEADROOM_GIB,
@@ -5935,6 +5969,7 @@ def _(
     probe_estimate,
     mo,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # 10. PREFLIGHT — no data/model downloads here.
     training_spec = experiment_spec(EXPERIMENT)
     assert (training_spec.encoder is None) == (FAMILY == "decoder_only")
@@ -5974,7 +6009,8 @@ def _(
 
 
 @app.cell
-def _(LOCAL_DATA_FILE, corpus_pool_status, EXPERIMENT_SEQUENCE, TRAINING_RECIPES, mo):
+def _(auth_info, LOCAL_DATA_FILE, corpus_pool_status, EXPERIMENT_SEQUENCE, TRAINING_RECIPES, mo):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # Data plan only: tokenize inside the model loop, so arrays from an earlier model do not stay resident.
     sequence_data_plan = {
         "status": corpus_pool_status["status"],
@@ -6038,6 +6074,7 @@ def _(
     training_guard,
     training_policy,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     run_recipe_comparison = (
         __import__("importlib").import_module("bifocalgemma.training.recipes").run_recipe_comparison
     )
@@ -6105,7 +6142,8 @@ def _(
 
 
 @app.cell
-def _(mo, run_dir, training_result):
+def _(auth_info, mo, run_dir, training_result):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     result_summary = [
         {
             "experiment": row["experiment"],
@@ -6128,7 +6166,8 @@ def _(mo, run_dir, training_result):
 
 
 @app.cell
-def _(HF_REPO_ID, HF_UPLOAD_ENABLED, mo, training_result):
+def _(auth_info, HF_REPO_ID, HF_UPLOAD_ENABLED, mo, training_result):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # Upload is owned by the sequential cell: checkpoint, training result, benchmark progress, final receipt.
     upload_result = {
         "status": "DISABLED"
@@ -6143,6 +6182,7 @@ def _(HF_REPO_ID, HF_UPLOAD_ENABLED, mo, training_result):
 
 @app.cell
 def _(
+    auth_info,
     EXPERIMENT,
     FAMILY,
     HF_REPO_ID,
@@ -6154,6 +6194,8 @@ def _(
     prepare_editing_records,
     split_editing_records,
 ):
+    assert auth_info["verified"], "Apply a valid HF token before running this cell."
+
     def test_family_policy_matches_selected_pair():
         spec = experiment_spec(EXPERIMENT)
         assert spec.tie_encoder_decoder_words == (FAMILY == "symmetric")
