@@ -28,6 +28,33 @@ def module_definitions(path):
     return "\n\n".join(parts)
 
 
+def use_embedded_imports(code):
+    """Keep marimo's package scanner from requesting our bundled source on PyPI.
+
+    Rewrite only project import statements, preserving comments/cell structure.
+    Imports inside embedded ZIP source remain ordinary Python imports.
+    """
+    lines = code.splitlines(keepends=True)
+    imports = [
+        node
+        for node in ast.walk(ast.parse(code))
+        if isinstance(node, ast.ImportFrom)
+        and node.module
+        and (node.module == "bifocalgemma" or node.module.startswith("bifocalgemma."))
+    ]
+    for node in sorted(imports, key=lambda item: item.lineno, reverse=True):
+        indent = " " * node.col_offset
+        replacements = []
+        for alias in node.names:
+            if alias.name == "*":
+                raise ValueError("Bundled notebook imports must name explicit symbols.")
+            replacements.append(
+                f"{indent}{alias.asname or alias.name} = __import__('importlib').import_module({node.module!r}).{alias.name}\n"
+            )
+        lines[node.lineno - 1 : node.end_lineno] = replacements
+    return "".join(lines)
+
+
 def render(family):
     template = (ROOT / "tools/templates/training_notebook.py.txt").read_text(encoding="utf-8")
     for marker, path in {
@@ -50,7 +77,7 @@ def render(family):
     template = template.replace(
         'OUTPUT_ROOT = "outputs/training_symmetric"', f'OUTPUT_ROOT = "{output}"', 1
     )
-    ast.parse(template)
+    template = use_embedded_imports(template)
     formatter = shutil.which("ruff")
     if formatter is None:
         raise RuntimeError("Install the project dev dependency ruff before generation.")

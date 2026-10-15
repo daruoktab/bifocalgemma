@@ -1,6 +1,7 @@
 """Bootstrap installs and restarts are simulated; never touch the test environment."""
 
 import ast
+import importlib
 import importlib.metadata
 import shutil
 import subprocess
@@ -10,7 +11,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools.notebook_dependencies import bootstrap_notebook_dependencies
+from tools.notebook_dependencies import (
+    activate_notebook_bundle,
+    bootstrap_notebook_dependencies,
+    import_native_gemma4,
+)
 
 PINS = {"torch": "2.14.1", "numpy": "2.5.3", "marimo": "0.25.1"}
 
@@ -139,3 +144,106 @@ def test_reinstall_cell_is_first_and_native_imports_depend_on_it():
         assert "dependency_runtime" in [arg.arg for arg in native.args.args]
         assert 'torch.__version__ == "2.14.1+cu130"' in text
         assert '# requires-python = ">=3.12,<3.14"' in text
+        assert "import_native_gemma4" in [arg.arg for arg in native.args.args]
+        assert "_native_gemma4 = import_native_gemma4()" in text
+
+
+def test_native_import_diagnostic_preserves_original_dependency_failure(monkeypatch, capsys):
+    def broken(name):
+        raise RuntimeError("operator torchvision::nms does not exist")
+
+    monkeypatch.setattr(importlib, "import_module", broken)
+    monkeypatch.setattr(importlib.metadata, "version", lambda name: "test-version")
+    with pytest.raises(RuntimeError, match="Original traceback") as error:
+        import_native_gemma4()
+    assert "operator torchvision::nms does not exist" in str(error.value)
+    assert '"torchvision": "test-version"' in str(error.value)
+    assert "operator torchvision::nms does not exist" in capsys.readouterr().out
+
+
+def test_native_import_loads_direct_modules_and_expected_symbols(monkeypatch):
+    configuration = SimpleNamespace(Gemma4TextConfig=object())
+    modeling = SimpleNamespace(
+        **{
+            name: object()
+            for name in (
+                "Gemma4TextModel",
+                "Gemma4TextAttention",
+                "Gemma4TextDecoderLayer",
+                "apply_rotary_pos_emb",
+                "repeat_kv",
+            )
+        }
+    )
+    modules = {
+        "transformers.models.gemma4.configuration_gemma4": configuration,
+        "transformers.models.gemma4.modeling_gemma4": modeling,
+    }
+    monkeypatch.setattr(importlib, "import_module", modules.__getitem__)
+    result = import_native_gemma4()
+    assert result["Gemma4TextConfig"] is configuration.Gemma4TextConfig
+    assert result["Gemma4TextModel"] is modeling.Gemma4TextModel
+
+
+def test_notebook_never_declares_bundled_project_as_external_package():
+    root = Path(__file__).resolve().parents[1]
+    for family in ("symmetric", "asymmetric", "baseline"):
+        path = root / f"notebooks/bifocalgemma_train_{family}.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert not (node.module or "").startswith("bifocalgemma")
+            elif isinstance(node, ast.Import):
+                assert not any(alias.name.startswith("bifocalgemma") for alias in node.names)
+        first = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
+        assert any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "activate_notebook_bundle"
+            for node in ast.walk(first)
+        )
+
+
+def test_one_uploaded_notebook_loads_source_without_repo_or_pythonpath(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    source = root / "notebooks/bifocalgemma_train_symmetric.py"
+    uploaded = tmp_path / "notebook.py"
+    shutil.copyfile(source, uploaded)
+    child = r"""
+import ast
+import importlib
+import pathlib
+import sys
+
+uploaded = pathlib.Path(sys.argv[1])
+tree = ast.parse(uploaded.read_text(encoding="utf-8"))
+cell = next(n for n in tree.body if isinstance(n, ast.FunctionDef))
+helper = next(n for n in cell.body if isinstance(n, ast.FunctionDef) and n.name == "activate_notebook_bundle")
+namespace = {}
+exec(compile(ast.Module(body=[helper], type_ignores=[]), "uploaded-helper", "exec"), namespace)
+values = {n.targets[0].id: ast.literal_eval(n.value) for n in cell.body if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in {"_payload", "_bundle_sha"}}
+bundle = namespace["activate_notebook_bundle"](values["_payload"], values["_bundle_sha"])
+project = importlib.import_module("bifocalgemma")
+assert pathlib.Path(project.__file__).resolve().is_relative_to(bundle)
+config = importlib.import_module("bifocalgemma.config")
+assert config.get_experiment("BifocalGemma-E2B-E2B").name == "BifocalGemma-E2B-E2B"
+assert not (uploaded.parent / "src").exists()
+print("ONE_FILE_BUNDLE_OK")
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", child, str(uploaded)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ONE_FILE_BUNDLE_OK" in result.stdout
+
+
+def test_source_bundle_checksum_failure_does_not_activate_source(tmp_path):
+    import base64
+
+    with pytest.raises(ValueError, match="checksum"):
+        activate_notebook_bundle(base64.b85encode(b"invalid zip"), "0" * 64, directory=tmp_path)
+    assert not list(tmp_path.iterdir())

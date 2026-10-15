@@ -46,7 +46,11 @@ def _():
     dependency_runtime = bootstrap_notebook_dependencies(
         NOTEBOOK_DEPENDENCY_PINS, reinstall=FORCE_REINSTALL,
     )
-    return (dependency_runtime,)
+    # This file contains all project source. No repository checkout/PyPI package needed.
+    _payload = {{BUNDLE_PAYLOAD}}
+    _bundle_sha = "{{BUNDLE_SHA}}"
+    corpus_runtime_root = activate_notebook_bundle(_payload, _bundle_sha)
+    return (dependency_runtime, import_native_gemma4, corpus_runtime_root,)
 
 
 @app.cell(hide_code=True)
@@ -165,8 +169,15 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(DEVICE, PRECISION, dependency_runtime, mo):
+def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtime_root, mo):
     # 2. ENVIRONMENT — dependency setup must finish before native imports.
+    _native_gemma4 = import_native_gemma4()
+    Gemma4TextConfig = _native_gemma4["Gemma4TextConfig"]
+    Gemma4TextModel = _native_gemma4["Gemma4TextModel"]
+    Gemma4TextAttention = _native_gemma4["Gemma4TextAttention"]
+    Gemma4TextDecoderLayer = _native_gemma4["Gemma4TextDecoderLayer"]
+    apply_rotary_pos_emb = _native_gemma4["apply_rotary_pos_emb"]
+    repeat_kv = _native_gemma4["repeat_kv"]
     import copy
     import gc
     import json
@@ -196,13 +207,6 @@ def _(DEVICE, PRECISION, dependency_runtime, mo):
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from transformers import Gemma4TextConfig, Gemma4TextModel
-    from transformers.models.gemma4.modeling_gemma4 import (
-        Gemma4TextAttention,
-        Gemma4TextDecoderLayer,
-        apply_rotary_pos_emb,
-        repeat_kv,
-    )
 
     assert torch.__version__ == "2.14.1+cu130", "Restart kernel; gunakan torch==2.14.1 CUDA13.0."
     assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
@@ -228,37 +232,7 @@ def _(DEVICE, PRECISION, dependency_runtime, mo):
     )
     if dtype == torch.bfloat16 and device == "cuda" and not torch.cuda.is_bf16_supported():
         raise RuntimeError("GPU/runtime ini belum mendukung BF16.")
-    # FULL CORPUS: standalone source bundle, pinned public data, no model weights.
-    _payload = {{BUNDLE_PAYLOAD}}
-    corpus_bundle_sha = "{{BUNDLE_SHA}}"
-    _bytes = importlib.import_module("base64").b85decode(_payload)
-    if hashlib.sha256(_bytes).hexdigest() != corpus_bundle_sha:
-        raise ValueError("Corpus source bundle checksum mismatch.")
-    corpus_runtime_root = (Path("outputs/corpus_runtime") / corpus_bundle_sha[:16]).resolve()
-    corpus_runtime_root.mkdir(parents=True, exist_ok=True)
-    with importlib.import_module("zipfile").ZipFile(importlib.import_module("io").BytesIO(_bytes)) as _archive:
-        for _entry in _archive.infolist():
-            _destination = (corpus_runtime_root / _entry.filename).resolve()
-            if not _destination.is_relative_to(corpus_runtime_root):
-                raise ValueError("Corpus source bundle path escape.")
-            _destination.parent.mkdir(parents=True, exist_ok=True)
-            _destination.write_bytes(_archive.read(_entry))
-    _sys = importlib.import_module("sys")
-    if "bifocalgemma" in _sys.modules:
-        _loaded_file = _sys.modules["bifocalgemma"].__file__
-        if _loaded_file is not None:
-            _loaded_root = Path(_loaded_file).resolve().parent
-            for _name, _module in list(_sys.modules.items()):
-                if _name == "bifocalgemma" or _name.startswith("bifocalgemma."):
-                    _file = getattr(_module, "__file__", None)
-                    if _file and Path(_file).suffix == ".py":
-                        _path = Path(_file).resolve()
-                        if not _path.is_relative_to(_loaded_root):
-                            raise RuntimeError("Restart runtime: mixed BifocalGemma modules.")
-                        _expected = corpus_runtime_root / "src/bifocalgemma" / _path.relative_to(_loaded_root)
-                        if not _expected.exists() or _expected.read_bytes() != _path.read_bytes():
-                            raise RuntimeError("Restart runtime to load the new corpus source version.")
-    _sys.path.insert(0, str(corpus_runtime_root / "src"))
+    # Source bundle was verified/activated in cell 0, independently of native imports.
     corpus_assets_api = importlib.import_module("bifocalgemma.repository_study")
     corpus_config_api = importlib.import_module("bifocalgemma.config")
 
@@ -305,7 +279,6 @@ def _(DEVICE, PRECISION, dependency_runtime, mo):
         device,
         dtype,
         environment,
-        corpus_runtime_root,
         corpus_assets_api,
         corpus_config_api,
     )

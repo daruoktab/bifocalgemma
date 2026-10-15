@@ -34,6 +34,111 @@ app = marimo.App(width="full")
 @app.cell
 def _():
     # DEPENDENCY SETUP — first cell, before training-library imports.
+    def activate_notebook_bundle(payload, expected_sha, directory="outputs/corpus_runtime"):
+        """Activate source embedded in this one notebook, before native imports."""
+        import base64
+        import hashlib
+        import importlib
+        import io
+        import sys
+        import zipfile
+        from pathlib import Path
+
+        data = base64.b85decode(payload)
+        if hashlib.sha256(data).hexdigest() != expected_sha:
+            raise ValueError("Notebook source bundle checksum mismatch.")
+        root = (Path(directory) / expected_sha[:16]).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for entry in archive.infolist():
+                destination = (root / entry.filename).resolve()
+                if not destination.is_relative_to(root):
+                    raise ValueError("Notebook source bundle path escape.")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(archive.read(entry))
+        if "bifocalgemma" in sys.modules:
+            loaded = sys.modules["bifocalgemma"].__file__
+            if loaded is None:
+                raise RuntimeError("Restart kernel: unexpected BifocalGemma module.")
+            loaded_root = Path(loaded).resolve().parent
+            for name, module in list(sys.modules.items()):
+                if name != "bifocalgemma" and not name.startswith("bifocalgemma."):
+                    continue
+                filename = getattr(module, "__file__", None)
+                if filename and Path(filename).suffix == ".py":
+                    path = Path(filename).resolve()
+                    if not path.is_relative_to(loaded_root):
+                        raise RuntimeError("Restart kernel: mixed BifocalGemma modules.")
+                    expected = root / "src/bifocalgemma" / path.relative_to(loaded_root)
+                    if not expected.is_file() or expected.read_bytes() != path.read_bytes():
+                        raise RuntimeError("Restart kernel to load the new notebook source bundle.")
+        sys.path.insert(0, str(root / "src"))
+        importlib.invalidate_caches()
+        module = importlib.import_module("bifocalgemma")
+        if module.__file__ is None or not Path(module.__file__).resolve().is_relative_to(root):
+            raise RuntimeError("BifocalGemma must load from this notebook's embedded source.")
+        print(
+            f"Embedded project source activated: {root} (no repository checkout needed).",
+            flush=True,
+        )
+        return root
+
+    def import_native_gemma4():
+        """Import native modules directly and expose the complete failure in marimo.
+
+        Lazy top-level Transformers imports can hide a binary/optional-dependency
+        failure behind 'Could not import module Gemma4TextConfig'. Do not suppress
+        the original exception or mutate optional packages without its evidence.
+        """
+        import importlib
+        import importlib.metadata
+        import json
+        import sys
+        import traceback
+
+        try:
+            configuration = importlib.import_module(
+                "transformers.models.gemma4.configuration_gemma4"
+            )
+            modeling = importlib.import_module("transformers.models.gemma4.modeling_gemma4")
+            return {
+                "Gemma4TextConfig": configuration.Gemma4TextConfig,
+                "Gemma4TextModel": modeling.Gemma4TextModel,
+                "Gemma4TextAttention": modeling.Gemma4TextAttention,
+                "Gemma4TextDecoderLayer": modeling.Gemma4TextDecoderLayer,
+                "apply_rotary_pos_emb": modeling.apply_rotary_pos_emb,
+                "repeat_kv": modeling.repeat_kv,
+            }
+        except Exception:
+            original = traceback.format_exc()
+            versions = {}
+            for name in (
+                "torch",
+                "torchvision",
+                "torchaudio",
+                "transformers",
+                "huggingface-hub",
+                "tokenizers",
+                "numpy",
+                "scipy",
+                "scikit-learn",
+                "librosa",
+                "numba",
+                "Pillow",
+            ):
+                try:
+                    versions[name] = importlib.metadata.version(name)
+                except importlib.metadata.PackageNotFoundError:
+                    versions[name] = "not installed"
+            message = (
+                "Native Gemma4 import failed before model loading.\n"
+                f"Python: {sys.version.split()[0]} ({sys.executable})\n"
+                f"Installed packages: {json.dumps(versions, sort_keys=True)}\n"
+                "Original traceback (send this entire block):\n" + original
+            )
+            print(message, flush=True)
+            raise RuntimeError(message) from None
+
     def bootstrap_notebook_dependencies(
         pins: dict[str, str], *, reinstall=True, state_directory="outputs/dependency_setup"
     ):
@@ -220,237 +325,7 @@ def _():
         NOTEBOOK_DEPENDENCY_PINS,
         reinstall=FORCE_REINSTALL,
     )
-    return (dependency_runtime,)
-
-
-@app.cell(hide_code=True)
-def _(dependency_runtime):
-    import marimo as mo
-
-    assert dependency_runtime["status"] == "READY"
-    mo.md("""
-    # BifocalGemma · Offline LoRA SFT
-    Ketiga notebook memakai jumlah dan urutan cell yang sama; 20 dari 21 isi cell identik.
-    Pilih pasangan di control center, Apply HF token bila diperlukan,
-    Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full mixed context pool → target-only SFT
-    → held-out loss → adapter checkpoint + optimizer/data cursor resume.
-    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA), empat run berurutan, satu epoch penuh, benchmark penuh dan upload per run. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
-    Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
-    """)
-    return (mo,)
-
-
-@app.cell
-def _(mo):
-    # 1. CONTROL CENTER — tiga baris ini saja berbeda antar notebook.
-    FAMILY = "asymmetric"
-    EXPERIMENT = "BifocalGemma-E2B-E4B"
-    OUTPUT_ROOT = "outputs/training_asymmetric"
-
-    PAIR_OPTIONS = {
-        "symmetric": ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"),
-        "asymmetric": ("BifocalGemma-E2B-E4B", "BifocalGemma-E4B-E2B"),
-        "decoder_only": ("Gemma-4-E2B-IT", "Gemma-4-E4B-IT"),
-    }
-    assert FAMILY in PAIR_OPTIONS and EXPERIMENT in PAIR_OPTIONS[FAMILY]
-    EXPERIMENT_SEQUENCE = PAIR_OPTIONS[FAMILY][PAIR_OPTIONS[FAMILY].index(EXPERIMENT) :]
-    RUN_TRAINING = True
-    RUN_BENCHMARKS = True
-    FUNCTIONAL_BENCHMARKS = True
-    AUTO_RESUME = True
-    CHECKPOINT_UPLOAD_ENABLED = True
-    SAVE_TOTAL_LIMIT = 2
-    BENCHMARK_UPLOAD_EVERY = 100
-    BENCHMARK_CACHE = "outputs/context_benchmark_cache"
-    BENCHMARK_COLLECTIONS = [
-        {
-            "collection": "sweqa_oracle_gemma32k_dec8k_v1",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-        },
-        {
-            "collection": "sweqa_noisy_oracle_gemma32k_dec8k_v1",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-        },
-        {
-            "collection": "crosscodelong_chunk_gemma32k_dec8k_v1",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-        },
-        {
-            "collection": "crosscodelong_function_gemma32k_dec8k_v1",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-        },
-        {
-            "collection": "longcodeqa_gemma32k_dec8k_v1",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-        },
-        {
-            "collection": "humanevalfix_python_v2",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-            "max_new_tokens": 8192,
-        },
-        {
-            "collection": "gsm8k_zero_shot_v2",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-            "max_new_tokens": 8192,
-        },
-        {
-            "collection": "gsm8k_eight_shot_v2",
-            "encoder_limit": 32768,
-            "decoder_limit": 8192,
-            "max_new_tokens": 8192,
-        },
-    ]
-    DATASET_REPO_ID = "daruokta/bifocalgemma-data"
-    DATASET_REVISION = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"  # Full immutable Hub commit SHA, from dataset release receipt
-    DATASET_COLLECTION = "mixed_context_enc32k_dec8k_v3"
-    CORPUS_TOKENIZER_CACHE = "outputs/repository_tokenizers"
-    CORPUS_KIND = "multitask"
-    DEVICE = "auto"
-    PRECISION = "auto"
-    RUN_NAME = "enc32k-dec8k-context-v3-recipes-v1-torch2141"
-    RESUME_FROM = ""  # AUTO_RESUME selects the last valid checkpoint per model/recipe.
-    LOCAL_DATA_FILE = "outputs/mixed_context_enc32k_dec8k_v3"
-    ENCODER_LIMIT = 32768
-    DECODER_LIMIT = 8192
-    BATCH_SIZE = 2
-    EVAL_BATCH_SIZE = 2
-    GRAD_ACCUMULATION = 2
-    MAX_STEPS = 0  # 0 = complete EPOCHS over the frozen training split
-    EPOCHS = 1
-    MAX_GRAD_NORM = 1.0
-    EVAL_FRACTION = 0.25  # ~4 full validations including the mandatory final pass.
-    CHECKPOINT_FRACTION = 0.10  # ~10 saves including final; retain only the latest two.
-    MEMORY_POLICY = {
-        "version": "tiled_recompute_v1",
-        "attention_backend": "tiled_eager_fp32",
-        "query_chunk_size": 128,
-        "loss_chunk_size": 128,
-        "gradient_checkpointing": True,
-        "ple_offload": False,
-        "kv_gradient_accumulation": "float32",
-    }
-    HEADROOM_GIB = 16
-    SEED = 17
-    CACHE_DIR = "outputs/hf_cache"
-    HF_REPO_ID = "daruokta/bifocalgemma-sft"
-    HF_UPLOAD_ENABLED = True
-    mo.md(
-        f"## 1 · Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}, HF_UPLOAD={HF_UPLOAD_ENABLED}."
-    )
-    return (
-        FAMILY,
-        EXPERIMENT,
-        OUTPUT_ROOT,
-        PAIR_OPTIONS,
-        EXPERIMENT_SEQUENCE,
-        RUN_BENCHMARKS,
-        FUNCTIONAL_BENCHMARKS,
-        AUTO_RESUME,
-        CHECKPOINT_UPLOAD_ENABLED,
-        SAVE_TOTAL_LIMIT,
-        BENCHMARK_UPLOAD_EVERY,
-        BENCHMARK_CACHE,
-        BENCHMARK_COLLECTIONS,
-        RUN_TRAINING,
-        DATASET_REPO_ID,
-        DATASET_REVISION,
-        DATASET_COLLECTION,
-        CORPUS_TOKENIZER_CACHE,
-        CORPUS_KIND,
-        DEVICE,
-        PRECISION,
-        RUN_NAME,
-        RESUME_FROM,
-        LOCAL_DATA_FILE,
-        ENCODER_LIMIT,
-        DECODER_LIMIT,
-        BATCH_SIZE,
-        EVAL_BATCH_SIZE,
-        GRAD_ACCUMULATION,
-        MAX_STEPS,
-        EPOCHS,
-        MAX_GRAD_NORM,
-        EVAL_FRACTION,
-        CHECKPOINT_FRACTION,
-        MEMORY_POLICY,
-        HEADROOM_GIB,
-        SEED,
-        CACHE_DIR,
-        HF_REPO_ID,
-        HF_UPLOAD_ENABLED,
-    )
-
-
-@app.cell(hide_code=True)
-def _(DEVICE, PRECISION, dependency_runtime, mo):
-    # 2. ENVIRONMENT — dependency setup must finish before native imports.
-    import copy
-    import difflib
-    import gc
-    import hashlib
-    import importlib
-    import json
-    import math
-    import os
-    import platform
-    import random
-    import re
-    import time
-    from collections import Counter
-    from datetime import datetime, timezone
-    from importlib.metadata import version
-    from pathlib import Path, PurePosixPath
-    from types import SimpleNamespace
-    from typing import Any, cast
-    from uuid import uuid4
-
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-    from huggingface_hub import HfApi, hf_hub_download
-    from huggingface_hub.errors import HfHubHTTPError
-    from safetensors import safe_open
-    from safetensors.torch import save_file
-    from transformers import AutoTokenizer, Gemma4TextConfig, Gemma4TextModel
-    from transformers.models.gemma4.modeling_gemma4 import (
-        Gemma4TextAttention,
-        Gemma4TextDecoderLayer,
-        apply_rotary_pos_emb,
-        repeat_kv,
-    )
-
-    assert torch.__version__ == "2.14.1+cu130", "Restart kernel; gunakan torch==2.14.1 CUDA13.0."
-    assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
-    assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
-    assert dependency_runtime["versions"]["torch"] == torch.__version__
-    torch.set_num_threads(min(4, torch.get_num_threads()))
-    torch.set_float32_matmul_precision("highest")
-    device_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_DEVICE", DEVICE)
-    precision_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_PRECISION", PRECISION)
-    assert device_request in {"auto", "cpu", "cuda"}
-    assert precision_request in {"auto", "float32", "bfloat16"}
-    device = (
-        ("cuda" if torch.cuda.is_available() else "cpu")
-        if device_request == "auto"
-        else device_request
-    )
-    if device == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA diminta tetapi tidak tersedia.")
-    dtype = (
-        torch.bfloat16
-        if precision_request == "bfloat16" or (precision_request == "auto" and device == "cuda")
-        else torch.float32
-    )
-    if dtype == torch.bfloat16 and device == "cuda" and not torch.cuda.is_bf16_supported():
-        raise RuntimeError("GPU/runtime ini belum mendukung BF16.")
-    # FULL CORPUS: standalone source bundle, pinned public data, no model weights.
+    # This file contains all project source. No repository checkout/PyPI package needed.
     _payload = (
         "P)h>@6aWAK2mk;8ApoJuqaC-M002)l0{|xg003ieZf0p`b1!6JbYXL4bYF61Y-M3{WiDfHZggdMbTcw*E^2dcZp6J^uco(^C3YVm"
         "|KY&7wQPQW#8-_@_h67|Ad^le7wJGC_uiBaR8^<C>PWVGkpG^w-YU6ew>>J8%(P(0rBmm9xgI{`-fNNj<G=oo|HISMFW!x}_KW}d"
@@ -3219,43 +3094,244 @@ def _(DEVICE, PRECISION, dependency_runtime, mo):
         "ApqL}Oy48|0018Z001Na0000000000004jifiD99b8=%ZVrgb?V_|G(Wo>O?FLZKYX>Mt5XD@VeVQFq<axQRrP)h*<6aW+e000O8"
         "001EXAT5#yr49f9+bRG62LJ#70000000000fC1+*0{~1(Lq$$gMNmrx1^@s609ycC0Eiy|0I@&=0000"
     )
-    corpus_bundle_sha = "4f58035d8e497be8e3b3dc27f5f659fd734c0661926eb7bbe12e7ae8eec281ce"
-    _bytes = importlib.import_module("base64").b85decode(_payload)
-    if hashlib.sha256(_bytes).hexdigest() != corpus_bundle_sha:
-        raise ValueError("Corpus source bundle checksum mismatch.")
-    corpus_runtime_root = (Path("outputs/corpus_runtime") / corpus_bundle_sha[:16]).resolve()
-    corpus_runtime_root.mkdir(parents=True, exist_ok=True)
-    with importlib.import_module("zipfile").ZipFile(
-        importlib.import_module("io").BytesIO(_bytes)
-    ) as _archive:
-        for _entry in _archive.infolist():
-            _destination = (corpus_runtime_root / _entry.filename).resolve()
-            if not _destination.is_relative_to(corpus_runtime_root):
-                raise ValueError("Corpus source bundle path escape.")
-            _destination.parent.mkdir(parents=True, exist_ok=True)
-            _destination.write_bytes(_archive.read(_entry))
-    _sys = importlib.import_module("sys")
-    if "bifocalgemma" in _sys.modules:
-        _loaded_file = _sys.modules["bifocalgemma"].__file__
-        if _loaded_file is not None:
-            _loaded_root = Path(_loaded_file).resolve().parent
-            for _name, _module in list(_sys.modules.items()):
-                if _name == "bifocalgemma" or _name.startswith("bifocalgemma."):
-                    _file = getattr(_module, "__file__", None)
-                    if _file and Path(_file).suffix == ".py":
-                        _path = Path(_file).resolve()
-                        if not _path.is_relative_to(_loaded_root):
-                            raise RuntimeError("Restart runtime: mixed BifocalGemma modules.")
-                        _expected = (
-                            corpus_runtime_root
-                            / "src/bifocalgemma"
-                            / _path.relative_to(_loaded_root)
-                        )
-                        if not _expected.exists() or _expected.read_bytes() != _path.read_bytes():
-                            raise RuntimeError(
-                                "Restart runtime to load the new corpus source version."
-                            )
-    _sys.path.insert(0, str(corpus_runtime_root / "src"))
+    _bundle_sha = "4f58035d8e497be8e3b3dc27f5f659fd734c0661926eb7bbe12e7ae8eec281ce"
+    corpus_runtime_root = activate_notebook_bundle(_payload, _bundle_sha)
+    return (
+        dependency_runtime,
+        import_native_gemma4,
+        corpus_runtime_root,
+    )
+
+
+@app.cell(hide_code=True)
+def _(dependency_runtime):
+    import marimo as mo
+
+    assert dependency_runtime["status"] == "READY"
+    mo.md("""
+    # BifocalGemma · Offline LoRA SFT
+    Ketiga notebook memakai jumlah dan urutan cell yang sama; 20 dari 21 isi cell identik.
+    Pilih pasangan di control center, Apply HF token bila diperlukan,
+    Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full mixed context pool → target-only SFT
+    → held-out loss → adapter checkpoint + optimizer/data cursor resume.
+    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA), empat run berurutan, satu epoch penuh, benchmark penuh dan upload per run. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
+    Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
+    """)
+    return (mo,)
+
+
+@app.cell
+def _(mo):
+    # 1. CONTROL CENTER — tiga baris ini saja berbeda antar notebook.
+    FAMILY = "asymmetric"
+    EXPERIMENT = "BifocalGemma-E2B-E4B"
+    OUTPUT_ROOT = "outputs/training_asymmetric"
+
+    PAIR_OPTIONS = {
+        "symmetric": ("BifocalGemma-E2B-E2B", "BifocalGemma-E4B-E4B"),
+        "asymmetric": ("BifocalGemma-E2B-E4B", "BifocalGemma-E4B-E2B"),
+        "decoder_only": ("Gemma-4-E2B-IT", "Gemma-4-E4B-IT"),
+    }
+    assert FAMILY in PAIR_OPTIONS and EXPERIMENT in PAIR_OPTIONS[FAMILY]
+    EXPERIMENT_SEQUENCE = PAIR_OPTIONS[FAMILY][PAIR_OPTIONS[FAMILY].index(EXPERIMENT) :]
+    RUN_TRAINING = True
+    RUN_BENCHMARKS = True
+    FUNCTIONAL_BENCHMARKS = True
+    AUTO_RESUME = True
+    CHECKPOINT_UPLOAD_ENABLED = True
+    SAVE_TOTAL_LIMIT = 2
+    BENCHMARK_UPLOAD_EVERY = 100
+    BENCHMARK_CACHE = "outputs/context_benchmark_cache"
+    BENCHMARK_COLLECTIONS = [
+        {
+            "collection": "sweqa_oracle_gemma32k_dec8k_v1",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+        },
+        {
+            "collection": "sweqa_noisy_oracle_gemma32k_dec8k_v1",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+        },
+        {
+            "collection": "crosscodelong_chunk_gemma32k_dec8k_v1",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+        },
+        {
+            "collection": "crosscodelong_function_gemma32k_dec8k_v1",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+        },
+        {
+            "collection": "longcodeqa_gemma32k_dec8k_v1",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+        },
+        {
+            "collection": "humanevalfix_python_v2",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+            "max_new_tokens": 8192,
+        },
+        {
+            "collection": "gsm8k_zero_shot_v2",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+            "max_new_tokens": 8192,
+        },
+        {
+            "collection": "gsm8k_eight_shot_v2",
+            "encoder_limit": 32768,
+            "decoder_limit": 8192,
+            "max_new_tokens": 8192,
+        },
+    ]
+    DATASET_REPO_ID = "daruokta/bifocalgemma-data"
+    DATASET_REVISION = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"  # Full immutable Hub commit SHA, from dataset release receipt
+    DATASET_COLLECTION = "mixed_context_enc32k_dec8k_v3"
+    CORPUS_TOKENIZER_CACHE = "outputs/repository_tokenizers"
+    CORPUS_KIND = "multitask"
+    DEVICE = "auto"
+    PRECISION = "auto"
+    RUN_NAME = "enc32k-dec8k-context-v3-recipes-v1-torch2141"
+    RESUME_FROM = ""  # AUTO_RESUME selects the last valid checkpoint per model/recipe.
+    LOCAL_DATA_FILE = "outputs/mixed_context_enc32k_dec8k_v3"
+    ENCODER_LIMIT = 32768
+    DECODER_LIMIT = 8192
+    BATCH_SIZE = 2
+    EVAL_BATCH_SIZE = 2
+    GRAD_ACCUMULATION = 2
+    MAX_STEPS = 0  # 0 = complete EPOCHS over the frozen training split
+    EPOCHS = 1
+    MAX_GRAD_NORM = 1.0
+    EVAL_FRACTION = 0.25  # ~4 full validations including the mandatory final pass.
+    CHECKPOINT_FRACTION = 0.10  # ~10 saves including final; retain only the latest two.
+    MEMORY_POLICY = {
+        "version": "tiled_recompute_v1",
+        "attention_backend": "tiled_eager_fp32",
+        "query_chunk_size": 128,
+        "loss_chunk_size": 128,
+        "gradient_checkpointing": True,
+        "ple_offload": False,
+        "kv_gradient_accumulation": "float32",
+    }
+    HEADROOM_GIB = 16
+    SEED = 17
+    CACHE_DIR = "outputs/hf_cache"
+    HF_REPO_ID = "daruokta/bifocalgemma-sft"
+    HF_UPLOAD_ENABLED = True
+    mo.md(
+        f"## 1 · Control center\nFamily **{FAMILY}**, experiment **{EXPERIMENT}**. RUN_TRAINING={RUN_TRAINING}, HF_UPLOAD={HF_UPLOAD_ENABLED}."
+    )
+    return (
+        FAMILY,
+        EXPERIMENT,
+        OUTPUT_ROOT,
+        PAIR_OPTIONS,
+        EXPERIMENT_SEQUENCE,
+        RUN_BENCHMARKS,
+        FUNCTIONAL_BENCHMARKS,
+        AUTO_RESUME,
+        CHECKPOINT_UPLOAD_ENABLED,
+        SAVE_TOTAL_LIMIT,
+        BENCHMARK_UPLOAD_EVERY,
+        BENCHMARK_CACHE,
+        BENCHMARK_COLLECTIONS,
+        RUN_TRAINING,
+        DATASET_REPO_ID,
+        DATASET_REVISION,
+        DATASET_COLLECTION,
+        CORPUS_TOKENIZER_CACHE,
+        CORPUS_KIND,
+        DEVICE,
+        PRECISION,
+        RUN_NAME,
+        RESUME_FROM,
+        LOCAL_DATA_FILE,
+        ENCODER_LIMIT,
+        DECODER_LIMIT,
+        BATCH_SIZE,
+        EVAL_BATCH_SIZE,
+        GRAD_ACCUMULATION,
+        MAX_STEPS,
+        EPOCHS,
+        MAX_GRAD_NORM,
+        EVAL_FRACTION,
+        CHECKPOINT_FRACTION,
+        MEMORY_POLICY,
+        HEADROOM_GIB,
+        SEED,
+        CACHE_DIR,
+        HF_REPO_ID,
+        HF_UPLOAD_ENABLED,
+    )
+
+
+@app.cell(hide_code=True)
+def _(DEVICE, PRECISION, dependency_runtime, import_native_gemma4, corpus_runtime_root, mo):
+    # 2. ENVIRONMENT — dependency setup must finish before native imports.
+    _native_gemma4 = import_native_gemma4()
+    Gemma4TextConfig = _native_gemma4["Gemma4TextConfig"]
+    Gemma4TextModel = _native_gemma4["Gemma4TextModel"]
+    Gemma4TextAttention = _native_gemma4["Gemma4TextAttention"]
+    Gemma4TextDecoderLayer = _native_gemma4["Gemma4TextDecoderLayer"]
+    apply_rotary_pos_emb = _native_gemma4["apply_rotary_pos_emb"]
+    repeat_kv = _native_gemma4["repeat_kv"]
+    import copy
+    import difflib
+    import gc
+    import hashlib
+    import importlib
+    import json
+    import math
+    import os
+    import platform
+    import random
+    import re
+    import time
+    from collections import Counter
+    from datetime import datetime, timezone
+    from importlib.metadata import version
+    from pathlib import Path, PurePosixPath
+    from types import SimpleNamespace
+    from typing import Any, cast
+    from uuid import uuid4
+
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    from huggingface_hub import HfApi, hf_hub_download
+    from huggingface_hub.errors import HfHubHTTPError
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+    from transformers import AutoTokenizer
+
+    assert torch.__version__ == "2.14.1+cu130", "Restart kernel; gunakan torch==2.14.1 CUDA13.0."
+    assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
+    assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
+    assert dependency_runtime["versions"]["torch"] == torch.__version__
+    torch.set_num_threads(min(4, torch.get_num_threads()))
+    torch.set_float32_matmul_precision("highest")
+    device_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_DEVICE", DEVICE)
+    precision_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_PRECISION", PRECISION)
+    assert device_request in {"auto", "cpu", "cuda"}
+    assert precision_request in {"auto", "float32", "bfloat16"}
+    device = (
+        ("cuda" if torch.cuda.is_available() else "cpu")
+        if device_request == "auto"
+        else device_request
+    )
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA diminta tetapi tidak tersedia.")
+    dtype = (
+        torch.bfloat16
+        if precision_request == "bfloat16" or (precision_request == "auto" and device == "cuda")
+        else torch.float32
+    )
+    if dtype == torch.bfloat16 and device == "cuda" and not torch.cuda.is_bf16_supported():
+        raise RuntimeError("GPU/runtime ini belum mendukung BF16.")
+    # Source bundle was verified/activated in cell 0, independently of native imports.
     corpus_assets_api = importlib.import_module("bifocalgemma.repository_study")
     corpus_config_api = importlib.import_module("bifocalgemma.config")
 
@@ -3316,7 +3392,6 @@ def _(DEVICE, PRECISION, dependency_runtime, mo):
         device,
         dtype,
         environment,
-        corpus_runtime_root,
         corpus_assets_api,
         corpus_config_api,
     )
@@ -3597,8 +3672,7 @@ def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
     )
 
     def experiment_spec(name):
-        from bifocalgemma.config import get_experiment
-
+        get_experiment = __import__("importlib").import_module("bifocalgemma.config").get_experiment
         return get_experiment(name)
 
     def native_config(size: str, *, tiny: bool = True, encoder: bool = False):
@@ -3774,9 +3848,14 @@ def _(torch, F, mo):
 
 @app.cell
 def _(mo):
-    from bifocalgemma.models.merged_attention import build_joint_visibility
-    from bifocalgemma.models.native import NativeMergedAttention
-
+    NativeMergedAttention = (
+        __import__("importlib").import_module("bifocalgemma.models.native").NativeMergedAttention
+    )
+    build_joint_visibility = (
+        __import__("importlib")
+        .import_module("bifocalgemma.models.merged_attention")
+        .build_joint_visibility
+    )
     mo.md(
         "## 5 · Attention reference\nSatu joint softmax; self causal/windowed dan encoder global. Training memakai tiled FP32 dengan recompute dari implementasi bersama."
     )
@@ -3786,12 +3865,25 @@ def _(mo):
 @app.cell
 def _(torch, mo):
     # Native architecture is shared with the bundled package: one maintained implementation.
-    from bifocalgemma.models.memory_efficient import (
-        configure_memory_efficient_training,
-        run_training_memory_preflight,
+    NativeTinyModel = (
+        __import__("importlib").import_module("bifocalgemma.models.native").NativeTinyModel
     )
-    from bifocalgemma.models.native import NativeTinyModel
-    from bifocalgemma.training.telemetry import TrainingDashboard, resource_snapshot
+    configure_memory_efficient_training = (
+        __import__("importlib")
+        .import_module("bifocalgemma.models.memory_efficient")
+        .configure_memory_efficient_training
+    )
+    run_training_memory_preflight = (
+        __import__("importlib")
+        .import_module("bifocalgemma.models.memory_efficient")
+        .run_training_memory_preflight
+    )
+    TrainingDashboard = (
+        __import__("importlib").import_module("bifocalgemma.training.telemetry").TrainingDashboard
+    )
+    resource_snapshot = (
+        __import__("importlib").import_module("bifocalgemma.training.telemetry").resource_snapshot
+    )
 
     ArchitectureModel = NativeTinyModel
 
@@ -4195,7 +4287,11 @@ def _(
 
     def validate_training_policy(policy, model=None):
         if "optimizer" in policy:
-            from bifocalgemma.training.optimizers import validate_optimizer_config
+            validate_optimizer_config = (
+                __import__("importlib")
+                .import_module("bifocalgemma.training.optimizers")
+                .validate_optimizer_config
+            )
 
             validate_optimizer_config(policy["optimizer"])
         if type(policy.get("alignment_fp32", False)) is not bool:
@@ -4390,8 +4486,9 @@ def _(
             rates[group["name"]] = group["lr"]
         return rates
 
-    from bifocalgemma.training.recipes import comparison_recipes
-
+    comparison_recipes = (
+        __import__("importlib").import_module("bifocalgemma.training.recipes").comparison_recipes
+    )
     # Single maintained numerical source, shared by all three notebooks.
     TRAINING_RECIPES = comparison_recipes(FAMILY)
     training_policy = copy.deepcopy(next(iter(TRAINING_RECIPES.values())))
@@ -4570,7 +4667,11 @@ def _(
         for raw in records:
             row = raw
             if raw.get("record_type") == "context_sft_v1":
-                from bifocalgemma.data.context_tasks import normalize_context_task
+                normalize_context_task = (
+                    __import__("importlib")
+                    .import_module("bifocalgemma.data.context_tasks")
+                    .normalize_context_task
+                )
 
                 row = normalize_context_task(raw)
             if raw.get("record_type") == "repository_patch_v1":
@@ -4700,7 +4801,11 @@ def _(
                     raise ValueError("curated_pool_duplicate_identity")
                 all_ids.add(row["instance_id"])
                 if row.get("record_type") == "context_sft_v1":
-                    from bifocalgemma.data.context_tasks import normalize_context_task
+                    normalize_context_task = (
+                        __import__("importlib")
+                        .import_module("bifocalgemma.data.context_tasks")
+                        .normalize_context_task
+                    )
 
                     normalize_context_task(row)
                     validate_context_license_record(row)
@@ -5299,11 +5404,23 @@ def _(
         import time
         import traceback
 
-        from bifocalgemma.training.stages import retained_checkpoints
-        from bifocalgemma.training.telemetry import (
-            TrainingDashboard,
-            append_event,
-            resource_snapshot,
+        retained_checkpoints = (
+            __import__("importlib")
+            .import_module("bifocalgemma.training.stages")
+            .retained_checkpoints
+        )
+        TrainingDashboard = (
+            __import__("importlib")
+            .import_module("bifocalgemma.training.telemetry")
+            .TrainingDashboard
+        )
+        append_event = (
+            __import__("importlib").import_module("bifocalgemma.training.telemetry").append_event
+        )
+        resource_snapshot = (
+            __import__("importlib")
+            .import_module("bifocalgemma.training.telemetry")
+            .resource_snapshot
         )
 
         segment_started = time.perf_counter()
@@ -5339,7 +5456,11 @@ def _(
                 parameters, lr=learning_rate, weight_decay=0.0, foreach=False
             )
         else:
-            from bifocalgemma.training.optimizers import build_policy_optimizer
+            build_policy_optimizer = (
+                __import__("importlib")
+                .import_module("bifocalgemma.training.optimizers")
+                .build_policy_optimizer
+            )
 
             groups = build_training_groups(model, training_policy, total_steps=horizon)
             optimizer = build_policy_optimizer(groups, training_policy)
@@ -5877,8 +5998,9 @@ def _(
     training_guard,
     training_policy,
 ):
-    from bifocalgemma.training.recipes import run_recipe_comparison
-
+    run_recipe_comparison = (
+        __import__("importlib").import_module("bifocalgemma.training.recipes").run_recipe_comparison
+    )
     training_result = {"status": "DISABLED", "reason": training_guard, "models": []}
     run_dir = Path(OUTPUT_ROOT)
     if training_guard is None:

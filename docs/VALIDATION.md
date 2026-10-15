@@ -14,6 +14,12 @@ dan regresi dependency bootstrap. Generator, kesamaan cell, Pyrefly, ty, Ruff,
 marimo strict dan whitespace diperiksa. Training pretrained untuk recipe baru
 belum dijalankan; tes ini tidak membuktikan kualitas repair atau peak VRAM model asli.
 
+Standalone upload juga diuji dengan menyalin hanya satu notebook ke direktori
+kosong dan menjalankan Python `-I`, tanpa repo atau PYTHONPATH. Source/config
+berhasil dimuat dari ZIP tertanam. Import Gemma4 langsung berhasil pada environment
+lokal Torch2.14.1/Transformers5.19.0. Error wrapper di Molab belum membuktikan akar
+masalah; cell baru menampilkan traceback dependency asli dan versi paket.
+
 Bagian bertanggal berikut mempertahankan hasil dan batas implementasi **pada
 tanggal pemeriksaan tersebut**; beberapa placeholder/default sudah berubah sejak itu.
 

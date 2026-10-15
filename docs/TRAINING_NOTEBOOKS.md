@@ -6,6 +6,13 @@ Template bersama menghasilkan tiga notebook standalone: [simetris](../notebooks/
 Masing-masing memiliki **21 cell, 20 isi cell identik**. Perbedaan hanya tiga baris
 control center: `FAMILY`, `EXPERIMENT`, dan `OUTPUT_ROOT`.
 
+**Cukup unggah satu file notebook.** Seluruh source proyek berada dalam bundel
+terkompresi di file tersebut; cell0 memverifikasi checksum, mengekstraknya ke
+`outputs/corpus_runtime/`, dan mengaktifkan source sebelum import model native.
+Tidak diperlukan checkout repo, editable install, atau paket `bifocalgemma` dari
+PyPI di Molab. Generator memuat simbol bundel melalui import dinamis agar scanner
+paket Marimo tidak menyarankan instalasi proyek dari luar.
+
 Panduan operasional dan kontrak resume lengkap ada di
 [Sequential training](SEQUENTIAL_TRAINING.md). Setiap model menyelesaikan training,
 upload, benchmark, dan upload hasil sebelum model berikutnya dimuat. Satu model
@@ -29,10 +36,10 @@ untuk token input/apply dan policy.
 
 | Cell | Isi dan tanggung jawab |
 | --- | --- |
-| 0 | Dependency setup: uv pip reinstall, receipt dan restart guard |
+| 0 | Dependency setup: uv pip reinstall, receipt/restart guard, aktivasi bundel source |
 | 1 | Pengantar dan default |
 | 2 | Control center: urutan model, data, limits, batch, epoch, output, upload |
-| 3 | Environment, ekstraksi paket bersama, resource/runtime guard |
+| 3 | Environment, import native dengan traceback asli, resource/runtime guard |
 | 4 | Form HF token, submit eksplisit |
 | 5 | Apply/verifikasi token; token tidak dicetak ke log |
 | 6 | Config native Gemma dan dimensi |
@@ -161,3 +168,14 @@ marimo pada Jupyter/Modal tetap memerlukan penyesuaian jika interaksinya tidak b
 
 Lihat [audit dan recipe baru](TRAINING_NEXT_RUN.md). Run baru memakai cosine decay,
 preflight batch train/dev dan compatibility horizon; benchmark tetap single-case.
+
+## Diagnostik import Gemma4
+
+Pesan Transformers `Could not import module 'Gemma4TextConfig'` adalah wrapper
+lazy import; penyebab aslinya belum tentu ketiadaan kelas tersebut. Cell environment
+sekarang memuat modul configuration/modeling secara langsung. Jika gagal, exception
+menyertakan seluruh traceback dan metadata versi Torch, torchvision/torchaudio,
+Transformers, Hub, NumPy dan dependency terkait. Tidak ada dependency opsional yang
+dihapus atau dipatch berdasarkan dugaan. Kirim seluruh blok `Original traceback`
+untuk diagnosis runtime cloud. Peringatan paket proyek pada notebook lama bukan
+bukti bahwa `bifocalgemma` perlu diinstal dari PyPI.

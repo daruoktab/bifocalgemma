@@ -1,6 +1,108 @@
 """Standard-library-only dependency bootstrap embedded in standalone notebooks."""
 
 
+def activate_notebook_bundle(payload, expected_sha, directory="outputs/corpus_runtime"):
+    """Activate source embedded in this one notebook, before native imports."""
+    import base64
+    import hashlib
+    import importlib
+    import io
+    import sys
+    import zipfile
+    from pathlib import Path
+
+    data = base64.b85decode(payload)
+    if hashlib.sha256(data).hexdigest() != expected_sha:
+        raise ValueError("Notebook source bundle checksum mismatch.")
+    root = (Path(directory) / expected_sha[:16]).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        for entry in archive.infolist():
+            destination = (root / entry.filename).resolve()
+            if not destination.is_relative_to(root):
+                raise ValueError("Notebook source bundle path escape.")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(archive.read(entry))
+    if "bifocalgemma" in sys.modules:
+        loaded = sys.modules["bifocalgemma"].__file__
+        if loaded is None:
+            raise RuntimeError("Restart kernel: unexpected BifocalGemma module.")
+        loaded_root = Path(loaded).resolve().parent
+        for name, module in list(sys.modules.items()):
+            if name != "bifocalgemma" and not name.startswith("bifocalgemma."):
+                continue
+            filename = getattr(module, "__file__", None)
+            if filename and Path(filename).suffix == ".py":
+                path = Path(filename).resolve()
+                if not path.is_relative_to(loaded_root):
+                    raise RuntimeError("Restart kernel: mixed BifocalGemma modules.")
+                expected = root / "src/bifocalgemma" / path.relative_to(loaded_root)
+                if not expected.is_file() or expected.read_bytes() != path.read_bytes():
+                    raise RuntimeError("Restart kernel to load the new notebook source bundle.")
+    sys.path.insert(0, str(root / "src"))
+    importlib.invalidate_caches()
+    module = importlib.import_module("bifocalgemma")
+    if module.__file__ is None or not Path(module.__file__).resolve().is_relative_to(root):
+        raise RuntimeError("BifocalGemma must load from this notebook's embedded source.")
+    print(f"Embedded project source activated: {root} (no repository checkout needed).", flush=True)
+    return root
+
+
+def import_native_gemma4():
+    """Import native modules directly and expose the complete failure in marimo.
+
+    Lazy top-level Transformers imports can hide a binary/optional-dependency
+    failure behind 'Could not import module Gemma4TextConfig'. Do not suppress
+    the original exception or mutate optional packages without its evidence.
+    """
+    import importlib
+    import importlib.metadata
+    import json
+    import sys
+    import traceback
+
+    try:
+        configuration = importlib.import_module("transformers.models.gemma4.configuration_gemma4")
+        modeling = importlib.import_module("transformers.models.gemma4.modeling_gemma4")
+        return {
+            "Gemma4TextConfig": configuration.Gemma4TextConfig,
+            "Gemma4TextModel": modeling.Gemma4TextModel,
+            "Gemma4TextAttention": modeling.Gemma4TextAttention,
+            "Gemma4TextDecoderLayer": modeling.Gemma4TextDecoderLayer,
+            "apply_rotary_pos_emb": modeling.apply_rotary_pos_emb,
+            "repeat_kv": modeling.repeat_kv,
+        }
+    except Exception:
+        original = traceback.format_exc()
+        versions = {}
+        for name in (
+            "torch",
+            "torchvision",
+            "torchaudio",
+            "transformers",
+            "huggingface-hub",
+            "tokenizers",
+            "numpy",
+            "scipy",
+            "scikit-learn",
+            "librosa",
+            "numba",
+            "Pillow",
+        ):
+            try:
+                versions[name] = importlib.metadata.version(name)
+            except importlib.metadata.PackageNotFoundError:
+                versions[name] = "not installed"
+        message = (
+            "Native Gemma4 import failed before model loading.\n"
+            f"Python: {sys.version.split()[0]} ({sys.executable})\n"
+            f"Installed packages: {json.dumps(versions, sort_keys=True)}\n"
+            "Original traceback (send this entire block):\n" + original
+        )
+        print(message, flush=True)
+        raise RuntimeError(message) from None
+
+
 def bootstrap_notebook_dependencies(
     pins: dict[str, str], *, reinstall=True, state_directory="outputs/dependency_setup"
 ):

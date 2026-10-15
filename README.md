@@ -134,6 +134,8 @@ Tiga notebook khusus **training** tersedia:
 [baseline](notebooks/bifocalgemma_train_baseline.py). Masing-masing 21 cell,
 20 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
 Pinned private HF dataset → LoRA SFT → dev loss → upload → benchmark → upload.
+Unggah satu file notebook: source proyek sudah dibundel dan diaktifkan oleh cell
+pertama. Tidak perlu checkout repo atau menginstal `bifocalgemma` dari PyPI di Molab.
 RUN_TRAINING, RUN_BENCHMARKS dan upload default True. Satu model resident;
 dua checkpoint terakhir per model/recipe disimpan, dengan resume stage dan prediksi.
 Setiap notebook menjalankan dua model × dua recipe, sehingga menghasilkan empat
