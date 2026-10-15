@@ -173,6 +173,23 @@ def render_dashboard(state, history, recent):
             f'<pre style="white-space:pre-wrap">{esc(latest.get("completion", "")[:2000])}</pre></details>'
         )
     lr = " · ".join(f"{esc(k)}={v:.3g}" for k, v in state.get("learning_rates", {}).items()) or "—"
+    optimizer_details = ""
+    diagnostics = state.get("optimizer_diagnostics", {})
+    if diagnostics:
+        diagnostic_rows = "".join(
+            f"<tr><td>{esc(group)}</td><td>{number(item.get('trust_min'), 3)} / "
+            f"{number(item.get('trust_mean'), 3)} / {number(item.get('trust_max'), 3)}</td>"
+            f"<td>{number(item.get('update_norm'), 6)}</td>"
+            f"<td>{number(item.get('parameter_norm_before'), 4)}</td>"
+            f"<td>{esc(item.get('bootstrap_matrices', 0))}</td></tr>"
+            for group, item in diagnostics.items()
+        )
+        optimizer_details = (
+            "<details open><summary>Optimizer diagnostics</summary><table><thead><tr>"
+            "<th>Group</th><th>Trust min / mean / max</th><th>Update norm</th>"
+            "<th>Parameter norm sebelum update</th><th>Bootstrap matrices</th>"
+            f"</tr></thead><tbody>{diagnostic_rows}</tbody></table></details>"
+        )
     rows = "".join(
         f"<tr><td>{esc(row.get('timestamp_utc', ''))}</td><td>{esc(row.get('stage', ''))}</td><td>{esc(row.get('message', row.get('step', '')))}</td></tr>"
         for row in recent[-10:]
@@ -215,6 +232,8 @@ def render_dashboard(state, history, recent):
     {error}{dev_progress}<div class="grid">{card_html}</div>{breakdown}
     <p class="muted">LR: {lr} · Microbatch {esc(state.get("microbatch", "—"))}/{esc(state.get("accumulation", "—"))}
     · Encoder {esc(state.get("encoder_tokens", "—"))} · Decoder {esc(state.get("decoder_tokens", "—"))} · Target {esc(state.get("batch_target_tokens", "—"))}</p>
+    <p class="muted">Optimizer: {esc(state.get("optimizer_name", "—"))} · Full validation setiap {esc(state.get("eval_every", "—"))} update · Checkpoint setiap {esc(state.get("save_every", "—"))} update · Final selalu dijalankan</p>
+    {optimizer_details}
     <p class="muted">Backend: {esc(state.get("attention_backend", "—"))} · Layer checkpointing: {esc(state.get("gradient_checkpointing", "—"))}
     · Batch IDs: {esc(", ".join(state.get("instance_ids", [])))}</p>
     {loss_chart(history)}<p class="muted">Checkpoint lengkap terakhir: {esc(state.get("last_checkpoint", "belum tersimpan"))}</p>

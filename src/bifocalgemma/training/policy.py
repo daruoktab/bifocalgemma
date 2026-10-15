@@ -9,6 +9,13 @@ import torch.nn as nn
 from bifocalgemma.training.memory_probe import ProbeLoRALinear, configure_probe_training
 
 
+class Float32Alignment(nn.Linear):
+    """Keep small learned alignment in FP32 while returning backbone dtype."""
+
+    def forward(self, input):
+        return nn.functional.linear(input.float(), self.weight, self.bias).to(input.dtype)
+
+
 def default_training_profiles():
     common = {
         "version": "attention_lora_policy_v1",
@@ -39,6 +46,12 @@ def default_training_profiles():
 
 
 def validate_training_policy(policy, model=None):
+    if "optimizer" in policy:
+        from bifocalgemma.training.optimizers import validate_optimizer_config
+
+        validate_optimizer_config(policy["optimizer"])
+    if type(policy.get("alignment_fp32", False)) is not bool:
+        raise ValueError("alignment_fp32 must be boolean.")
     family = policy.get("family")
     if family not in {"symmetric", "asymmetric", "decoder_only"}:
         raise ValueError("Unknown training-policy family.")
@@ -67,6 +80,16 @@ def validate_training_policy(policy, model=None):
             raise ValueError(f"Invalid LR for {name}.")
         if type(warmup) is not int or warmup < 0:
             raise ValueError(f"Invalid warmup for {name}.")
+        if settings.get("scheduler", "constant") not in {"constant", "cosine"}:
+            raise ValueError(f"Invalid scheduler for {name}.")
+        for key in ("warmup_ratio", "min_lr_ratio"):
+            value = settings.get(key, 0.0)
+            if (
+                not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or not 0 <= value < 1
+            ):
+                raise ValueError(f"Invalid {key} for {name}.")
     if model is not None:
         if family == "decoder_only":
             if model.encoder is not None or model.encoder_projection is not None:
@@ -86,13 +109,19 @@ def validate_training_policy(policy, model=None):
 def configure_policy_model(model, policy):
     validate_training_policy(policy, model)
     scope = configure_probe_training(model, policy="lora", rank=policy["rank"])
+    if policy.get("alignment_fp32") and isinstance(model.encoder_projection, nn.Linear):
+        model.encoder_projection.__class__ = Float32Alignment
+        model.encoder_projection.float()
     for module in model.modules():
         if isinstance(module, ProbeLoRALinear):
             module.scaling = policy["alpha"] / policy["rank"]
+    scope["trainable_bytes"] = sum(
+        p.numel() * p.element_size() for p in model.parameters() if p.requires_grad
+    )
     return scope
 
 
-def build_training_groups(model, policy) -> "list[dict[str, Any]]":
+def build_training_groups(model, policy, total_steps=None) -> "list[dict[str, Any]]":
     validate_training_policy(policy, model)
     entries = {name: [] for name in ("encoder", "decoder", "alignment")}
     seen = set()
@@ -121,6 +150,23 @@ def build_training_groups(model, policy) -> "list[dict[str, Any]]":
         if not entries[name]:
             raise ValueError(f"Empty trainable group: {name}")
         settings = policy["groups"][name]
+        schedule = {}
+        if settings.get("scheduler", "constant") == "cosine":
+            if total_steps is not None and (type(total_steps) is not int or total_steps < 1):
+                raise ValueError("Schedule horizon must be a positive integer.")
+            schedule = {
+                "scheduler": "cosine",
+                "total_steps": total_steps,
+                "warmup_ratio": settings.get("warmup_ratio", 0.0),
+                "min_lr_ratio": settings.get("min_lr_ratio", 0.0),
+            }
+            if total_steps is not None:
+                schedule["warmup_steps"] = min(
+                    total_steps,
+                    max(
+                        settings["warmup_steps"], math.ceil(total_steps * schedule["warmup_ratio"])
+                    ),
+                )
         groups.append(
             {
                 "name": name,
@@ -129,6 +175,7 @@ def build_training_groups(model, policy) -> "list[dict[str, Any]]":
                 "lr": settings["lr"],
                 "base_lr": settings["lr"],
                 "warmup_steps": settings["warmup_steps"],
+                **schedule,
             }
         )
     if seen != {id(p) for p in model.parameters() if p.requires_grad}:
@@ -142,11 +189,16 @@ def training_policy_table(groups, policy):
             "group": group["name"],
             "base_lr": group["base_lr"],
             "warmup_steps": group["warmup_steps"],
+            "scheduler": group.get("scheduler", "constant"),
+            "warmup_ratio": group.get("warmup_ratio", 0.0),
+            "min_lr_ratio": group.get("min_lr_ratio", 1.0),
             "parameters": sum(p.numel() for p in group["params"]),
             "dtypes": sorted({str(p.dtype) for p in group["params"]}),
             "words_frozen": policy["freeze_words"],
             "PLE_frozen": policy["freeze_ple"],
             "word_tying": "shared_IT_anchor" if policy["family"] == "symmetric" else "separate",
+            "optimizer": policy.get("optimizer", {}).get("name", "adamw"),
+            "alignment_fp32": policy.get("alignment_fp32", False),
         }
         for group in groups
     ]
@@ -159,6 +211,14 @@ def optimizer_group_manifest(groups):
             "param_names": list(group["param_names"]),
             "base_lr": group["base_lr"],
             "warmup_steps": group["warmup_steps"],
+            **(
+                {
+                    key: group[key]
+                    for key in ("scheduler", "total_steps", "warmup_ratio", "min_lr_ratio")
+                }
+                if "scheduler" in group
+                else {}
+            ),
         }
         for group in groups
     ]
@@ -171,6 +231,15 @@ def update_policy_learning_rates(optimizer, step):
     for group in optimizer.param_groups:
         warmup = group["warmup_steps"]
         fraction = min(1.0, (step + 1) / warmup) if warmup else 1.0
+        if group.get("scheduler") == "cosine":
+            total = group["total_steps"]
+            if total is None:
+                raise ValueError("Cosine schedule needs a resolved training horizon.")
+            if step + 1 > warmup:
+                # First post-warmup update starts decay; final update reaches the floor.
+                progress = min(1.0, (step + 1 - warmup) / max(1, total - warmup))
+                floor = group["min_lr_ratio"]
+                fraction = floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * progress))
         group["lr"] = group["base_lr"] * fraction
         rates[group["name"]] = group["lr"]
     return rates

@@ -1,7 +1,7 @@
 # Sequential full SFT, benchmarks and upload
 
-The common template generates three standalone Molab notebooks. Each has 20 cells;
-19 cells are identical. Only family, first experiment and output directory differ.
+The common template generates three standalone Molab notebooks. Each has 21 cells;
+20 cells are identical. Only family, first experiment and output directory differ.
 
 | Notebook | Default sequence |
 |---|---|
@@ -14,6 +14,11 @@ training IDs and evaluation cohorts. Baselines place the same context in their
 causal decoder prefix. The family notebooks do not train the baselines again.
 These are SFT-matched baselines initialized from the IT checkpoints. Their scores
 must not be labeled as untouched pretrained baseline results.
+
+Each model now runs **base AdamW → optimized GrokOrScale LoRA**, independently
+initialized from the same pretrained sources/seed. Four runs per notebook,
+twelve total. See [recipe comparison](TRAINING_RECIPE_COMPARISON.md) for shared
+numbers, exact optimizer semantics, and evidence limits.
 
 ## Budgets and defaults
 
@@ -44,7 +49,7 @@ does not update the optimizer or add synthetic rows to the training pool.
 
 ## Durable stages
 
-Each model owns `OUTPUT_ROOT/EXPERIMENT/RUN_NAME/`:
+Each model/recipe owns `OUTPUT_ROOT/EXPERIMENT/RUN_NAME/{base|optimized}/`:
 
 1. `training`: full SFT and full held-out loss; optimizer-boundary checkpoints.
 2. `training_upload`: verified training artifacts on the Hub.
@@ -63,6 +68,14 @@ a corrupt completed checkpoint is rejected. If a recognized interrupted run has
 no complete checkpoint yet, its diagnostics are archived and training restarts
 from zero. Incorrect compatibility never silently initializes a different run.
 
+Validation interval is ceil(25% of actual total optimizer steps); checkpoint
+interval is ceil(10%). Final validation runs once and a final checkpoint is
+always available. At11,102 updates these intervals are2,776 and1,111. Exactly
+the latest two checkpoints are retained per model/recipe. Fewer uploads mean
+up to about10% of a run may need repeating after a lost runtime. Telemetry
+continues at every step; neither periodic validation nor upload is a training
+update. Optimizer EMA/momentum/calibration states are included in v2 resume.
+
 Every benchmark prediction is journaled and flushed before advancing to the next
 case. A final partial journal append is discarded after a process crash. Completed
 IDs must exactly match the expected cohort prefix; duplicates and reordered IDs
@@ -71,7 +84,7 @@ again. A different model/checkpoint/cohort cannot reuse that prediction journal.
 
 ## Two-checkpoint retention and Hub recovery
 
-Only the **two latest complete checkpoints per model/run** remain locally and in
+Only the **two latest complete checkpoints per model/recipe/run** remain locally and in
 the current Hub tree. Newly saved files are validated before pruning. Remote
 deletions target only obsolete numeric checkpoint folders inside this exact run;
 other experiments and historical runs are outside that scope. Hub history is not
@@ -100,10 +113,10 @@ prediction. Durable files include history, events, monitor HTML, stage receipts,
 predictions and benchmark reports. Source and objective loss breakdowns are stored
 separately; validation CE remains distinct from functional repair success.
 
-The v8 reference was read in full (6,742 lines). The adopted mechanics are staged
-recovery, complete checkpoint selection, scoped retention and verified uploads.
-Optimizer research, steering, vision grafting and preference/RL stages are not
-introduced by this change.
+The v8 reference was read in full (6,742 lines). Staged recovery, complete
+checkpoint selection, scoped retention and verified uploads are retained.
+The optimized comparison adds its gradient-filter/orthogonal/trust-ratio ideas;
+steering, vision grafting and preference/RL stages remain outside this recipe.
 
 ## Validation boundary
 
@@ -112,3 +125,19 @@ sequencing, model release, parameter policies and checkpoint behavior; they do n
 establish pretrained model quality. Real tokenizer audits are separate from tiny
 model tests. Original pretrained training/benchmark execution remains a Molab run
 performed by the user after applying the HF write token.
+
+## Dependency bootstrap for interrupted-run recovery
+
+The first cell explicitly reinstalls pinned packages with `uv pip` into the current
+kernel interpreter. Notebook Torch is pinned to **2.11.0+cu130**, matching the uploaded
+interrupted runs; both Python3.12 and3.13 are accepted. Development dependencies in
+the local project remain independent. A receipt avoids repeated reinstall after
+restart, while preloaded native modules force a kernel restart before proceeding.
+No packages are installed into conda base. A runtime mismatch still blocks resume.
+
+## Next-run scheduler and batching
+
+See [the next-run audit](TRAINING_NEXT_RUN.md). Defaults now use microbatch2,
+accumulation2, validation batch up to2, 3% warm-up and cosine decay to10% peak LR.
+The new run name prevents accidental resume of constant-LR pilots. Train/dev
+shape preflight uses the configured batch size. Benchmark generation stays single-case.

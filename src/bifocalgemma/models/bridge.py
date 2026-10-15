@@ -23,7 +23,7 @@ class RMSNorm(nn.Module):
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
         variance = x.pow(2).mean(-1, keepdim=True)
         return x * torch.rsqrt(variance + self.eps) * self.weight
 
@@ -83,7 +83,7 @@ class GatedCrossAttentionBridge(nn.Module):
         init_g = 0.5 * math.log((1.0 + initial_gate_val) / (1.0 - initial_gate_val))
         self.gate = nn.Parameter(torch.tensor([init_g], dtype=torch.float32))
 
-    def forward(
+    def forward(  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
         self,
         decoder_states: torch.Tensor,
         encoder_states: torch.Tensor,

@@ -1,8 +1,8 @@
 # /// script
-# requires-python = ">=3.13,<3.14"
+# requires-python = ">=3.12,<3.14"
 # dependencies = [
 #     "marimo==0.25.1",
-#     "torch==2.14.1",
+#     "torch==2.11.0",
 #     "transformers==5.19.0",
 #     "safetensors==0.8.0",
 #     "pyarrow==25.0.1",
@@ -10,6 +10,8 @@
 #     "huggingface-hub==1.33.0",
 #     "tokenizers==0.23.2",
 #     "numpy==2.5.3",
+#     "PyYAML>=6.0",
+#     "psutil>=7.0",
 # ]
 #
 # [tool.uv.sources]
@@ -29,16 +31,35 @@ __generated_with = "0.25.1"
 app = marimo.App(width="full")
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _():
+    # DEPENDENCY SETUP — first cell, before training-library imports.
+    {{DEPENDENCY_HELPERS}}
+
+    NOTEBOOK_DEPENDENCY_PINS = {
+        "torch": "2.11.0",  # Match existing CUDA 13.0 checkpoints for resume.
+        "marimo": "0.25.1", "transformers": "5.19.0", "safetensors": "0.8.0",
+        "pyarrow": "25.0.1", "pytest": "8.4.2", "huggingface-hub": "1.33.0",
+        "tokenizers": "0.23.2", "numpy": "2.5.3",
+    }
+    FORCE_REINSTALL = True  # Once per matching environment; receipt avoids restart loops.
+    dependency_runtime = bootstrap_notebook_dependencies(
+        NOTEBOOK_DEPENDENCY_PINS, reinstall=FORCE_REINSTALL,
+    )
+    return (dependency_runtime,)
+
+
+@app.cell(hide_code=True)
+def _(dependency_runtime):
     import marimo as mo
+    assert dependency_runtime["status"] == "READY"
     mo.md("""
     # BifocalGemma · Offline LoRA SFT
-    Ketiga notebook memakai jumlah dan urutan cell yang sama; 19 dari 20 isi cell identik.
+    Ketiga notebook memakai jumlah dan urutan cell yang sama; 20 dari 21 isi cell identik.
     Pilih pasangan di control center, Apply HF token bila diperlukan,
     Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full mixed context pool → target-only SFT
     → held-out loss → adapter checkpoint + optimizer/data cursor resume.
-    Default: dua model berurutan, satu epoch penuh, benchmark penuh dan upload. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model.
+    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA), empat run berurutan, satu epoch penuh, benchmark penuh dan upload per run. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
     Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
     """)
     return (mo,)
@@ -83,18 +104,19 @@ def _(mo):
     CORPUS_KIND = "multitask"
     DEVICE = "auto"
     PRECISION = "auto"
-    RUN_NAME = "enc32k-dec8k-context-v3-seq1"
-    RESUME_FROM = ""  # Path checkpoint-000025, dsb.; kosong = mulai baru.
+    RUN_NAME = "enc32k-dec8k-context-v3-recipes-v1"
+    RESUME_FROM = ""  # AUTO_RESUME selects the last valid checkpoint per model/recipe.
     LOCAL_DATA_FILE = "outputs/mixed_context_enc32k_dec8k_v3"
     ENCODER_LIMIT = 32768
     DECODER_LIMIT = 8192
-    BATCH_SIZE = 1
-    GRAD_ACCUMULATION = 4
+    BATCH_SIZE = 2
+    EVAL_BATCH_SIZE = 2
+    GRAD_ACCUMULATION = 2
     MAX_STEPS = 0  # 0 = complete EPOCHS over the frozen training split
     EPOCHS = 1
     MAX_GRAD_NORM = 1.0
-    EVAL_EVERY = 500
-    SAVE_EVERY = 500
+    EVAL_FRACTION = 0.25  # ~4 full validations including the mandatory final pass.
+    CHECKPOINT_FRACTION = 0.10  # ~10 saves including final; retain only the latest two.
     MEMORY_POLICY = {"version": "tiled_recompute_v1", "attention_backend": "tiled_eager_fp32", "query_chunk_size": 128, "loss_chunk_size": 128, "gradient_checkpointing": True, "ple_offload": False, "kv_gradient_accumulation": "float32"}
     HEADROOM_GIB = 16
     SEED = 17
@@ -126,12 +148,13 @@ def _(mo):
         ENCODER_LIMIT,
         DECODER_LIMIT,
         BATCH_SIZE,
+        EVAL_BATCH_SIZE,
         GRAD_ACCUMULATION,
         MAX_STEPS,
         EPOCHS,
         MAX_GRAD_NORM,
-        EVAL_EVERY,
-        SAVE_EVERY,
+        EVAL_FRACTION,
+        CHECKPOINT_FRACTION,
         MEMORY_POLICY,
         HEADROOM_GIB,
         SEED,
@@ -142,8 +165,8 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(DEVICE, PRECISION, mo):
-    # 2. ENVIRONMENT — pakai dependency yang sudah terpasang; tidak ada pip di cell.
+def _(DEVICE, PRECISION, dependency_runtime, mo):
+    # 2. ENVIRONMENT — dependency setup must finish before native imports.
     import copy
     import gc
     import json
@@ -181,7 +204,10 @@ def _(DEVICE, PRECISION, mo):
         repeat_kv,
     )
 
+    assert torch.__version__ == "2.11.0+cu130", "Restart kernel; gunakan torch==2.11.0 CUDA13.0."
+    assert version("torch") == torch.__version__, "Torch loaded/installed mismatch; restart kernel."
     assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
+    assert dependency_runtime["versions"]["torch"] == torch.__version__
     torch.set_num_threads(min(4, torch.get_num_threads()))
     torch.set_float32_matmul_precision("highest")
     device_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_DEVICE", DEVICE)
@@ -1073,43 +1099,21 @@ def _(EXPERIMENT, FAMILY, ProbeLoRALinear, build_model, configure_probe_training
     # 7a. TRAINING POLICY — all family-specific training settings live here.
     {{POLICY_HELPERS}}
 
-    POLICY_PROFILES = {
-        "symmetric": {
-            "version": "attention_lora_policy_v1", "family": "symmetric",
-            "rank": 16, "alpha": 32, "freeze_words": True, "freeze_ple": True,
-            "phase": "joint", "train_alignment": False,
-            "groups": {
-                "encoder": {"lr": 2e-5, "warmup_steps": 5},
-                "decoder": {"lr": 2e-5, "warmup_steps": 5},
-            },
-        },
-        "asymmetric": {
-            "version": "attention_lora_policy_v1", "family": "asymmetric",
-            "rank": 16, "alpha": 32, "freeze_words": True, "freeze_ple": True,
-            "phase": "joint", "train_alignment": True,
-            "groups": {
-                "encoder": {"lr": 2e-5, "warmup_steps": 5},
-                "decoder": {"lr": 2e-5, "warmup_steps": 5},
-                "alignment": {"lr": 2e-5, "warmup_steps": 5},
-            },
-        },
-        "decoder_only": {
-            "version": "attention_lora_policy_v1", "family": "decoder_only",
-            "rank": 16, "alpha": 32, "freeze_words": True, "freeze_ple": True,
-            "phase": "joint", "train_alignment": False,
-            "groups": {"decoder": {"lr": 2e-5, "warmup_steps": 5}},
-        },
-    }
-    training_policy = copy.deepcopy(POLICY_PROFILES[FAMILY])
+    from bifocalgemma.training.recipes import comparison_recipes
+    # Single maintained numerical source, shared by all three notebooks.
+    TRAINING_RECIPES = comparison_recipes(FAMILY)
+    training_policy = copy.deepcopy(next(iter(TRAINING_RECIPES.values())))
     policy_spec = experiment_spec(EXPERIMENT)
     with torch.device("meta"):
         policy_blueprint = build_model(policy_spec,"meta",torch.bfloat16,tiny=False)
     configure_policy_model(policy_blueprint,training_policy)
-    policy_table = training_policy_table(build_training_groups(policy_blueprint,training_policy),training_policy)
+    policy_table = [{"recipe": recipe, **row} for recipe, policy in TRAINING_RECIPES.items()
+                    for row in training_policy_table(build_training_groups(policy_blueprint,policy),policy)]
     del policy_blueprint
-    mo.vstack([mo.md("## 7a · Training policy\nEdit rank/alpha dan LR/warm-up per group di POLICY_PROFILES. Tabel memakai blueprint meta."),
-               mo.ui.table(policy_table,selection=None)])
-    return (POLICY_PROFILES, training_policy, policy_table, default_training_profiles,
+    mo.vstack([mo.md("## 7a · Training policy\nDua recipe: base AdamW dan optimized Grokfast + OrScale-style LoRA. LR 2e-5, warm-up 3%, cosine → 10% untuk semua group/model. Rank16/alpha32, CE murni, word/PLE frozen. Angka dan optimizer ada di `comparison_recipes` (source bundle); TRAINING_RECIPES dapat diedit di cell ini. Tabel memakai blueprint meta; hasil optimized belum dijamin lebih baik."),
+               mo.ui.table(policy_table,selection=None),
+               mo.ui.table([{"recipe": name, "optimizer_settings": str(policy["optimizer"])} for name, policy in TRAINING_RECIPES.items()], selection=None)])
+    return (TRAINING_RECIPES, training_policy, policy_table, default_training_profiles,
             validate_training_policy, configure_policy_model, build_training_groups,
             training_policy_table, optimizer_group_manifest, update_policy_learning_rates,)
 
@@ -1228,25 +1232,25 @@ def _(EXPERIMENT, FAMILY, HEADROOM_GIB, training_policy, RUN_TRAINING, RUN_BENCH
 
 
 @app.cell
-def _(LOCAL_DATA_FILE, corpus_pool_status, EXPERIMENT_SEQUENCE, mo):
+def _(LOCAL_DATA_FILE, corpus_pool_status, EXPERIMENT_SEQUENCE, TRAINING_RECIPES, mo):
     # Data plan only: tokenize inside the model loop, so arrays from an earlier model do not stay resident.
     sequence_data_plan = {"status": corpus_pool_status["status"], "collection_path": LOCAL_DATA_FILE,
-                          "sequence": list(EXPERIMENT_SEQUENCE), "sampling": "all frozen train/dev IDs"}
+                          "sequence": [f"{model}/{recipe}" for model in EXPERIMENT_SEQUENCE for recipe in TRAINING_RECIPES], "sampling": "all frozen train/dev IDs"}
     mo.vstack([mo.md("## 11 · Sequential data plan"), mo.ui.table([sequence_data_plan], selection=None)])
     return (sequence_data_plan,)
 
 
 @app.cell
 def _(AUTO_RESUME, BENCHMARK_CACHE, BENCHMARK_COLLECTIONS, BENCHMARK_UPLOAD_EVERY,
-      BATCH_SIZE, CACHE_DIR, CHECKPOINT_UPLOAD_ENABLED, CORPUS_TOKENIZER_CACHE,
-      DATASET_COLLECTION, DATASET_REPO_ID, DATASET_REVISION, EPOCHS, EVAL_EVERY,
+      BATCH_SIZE, EVAL_BATCH_SIZE, CACHE_DIR, CHECKPOINT_UPLOAD_ENABLED, CORPUS_TOKENIZER_CACHE,
+      DATASET_COLLECTION, DATASET_REPO_ID, DATASET_REVISION, EPOCHS, EVAL_FRACTION,
       EXPERIMENT_SEQUENCE, FAMILY, FUNCTIONAL_BENCHMARKS, GRAD_ACCUMULATION, HEADROOM_GIB,
       HF_REPO_ID, HF_UPLOAD_ENABLED, LOCAL_DATA_FILE, MAX_GRAD_NORM, MAX_STEPS,
       MEMORY_POLICY, OUTPUT_ROOT, Path, RESUME_FROM, RUN_BENCHMARKS, RUN_NAME,
-      RUN_TRAINING, SAVE_EVERY, SAVE_TOTAL_LIMIT, SEED, auth_info, environment,
+      RUN_TRAINING, CHECKPOINT_FRACTION, SAVE_TOTAL_LIMIT, SEED, TRAINING_RECIPES, auth_info, environment,
       gpu_guard, hf_download_token, load_pretrained_probe, mo, probe_estimate,
       sequence_data_plan, training_guard, training_policy):
-    from bifocalgemma.training.sequential import run_sequential_pipeline
+    from bifocalgemma.training.recipes import run_recipe_comparison
     training_result = {"status": "DISABLED", "reason": training_guard, "models": []}
     run_dir = Path(OUTPUT_ROOT)
     if training_guard is None:
@@ -1261,15 +1265,15 @@ def _(AUTO_RESUME, BENCHMARK_CACHE, BENCHMARK_COLLECTIONS, BENCHMARK_UPLOAD_EVER
             if guard:
                 raise RuntimeError(guard)
             return load_pretrained_probe(spec, CACHE_DIR, SEED, progress=progress)
-        training_result = run_sequential_pipeline(
+        training_result = run_recipe_comparison(
             family=FAMILY, experiments=EXPERIMENT_SEQUENCE, output_root=OUTPUT_ROOT, run_name=RUN_NAME,
             dataset_repo=DATASET_REPO_ID, dataset_revision=DATASET_REVISION, collection=DATASET_COLLECTION,
             pool_directory=LOCAL_DATA_FILE, tokenizer_cache=CORPUS_TOKENIZER_CACHE,
             benchmark_collections=BENCHMARK_COLLECTIONS, benchmark_cache=BENCHMARK_CACHE,
-            model_factory=model_factory, training_policy=training_policy, memory_policy=MEMORY_POLICY,
+            model_factory=model_factory, recipes=TRAINING_RECIPES, memory_policy=MEMORY_POLICY,
             environment=environment, model_repo=HF_REPO_ID, token=hf_download_token, mo=mo,
-            epochs=EPOCHS, batch_size=BATCH_SIZE, accumulation=GRAD_ACCUMULATION, max_steps=MAX_STEPS,
-            eval_every=EVAL_EVERY, save_every=SAVE_EVERY, clip_norm=MAX_GRAD_NORM, seed=SEED,
+            epochs=EPOCHS, batch_size=BATCH_SIZE, eval_batch_size=EVAL_BATCH_SIZE, accumulation=GRAD_ACCUMULATION, max_steps=MAX_STEPS,
+            eval_fraction=EVAL_FRACTION, save_fraction=CHECKPOINT_FRACTION, clip_norm=MAX_GRAD_NORM, seed=SEED,
             run_training=RUN_TRAINING, run_benchmarks=RUN_BENCHMARKS, upload=HF_UPLOAD_ENABLED,
             resume_from=RESUME_FROM or None, checkpoint_upload=CHECKPOINT_UPLOAD_ENABLED,
             benchmark_upload_every=BENCHMARK_UPLOAD_EVERY, functional_execution=FUNCTIONAL_BENCHMARKS,
@@ -1281,7 +1285,7 @@ def _(AUTO_RESUME, BENCHMARK_CACHE, BENCHMARK_COLLECTIONS, BENCHMARK_UPLOAD_EVER
 
 @app.cell
 def _(mo, run_dir, training_result):
-    result_summary = [{"experiment": row["experiment"], "status": row["status"],
+    result_summary = [{"experiment": row["experiment"], "recipe": row["recipe"], "status": row["status"],
                        "optimizer_steps": row["global_step"], "dev_loss": row["held_out_eval"]["loss"],
                        "benchmark_stages": sum(k.startswith("benchmark:") for k in row["stages"]),
                        "run_dir": row["run_dir"]} for row in training_result.get("models", [])]

@@ -3,7 +3,7 @@
 Template bersama menghasilkan tiga notebook standalone: [simetris](../notebooks/bifocalgemma_train_symmetric.py),
 [asimetris](../notebooks/bifocalgemma_train_asymmetric.py), dan
 [baseline decoder-only](../notebooks/bifocalgemma_train_baseline.py).
-Masing-masing memiliki **20 cell, 19 isi cell identik**. Perbedaan hanya tiga baris
+Masing-masing memiliki **21 cell, 20 isi cell identik**. Perbedaan hanya tiga baris
 control center: `FAMILY`, `EXPERIMENT`, dan `OUTPUT_ROOT`.
 
 Panduan operasional dan kontrak resume lengkap ada di
@@ -17,6 +17,11 @@ resident pada satu waktu; keluarga pasangan tidak melatih baseline lagi.
 | Asimetris | E2B–E4B → E4B–E2B |
 | Baseline | E2B-it → E4B-it |
 
+Setiap model menjalankan **base AdamW → optimized GrokOrScale LoRA** dari
+inisialisasi pretrained yang sama: empat hasil per notebook, 12 total. Kontrak,
+angka bersama, pemilihan ide v8, dan trade-off lengkap ada di
+[Training recipe comparison](TRAINING_RECIPE_COMPARISON.md).
+
 ## Peta cell
 
 Nomor adalah posisi cell, dimulai dari nol. Label UI memakai subbagian tersendiri
@@ -24,26 +29,27 @@ untuk token input/apply dan policy.
 
 | Cell | Isi dan tanggung jawab |
 | --- | --- |
-| 0 | Pengantar dan default |
-| 1 | Control center: urutan model, data, limits, batch, epoch, output, upload |
-| 2 | Environment, ekstraksi paket bersama, resource/runtime guard |
-| 3 | Form HF token, submit eksplisit |
-| 4 | Apply/verifikasi token; token tidak dicetak ke log |
-| 5 | Config native Gemma dan dimensi |
-| 6 | Batch, masking label, shifted token loss |
-| 7 | Reference attention dan backend training bersama |
-| 8 | Model builder: encoder, merged decoder, projection/tying |
-| 9 | Checkpoint loader dan attention LoRA |
-| 10 | Training policy: profil ketiga keluarga, parameter groups, LR/warm-up |
-| 11 | Kontrak contoh, tokenisasi dan dataset helpers |
-| 12 | Download/verifikasi koleksi HF beku dan tokenizer assets |
-| 13 | Training/checkpoint helpers |
-| 14 | Guard dan preflight plan |
-| 15 | Data plan; tidak menyimpan token seluruh model dalam Python lists |
-| 16 | Sequential pipeline, dashboard dan resume |
-| 17 | Hasil per model |
-| 18 | Ringkasan upload yang sudah diverifikasi |
-| 19 | Entrypoint/test notebook |
+| 0 | Dependency setup: uv pip reinstall, receipt dan restart guard |
+| 1 | Pengantar dan default |
+| 2 | Control center: urutan model, data, limits, batch, epoch, output, upload |
+| 3 | Environment, ekstraksi paket bersama, resource/runtime guard |
+| 4 | Form HF token, submit eksplisit |
+| 5 | Apply/verifikasi token; token tidak dicetak ke log |
+| 6 | Config native Gemma dan dimensi |
+| 7 | Batch, masking label, shifted token loss |
+| 8 | Reference attention dan backend training bersama |
+| 9 | Model builder: encoder, merged decoder, projection/tying |
+| 10 | Checkpoint loader dan attention LoRA |
+| 11 | Training policy: profil ketiga keluarga, parameter groups, LR/warm-up |
+| 12 | Kontrak contoh, tokenisasi dan dataset helpers |
+| 13 | Download/verifikasi koleksi HF beku dan tokenizer assets |
+| 14 | Training/checkpoint helpers |
+| 15 | Guard dan preflight plan |
+| 16 | Data plan; tidak menyimpan token seluruh model dalam Python lists |
+| 17 | Sequential pipeline, dashboard dan resume |
+| 18 | Hasil per model |
+| 19 | Ringkasan upload yang sudah diverifikasi |
+| 20 | Entrypoint/test notebook |
 
 ## Policy dan objective
 
@@ -54,13 +60,15 @@ simetris memakai Identity. Baseline hanya mempunyai decoder.
 
 | Group | Simetris | Asimetris | Baseline | LR / warm-up |
 | --- | --- | --- | --- | --- |
-| encoder | Attention LoRA | Attention LoRA | Tidak ada | 2e-5 / 5 steps |
-| decoder | Attention LoRA | Attention LoRA | Attention LoRA | 2e-5 / 5 steps |
-| alignment | Tidak ada | Learned projection | Tidak ada | 2e-5 / 5 steps |
+| encoder | Attention LoRA | Attention LoRA | Tidak ada | 2e-5 / 3% updates; cosine → 2e-6 |
+| decoder | Attention LoRA | Attention LoRA | Attention LoRA | 2e-5 / 3% updates; cosine → 2e-6 |
+| alignment | Tidak ada | Learned projection | Tidak ada | 2e-5 / 3% updates; cosine → 2e-6 |
 
-Default rank16/alpha32, ordinary embeddings dan PLE frozen, AdamW `foreach=False`,
-weight decay0, clipping1.0. Tiap trainable parameter masuk tepat satu group;
-aliases tidak diduplikasi. Knob tersebut berada di cell policy.
+Default rank16/alpha32, ordinary embeddings dan PLE frozen, weight decay0,
+clipping1.0. Base memakai AdamW `foreach=False`; optimized memakai EMA gradien,
+Nesterov/ortogonalisasi, dan trust ratio. Seluruh trainable termasuk alignment
+asimetris memakai FP32. Tiap trainable parameter masuk tepat satu group;
+aliases tidak diduplikasi. Cell policy memuat `TRAINING_RECIPES` dari factory angka bersama.
 Projection-only warm-up dan staged unfreezing belum diaktifkan. Direct SFT tetap
 hipotesis adaptasi; belum terbukti setara dengan adaptasi UL2 recipe Google.
 
@@ -79,9 +87,10 @@ tugas lain memakai allowance sampai budget decoder setelah prefix.
 
 RUN_TRAINING, RUN_BENCHMARKS, FUNCTIONAL_BENCHMARKS, AUTO_RESUME,
 HF_UPLOAD_ENABLED dan CHECKPOINT_UPLOAD_ENABLED default True.
-Batch1, accumulation4, EPOCHS1, MAX_STEPS0 berarti satu epoch penuh atas split beku;
-dev loss/checkpoint setiap500 update ditambah final. Dua checkpoint terakhir
-dipertahankan per model/run. Token cache int32 mmap mempertahankan ID asli sehingga
+Batch2, accumulation2, validation maksimum2, EPOCHS1, MAX_STEPS0 berarti satu epoch penuh atas split beku;
+dev loss setiap25% update dan checkpoint setiap10% update ditambah final.
+Dengan11.102 updates: interval validation2.776 dan checkpoint1.111. Dua checkpoint terakhir
+dipertahankan per model/recipe/run. Token cache int32 mmap mempertahankan ID asli sehingga
 runtime RAM sekitar30GiB tidak menampung seluruh token sebagai objek Python.
 
 Backend tiled attention FP32, gradient recomputation dan chunked loss mempertahankan
@@ -107,11 +116,44 @@ ty check
 ruff check --fix
 ```
 
-PEP723 mengikuti ai/Molab: Python3.13, Torch2.14.1 CUDA13.0, Transformers5.19.0,
-marimo0.25.1; dependency lain terpin di header. Cell tidak menginstal ulang Torch.
+Runtime notebook resume: Python3.12/3.13, Torch2.11.0 CUDA13.0, Transformers5.19.0,
+marimo0.25.1; dependency lain terpin di header. Cell setup menginstal ulang sekali
+per environment receipt dan meminta restart jika native library sudah ter-load.
 Notebook mengunci full commit SHA data. Perubahan cohort memerlukan RUN_NAME baru.
 Resume memverifikasi optimizer groups, policy, tokenizer, data, RNG dan cursor.
 
 Pyrefly memakai interpreter ai yang ditentukan di pyproject.toml. Pyrefly dan ty
 memeriksa src, tools dan tests; reactive notebook graph diperiksa oleh marimo.
 Type stubs YAML/psutil adalah dependency dev dan tidak mengubah runtime training.
+
+## Upload ulang dan dependency reinstall
+
+Cell pertama memakai standard library dan `uv pip --python sys.executable` agar
+instalasi menargetkan kernel notebook. Default `FORCE_REINSTALL=True` memasang ulang
+Torch2.11.0 dari index cu130 dan dependency lain dari PyPI, satu kali per environment
+matching receipt. Torch2.11.0 dipilih untuk melanjutkan checkpoint run sebelumnya;
+versi pengembangan lokal di pyproject tidak otomatis menjadi versi kernel cloud.
+
+Receipt berada di `outputs/dependency_setup/`. Jika Torch/NumPy/library native sudah
+ter-load saat instalasi, cell berhenti dan meminta restart kernel. Menjalankan cell
+lagi pada kernel yang sama tidak melewati guard. Setelah restart, receipt dan
+versi terpasang diverifikasi sehingga tidak terjadi loop reinstall.
+
+Conda base ditolak sebelum instalasi. Python3.12/3.13 diterima; dukungan penuh
+Python3.12 belum dibuktikan melalui regresi pretrained. Cell environment memeriksa
+Torch loaded/installed tepat `2.11.0+cu130` sebelum training. Nama run, data dan
+policy tetap sama untuk auto-resume; checkpoint dari runtime berbeda ditolak.
+
+Untuk ekspor Jupyter tanpa menjalankan notebook:
+
+```powershell
+marimo export ipynb notebooks/bifocalgemma_train_symmetric.py --sort top-down -o notebooks/bifocalgemma_train_symmetric.ipynb --force
+```
+
+Cell setup berada paling awal pada ekspor. Ekspor hanya mengubah format; UI token
+marimo pada Jupyter/Modal tetap memerlukan penyesuaian jika interaksinya tidak bekerja.
+
+## Scheduler dan batch run berikutnya
+
+Lihat [audit dan recipe baru](TRAINING_NEXT_RUN.md). Run baru memakai cosine decay,
+preflight batch train/dev dan compatibility horizon; benchmark tetap single-case.

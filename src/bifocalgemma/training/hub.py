@@ -14,9 +14,10 @@ def checked_prefix(prefix):
         path.is_absolute()
         or ".." in path.parts
         or path.as_posix() != prefix
-        or len(path.parts) != 3
+        or len(path.parts) not in {3, 4}
+        or (len(path.parts) == 4 and path.parts[-1] not in {"base", "optimized"})
     ):
-        raise ValueError("Expected family/experiment/run Hub prefix.")
+        raise ValueError("Expected family/experiment/run[/base|optimized] Hub prefix.")
     return prefix
 
 

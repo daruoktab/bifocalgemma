@@ -21,6 +21,7 @@ from bifocalgemma.training.curated_sft import prepare_curated_training
 from bifocalgemma.training.hub import recover_remote_run, synchronize_run
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.policy import configure_policy_model
+from bifocalgemma.training.recipes import resolve_training_cadence
 from bifocalgemma.training.stages import StageLedger, atomic_json, latest_checkpoint
 from bifocalgemma.training.telemetry import TrainingDashboard, resource_snapshot
 
@@ -53,10 +54,13 @@ def run_sequential_pipeline(
     mo=None,
     epochs=1,
     batch_size=1,
+    eval_batch_size=1,
     accumulation=4,
     max_steps=0,
-    eval_every=500,
-    save_every=500,
+    eval_every=None,
+    save_every=None,
+    eval_fraction=0.25,
+    save_fraction=0.10,
     clip_norm=1.0,
     seed=17,
     run_training=True,
@@ -67,6 +71,7 @@ def run_sequential_pipeline(
     benchmark_upload_every=100,
     functional_execution=True,
     auto_resume=True,
+    recipe_name=None,
 ):
     if not experiments or len(set(experiments)) != len(experiments):
         raise ValueError("Choose an ordered sequence with unique experiments.")
@@ -111,17 +116,27 @@ def run_sequential_pipeline(
             "memory_policy": memory_policy,
             "epochs": epochs,
             "batch_size": batch_size,
+            "eval_batch_size": eval_batch_size,
             "accumulation": accumulation,
             "max_steps": max_steps,
             "clip_norm": clip_norm,
             "seed": seed,
+            "cadence_policy": {
+                "eval_every": eval_every,
+                "save_every": save_every,
+                "eval_fraction": eval_fraction,
+                "save_fraction": save_fraction,
+            },
+            "recipe": recipe_name,
             "torch": str(torch.__version__),
             "transformers": environment["transformers"],
         }
         ledger = StageLedger(root, identity)
         train_root = root / "training"
         model = None
-        dashboard = TrainingDashboard(mo, experiment=name, device=device)
+        dashboard = TrainingDashboard(
+            mo, experiment=f"{name} / {recipe_name}" if recipe_name else name, device=device
+        )
         dashboard(
             {
                 "stage": "pipeline_model_started",
@@ -164,13 +179,36 @@ def run_sequential_pipeline(
                         packed_cache=Path(tokenizer_cache).parent / "packed_training_tokens",
                         progress=dashboard,
                     )
-                    steps = max_steps or epochs * math.ceil(
-                        len(train) / (batch_size * accumulation)
+                    full_steps = epochs * math.ceil(len(train) / (batch_size * accumulation))
+                    steps = min(max_steps, full_steps) if max_steps else full_steps
+                    cadence = resolve_training_cadence(
+                        steps,
+                        eval_every=eval_every,
+                        save_every=save_every,
+                        eval_fraction=eval_fraction,
+                        save_fraction=save_fraction,
+                    )
+                    dashboard(
+                        {
+                            "stage": "training_plan",
+                            "message": f"{name} / {recipe_name or 'legacy'}: {steps:,} updates; validation every {cadence['eval_every']:,}, checkpoint every {cadence['save_every']:,}; final validation once.",
+                            **cadence,
+                        }
                     )
                     selected_resume = (
                         resume_from if index == 1 and resume_from else latest_checkpoint(train_root)
                     )
-                    preflight = run_training_memory_preflight(model, train, progress=dashboard)
+                    preflight = run_training_memory_preflight(
+                        model, train, progress=dashboard, batch_size=batch_size, min_headroom_gib=8
+                    )
+                    # Dev may contain longer targets than train; probe before any optimizer update.
+                    validation_preflight = run_training_memory_preflight(
+                        model,
+                        dev,
+                        progress=dashboard,
+                        batch_size=eval_batch_size,
+                        min_headroom_gib=8,
+                    )
                     compatibility = {
                         "architecture": "sequential_context_sft_v1",
                         "experiment": name,
@@ -181,6 +219,7 @@ def run_sequential_pipeline(
                         "training_policy": training_policy,
                         "memory_policy": memory_policy,
                         "batch_size": batch_size,
+                        "eval_batch_size": eval_batch_size,
                         "accumulation": accumulation,
                         "clip_norm": clip_norm,
                         "seed": seed,
@@ -235,6 +274,7 @@ def run_sequential_pipeline(
                                 json.dumps(
                                     {
                                         "model": name,
+                                        "recipe": recipe_name,
                                         "step": row["step"],
                                         "total_steps": steps,
                                         "train_loss": row["train_loss"],
@@ -255,11 +295,12 @@ def run_sequential_pipeline(
                         max_steps=steps,
                         epochs=epochs,
                         batch_size=batch_size,
+                        eval_batch_size=eval_batch_size,
                         accumulation=accumulation,
                         training_policy=training_policy,
                         clip_norm=clip_norm,
-                        eval_every=eval_every,
-                        save_every=save_every,
+                        eval_every=cadence["eval_every"],
+                        save_every=cadence["save_every"],
                         seed=seed,
                         resume_from=selected_resume,
                         event_callback=dashboard,
@@ -275,8 +316,10 @@ def run_sequential_pipeline(
                         provenance=provenance,
                         scope=scope,
                         memory_preflight=preflight,
+                        validation_memory_preflight=validation_preflight,
                         planned_full_epoch_updates=epochs
                         * math.ceil(len(train) / (batch_size * accumulation)),
+                        recipe=recipe_name,
                     )
                     atomic_json(train_root / "training_report.json", report)
                     last_saved = report["last_checkpoint"]

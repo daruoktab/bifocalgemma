@@ -355,7 +355,9 @@ def configure_memory_efficient_training(model, policy=None):
     return copy.deepcopy(options)
 
 
-def run_training_memory_preflight(model, examples, *, progress=None):
+def run_training_memory_preflight(
+    model, examples, *, progress=None, batch_size=1, min_headroom_gib=0
+):
     """Probe actual maxima plus a combined shape stress, without any optimizer update.
 
     Restores RNG/mode and discards probe gradients. Combined context/target is a
@@ -365,6 +367,8 @@ def run_training_memory_preflight(model, examples, *, progress=None):
     from bifocalgemma.data.collator import RepairCollator
     from bifocalgemma.training.telemetry import resource_snapshot
 
+    if type(batch_size) is not int or batch_size < 1:
+        raise ValueError("Preflight batch size must be a positive integer.")
     if not examples or any(p.grad is not None for p in model.parameters()):
         raise ValueError("Preflight requires fresh parameters and nonempty examples.")
 
@@ -395,9 +399,12 @@ def run_training_memory_preflight(model, examples, *, progress=None):
     try:
         model.train()
         for item in probes:
-            batch = RepairCollator()([item]).to(device)
+            if device.type == "cuda":
+                torch.cuda.reset_peak_memory_stats(device)
+            batch = RepairCollator()([item] * batch_size).to(device)
             row = {
                 "stage": "memory_preflight_started",
+                "batch_size": batch_size,
                 "instance_ids": [item.instance_id],
                 "encoder_tokens": batch.encoder_input_ids.shape[1],
                 "decoder_tokens": batch.decoder_input_ids.shape[1],
@@ -424,6 +431,17 @@ def run_training_memory_preflight(model, examples, *, progress=None):
                 **resource_snapshot(device),
             )
             results.append(row)
+            if device.type == "cuda" and min_headroom_gib:
+                free, total = torch.cuda.mem_get_info(device)
+                external = total - free - torch.cuda.memory_reserved(device)
+                remaining = (total - external - torch.cuda.max_memory_allocated(device)) / 2**30
+                row["estimated_peak_headroom_gib"] = remaining
+                if remaining < min_headroom_gib:
+                    raise RuntimeError(
+                        f"Batch {batch_size} preflight leaves only {remaining:.2f} GiB; "
+                        f"requires {min_headroom_gib} GiB for optimizer/runtime headroom. "
+                        "Reduce batch size and preserve effective batch with accumulation."
+                    )
             if progress:
                 progress(row)
             del output, batch, gradients

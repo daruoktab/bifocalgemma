@@ -16,7 +16,11 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 | [Pipeline data](DATA_PIPELINE.md) | Snapshot, prefix, target, offset AST, collator dan leakage |
 | [Training notebooks](TRAINING_NOTEBOOKS.md) | Tiga standalone SFT notebooks dengan cell identik dan template bersama |
 | [Sequential training](SEQUENTIAL_TRAINING.md) | Full SFT → upload → benchmark → upload, resume dan dua checkpoint per run |
+| [Base vs optimized](TRAINING_RECIPE_COMPARISON.md) | Dua recipe per model, default bersama, ide v8, interval save/validation dan batas bukti |
+| [Audit run berikutnya](TRAINING_NEXT_RUN.md) | Temuan pilot, warm-up/cosine, batching, preflight dan kebutuhan bukti paper |
 | [Context data v3](CONTEXT_DATA_RELEASE_V3.md) | Pool gabungan, benchmark32K, provenance dan batas audit |
+| [Full-corpus training](FULL_CORPUS_TRAINING.md) | Admission, benchmark quarantine dan complete-epoch training |
+| [GSM8K](GSM8K_CONTEXT.md) | Adapter, generation/scoring, tokenizer validation dan context budget |
 | [Repository study implementation](REPOSITORY_STUDY_IMPLEMENTATION.md) | Standalone prepare/SFT/generate/score notebook, native adapters dan validation |
 | [Training](TRAINING.md) | Direct SFT, loss, profiling, PEFT, checkpoint dan opsi distillation |
 | [Evaluasi](EVALUATION.md) | Inference, prediksi, harness, metrik dan tabel enam model |
@@ -58,11 +62,5 @@ lama hanya ada di RESEARCH_LOG.
 
 Tidak ada bobot pretrained, dataset besar, atau hasil code-repair BifocalGemma
 yang disertakan. Config/checksum resmi dan contoh synthetic dibedakan dengan jelas.
-
-- [Full-corpus curation and training](FULL_CORPUS_TRAINING.md): admission, benchmark quarantine, complete-epoch notebook defaults.
-
-
-[GSM8K supplementary evaluation and context budgets](GSM8K_CONTEXT.md) documents the executable pinned adapter, math generation/scoring workflow, full 1,319-case tokenizer validation, and the separate larger-window GPU gate.
-
-
-[Dataset and benchmark inventory from current code](DATASETS_AND_BENCHMARKS.md) distinguishes the default repository SFT pool, optional instruction runs, conditional sources, mandatory quarantine artifacts, implemented scorers and pending adapters.
+Panduan notebook dan comparison menyatakan default aktif; catatan bertanggal di
+VALIDATION/RESEARCH_LOG adalah riwayat dan tidak mengganti konfigurasi saat ini.

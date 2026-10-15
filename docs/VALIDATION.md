@@ -1,5 +1,24 @@
 # Validasi Scaffold dan Native Tiny
 
+## Status terbaru — 15 Oktober 2026
+
+Tiga notebook training kini memiliki21 cell,20 isi identik, dan masing-masing
+menjalankan dua model × base/optimized. Ekspor ipynb tidak memuat outputs.
+[Perbandingan recipe](TRAINING_RECIPE_COMPARISON.md) menjelaskan default aktif,
+interval checkpoint10% dan validation25%, serta optimizer eksperimental.
+
+Pemeriksaan lokal mencakup native tiny keempat pasangan/dua baseline, empat
+run terpisah per keluarga, exact resume optimizer baru, penolakan recipe berbeda,
+retensi dua checkpoint per recipe, BF16 backbone/FP32 alignment, telemetry,
+dan regresi dependency bootstrap. Generator, kesamaan cell, Pyrefly, ty, Ruff,
+marimo strict dan whitespace diperiksa. Training pretrained untuk recipe baru
+belum dijalankan; tes ini tidak membuktikan kualitas repair atau peak VRAM model asli.
+
+Bagian bertanggal berikut mempertahankan hasil dan batas implementasi **pada
+tanggal pemeriksaan tersebut**; beberapa placeholder/default sudah berubah sejak itu.
+
+## Histori — 6 Oktober 2026
+
 Diperiksa **6 Oktober 2026**: Conda ai, Python 3.13.16, Torch 2.14.1+cu130,
 Transformers 5.18.0, CUDA 13.0, NVIDIA GeForce RTX 3060 Laptop GPU (6144 MiB).
 Tidak ada pretrained model weights yang diunduh atau dimuat.

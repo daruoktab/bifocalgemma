@@ -13,8 +13,9 @@ from tests.test_offline_sft_training import TinyLossModel, examples
 
 
 @pytest.mark.parametrize("checkpoint_only", [False, True])
+@pytest.mark.parametrize("recipe", [None, "optimized"])
 def test_checkpoint_upload_and_retention_receipt_are_one_scoped_commit(
-    tmp_path, monkeypatch, checkpoint_only
+    tmp_path, monkeypatch, checkpoint_only, recipe
 ):
     root = tmp_path / "run"
     fit_offline_sft(
@@ -32,9 +33,14 @@ def test_checkpoint_upload_and_retention_receipt_are_one_scoped_commit(
     )
     atomic_json(root / "pipeline_state.json", {"fixture": True})
     prefix = "symmetric/BifocalGemma-E2B-E2B/fixture"
+    if recipe:
+        prefix += "/" + recipe
     foreign = "asymmetric/BifocalGemma-E2B-E4B/other/training/checkpoint-000001/READY.json"
     old = prefix + "/training/checkpoint-000001/READY.json"
+    sibling = "symmetric/BifocalGemma-E2B-E2B/fixture/base/training/checkpoint-000001/READY.json"
     remote = {foreign: b"other-model", old: b"obsolete"}
+    if recipe:
+        remote[sibling] = b"other-recipe"
     commits = []
 
     class Api:
@@ -76,6 +82,8 @@ def test_checkpoint_upload_and_retention_receipt_are_one_scoped_commit(
         "fixture/model", root, prefix, token="fixture-write-token", checkpoint_only=checkpoint_only
     )
     assert len(commits) == 1 and old not in remote and remote[foreign] == b"other-model"
+    if recipe:
+        assert remote[sibling] == b"other-recipe"
     assert prefix + "/upload_complete.json" in remote
     assert receipt["retained_checkpoints"] == ["checkpoint-000002", "checkpoint-000003"]
     assert (root / "upload_complete.json").is_file()

@@ -81,6 +81,106 @@ class TestTrainingPolicy(unittest.TestCase):
         self.assertEqual(last, {"encoder": 1e-3, "decoder": 2e-3, "alignment": 5e-4})
         self.assertEqual(optimizer_group_manifest(optimizer.param_groups), signature)
 
+    def test_cosine_endpoints_and_resume_both_families(self):
+        for index in (0, 2):
+            with self.subTest(index=index), tempfile.TemporaryDirectory() as temp:
+                policy = self.policy(index)
+                for settings in policy["groups"].values():
+                    settings.update(
+                        warmup_steps=0, warmup_ratio=0.25, scheduler="cosine", min_lr_ratio=0.1
+                    )
+                full_model = self.model(index, policy)
+                staged = self.model(index, policy)
+                common = dict(
+                    max_steps=4,
+                    epochs=4,
+                    batch_size=2,
+                    accumulation=1,
+                    eval_batch_size=2,
+                    save_every=2,
+                    eval_every=4,
+                    training_policy=policy,
+                    event_callback=lambda event: None,
+                )
+                full = fit_offline_sft(
+                    full_model, examples(), examples(), Path(temp) / "full", {}, **common
+                )
+                saved = []
+
+                def interrupt_after_save(path):
+                    saved.append(path)
+                    raise KeyboardInterrupt("Simulated runtime interruption")
+
+                with self.assertRaises(KeyboardInterrupt):
+                    fit_offline_sft(
+                        staged,
+                        examples(),
+                        examples(),
+                        Path(temp) / "staged",
+                        {},
+                        checkpoint_callback=interrupt_after_save,
+                        **common,
+                    )
+                restored = self.model(index, policy)
+                with self.assertRaises(ValueError):
+                    fit_offline_sft(
+                        restored,
+                        examples(),
+                        examples(),
+                        Path(temp) / "staged",
+                        {},
+                        resume_from=saved[0],
+                        **{**common, "max_steps": 5},
+                    )
+                resumed = fit_offline_sft(
+                    restored,
+                    examples(),
+                    examples(),
+                    Path(temp) / "staged",
+                    {},
+                    resume_from=saved[0],
+                    **common,
+                )
+                for name, settings in policy["groups"].items():
+                    rates = [r["learning_rates"][name] for r in full["history"]]
+                    self.assertAlmostEqual(rates[0], settings["lr"])
+                    self.assertAlmostEqual(rates[-1], settings["lr"] * 0.1)
+                    self.assertTrue(all(a > b for a, b in zip(rates, rates[1:])))
+                    self.assertEqual(rates, [r["learning_rates"][name] for r in resumed["history"]])
+                for key, tensor in full_model.state_dict().items():
+                    torch.testing.assert_close(
+                        tensor, restored.state_dict()[key], atol=1e-6, rtol=1e-6
+                    )
+
+    def test_larger_microbatch_preserves_effective_update_and_validation(self):
+        from bifocalgemma.training.offline_sft import evaluate_sft_loss
+
+        policy = default_training_profiles()["symmetric"]
+        policy.update(rank=2, alpha=4)
+        # Use production LR: Adam can amplify small near-zero gradient differences
+        # at the deliberately oversized LRs used by other policy tests.
+        one, two = self.model(0, policy), self.model(0, policy)
+        with tempfile.TemporaryDirectory() as temp:
+            for model, batch, accumulation in ((one, 1, 4), (two, 2, 2)):
+                fit_offline_sft(
+                    model,
+                    examples(),
+                    examples(),
+                    Path(temp) / str(batch),
+                    {},
+                    max_steps=1,
+                    batch_size=batch,
+                    accumulation=accumulation,
+                    training_policy=policy,
+                    event_callback=lambda event: None,
+                )
+            for key, tensor in one.state_dict().items():
+                torch.testing.assert_close(tensor, two.state_dict()[key], atol=2e-6, rtol=2e-5)
+            a = evaluate_sft_loss(one, examples(), batch_size=1, device="cpu")
+            b = evaluate_sft_loss(one, examples(), batch_size=2, device="cpu")
+            self.assertEqual(a["supervised_tokens"], b["supervised_tokens"])
+            self.assertAlmostEqual(a["loss"], b["loss"], places=5)
+
     def test_v2_resume_matches_uninterrupted_for_both_families(self):
         for index in (0, 2):
             with self.subTest(index=index), tempfile.TemporaryDirectory() as temp:

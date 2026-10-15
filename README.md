@@ -11,18 +11,16 @@ codebase serta perbaikan bug lintas file. Rancangan aktif memakai **encoder Gemm
 base + decoder Gemma 4 IT**, langsung dibangun dengan merged attention, lalu
 supervised fine-tuning. Teacher network dan distillation bersifat opsional.
 
-Fondasi tuning memakai **offline instruction-to-patch SFT** dari dataset private
-EditPackFT, CommitPackFT Python, dan NextCoder Python.
-Input berupa kode sebelum edit + instruksi; target berupa unified diff. Cohort v2
-menghapus event/struktur edit duplikat, mengarantina target ambigu, dan memisahkan
-train/dev melalui komponen repository, commit/seed serta struktur kode.
-**RL dan VM/Docker tidak diperlukan pada jalur tuning.** Data ini tetap auxiliary
-single-file editing. Perluasan v3 menambahkan repair, localization dan dependency
-completion dari snapshot pre-fix SWE-rebench, serta benchmark context lintas file;
-status rilis beku tercatat di [dataset releases](docs/DATASET_RELEASES.md). Lisensi kode
-seed sintetis NextCoder belum terverifikasi. Lihat
-[audit dataset v2](docs/DATASET_REMEDIATION_V2.md) untuk fondasi, serta
-[context data v3](docs/CONTEXT_DATA_RELEASE_V3.md) untuk pool49.342 contoh dan benchmark baru.
+Default tuning memakai koleksi private HF **`mixed_context_enc32k_dec8k_v3`**:
+**44.408 train / 4.934 dev**, gabungan editing EditPackFT, CommitPackFT Python,
+NextCoder Python, serta repair/localization/dependency completion dari snapshot
+pre-fix SWE-rebench. Target mengikuti task: unified diff, path JSON, atau kode.
+Split dan source revision dibekukan; overflow ditolak tanpa pemotongan diam-diam.
+**RL dan VM/Docker tidak diperlukan pada jalur tuning.** Lisensi kode seed sintetis
+NextCoder belum terverifikasi. [Rilis context v3](docs/CONTEXT_DATA_RELEASE_V3.md)
+menjelaskan cohort aktif; [audit v2](docs/DATASET_REMEDIATION_V2.md) mencatat
+fondasi kurasi sebelumnya. Status dan SHA rilis ada di
+[dataset releases](docs/DATASET_RELEASES.md).
 
 ## Matriks penelitian
 
@@ -65,7 +63,10 @@ source-pinned repo exports, matched-cohort SFT keenam model, checkpoint v2 infer
 greedy patch/function/completion generation, serta opt-in native scoring.
 Notebook study menyediakan generation/scoring terpisah. Tiga training notebooks
 menjalankan full training → upload → benchmark → upload secara berurutan;
-masing-masing 20 cell dengan 19 isi identik dan menerima koleksi HF beku.
+masing-masing 21 cell dengan 20 isi identik dan menerima koleksi HF beku.
+Setiap notebook menghasilkan empat run: dua model × recipe base AdamW dan
+optimized GrokOrScale LoRA, dengan checkpoint/resume/benchmark terpisah.
+[Default dan metodologi pembanding](docs/TRAINING_RECIPE_COMPARISON.md).
 
 Validation nyata: synthetic pipeline smoke, RepoQA Python100 prepared, dan
 HumanEvalFix 164/164 gold reference repairs lolos native ai scorer. Ini **bukan
@@ -130,13 +131,23 @@ download/cache, provenance, optimizer policy dan interpretasi PASS/OOM/guard.
 Tiga notebook khusus **training** tersedia:
 [simetris](notebooks/bifocalgemma_train_symmetric.py),
 [asimetris](notebooks/bifocalgemma_train_asymmetric.py), dan
-[baseline](notebooks/bifocalgemma_train_baseline.py). Masing-masing 20 cell,
-19 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
+[baseline](notebooks/bifocalgemma_train_baseline.py). Masing-masing 21 cell,
+20 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
 Pinned private HF dataset → LoRA SFT → dev loss → upload → benchmark → upload.
 RUN_TRAINING, RUN_BENCHMARKS dan upload default True. Satu model resident;
-dua checkpoint terakhir per model/run disimpan, dengan resume stage dan prediksi.
+dua checkpoint terakhir per model/recipe disimpan, dengan resume stage dan prediksi.
+Setiap notebook menjalankan dua model × dua recipe, sehingga menghasilkan empat
+hasil SFT. Validation penuh setiap25% total update, checkpoint setiap10%, ditambah
+hasil akhir. Base AdamW dan optimized GrokOrScale LoRA dimulai dari pretrained
+dan seed yang sama; optimized masih hipotesis eksperimen.
 [Panduan training notebooks](docs/TRAINING_NOTEBOOKS.md)
 menjelaskan template bersama dan cara menjaga cell tetap sinkron.
+
+| Keluarga | Marimo | Jupyter, tanpa outputs |
+| --- | --- | --- |
+| Simetris | [Python](notebooks/bifocalgemma_train_symmetric.py) | [ipynb](notebooks/bifocalgemma_train_symmetric.ipynb) |
+| Asimetris | [Python](notebooks/bifocalgemma_train_asymmetric.py) | [ipynb](notebooks/bifocalgemma_train_asymmetric.ipynb) |
+| Decoder-only | [Python](notebooks/bifocalgemma_train_baseline.py) | [ipynb](notebooks/bifocalgemma_train_baseline.ipynb) |
 
 Default training kini memakai **checkpointing + tiled attention FP32 + chunked loss**
 untuk menjaga objective pada input sampai32K dan shifted decoder budget8K termasuk
@@ -155,13 +166,29 @@ git clone https://github.com/daruoktab/bifocalgemma.git
 cd bifocalgemma
 conda create -n ai python=3.13
 conda activate ai
-python -m pip install -e ".[dev]"
+uv pip install --python (Get-Command python).Source -e ".[dev]"
 ```
 
 Jika ai sudah ada, cukup aktifkan environment itu. Dependency installation berbeda
 dari download bobot. Untuk source checkout tanpa editable install, gunakan PYTHONPATH
 seperti contoh di atas. [Config training](configs/train.example.json) menunggu
 profiling untuk hyperparameters; teacher_required=false.
+
+## Struktur repo
+
+| Folder | Isi |
+| --- | --- |
+| `src/bifocalgemma/` | Implementasi model, data, training, evaluasi, dan CLI |
+| `notebooks/` | Notebook standalone dan ekspor Jupyter training |
+| `tools/` | Generator notebook, template bersama, kurasi dan audit data |
+| `tests/` | Tes dan fixture kecil untuk kontrak/numerik/resume |
+| `configs/` dan `examples/` | Config serta contoh penggunaan |
+| `docs/` | Panduan aktif, riset, status dan riwayat validasi |
+| `outputs/` | Cache, hasil, dan arsip eksperimen lokal; diabaikan Git |
+
+File `working-molab-v8-exp-temp.py` adalah referensi lokal yang diabaikan Git.
+Edit template/modul bersama lalu regenerate notebook; cara reproduksi ada di
+[panduan notebook](docs/TRAINING_NOTEBOOKS.md).
 
 ## Jalur membaca dan membangun
 
@@ -185,8 +212,9 @@ yang belum terverifikasi tetap diberi status demikian.
 Notebook Molab selalu mengambil koleksi dataset beku dari HF; tidak ada kurasi ulang
 atau pilihan raw-source di notebook. Default satu epoch penuh dan upload artefak run
 selesai aktif. Pengguna dapat mengubah RUN_TRAINING/HF_UPLOAD_ENABLED menjadi False.
-Dataset v2:40.706 train /4.524 dev; corpus repository utama masih pending.
-Lihat [panduan notebook](docs/TRAINING_NOTEBOOKS.md).
+Koleksi aktif v3:44.408 train /4.934 dev. Lihat
+[perbandingan recipe](docs/TRAINING_RECIPE_COMPARISON.md) untuk angka default,
+urutan12 run, checkpoint, dan batas bukti.
 
 Dataset releases are staged in the separate private HF dataset repository
 [daruokta/bifocalgemma-data](https://huggingface.co/datasets/daruokta/bifocalgemma-data).

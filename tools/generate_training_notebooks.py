@@ -31,6 +31,7 @@ def module_definitions(path):
 def render(family):
     template = (ROOT / "tools/templates/training_notebook.py.txt").read_text(encoding="utf-8")
     for marker, path in {
+        "{{DEPENDENCY_HELPERS}}": ROOT / "tools/notebook_dependencies.py",
         "{{DATA_HELPERS}}": ROOT / "src/bifocalgemma/data/offline_sft.py",
         "{{TRAIN_HELPERS}}": ROOT / "src/bifocalgemma/training/offline_sft.py",
         "{{POLICY_HELPERS}}": ROOT / "src/bifocalgemma/training/policy.py",

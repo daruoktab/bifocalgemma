@@ -29,7 +29,7 @@ class TinyLossModel(torch.nn.Module):
         self.words = torch.nn.Embedding(128, 8)
         self.head = torch.nn.Linear(8, 128, bias=False)
 
-    def forward(self, batch):
+    def forward(self, batch):  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
         logits = self.head(self.words(batch.decoder_input_ids))
         return ModelOutput(logits, patch_cross_entropy(logits, batch.labels))
 
@@ -232,7 +232,7 @@ class TestNotebookCellParity(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         texts = [
             (root / f"notebooks/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
-            for family in ("symmetric", "asymmetric")
+            for family in ("symmetric", "asymmetric", "baseline")
         ]
         cells = [
             [
@@ -242,9 +242,11 @@ class TestNotebookCellParity(unittest.TestCase):
             ]
             for text in texts
         ]
-        self.assertEqual(len(cells[0]), 20)
-        self.assertEqual(len(cells[1]), 20)
-        self.assertEqual([i for i, (a, b) in enumerate(zip(*cells, strict=True)) if a != b], [1])
+        self.assertEqual([len(items) for items in cells], [21, 21, 21])
+        self.assertEqual(
+            [i for i, group in enumerate(zip(*cells, strict=True)) if len(set(group)) != 1],
+            [2],
+        )
 
     def test_hub_upload_controls_and_path(self):
         root = Path(__file__).resolve().parents[1]
@@ -253,7 +255,7 @@ class TestNotebookCellParity(unittest.TestCase):
             self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
             self.assertIn("HF_UPLOAD_ENABLED = True", text)
             self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)
-            self.assertIn("run_sequential_pipeline", text)
+            self.assertIn("run_recipe_comparison", text)
             self.assertIn("CHECKPOINT_UPLOAD_ENABLED = True", text)
             self.assertIn("SAVE_TOTAL_LIMIT = 2", text)
 

@@ -162,6 +162,21 @@ def restore_sft_checkpoint(
     return state
 
 
+def validation_batches(examples, batch_size):
+    """Keep source/task attribution exact without changing the evaluation cohort."""
+    pending = []
+    previous_key = None
+    for item in examples:
+        key = (item.metadata.get("source", "unknown"), item.metadata.get("task_type", "repair"))
+        if pending and (len(pending) == batch_size or key != previous_key):
+            yield pending
+            pending = []
+        pending.append(item)
+        previous_key = key
+    if pending:
+        yield pending
+
+
 def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=None, step=0):
     previous = model.training
     model.eval()
@@ -177,8 +192,8 @@ def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=Non
         )
     try:
         with torch.no_grad():
-            for start in range(0, len(examples), batch_size):
-                items = examples[start : start + batch_size]
+            done = 0
+            for items in validation_batches(examples, batch_size):
                 batch = RepairCollator()(items).to(device)
                 # Save ID/length before execution so a failed validation batch is reproducible.
                 if event_callback:
@@ -219,9 +234,9 @@ def evaluate_sft_loss(model, examples, *, batch_size, device, event_callback=Non
                 task_entry["supervised_tokens"] += count
                 task_entry["examples"] += len(items)
                 del output, batch
-                done = start + len(items)
+                done += len(items)
                 if event_callback and (
-                    start == 0 or done == len(examples) or done % (25 * batch_size) == 0
+                    done == len(items) or done == len(examples) or done % (25 * batch_size) == 0
                 ):
                     event_callback(
                         {
@@ -284,6 +299,7 @@ def fit_offline_sft(
     max_steps=100,
     epochs=1,
     batch_size=1,
+    eval_batch_size=None,
     accumulation=4,
     learning_rate=2e-5,
     warmup_steps=5,
@@ -314,6 +330,9 @@ def fit_offline_sft(
         raise ValueError("Invalid training settings.")
     if not train or not dev or clip_norm <= 0 or warmup_steps < 0 or save_total_limit < 1:
         raise ValueError("Need nonempty train/dev and valid clipping/warmup.")
+    eval_batch_size = batch_size if eval_batch_size is None else eval_batch_size
+    if type(eval_batch_size) is not int or eval_batch_size < 1:
+        raise ValueError("Validation batch size must be a positive integer.")
     root = Path(run_dir)
     if not resume_from and root.exists() and any(root.iterdir()):
         raise FileExistsError(
@@ -326,11 +345,17 @@ def fit_offline_sft(
     if getattr(model, "memory_policy", None):
         compatibility = {**compatibility, "memory_policy": copy.deepcopy(model.memory_policy)}
     checkpoint_format = "bifocalgemma_notebook_sft_v1"
+    horizon = min(
+        max_steps,
+        epochs * ((len(train) + batch_size * accumulation - 1) // (batch_size * accumulation)),
+    )
     if training_policy is None:
         optimizer = torch.optim.AdamW(parameters, lr=learning_rate, weight_decay=0.0, foreach=False)
     else:
-        groups = build_training_groups(model, training_policy)
-        optimizer = torch.optim.AdamW(groups, weight_decay=0.0, foreach=False)
+        from bifocalgemma.training.optimizers import build_policy_optimizer
+
+        groups = build_training_groups(model, training_policy, total_steps=horizon)
+        optimizer = build_policy_optimizer(groups, training_policy)
         compatibility = {
             **compatibility,
             "training_policy": copy.deepcopy(training_policy),
@@ -410,6 +435,14 @@ def fit_offline_sft(
                 "run_dir": str(root.resolve()),
                 "train_examples": len(train),
                 "dev_examples": len(dev),
+                "batch_size": batch_size,
+                "eval_batch_size": eval_batch_size,
+                "eval_every": eval_every,
+                "save_every": save_every,
+                "optimizer_name": (training_policy or {}).get("optimizer", {}).get("name", "adamw"),
+                "optimizer_groups": optimizer_group_manifest(optimizer.param_groups)
+                if training_policy is not None
+                else None,
                 "last_checkpoint": last_checkpoint,
                 "memory_policy": getattr(model, "memory_policy", None),
                 **getattr(model, "memory_policy", {}),
@@ -545,6 +578,8 @@ def fit_offline_sft(
                 row["learning_rate"] = rates["default"]
             else:
                 row["learning_rates"] = rates
+            if hasattr(optimizer, "last_diagnostics"):
+                row["optimizer_diagnostics"] = copy.deepcopy(optimizer.last_diagnostics)
             if device.type == "cuda":
                 row["peak_allocated_gib"] = torch.cuda.max_memory_allocated(device) / 2**30
             recent_times = [r.get("step_seconds", seconds) for r in state["history"][-19:]] + [
@@ -554,12 +589,14 @@ def fit_offline_sft(
                 sum(recent_times) / len(recent_times) * max(0, max_steps - state["global_step"])
             )
             emit({"stage": "optimizer_step_complete", **row, "learning_rates": rates})
-            if state["global_step"] % eval_every == 0:
+            # Final CE is computed once below, including when the last step
+            # happens to be a periodic validation boundary.
+            if state["global_step"] % eval_every == 0 and state["global_step"] < horizon:
                 started = time.perf_counter()
                 row["eval"] = evaluate_sft_loss(
                     model,
                     dev,
-                    batch_size=batch_size,
+                    batch_size=eval_batch_size,
                     device=device,
                     event_callback=emit,
                     step=state["global_step"],
@@ -598,7 +635,7 @@ def fit_offline_sft(
         evaluation = evaluate_sft_loss(
             model,
             dev,
-            batch_size=batch_size,
+            batch_size=eval_batch_size,
             device=device,
             event_callback=emit,
             step=state["global_step"],
@@ -633,6 +670,7 @@ def fit_offline_sft(
             "checkpoint_format": checkpoint_format,
             "memory_policy": getattr(model, "memory_policy", None),
             "training_policy": copy.deepcopy(training_policy),
+            "cadence": {"eval_every": eval_every, "save_every": save_every, "total_steps": horizon},
             "last_checkpoint": last_checkpoint,
             "segment_seconds": time.perf_counter() - segment_started,
             "segment_evaluation_seconds": evaluation_seconds,

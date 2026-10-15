@@ -28,7 +28,7 @@ class ProbeLoRALinear(nn.Module):
         )
         nn.init.normal_(self.lora_A, std=0.02)
 
-    def forward(self, values):
+    def forward(self, values):  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
         delta = F.linear(F.linear(values.float(), self.lora_A), self.lora_B)
         return self.base(values) + delta.to(values.dtype) * self.scaling
 

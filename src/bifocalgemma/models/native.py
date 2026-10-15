@@ -237,7 +237,7 @@ class NativeTinyModel(nn.Module):
             input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=True
         )
 
-    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:
+    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
         if self.encoder is None:
             if batch.encoder_input_ids.shape[1] != 0:
                 raise ValueError("Baseline requires an empty encoder sequence.")

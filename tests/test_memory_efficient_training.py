@@ -305,7 +305,8 @@ def test_monitor_escapes_errors_updates_validation_and_exports_html(tmp_path):
     )
 
 
-def test_preflight_changes_neither_weights_rng_nor_dataset():
+@pytest.mark.parametrize("batch_size", [1, 2])
+def test_preflight_changes_neither_weights_rng_nor_dataset(batch_size):
     from bifocalgemma.models.memory_efficient import run_training_memory_preflight
 
     model, _ = make_model(2)
@@ -315,8 +316,9 @@ def test_preflight_changes_neither_weights_rng_nor_dataset():
     weights = {name: p.detach().clone() for name, p in model.named_parameters()}
     rng = torch.get_rng_state().clone()
     events = []
-    result = run_training_memory_preflight(model, data, progress=events.append)
+    result = run_training_memory_preflight(model, data, progress=events.append, batch_size=batch_size)
     assert result["status"] == "PASS" and result["optimizer_updates"] == 0
+    assert all(row["batch_size"] == batch_size for row in result["rows"])
     assert result["rows"][-1]["shape_only"] is True
     assert model.training is False and len(data) == 2
     assert torch.equal(torch.get_rng_state(), rng)
