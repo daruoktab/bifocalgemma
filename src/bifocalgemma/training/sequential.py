@@ -17,6 +17,8 @@ from bifocalgemma.models.memory_efficient import (
     run_training_memory_preflight,
 )
 from bifocalgemma.models.pretrained import load_sft_adapters_for_inference
+from bifocalgemma.training.benchmark_reset import reset_local_benchmarks
+from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
 from bifocalgemma.training.curated_sft import prepare_curated_training
 from bifocalgemma.training.hub import recover_remote_run, synchronize_run
 from bifocalgemma.training.offline_sft import fit_offline_sft
@@ -68,10 +70,12 @@ def run_sequential_pipeline(
     upload=True,
     resume_from=None,
     checkpoint_upload=True,
-    benchmark_upload_every=100,
+    benchmark_upload_every=500,
     functional_execution=True,
     auto_resume=True,
     recipe_name=None,
+    finalize=True,
+    benchmark_reset_id=None,
 ):
     if not experiments or len(set(experiments)) != len(experiments):
         raise ValueError("Choose an ordered sequence with unique experiments.")
@@ -105,6 +109,7 @@ def run_sequential_pipeline(
             recover_remote_run(model_repo, root, prefix, token=token)
         if not auto_resume and root.exists() and any(root.iterdir()):
             raise FileExistsError("AUTO_RESUME=False: choose a new RUN_NAME.")
+        reset_local_benchmarks(root, benchmark_reset_id)
         identity = {
             "version": "sequential_context_sft_v1",
             "spec": spec.to_dict(),
@@ -146,6 +151,11 @@ def run_sequential_pipeline(
             }
         )
         active_stage = "training"
+        benchmark_upload = BenchmarkUploadQueue(
+            root,
+            backoff_path=Path(output_root) / ".benchmark-upload-backoff.json",
+            progress=dashboard,
+        )
         try:
             training_done = ledger.completed("training")
             benchmark_done = (
@@ -164,6 +174,8 @@ def run_sequential_pipeline(
                 else True
             )
             if not training_done or not benchmark_done:
+                if not training_done and not run_training:
+                    raise ValueError("No completed training stage; RUN_TRAINING is disabled.")
                 dashboard({"stage": "checkpoint_loading", **resource_snapshot(device)})
                 model, provenance = model_factory(spec, dashboard)
                 if not training_done:
@@ -387,7 +399,21 @@ def run_sequential_pipeline(
                     dashboard({"stage": "benchmark_started", "message": item["collection"]})
 
                     def save_benchmark_progress():
-                        synchronize_run(model_repo, root, prefix, token=token)
+                        benchmark_upload.attempt(
+                            lambda: synchronize_run(model_repo, root, prefix, token=token)
+                        )
+
+                    def benchmark_progress(event):
+                        if upload and event["stage"] == "benchmark_prediction_saved":
+                            benchmark_upload.mark_pending()
+                        dashboard(
+                            {
+                                **event,
+                                "benchmark_backup_status": benchmark_upload.state["status"],
+                                "backup_pending": benchmark_upload.state["pending"],
+                                "backup_next_retry_at": benchmark_upload.state.get("next_retry_at"),
+                            }
+                        )
 
                     benchmark = run_context_benchmark(
                         model,
@@ -400,7 +426,7 @@ def run_sequential_pipeline(
                         decoder_limit=item.get("decoder_limit", 2048),
                         max_new_tokens=item.get("max_new_tokens", 2048),
                         allow_execution=functional_execution,
-                        progress=dashboard,
+                        progress=benchmark_progress,
                         prediction_callback=save_benchmark_progress if upload else None,
                         upload_every=benchmark_upload_every,
                     )
@@ -414,35 +440,53 @@ def run_sequential_pipeline(
                         benchmark,
                         settings=benchmark_settings,
                     )
+                    if upload:
+                        # Publish the completed report/ledger too, not just the last prediction.
+                        save_benchmark_progress()
             upload_settings = {
                 "benchmarks": benchmark_collections if run_benchmarks else [],
                 "execution": functional_execution,
                 "protocol": EVALUATION_PROTOCOL,
             }
-            if upload and not ledger.completed("final_upload", settings=upload_settings):
-                active_stage = "final_upload"
-                ledger.start(active_stage)
-                receipt = synchronize_run(model_repo, root, prefix, token=token)
-                final_receipt = train_root / "final_upload_receipt.json"
-                atomic_json(final_receipt, receipt)
-                ledger.finish(
-                    active_stage,
-                    [final_receipt],
-                    {"revision": receipt["revision"]},
-                    settings=upload_settings,
+            if (
+                upload
+                and finalize
+                and (
+                    not ledger.completed("final_upload", settings=upload_settings)
+                    or benchmark_upload.state.get("pending")
+                    or not benchmark_upload.state.get("final_synced", False)
                 )
-                # Persist the finished pipeline receipt remotely as well. Do not mutate hashed evidence afterward.
-                synchronize_run(model_repo, root, prefix, token=token)
+            ):
+                active_stage = "final_upload"
+
+                def publish_final():
+                    if not ledger.completed("final_upload", settings=upload_settings):
+                        ledger.start("final_upload")
+                        receipt = synchronize_run(model_repo, root, prefix, token=token)
+                        final_receipt = train_root / "final_upload_receipt.json"
+                        atomic_json(final_receipt, receipt)
+                        ledger.finish(
+                            "final_upload",
+                            [final_receipt],
+                            {"revision": receipt["revision"]},
+                            settings=upload_settings,
+                        )
+                    # Retry this commit even when the local ledger was completed before a failure.
+                    return synchronize_run(model_repo, root, prefix, token=token)
+
+                benchmark_upload.attempt(publish_final, final=True)
+            pending_upload = bool(upload and finalize and benchmark_upload.state.get("pending"))
             results.append(
                 {
                     "experiment": name,
-                    "status": "COMPLETED",
+                    "status": "PENDING_UPLOAD" if pending_upload else "COMPLETED",
                     "global_step": report["global_step"],
                     "held_out_eval": report["held_out_eval"],
                     "run_dir": str(root),
                     "stages": copy.deepcopy(ledger.state["stages"]),
                     "benchmark_enabled": run_benchmarks,
                     "upload_enabled": upload,
+                    "benchmark_backup": copy.deepcopy(benchmark_upload.state),
                 }
             )
             dashboard(
@@ -466,7 +510,9 @@ def run_sequential_pipeline(
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
     return {
-        "status": "COMPLETED",
+        "status": "PENDING_UPLOAD"
+        if any(r["status"] == "PENDING_UPLOAD" for r in results)
+        else "COMPLETED",
         "family": family,
         "sequence": list(experiments),
         "models": results,

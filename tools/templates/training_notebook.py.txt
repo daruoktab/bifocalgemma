@@ -43,7 +43,7 @@ def _():
     Setelah setup, isi dan Apply HF token, lalu jalankan Run stale.
     Dataset beku diambil dari repo HF pada commit SHA yang terkunci. Pipeline: full mixed context pool → target-only SFT
     → held-out loss → adapter checkpoint + optimizer/data cursor resume.
-    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA), empat run berurutan, satu epoch penuh, benchmark penuh dan upload per run. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
+    Default: dua model × dua recipe (base AdamW + optimized GrokOrScale LoRA). Selesaikan keempat training dan upload bobot dahulu, baru benchmark keempatnya. Setiap recipe mulai dari checkpoint pretrained yang sama. Resume otomatis memeriksa receipt dan checksum; hanya dua checkpoint terbaru disimpan per model/recipe.
     Ubah RUN_TRAINING atau HF_UPLOAD_ENABLED menjadi False untuk menonaktifkannya.
     """)
     return (mo,)
@@ -178,7 +178,7 @@ def _(auth_info, mo):
     AUTO_RESUME = True
     CHECKPOINT_UPLOAD_ENABLED = True
     SAVE_TOTAL_LIMIT = 2
-    BENCHMARK_UPLOAD_EVERY = 100
+    BENCHMARK_UPLOAD_EVERY = 500
     BENCHMARK_CACHE = "outputs/context_benchmark_cache"
     BENCHMARK_COLLECTIONS = [
         {"collection": "sweqa_oracle_gemma32k_dec8k_v1", "encoder_limit": 32768, "decoder_limit": 8192},
@@ -1280,7 +1280,8 @@ def _(AUTO_RESUME, BENCHMARK_CACHE, BENCHMARK_COLLECTIONS, BENCHMARK_UPLOAD_EVER
             run_training=RUN_TRAINING, run_benchmarks=RUN_BENCHMARKS, upload=HF_UPLOAD_ENABLED,
             resume_from=RESUME_FROM or None, checkpoint_upload=CHECKPOINT_UPLOAD_ENABLED,
             benchmark_upload_every=BENCHMARK_UPLOAD_EVERY, functional_execution=FUNCTIONAL_BENCHMARKS,
-            auto_resume=AUTO_RESUME)
+            auto_resume=AUTO_RESUME,
+            benchmark_reset_id="2026-10-17-clean-evaluation-v1")
     else:
         mo.output.replace(mo.md("Pipeline disabled / preflight blocked: " + str(training_guard)))
     return (training_result, run_dir)
@@ -1292,6 +1293,7 @@ def _(auth_info, mo, run_dir, training_result):
     result_summary = [{"experiment": row["experiment"], "recipe": row["recipe"], "status": row["status"],
                        "optimizer_steps": row["global_step"], "dev_loss": row["held_out_eval"]["loss"],
                        "benchmark_stages": sum(k.startswith("benchmark:") for k in row["stages"]),
+                       "backup_status": row.get("benchmark_backup", {}).get("status", "NOT_STARTED"),
                        "run_dir": row["run_dir"]} for row in training_result.get("models", [])]
     mo.vstack([mo.md(f"## 13 · Sequential results\nArtifacts: `{run_dir}`"),
                mo.ui.table(result_summary or [{"status": training_result["status"]}], selection=None)])
@@ -1303,7 +1305,8 @@ def _(auth_info, HF_REPO_ID, HF_UPLOAD_ENABLED, mo, training_result):
     assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # Upload is owned by the sequential cell: checkpoint, training result, benchmark progress, final receipt.
     upload_result = {"status": "DISABLED" if not HF_UPLOAD_ENABLED else
-                     ("COMPLETED" if training_result["status"] == "COMPLETED" else "SKIPPED"),
+                     ("PENDING_UPLOAD" if training_result["status"] == "PENDING_UPLOAD" else
+                      ("COMPLETED" if training_result["status"] == "COMPLETED" else "SKIPPED")),
                      "repo_id": HF_REPO_ID, "models": len(training_result.get("models", []))}
     mo.vstack([mo.md("## 14 · Verified Hub uploads"), mo.ui.table([upload_result], selection=None)])
     return (upload_result,)

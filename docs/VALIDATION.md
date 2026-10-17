@@ -1,6 +1,34 @@
 # Validasi Scaffold dan Native Tiny
 
-## Status terbaru — 15 Oktober 2026
+## Status terbaru — 17 Oktober 2026
+
+Backup benchmark kini menunda error HF/network sementara dengan deadline retry
+persisten. Tes simulasi 429 membuktikan semua soal tetap selesai; tes native tiny
+membuktikan `PENDING_UPLOAD` bisa dilanjutkan menjadi upload selesai tanpa memuat
+model atau menghitung prediksi ulang. Tes 412 mempertahankan parent guard dan
+membatasi pengulangan transaksi tiga kali. Auth/disk/integrity errors tidak disembunyikan.
+Heartbeat soal/token/stage, pembacaan aktivitas dari terminal terpisah, dan tampilan
+pending backup diuji. Tidak ada pemotongan token, timeout scoring baru, atau auto-kill.
+SDK masih dapat menunggu retry HTTP di dalam panggilan upload yang sedang berlangsung.
+
+Tiga notebook sekarang menyelesaikan seluruh empat training/upload sebelum fase
+benchmark. Tes native tiny untuk tiga keluarga melatih empat recipe/model,
+memuat ulang adapter final untuk evaluasi, dan melewati hasil selesai saat resume.
+Tes barrier membuktikan kegagalan training/upload mencegah dimulainya benchmark.
+Reset lokal mengarsipkan evaluasi satu kali tanpa mengubah evidence training.
+Tes notebook lama diperbarui agar memakai auth gate yang sudah berlaku.
+
+HF reset terverifikasi pada commit `a12aa8980006e0942545463ebc2f42daaa4192cb`:
+14 file benchmark dihapus dari tree aktif; seluruh Git blob training tetap identik.
+Revision sebelumnya `16d132c10ab546e07fe6c2bdb5a1ebb8dd33c392` tetap menyimpan
+hasil lama di history. Metadata sebelum reset disimpan lokal di
+`outputs/benchmark_reset/`. Tidak ada training atau benchmark cloud dijalankan ulang.
+
+Env ai lokal kini Transformers 5.20.0. Tes native menggunakan Transformers 5.19.0
+dalam folder validasi terpisah melalui `uv pip --target`, tanpa mengganti library
+env ai. Notebook tetap memakai pin 5.19.0.
+
+## Pemeriksaan sebelumnya — 15 Oktober 2026
 
 Alur awal tiga notebook disusun ulang menjadi import Marimo → setup dependency
 → form HF token → verifikasi token → control/environment dan pipeline. Cell intro

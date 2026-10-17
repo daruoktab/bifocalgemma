@@ -225,7 +225,32 @@ def run_context_benchmark(
     )
     started = time.perf_counter()
     segment_initial_count = len(completed)
+    heartbeat_at = 0.0
+    heartbeat_stage = None
+
+    def activity(event, *, force=False):
+        nonlocal heartbeat_at, heartbeat_stage
+        now = time.monotonic()
+        if not force and event.get("stage") == heartbeat_stage and now - heartbeat_at < 5:
+            return
+        heartbeat_at = now
+        heartbeat_stage = event.get("stage")
+        payload = {"updated_at": time.time(), "benchmark": root.name, **event}
+        atomic_json(output / "activity.json", payload)
+        if progress:
+            progress(payload)
+
     for index, row in enumerate(public[len(completed) :], len(completed) + 1):
+        case_started = time.monotonic()
+        case_info = {
+            "instance_id": row["instance_id"],
+            "items_done": index - 1,
+            "items_total": len(ids),
+            "active_case": index,
+        }
+        activity(
+            {**case_info, "stage": "benchmark_case_started", "generated_tokens": 0}, force=True
+        )
         cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
         enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
         # Same output allowance for pairs and baselines: reserve the paired IT prefix.
@@ -244,12 +269,22 @@ def run_context_benchmark(
             raise ValueError("benchmark_decoder_prefix_exceeds_budget")
         total = decoder_limit if spec.encoder else cap + decoder_limit + 512
         generated = greedy_decode(
-            model, enc, prefix, max_new_tokens=new_tokens, max_total_decoder_tokens=total
+            model,
+            enc,
+            prefix,
+            max_new_tokens=new_tokens,
+            max_total_decoder_tokens=total,
+            progress=lambda event: activity(
+                {**case_info, **event, "case_elapsed_seconds": time.monotonic() - case_started}
+            ),
         )
         tokens = generated.token_ids
         if tokens and tokens[-1] in (1, 106, 50):
             tokens = tokens[:-1]
         completion = decode_text(decoder, tokens, skip_special_tokens=False)
+        activity(
+            {**case_info, "stage": "benchmark_scoring", "generated_tokens": len(tokens)}, force=True
+        )
         scoring = score_context_case(
             row,
             gold[row["instance_id"]],
@@ -272,6 +307,15 @@ def run_context_benchmark(
             stream.flush()
             os.fsync(stream.fileno())
         completed.append(record)
+        activity(
+            {
+                **case_info,
+                "stage": "benchmark_prediction_saved",
+                "items_done": index,
+                "generated_tokens": len(tokens),
+            },
+            force=True,
+        )
         if prediction_callback and (index % upload_every == 0 or index == len(ids)):
             prediction_callback()
         if progress:
@@ -312,4 +356,8 @@ def run_context_benchmark(
         if completed and key in completed[0]:
             report[key] = sum(float(r[key]) for r in completed) / len(ids)
     atomic_json(output / "benchmark_report.json", report)
+    activity(
+        {"stage": "benchmark_completed", "items_done": len(ids), "items_total": len(ids)},
+        force=True,
+    )
     return report

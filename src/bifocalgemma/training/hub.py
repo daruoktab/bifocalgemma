@@ -22,6 +22,21 @@ def checked_prefix(prefix):
 
 
 def synchronize_run(repo_id, root, prefix, *, token, checkpoint_only=False):
+    from huggingface_hub.errors import HfHubHTTPError
+
+    for attempt in range(3):
+        try:
+            return _synchronize_once(
+                repo_id, root, prefix, token=token, checkpoint_only=checkpoint_only
+            )
+        except HfHubHTTPError as error:
+            if error.response.status_code != 412 or attempt == 2:
+                raise
+            # Rebuild operations against the fresh HEAD, retaining the parent guard.
+    raise AssertionError("unreachable")
+
+
+def _synchronize_once(repo_id, root, prefix, *, token, checkpoint_only=False):
     from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi
 
     checked_prefix(prefix)
@@ -63,7 +78,7 @@ def synchronize_run(repo_id, root, prefix, *, token, checkpoint_only=False):
         files.append((relative, path))
     if not files or not retained:
         raise ValueError("No complete training checkpoint to upload.")
-    previous = api.model_info(repo_id).sha
+    previous = api.model_info(repo_id, timeout=30).sha
     remote = api.list_repo_files(repo_id, revision=previous)
     operations: list[CommitOperationAdd | CommitOperationDelete] = [
         CommitOperationAdd(path_in_repo=prefix + "/" + name, path_or_fileobj=str(path))

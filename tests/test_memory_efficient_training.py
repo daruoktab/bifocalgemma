@@ -294,6 +294,12 @@ def test_monitor_escapes_errors_updates_validation_and_exports_html(tmp_path):
         }
     )
     assert "3 / 7" in outputs[-1]
+    dashboard({"stage": "benchmark_upload_deferred", "benchmark_backup_status": "DEFERRED",
+               "backup_pending": True, "backup_next_retry_at": 1800000000,
+               "active_case": 2, "instance_id": "<case>", "generated_tokens": 19,
+               "case_elapsed_seconds": 12})
+    assert "DEFERRED" in outputs[-1] and "Token dihasilkan 19" in outputs[-1]
+    assert "&lt;case&gt;" in outputs[-1]
     dashboard({"stage": "validation_complete", "step": 1, "dev_loss": 0.6})
     assert dashboard.history[0]["eval"]["loss"] == 0.6
     dashboard({"stage": "failed", "error_type": "OOM", "error": "<script>bad</script>"})

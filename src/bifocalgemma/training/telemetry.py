@@ -173,6 +173,22 @@ def render_dashboard(state, history, recent):
             f'<pre style="white-space:pre-wrap">{esc(latest.get("completion", "")[:2000])}</pre></details>'
         )
     lr = " · ".join(f"{esc(k)}={v:.3g}" for k, v in state.get("learning_rates", {}).items()) or "—"
+    backup_note = ""
+    if state.get("benchmark_backup_status"):
+        retry_at = state.get("backup_next_retry_at")
+        retry_text = datetime.fromtimestamp(retry_at, timezone.utc).isoformat() if retry_at else "—"
+        backup_note = (
+            f"<p><strong>HF backup: {esc(state['benchmark_backup_status'])}</strong> · "
+            f"Pending: {esc(state.get('backup_pending'))} · Retry setelah UTC {esc(retry_text)}. "
+            "Prediksi tersimpan lokal; backup HF bisa tertinggal.</p>"
+        )
+    if state.get("active_case"):
+        backup_note += (
+            f"<p>Soal aktif {esc(state['active_case'])} · ID {esc(state.get('instance_id', ''))} · "
+            f"Token dihasilkan {esc(state.get('generated_tokens', 0))} · "
+            f"Waktu soal {format_duration(state.get('case_elapsed_seconds'))}. "
+            "Heartbeat diperbarui saat proses maju; heartbeat lama belum membuktikan kernel hang.</p>"
+        )
     optimizer_details = ""
     diagnostics = state.get("optimizer_diagnostics", {})
     if diagnostics:
@@ -229,7 +245,7 @@ def render_dashboard(state, history, recent):
     <progress max="{maximum}" value="{step}"></progress><p class="muted">{percent:.2f}% optimizer budget · Dev, checkpoint, dan upload terlihat sebagai tahap terpisah.</p>
     <p>{esc(state.get("message", ""))}</p>
     <p class="muted">Train {esc(state.get("train_examples", "—"))} · Dev {esc(state.get("dev_examples", "—"))} · Query chunk {esc(state.get("query_chunk_size", "—"))} · Loss chunk {esc(state.get("loss_chunk_size", "—"))}</p>
-    {error}{dev_progress}<div class="grid">{card_html}</div>{breakdown}
+    {error}{backup_note}{dev_progress}<div class="grid">{card_html}</div>{breakdown}
     <p class="muted">LR: {lr} · Microbatch {esc(state.get("microbatch", "—"))}/{esc(state.get("accumulation", "—"))}
     · Encoder {esc(state.get("encoder_tokens", "—"))} · Decoder {esc(state.get("decoder_tokens", "—"))} · Target {esc(state.get("batch_target_tokens", "—"))}</p>
     <p class="muted">Optimizer: {esc(state.get("optimizer_name", "—"))} · Full validation setiap {esc(state.get("eval_every", "—"))} update · Checkpoint setiap {esc(state.get("save_every", "—"))} update · Final selalu dijalankan</p>
@@ -283,6 +299,9 @@ class TrainingDashboard:
             "completed",
             "failed",
             "interrupted",
+            "benchmark_upload_deferred",
+            "benchmark_upload_synced",
+            "benchmark_upload_failed",
         }
         if now - self.last_refresh < self.refresh_seconds and not force:
             return

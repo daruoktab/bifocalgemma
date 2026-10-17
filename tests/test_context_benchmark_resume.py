@@ -98,6 +98,29 @@ def test_prediction_journal_resume_and_checkpoint_mismatch(tmp_path, monkeypatch
         model, EXPERIMENT_SPECS[0], root, tmp_path / "eval", tmp_path, **settings
     )
     assert model.encoded == 2 and again["total"] == 2
+    # Transient upload failures preserve every case and do not stop decoding/scoring.
+    from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
+    from tests.test_benchmark_upload import limited
+
+    queue = BenchmarkUploadQueue(tmp_path / "resilient", backoff_path=tmp_path / "backoff")
+
+    def transient():
+        raise limited()
+
+    resilient_model = FixtureGenerationModel()
+    resilient = run_context_benchmark(
+        resilient_model,
+        EXPERIMENT_SPECS[0],
+        root,
+        tmp_path / "resilient",
+        tmp_path,
+        prediction_callback=lambda: queue.attempt(transient),
+        **settings,
+    )
+    assert resilient["total"] == 2 and resilient["accuracy"] == 0.5
+    assert resilient_model.encoded == 2 and queue.state["pending"]
+    activity = json.loads((tmp_path / "resilient/activity.json").read_text())
+    assert activity["stage"] == "benchmark_completed" and activity["items_done"] == 2
     with pytest.raises(ValueError, match="changed"):
         run_context_benchmark(
             model,

@@ -86,6 +86,7 @@ def test_loader_always_verifies_pinned_collection_even_for_warm_cache(tmp_path, 
     }
     function = cell_function(PATHS[0], "corpus_pool_status")
     result = function(
+        {"verified": True},
         True,
         True,
         "owner/data",
@@ -114,12 +115,22 @@ def test_upload_enabled_does_not_require_credentials_or_touch_hub_before_complet
     tmp_path, status
 ):
     function = cell_function(PATHS[0], "upload_result")
-    result = function("owner/model", True, MO, {"status": status, "models": []})
+    result = function({"verified": True}, "owner/model", True, MO, {"status": status, "models": []})
     assert result[0]["status"] == "SKIPPED"
 
 
 def test_completed_upload_summary_has_no_second_side_effect(tmp_path):
     function = cell_function(PATHS[0], "upload_result")
-    result = function("owner/model", True, MO, {"status": "COMPLETED", "models": [{}, {}]})
+    result = function(
+        {"verified": True}, "owner/model", True, MO, {"status": "COMPLETED", "models": [{}, {}]}
+    )
     assert result[0]["status"] == "COMPLETED"
     assert result[0]["models"] == 2
+
+
+def test_pending_backup_is_not_displayed_as_completed():
+    function = cell_function(PATHS[0], "upload_result")
+    result = function(
+        {"verified": True}, "owner/model", True, MO, {"status": "PENDING_UPLOAD", "models": [{}]}
+    )
+    assert result[0]["status"] == "PENDING_UPLOAD"

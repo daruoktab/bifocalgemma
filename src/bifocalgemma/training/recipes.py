@@ -65,7 +65,7 @@ def resolve_training_cadence(
 
 
 def run_recipe_comparison(*, recipes, experiments, run_name, resume_from=None, **settings):
-    """Fresh initialization for every model/recipe, one resident model at a time."""
+    """Train/upload every model/recipe before evaluating any, one resident model at a time."""
     from bifocalgemma.training.sequential import run_sequential_pipeline
 
     if not recipes or set(recipes) - {"base", "optimized"}:
@@ -89,22 +89,44 @@ def run_recipe_comparison(*, recipes, experiments, run_name, resume_from=None, *
         validate_training_policy(policy)
         if policy["family"] != settings["family"]:
             raise ValueError("Recipe family differs from notebook family.")
+    evaluate = settings.pop("run_benchmarks", True)
+    train = settings.pop("run_training", True)
+    jobs = [
+        (experiment, recipe, policy)
+        for experiment in experiments
+        for recipe, policy in recipes.items()
+    ]
     results = []
-    for experiment in experiments:
-        for recipe, policy in recipes.items():
+    # The first pass is a barrier: no benchmark downloads/inference until every
+    # training run and its requested training upload has returned successfully.
+    for phase in ["training", "benchmark"] if evaluate else ["training"]:
+        phase_results = []
+        print(f"Comparison phase: {phase}; {len(jobs)} model/recipe runs", flush=True)
+        phase_settings = dict(settings)
+        if phase == "benchmark":
+            # Reuse pass-one checkpoints even when the initial request was a fresh run.
+            phase_settings["auto_resume"] = True
+        for job_index, (experiment, recipe, policy) in enumerate(jobs, 1):
+            print(f"{phase} {job_index}/{len(jobs)}: {experiment}/{recipe}", flush=True)
             outcome = run_sequential_pipeline(
                 experiments=(experiment,),
                 run_name=f"{run_name}/{recipe}",
                 training_policy=copy.deepcopy(policy),
                 resume_from=resume_from,
                 recipe_name=recipe,
-                **settings,
+                run_training=train if phase == "training" else False,
+                run_benchmarks=phase == "benchmark",
+                finalize=phase == "benchmark" or not evaluate,
+                **phase_settings,
             )
             for row in outcome["models"]:
                 row["recipe"] = recipe
-                results.append(row)
+                phase_results.append(row)
+        results = phase_results
     return {
-        "status": "COMPLETED",
+        "status": "PENDING_UPLOAD"
+        if any(r["status"] == "PENDING_UPLOAD" for r in results)
+        else "COMPLETED",
         "family": settings["family"],
         "sequence": list(experiments),
         "recipes": list(recipes),

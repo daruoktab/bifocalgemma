@@ -20,6 +20,28 @@ initialized from the same pretrained sources/seed. Four runs per notebook,
 twelve total. See [recipe comparison](TRAINING_RECIPE_COMPARISON.md) for shared
 numbers, exact optimizer semantics, and evidence limits.
 
+## Training barrier before evaluation
+
+Each notebook now completes **all four SFT runs and requested training uploads**
+before starting any benchmark. The second pass reloads one fresh backbone and
+its verified final adapters at a time; training-complete receipts prevent retraining.
+The same run names and training identities remain compatible with previous runs.
+The barrier is per notebook (four results), not across the three separate notebooks.
+Validation loss remains part of training and is not deferred.
+
+The notebook explicitly passes `benchmark_reset_id="2026-10-17-clean-evaluation-v1"`.
+On first resume of an existing local run, old benchmark files and the old ledger
+are archived under `.benchmark-reset-*`, evaluation/final-upload stages are cleared,
+and training stages/checkpoints stay intact. The same reset ID never resets new
+predictions a second time. Changing the ID intentionally invalidates evaluation again.
+
+For stopped Hub runs, `tools/reset_hf_benchmarks.py --repo ... --prefix ...`
+prints a scoped deletion plan; `--apply` deletes only benchmark files and obsolete
+final-evaluation receipts, and updates ledger/upload checksums in one guarded commit.
+It records the previous immutable HF revision locally and verifies training Git blobs
+remain identical. Stop writers first; old notebook sessions can otherwise reupload
+old results. The new notebook also archives old local results on resume.
+
 ## Budgets and defaults
 
 The user-selected training limits are **32,768 encoder tokens** and **8,192 shifted
@@ -93,7 +115,9 @@ squashed or erased.
 Checkpoint uploads contain a complete optimizer state. Final uploads include a
 receipt in the same Hub commit as the artifacts. A fresh runtime recovers the
 selected run at one pinned Hub revision and validates hashes before resuming.
-Benchmark progress is uploaded every 100 cases by default. Local progress is
+Benchmark backup is attempted every 500 cases, with at least 300 seconds between
+successful periodic uploads. Final flush bypasses this minimum interval, but never
+bypasses an active error backoff. Local progress is
 committed after every case; losing the runtime can require repeating cases after
 the most recent successful remote synchronization.
 
@@ -156,3 +180,45 @@ See [the next-run audit](TRAINING_NEXT_RUN.md). Defaults now use microbatch2,
 accumulation2, validation batch up to2, 3% warm-up and cosine decay to10% peak LR.
 The new run name prevents accidental resume of constant-LR pilots. Train/dev
 shape preflight uses the configured batch size. Benchmark generation stays single-case.
+
+## Deferred benchmark uploads and stalled-kernel inspection
+
+Every prediction remains committed locally before a backup attempt. HTTP 408/429,
+transient 5xx, network failures, and exhausted 412 conflicts defer benchmark backup
+instead of stopping scoring. Retry deadlines persist across kernel restarts and are
+shared across model runs in the notebook output root. `Retry-After` (seconds/date)
+and the official HF `RateLimit` reset are respected; fallback delay is 60 seconds,
+doubling to at most one hour. No evaluation-loop sleep is added. The SDK can still
+perform its own HTTP retries/waits during an in-flight call; this is not an asynchronous
+upload worker or a hard wall-clock deadline for the whole upload. Hub model-info
+requests have a 30-second timeout. Parent-commit conflicts rebuild the guarded
+transaction against fresh HEAD at most three times. No parent guard is removed.
+
+Auth/permission errors (401/403), storage/disk errors, and checksum mismatches remain
+fatal. Do not treat a storage quota or invalid token as a transient network error.
+Training checkpoint/uploads remain strict so the four-training barrier stays intact.
+
+A finished evaluation is committed to its local stage ledger before another backup
+attempt. Final upload includes both the report and completed ledger. If backup is
+still deferred, results and UI show **PENDING_UPLOAD**, not successful remote completion;
+the next model's benchmark can proceed. Rerunning after the deadline retries upload
+without loading the model or regenerating completed predictions. If the first final
+commit succeeded but publishing the completed ledger failed, that last commit is retried.
+No automatic timer survives a stopped notebook: retry happens at subsequent case/run
+boundaries or when the user reruns the notebook.
+
+`benchmark_upload_status.json` and `benchmark_upload_events.jsonl` record backup state;
+no auth token or raw HTTP error URL is written. Per-cohort `activity.json` records the
+active case and encoding/decoding/scoring/saved stages. Decoding heartbeats update
+every five seconds when tokens advance; stage changes update immediately. UI shows
+active case, generated tokens, elapsed time and backup state. Telemetry does not
+change tokens, stopping criteria, scores or the evaluation protocol.
+
+From a separate terminal, `python tools/inspect_benchmark_activity.py OUTPUT_ROOT`
+reads these files without sending work to the busy kernel. More than five minutes
+without activity is **STALE_REQUIRES_INSPECTION**, not proof of a hang: a single CUDA
+operation or SDK wait may be slow. An unresponsive GPU/kernel cannot be safely repaired
+inside itself. Inspect the GPU/process separately, then interrupt/restart and resume
+if necessary. The in-flight case is regenerated; already journaled cases are reused.
+No timed-out case is silently skipped or scored wrong, and no watchdog kills jobs.
+Losing the runtime disk still loses everything after the last successful HF backup.

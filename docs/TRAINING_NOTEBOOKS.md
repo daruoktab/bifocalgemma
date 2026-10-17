@@ -14,8 +14,8 @@ PyPI di Molab. Generator memuat simbol bundel melalui import dinamis agar scanne
 paket Marimo tidak menyarankan instalasi proyek dari luar.
 
 Panduan operasional dan kontrak resume lengkap ada di
-[Sequential training](SEQUENTIAL_TRAINING.md). Setiap model menyelesaikan training,
-upload, benchmark, dan upload hasil sebelum model berikutnya dimuat. Satu model
+[Sequential training](SEQUENTIAL_TRAINING.md). Keempat model/recipe menyelesaikan training dan upload bobot dahulu.
+Setelah semuanya berhasil, keempat checkpoint dimuat ulang bergiliran untuk benchmark dan upload hasil. Satu model
 resident pada satu waktu; keluarga pasangan tidak melatih baseline lagi.
 
 | Notebook | Urutan default |
@@ -206,3 +206,11 @@ atau mempatch registry Transformers untuk menyembunyikan error.
 
 Sumber versi: [metadata torchvision0.29.1](https://pypi.org/pypi/torchvision/0.29.1/json)
 dan [wheel resmi CUDA13.0](https://download.pytorch.org/whl/cu130/torchvision/).
+
+## Benchmark backup dan aktivitas
+
+Backup HF yang terkena rate limit ditunda; benchmark tetap menyimpan prediksi lokal.
+Status `PENDING_UPLOAD` berarti hasil lokal selesai tetapi backup belum terverifikasi.
+Default mencoba backup pada batas 500 soal dan minimum 300 detik antar backup periodik;
+final flush tetap mengikuti deadline retry error. UI menampilkan soal/token aktif dan
+status backup. Lihat [kontrak retry dan inspeksi hang](SEQUENTIAL_TRAINING.md#deferred-benchmark-uploads-and-stalled-kernel-inspection).

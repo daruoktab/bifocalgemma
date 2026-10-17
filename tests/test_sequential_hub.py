@@ -50,7 +50,7 @@ def test_checkpoint_upload_and_retention_receipt_are_one_scoped_commit(
         def create_repo(self, **kwargs):
             pass
 
-        def model_info(self, repo):
+        def model_info(self, repo, **kwargs):
             return SimpleNamespace(sha="a" * 40)
 
         def list_repo_files(self, *args, **kwargs):

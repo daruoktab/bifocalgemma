@@ -62,7 +62,7 @@ lagi dan selalu menyatakan mode synthetic, bukan benchmark score.
 source-pinned repo exports, matched-cohort SFT keenam model, checkpoint v2 inference,
 greedy patch/function/completion generation, serta opt-in native scoring.
 Notebook study menyediakan generation/scoring terpisah. Tiga training notebooks
-menjalankan full training → upload → benchmark → upload secara berurutan;
+menyelesaikan empat training + upload bobot terlebih dahulu, lalu benchmark + upload hasil;
 masing-masing 21 cell dengan 20 isi identik dan menerima koleksi HF beku.
 Setiap notebook menghasilkan empat run: dua model × recipe base AdamW dan
 optimized GrokOrScale LoRA, dengan checkpoint/resume/benchmark terpisah.
@@ -133,7 +133,7 @@ Tiga notebook khusus **training** tersedia:
 [asimetris](notebooks/bifocalgemma_train_asymmetric.py), dan
 [baseline](notebooks/bifocalgemma_train_baseline.py). Masing-masing 21 cell,
 20 isi cell identik; hanya tiga default control-center berbeda. Cell Training policy mengatur optimizer groups, LR/warmup serta freeze policy. Pipeline mencakup
-Pinned private HF dataset → LoRA SFT → dev loss → upload → benchmark → upload.
+Pinned private HF dataset → empat LoRA SFT + dev loss + upload → benchmark keempat hasil → upload.
 Unggah satu file notebook: source proyek sudah dibundel dan diaktifkan oleh cell
 setup. Tidak perlu checkout repo atau menginstal `bifocalgemma` dari PyPI di Molab.
 Urutan awal: **import Marimo → setup dependency → isi dan Apply HF key → Run stale**.

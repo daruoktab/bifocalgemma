@@ -15,7 +15,8 @@ tetap memakai rilis beku yang sama; training pretrained berikutnya dijalankan pe
 Total 12 hasil SFT. `base` berarti recipe AdamW, bukan encoder base checkpoint
 dan bukan IT model tanpa tuning. Setiap run dimuat ulang dari sumber pretrained
 dan seed yang sama. Optimized tidak melanjutkan hasil base. Satu model resident
-pada satu waktu; setiap run menyelesaikan SFT → upload → benchmark → upload.
+pada satu waktu. Selesaikan empat SFT + upload dahulu, lalu benchmark keempat
+checkpoint secara berurutan. Kegagalan training/upload menahan fase benchmark.
 
 Factory angka bersama ada di [`comparison_recipes`](../src/bifocalgemma/training/recipes.py).
 Cell **7a · Training policy** memuat `TRAINING_RECIPES`, menampilkan group dan

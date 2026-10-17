@@ -30,6 +30,7 @@ def greedy_decode(
     max_new_tokens: int,
     eos_ids: tuple[int, ...] = (1, 106, 50),
     max_total_decoder_tokens: int = 4096,
+    progress=None,
 ) -> GreedyGeneration:
     """Encode once and recompute causal decoder per step; suitable for correctness pilots."""
     if (
@@ -52,12 +53,16 @@ def greedy_decode(
     reason = "length_limit"
     try:
         with torch.inference_mode():
+            if progress:
+                progress({"stage": "benchmark_encoding", "generated_tokens": 0})
             enc = torch.tensor([encoder_ids], dtype=torch.long, device=device)
             enc_mask = torch.ones_like(enc, dtype=torch.bool)
             states = model.encode_context(enc, enc_mask) if model.encoder is not None else None
             if model.encoder is None:
                 enc_mask = None
             sequence = list(prefix_ids)
+            if progress:
+                progress({"stage": "benchmark_decoding", "generated_tokens": 0})
             for _ in range(max_new_tokens):
                 ids = torch.tensor([sequence], dtype=torch.long, device=device)
                 mask = torch.ones_like(ids, dtype=torch.bool)
@@ -67,6 +72,8 @@ def greedy_decode(
                     raise ValueError("nonfinite_generation_logits")
                 token = int(logits.argmax(-1).item())
                 output.append(token)
+                if progress:
+                    progress({"stage": "benchmark_decoding", "generated_tokens": len(output)})
                 if token in eos_ids:
                     reason = "tool_boundary" if token == 50 else "eos"
                     break
