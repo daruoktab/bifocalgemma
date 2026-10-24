@@ -1,5 +1,9 @@
 # BifocalGemma: Arsitektur Aktif dan Kontrak Implementasi
 
+Jalur training aktif sekarang adalah [normalized merged attention v2](BIFOCALGEMMA_V2.md).
+Kontrak di bawah mendokumentasikan implementasi v1 yang tetap dapat dibaca:
+v2 memakai linear+RMSNorm untuk semua pasangan dan embedding encoder terpisah.
+
 ## Keputusan aktif
 
 | Aspek | Keputusan |

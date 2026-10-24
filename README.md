@@ -1,5 +1,15 @@
 # BifocalGemma: Research Scaffold for Local Code Repair
 
+**Training aktif v2:** [enam notebook Molab](docs/BIFOCALGEMMA_V2.md), satu model
+per notebook dan satu resep AdamW. Empat pasangan memakai encoder base / decoder
+IT dengan normalized merged attention; dua baseline memakai decoder IT. Cukup Run:
+preflight GPU → training → benchmark → upload ke HF, tanpa pilihan tahap.
+Dashboard [Wigglystuff dan telemetri waktu](docs/WIGGLYSTUFF_TELEMETRY.md)
+menampilkan progress/loss/status otomatis; runtime bersama dipin di HF sehingga
+keenam notebook tetap ringkas.
+Notebook training sebelumnya tersedia di `notebooks/legacy/`; uraian recipe
+base/optimized di bawah adalah dokumentasi eksperimen v1.
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](pyproject.toml)
 [![GitHub](https://img.shields.io/badge/GitHub-bifocalgemma-green)](https://github.com/daruoktab/bifocalgemma)
@@ -26,8 +36,8 @@ fondasi kurasi sebelumnya. Status dan SHA rilis ada di
 
 | Pasangan | Encoder | Decoder | Ordinary word embeddings lintas komponen |
 | --- | --- | --- | --- |
-| E2B–E2B IT | E2B base | E2B IT | Tied dari initialization, anchor decoder IT |
-| E4B–E4B IT | E4B base | E4B IT | Tied dari initialization, anchor decoder IT |
+| E2B–E2B IT | E2B base | E2B IT | Terpisah (v2) |
+| E4B–E4B IT | E4B base | E4B IT | Terpisah (v2) |
 | E2B–E4B IT | E2B base | E4B IT | Terpisah |
 | E4B–E2B IT | E4B base | E2B IT | Terpisah |
 
