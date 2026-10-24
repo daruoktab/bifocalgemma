@@ -6,6 +6,7 @@ import math
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -72,6 +73,7 @@ def append_event(path, row):
     payload = {"timestamp_utc": datetime.now(timezone.utc).isoformat(), **row}
     with Path(path).open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, ensure_ascii=False, allow_nan=False) + "\n")
+        stream.flush()
     return payload
 
 
@@ -134,7 +136,9 @@ def render_dashboard(state, history, recent):
         ("Epoch", number(state.get("epoch_fraction"), 3)),
         ("Train CE", number(state.get("train_loss"), 5)),
         ("Dev CE", number(state.get("dev_loss"), 5)),
-        ("Waktu run", format_duration(state.get("elapsed_seconds"))),
+        ("Aktif teramati (lintas sesi)", format_duration(state.get("elapsed_seconds"))),
+        ("Sesi ini", format_duration(state.get("segment_seconds"))),
+        ("Jeda tidak teramati", format_duration(state.get("unobserved_gap_seconds"))),
         ("ETA train saja", format_duration(state.get("eta_train_seconds"))),
         ("Target token / detik", number(state.get("target_tokens_per_second"), 1)),
         ("Gradient norm sebelum clip", number(state.get("gradient_norm"), 3)),
@@ -253,6 +257,8 @@ def render_dashboard(state, history, recent):
     <p class="muted">Backend: {esc(state.get("attention_backend", "—"))} · Layer checkpointing: {esc(state.get("gradient_checkpointing", "—"))}
     · Batch IDs: {esc(", ".join(state.get("instance_ids", [])))}</p>
     {loss_chart(history)}<p class="muted">Checkpoint lengkap terakhir: {esc(state.get("last_checkpoint", "belum tersimpan"))}</p>
+    <p class="muted">Checkpoint HF terverifikasi: {esc(state.get("last_remote_checkpoint", "belum terverifikasi"))}
+    · Revision: {esc(str(state.get("remote_revision", "—"))[:12])} · Upload pending: {esc(state.get("upload_pending", "—"))}</p>
     <p class="muted">GPU peak kumulatif sejak awal segmen; ETA hanya waktu optimizer, belum termasuk evaluasi/save/upload. Nilai — berarti belum tersedia.</p>
     <details><summary>Aktivitas terbaru / diagnostics</summary><table>{rows}</table></details></section>"""
 
@@ -263,7 +269,7 @@ class TrainingDashboard:
     def __init__(self, mo, *, experiment="", refresh_seconds=1.0, device=None):
         self.mo = mo
         self.device = device
-        self.state = {"experiment": experiment, "step": 0}
+        self.state: dict[str, Any] = {"experiment": experiment, "step": 0}
         self.history: list[dict] = []
         self.recent: list[dict] = []
         self.last_refresh = 0.0
@@ -299,6 +305,9 @@ class TrainingDashboard:
             "completed",
             "failed",
             "interrupted",
+            "training_completed",
+            "pilot_completed",
+            "benchmark_completed",
             "benchmark_upload_deferred",
             "benchmark_upload_synced",
             "benchmark_upload_failed",
@@ -309,6 +318,9 @@ class TrainingDashboard:
         content = render_dashboard(self.state, self.history, self.recent)
         if self.run_dir is not None:
             (self.run_dir / "monitor.html").write_text(content, encoding="utf-8")
+        self.publish(content)
+
+    def publish(self, content):
         if self.mo is not None and self.ui_error is None:
             try:
                 self.mo.output.replace(self.mo.Html(content))

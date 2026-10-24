@@ -9,7 +9,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2 as httpx
 from huggingface_hub.utils import parse_ratelimit_headers
 
 from bifocalgemma.training.stages import atomic_json
@@ -54,10 +54,11 @@ class BenchmarkUploadQueue:
     Shared backoff prevents subsequent model runs hammering the same Hub repo.
     """
 
-    def __init__(self, root, *, backoff_path, progress=None, clock=time.time, interval=300):
+    def __init__(self, root, *, backoff_path, progress=None, clock=time.time, interval=300, label="Benchmark"):
         self.path = Path(root) / "benchmark_upload_status.json"
         self.backoff_path = Path(backoff_path)
         self.progress, self.clock, self.interval = progress, clock, interval
+        self.label = label
         self.state: dict[str, Any] = {"status": "NOT_STARTED", "pending": False, "failures": 0}
         if self.path.exists():
             self.state = json.loads(self.path.read_text(encoding="utf-8"))
@@ -71,7 +72,7 @@ class BenchmarkUploadQueue:
             "backup_pending": self.state["pending"],
             "backup_next_retry_at": self.state.get("next_retry_at"),
             "backup_last_success_at": self.state.get("last_success_at"),
-            "message": "Benchmark backup: " + self.state["status"],
+            "message": self.label + " backup: " + self.state["status"],
         }
         print(json.dumps(event), flush=True)
         append_event(self.path.with_name("benchmark_upload_events.jsonl"), event)

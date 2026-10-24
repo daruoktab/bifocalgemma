@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -18,7 +19,20 @@ def atomic_json(path, payload):
         json.dump(payload, stream, ensure_ascii=False, indent=2, allow_nan=False)
         stream.flush()
         os.fsync(stream.fileno())
-    temporary.replace(path)
+    retry_windows_file_operation(lambda: temporary.replace(path))
+
+
+def retry_windows_file_operation(operation):
+    """Retry only transient Windows sharing/access failures; preserve atomicity."""
+    for attempt in range(6):
+        try:
+            return operation()
+        except PermissionError as error:
+            # Windows readers/scanners can briefly deny an atomic replacement.
+            # Preserve the old destination; never fall back to an in-place write.
+            if getattr(error, "winerror", None) not in {5, 32, 33} or attempt == 5:
+                raise
+            time.sleep(0.02 * 2**attempt)
 
 
 class StageLedger:

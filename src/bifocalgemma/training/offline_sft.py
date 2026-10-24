@@ -82,7 +82,7 @@ def save_sft_checkpoint(
         "compatibility": compatibility,
         "trainable_names": sorted(parameters),
     }
-    if checkpoint_format == "bifocalgemma_notebook_sft_v2":
+    if checkpoint_format in {"bifocalgemma_notebook_sft_v2", "bifocalgemma_normalized_sft_v3"}:
         metadata["optimizer_groups"] = optimizer_group_manifest(optimizer.param_groups)
     (stage / "manifest.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     marker = {
@@ -92,7 +92,9 @@ def save_sft_checkpoint(
     (stage / "READY.json").write_text(json.dumps(marker, indent=2), encoding="utf-8")
     if stage.resolve().parent != root or final.resolve().parent != root:
         raise ValueError("Checkpoint targets escaped run directory.")
-    stage.rename(final)
+    from bifocalgemma.training.stages import retry_windows_file_operation
+
+    retry_windows_file_operation(lambda: stage.rename(final))
     return str(final)
 
 
@@ -115,18 +117,18 @@ def restore_sft_checkpoint(
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("format") != checkpoint_format:
         raise ValueError(
-            "Checkpoint format mismatch: grouped policy requires v2; resume v1 with the previous notebook."
+            "Checkpoint format/architecture mismatch: grouped policy requires v2 or its versioned successor; legacy checkpoints cannot resume unified_v2. Use the original notebook for legacy checkpoints."
         )
     if manifest["compatibility"] != compatibility:
         raise ValueError("Checkpoint experiment/data/tokenizer/optimizer config mismatch.")
-    if checkpoint_format == "bifocalgemma_notebook_sft_v2":
+    if checkpoint_format in {"bifocalgemma_notebook_sft_v2", "bifocalgemma_normalized_sft_v3"}:
         if manifest.get("optimizer_groups") != optimizer_group_manifest(optimizer.param_groups):
             raise ValueError("Checkpoint optimizer group order/names/policy mismatch.")
     parameters = {name: p for name, p in model.named_parameters() if p.requires_grad}
     if sorted(parameters) != manifest["trainable_names"]:
         raise ValueError("Checkpoint trainable parameter names differ.")
     payload = torch.load(root / "trainer_state.pt", map_location="cpu", weights_only=True)
-    if checkpoint_format == "bifocalgemma_notebook_sft_v2":
+    if checkpoint_format in {"bifocalgemma_notebook_sft_v2", "bifocalgemma_normalized_sft_v3"}:
         saved_groups = payload["optimizer"]["param_groups"]
         if optimizer_group_manifest(saved_groups) != optimizer_group_manifest(
             optimizer.param_groups
@@ -314,14 +316,19 @@ def fit_offline_sft(
     event_callback=None,
     save_total_limit=2,
     checkpoint_callback=None,
+    save_interval_seconds=None,
 ) -> "dict[str, Any]":
     import time
     import traceback
 
     from bifocalgemma.training.stages import retained_checkpoints
     from bifocalgemma.training.telemetry import TrainingDashboard, append_event, resource_snapshot
+    from bifocalgemma.training.timing import DurableClock
 
     segment_started = time.perf_counter()
+    last_saved_at = segment_started
+    if save_interval_seconds is not None and save_interval_seconds <= 0:
+        raise ValueError("Checkpoint interval must be positive.")
     evaluation_seconds = checkpoint_seconds = 0.0
     if (
         min(max_steps, epochs, batch_size, accumulation, eval_every, save_every) < 1
@@ -362,6 +369,8 @@ def fit_offline_sft(
             "optimizer_groups": optimizer_group_manifest(groups),
         }
         checkpoint_format = "bifocalgemma_notebook_sft_v2"
+        if training_policy.get("version") == "unified_v2":
+            checkpoint_format = "bifocalgemma_normalized_sft_v3"
     device = next(model.parameters()).device
     order = list(range(len(train)))
     random.Random(seed).shuffle(order)
@@ -376,6 +385,11 @@ def fit_offline_sft(
             len(train),
             checkpoint_format=checkpoint_format,
         )
+    clock = DurableClock(
+        root / "timing.json",
+        checkpoint_seconds=state.get("accumulated_seconds", 0),
+        started=segment_started,
+    )
     if data_manifest is not None:
         (root / "data_manifest.json").write_text(
             json.dumps(data_manifest, indent=2), encoding="utf-8"
@@ -411,11 +425,14 @@ def fit_offline_sft(
             "epoch_fraction": state["epoch"] + state["cursor"] / len(train),
             "max_steps": max_steps,
             "accumulation": accumulation,
-            "elapsed_seconds": time.perf_counter() - segment_started,
+            "elapsed_seconds": clock.elapsed(),
+            "segment_seconds": time.perf_counter() - segment_started,
+            "unobserved_gap_seconds": clock.gap,
             **event,
             **resource_snapshot(device),
         }
         payload = append_event(root / "events.jsonl", row)
+        clock.persist()
         if event_callback:
             event_callback(payload)
         return payload
@@ -538,8 +555,39 @@ def fit_offline_sft(
             else:
                 rates = update_policy_learning_rates(optimizer, state["global_step"])
             emit({"stage": "optimizer_started", "learning_rates": rates})
+            diagnostics = None
+            before = None
+            if (training_policy or {}).get("version") == "unified_v2" and state[
+                "global_step"
+            ] % 10 == 0:
+                diagnostics = {
+                    g["name"]: {
+                        "gradient_norm_after_clip": sum(
+                            float(p.grad.float().square().sum())
+                            for p in g["params"]
+                            if p.grad is not None
+                        )
+                        ** 0.5
+                    }
+                    for g in optimizer.param_groups
+                }
+                before = {id(p): p.detach().clone() for p in parameters}
             optimizer_started = time.perf_counter()
             optimizer.step()
+            if before is not None:
+                assert diagnostics is not None
+                for g in optimizer.param_groups:
+                    update = (
+                        sum(float((p.detach() - before[id(p)]).square().sum()) for p in g["params"])
+                        ** 0.5
+                    )
+                    magnitude = sum(float(before[id(p)].square().sum()) for p in g["params"]) ** 0.5
+                    diagnostics[g["name"]].update(
+                        update_norm=update,
+                        parameter_norm_before=magnitude,
+                        relative_update=update / max(magnitude, 1e-30),
+                    )
+                del before
             optimizer.zero_grad(set_to_none=True)
             if device.type == "cuda":
                 torch.cuda.synchronize(device)
@@ -580,6 +628,8 @@ def fit_offline_sft(
                 row["learning_rates"] = rates
             if hasattr(optimizer, "last_diagnostics"):
                 row["optimizer_diagnostics"] = copy.deepcopy(optimizer.last_diagnostics)
+            if diagnostics is not None:
+                row["optimizer_diagnostics"] = diagnostics
             if device.type == "cuda":
                 row["peak_allocated_gib"] = torch.cuda.max_memory_allocated(device) / 2**30
             recent_times = [r.get("step_seconds", seconds) for r in state["history"][-19:]] + [
@@ -608,9 +658,13 @@ def fit_offline_sft(
                 stream.write(json.dumps(row, allow_nan=False) + "\n")
             if progress:
                 progress(row)
-            if state["global_step"] % save_every == 0:
+            if state["global_step"] % save_every == 0 or (
+                save_interval_seconds is not None
+                and time.perf_counter() - last_saved_at >= save_interval_seconds
+            ):
                 started = time.perf_counter()
                 emit({"stage": "checkpoint_started"})
+                state["accumulated_seconds"] = clock.elapsed()
                 last_checkpoint = save_sft_checkpoint(
                     model,
                     optimizer,
@@ -624,6 +678,8 @@ def fit_offline_sft(
                     checkpoint_callback(last_checkpoint)
                 checkpoint_seconds += time.perf_counter() - started
                 last_checkpoint_step = state["global_step"]
+                last_saved_at = time.perf_counter()
+                clock.persist(force=True)
                 emit(
                     {
                         "stage": "checkpoint_complete",
@@ -644,6 +700,7 @@ def fit_offline_sft(
         if state["global_step"] != last_checkpoint_step:
             started = time.perf_counter()
             emit({"stage": "checkpoint_started"})
+            state["accumulated_seconds"] = clock.elapsed()
             last_checkpoint = save_sft_checkpoint(
                 model, optimizer, state, root, compatibility, checkpoint_format=checkpoint_format
             )
@@ -659,6 +716,7 @@ def fit_offline_sft(
                 }
             )
         checkpoints = retained_checkpoints(root, limit=save_total_limit)
+        clock.close()
         result = {
             "status": "COMPLETED",
             "global_step": state["global_step"],
@@ -686,6 +744,7 @@ def fit_offline_sft(
             "monitor_file": str(root / "monitor.html"),
         }
         result["timing"] = {
+            **clock.summary(),
             "segment_wall_seconds": result["segment_seconds"],
             "segment_evaluation_seconds": evaluation_seconds,
             "segment_checkpoint_seconds": checkpoint_seconds,
@@ -706,6 +765,7 @@ def fit_offline_sft(
         )
         return result
     except BaseException as exc:
+        clock.close("INTERRUPTED" if isinstance(exc, KeyboardInterrupt) else "FAILED")
         failed_stage = phase
         failure = {
             "status": "INTERRUPTED" if isinstance(exc, KeyboardInterrupt) else "FAILED",

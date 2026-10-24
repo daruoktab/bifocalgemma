@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from email.utils import format_datetime
 
-import httpx
+import httpx2 as httpx
 import pytest
 
 from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue, retry_delay

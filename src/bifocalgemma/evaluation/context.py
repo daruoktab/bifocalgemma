@@ -7,12 +7,14 @@ import time
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Any
 
 from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.training.stages import atomic_json
 
 EVALUATION_PROTOCOL = "greedy_no_cache_context_v2_explicit_repair_format"
+V2_EVALUATION_PROTOCOL = "greedy_cached_normalized_merged_v2"
 
 
 def greedy_decode(*args, **kwargs):
@@ -88,7 +90,9 @@ def completion_metrics(prediction, reference):
     }
 
 
-def score_context_case(row, gold, completion, *, directory, python_executable, allow_execution):
+def score_context_case(
+    row, gold, completion, *, directory, python_executable, allow_execution, include_syntax=False
+):
     kind = row.get("task_type")
     if kind == "mcq":
         parsed = strict_letter(completion)
@@ -118,9 +122,10 @@ def score_context_case(row, gold, completion, *, directory, python_executable, a
         path = (Path(directory) / gold["snapshot_file"]).resolve()
         if not path.is_relative_to(Path(directory).resolve()):
             raise ValueError("benchmark_snapshot_path")
+        snapshot = snapshot_from_json(path)
         result = score_python_patch(
             row["instance_id"],
-            snapshot_from_json(path),
+            snapshot,
             completion,
             gold.get("test_script") or "",
             python_executable=python_executable,
@@ -131,7 +136,12 @@ def score_context_case(row, gold, completion, *, directory, python_executable, a
         )
         if result.status == "INFRA_ERROR":
             raise RuntimeError("Functional benchmark infrastructure failed: " + result.reason)
-        return {**asdict(result), "correct": result.functional_pass}
+        record: dict[str, Any] = {**asdict(result), "correct": result.functional_pass}
+        if include_syntax:
+            from bifocalgemma.evaluation.syntax import patch_syntax
+
+            record.update(patch_syntax(snapshot, completion, applied=result.patch_applied))
+        return record
     raise ValueError("unsupported_benchmark_scorer")
 
 
@@ -151,6 +161,7 @@ def run_context_benchmark(
     progress=None,
     prediction_callback=None,
     upload_every=100,
+    use_cache=False,
 ):
     """Commit each prediction once. A failed process resumes the next uncommitted case."""
     import sys
@@ -175,6 +186,7 @@ def run_context_benchmark(
     if not ids or len(set(ids)) != len(ids) or ids != [r["instance_id"] for r in hidden]:
         raise ValueError("benchmark_public_gold_cohort_mismatch")
     gold = {r["instance_id"]: r for r in hidden}
+    protocol_version = V2_EVALUATION_PROTOCOL if use_cache else EVALUATION_PROTOCOL
     signature = stable_fingerprint(
         {
             "model": spec.to_dict(),
@@ -185,7 +197,7 @@ def run_context_benchmark(
             "decoder_limit": decoder_limit,
             "max_new_tokens": max_new_tokens,
             "execution": allow_execution,
-            "protocol": EVALUATION_PROTOCOL,
+            "protocol": protocol_version,
         }
     )
     output.mkdir(parents=True, exist_ok=True)
@@ -209,7 +221,7 @@ def run_context_benchmark(
                     break
                 try:
                     value = json.loads(line)
-                except (ValueError, UnicodeDecodeError):
+                except ValueError:
                     if stream.read():
                         raise ValueError("Corrupt prediction journal before final record.")
                     stream.truncate(offset)
@@ -224,6 +236,9 @@ def run_context_benchmark(
         load_verified_tokenizer(spec.encoder, Path(tokenizer_cache))[0] if spec.encoder else None
     )
     started = time.perf_counter()
+    from bifocalgemma.training.timing import DurableClock
+
+    clock = DurableClock(output / "timing.json", started=started)
     segment_initial_count = len(completed)
     heartbeat_at = 0.0
     heartbeat_stage = None
@@ -237,6 +252,7 @@ def run_context_benchmark(
         heartbeat_stage = event.get("stage")
         payload = {"updated_at": time.time(), "benchmark": root.name, **event}
         atomic_json(output / "activity.json", payload)
+        clock.persist(force=force)
         if progress:
             progress(payload)
 
@@ -277,6 +293,7 @@ def run_context_benchmark(
             progress=lambda event: activity(
                 {**case_info, **event, "case_elapsed_seconds": time.monotonic() - case_started}
             ),
+            **({"use_cache": True} if use_cache else {}),
         )
         tokens = generated.token_ids
         if tokens and tokens[-1] in (1, 106, 50):
@@ -292,6 +309,7 @@ def run_context_benchmark(
             directory=root,
             python_executable=python_executable or sys.executable,
             allow_execution=allow_execution,
+            **({"include_syntax": True} if use_cache else {}),
         )
         record = {
             "instance_id": row["instance_id"],
@@ -300,6 +318,7 @@ def run_context_benchmark(
             "encoder_tokens": len(enc),
             "decoder_prefix_tokens": len(prefix),
             "generated_tokens": len(tokens),
+            "case_seconds": time.monotonic() - case_started,
             **scoring,
         }
         with predictions.open("a", encoding="utf-8", newline="\n") as stream:
@@ -326,7 +345,8 @@ def run_context_benchmark(
                     "items_total": len(ids),
                     "message": f"{root.name}: {index:,}/{len(ids):,}",
                     "benchmark": root.name,
-                    "benchmark_elapsed_seconds": time.perf_counter() - started,
+                    "benchmark_elapsed_seconds": clock.elapsed(),
+                    "unobserved_gap_seconds": clock.gap,
                     "benchmark_eta_seconds": (time.perf_counter() - started)
                     / max(1, index - segment_initial_count)
                     * max(0, len(ids) - index),
@@ -336,6 +356,7 @@ def run_context_benchmark(
                 }
             )
     scored = all(r["correct"] is not None for r in completed)
+    clock.close()
     report = {
         "status": "COMPLETED",
         "signature": signature,
@@ -347,14 +368,23 @@ def run_context_benchmark(
         "statuses": dict(Counter(r["status"] for r in completed)),
         "generation_length_limit": sum(r["stop_reason"] == "length_limit" for r in completed),
         "segment_seconds": time.perf_counter() - started,
+        "timing": clock.summary(),
         "official_protocol": False,
-        "protocol_version": EVALUATION_PROTOCOL,
-        "protocol": "greedy_no_temporal_cache; fixed eligible cohort; no context truncation",
+        "protocol_version": protocol_version,
+        "protocol": ("greedy_cached" if use_cache else "greedy_no_temporal_cache")
+        + "; fixed eligible cohort; no context truncation",
         "resources": resource_snapshot(next(model.parameters()).device),
     }
     for key in ("exact_match", "sequence_similarity", "regex_identifier_set_f1"):
         if completed and key in completed[0]:
             report[key] = sum(float(r[key]) for r in completed) / len(ids)
+    if completed and "patch_applied" in completed[0]:
+        report["patch_apply_rate"] = sum(bool(r["patch_applied"]) for r in completed) / len(ids)
+        checked = [r for r in completed if r.get("syntax_valid") is not None]
+        report["syntax_checked"] = len(checked)
+        report["syntax_success_rate"] = (
+            sum(bool(r["syntax_valid"]) for r in checked) / len(checked) if checked else None
+        )
     atomic_json(output / "benchmark_report.json", report)
     activity(
         {"stage": "benchmark_completed", "items_done": len(ids), "items_total": len(ids)},
