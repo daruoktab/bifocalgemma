@@ -7,6 +7,26 @@ from pathlib import PurePosixPath
 from bifocalgemma.training.policy import default_training_profiles, validate_training_policy
 
 
+def unified_recipe(family):
+    """One AdamW policy for all v2 models, including paired alignment gains."""
+    policy = default_training_profiles()[family]
+    policy.update(
+        version="unified_v2", train_alignment=family != "decoder_only", alignment_fp32=True
+    )
+    if family != "decoder_only":
+        policy["groups"]["alignment"] = {"lr": 1e-4, "warmup_steps": 0}
+    for name, settings in policy["groups"].items():
+        settings.update(
+            lr=1e-4 if name == "alignment" else 2e-5,
+            warmup_steps=0,
+            warmup_ratio=0.03,
+            scheduler="cosine",
+            min_lr_ratio=0.1,
+        )
+    policy["optimizer"] = {"name": "adamw", "betas": [0.9, 0.999], "eps": 1e-8, "weight_decay": 0.0}
+    return policy
+
+
 def comparison_recipes(family):
     """Same data/LoRA/objective/LR numbers in every architecture and recipe.
 

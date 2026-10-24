@@ -31,6 +31,7 @@ def greedy_decode(
     eos_ids: tuple[int, ...] = (1, 106, 50),
     max_total_decoder_tokens: int = 4096,
     progress=None,
+    use_cache=False,
 ) -> GreedyGeneration:
     """Encode once and recompute causal decoder per step; suitable for correctness pilots."""
     if (
@@ -61,13 +62,24 @@ def greedy_decode(
             if model.encoder is None:
                 enc_mask = None
             sequence = list(prefix_ids)
+            from bifocalgemma.models.inference_cache import InferenceCache, cached_logits
+
+            cache = InferenceCache() if use_cache else None
             if progress:
                 progress({"stage": "benchmark_decoding", "generated_tokens": 0})
             for _ in range(max_new_tokens):
-                ids = torch.tensor([sequence], dtype=torch.long, device=device)
+                ids = torch.tensor(
+                    [sequence if cache is None or cache.offset == 0 else sequence[-1:]],
+                    dtype=torch.long,
+                    device=device,
+                )
                 mask = torch.ones_like(ids, dtype=torch.bool)
                 decode = getattr(model, "decode_next_logits", model.decode_logits)
-                logits = decode(ids, mask, states, enc_mask)[:, -1]
+                logits = (
+                    cached_logits(model, ids, cache, states, enc_mask)
+                    if cache is not None
+                    else decode(ids, mask, states, enc_mask)
+                )[:, -1]
                 if not bool(torch.isfinite(logits).all()):
                     raise ValueError("nonfinite_generation_logits")
                 token = int(logits.argmax(-1).item())

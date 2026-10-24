@@ -20,6 +20,27 @@ DEFAULT_MEMORY_POLICY = {
 }
 
 
+def mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window):
+    if encoder_valid is not None:
+        return joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window)
+    if isinstance(attention_mask, dict):
+        valid = attention_mask["valid"]
+        positions = torch.arange(valid.shape[1], device=valid.device)
+        queries = positions[start:stop, None]
+        visible = torch.ones((stop - start, valid.shape[1]), device=valid.device, dtype=torch.bool)
+        if not attention_mask["bidirectional"]:
+            visible &= positions[None, :] <= queries
+        if window:
+            distance = (positions[None, :] - queries).abs()
+            visible &= distance <= window if attention_mask["bidirectional"] else distance < window
+        return (
+            visible[None, None]
+            & valid[:, None, None, :].bool()
+            & valid[:, None, start:stop, None].bool()
+        )
+    return attention_mask[..., start:stop, :] if attention_mask is not None else None
+
+
 def joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window):
     positions = torch.arange(decoder_valid.shape[1], device=decoder_valid.device)
     queries = positions[start:stop, None]
@@ -91,13 +112,7 @@ class _TiledAttention(torch.autograd.Function):
         pieces = []
         for start in range(0, query.shape[2], chunk_size):
             stop = min(start + chunk_size, query.shape[2])
-            mask = (
-                joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window)
-                if encoder_valid is not None
-                else attention_mask[..., start:stop, :]
-                if attention_mask is not None
-                else None
-            )
+            mask = mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window)
             pieces.append(
                 attention_tile(
                     query[:, :, start:stop],
@@ -106,7 +121,7 @@ class _TiledAttention(torch.autograd.Function):
                     mask,
                     scaling,
                     0.0,
-                    encoder_valid is not None,
+                    encoder_valid is not None or isinstance(attention_mask, dict),
                 )
             )
         return torch.cat(pieces, dim=2)
@@ -124,17 +139,13 @@ class _TiledAttention(torch.autograd.Function):
         dk = torch.zeros(repeated_key.shape, dtype=accumulation_dtype, device=key.device)
         dv = torch.zeros(repeated_value.shape, dtype=accumulation_dtype, device=value.device)
         dq = torch.zeros_like(query)
-        merged = ctx.encoder_valid is not None
+        merged = ctx.encoder_valid is not None or isinstance(ctx.attention_mask, dict)
         for start in range(0, length, ctx.chunk_size):
             stop = min(start + ctx.chunk_size, length)
             q = query[:, :, start:stop]
             grad = grad_output[:, :, start:stop]
-            mask = (
-                joint_visibility_tile(ctx.encoder_valid, ctx.decoder_valid, start, stop, ctx.window)
-                if merged
-                else ctx.attention_mask[..., start:stop, :]
-                if ctx.attention_mask is not None
-                else None
+            mask = mask_tile(
+                ctx.attention_mask, ctx.encoder_valid, ctx.decoder_valid, start, stop, ctx.window
             )
             scores = torch.matmul(q, repeated_key.transpose(-1, -2)) * ctx.scaling
             if mask is not None:
@@ -192,6 +203,7 @@ def tiled_attention(
     encoder_valid=None,
     decoder_valid=None,
     window=None,
+    backend="tiled_eager_fp32",
 ):
     if chunk_size < 1 or query.shape[2] < 1:
         raise ValueError("Attention chunk size and query length must be positive.")
@@ -199,6 +211,19 @@ def tiled_attention(
         raise ValueError("Conservative tiled attention is validated for native Gemma dropout=0.")
     if encoder_valid is not None and decoder_valid is None:
         raise ValueError("Merged attention requires decoder validity.")
+    if backend == "flex_attention" or (backend == "hybrid_flex" and query.shape[-1] <= 256):
+        from bifocalgemma.models.flex_attention import fused_attention
+
+        return fused_attention(
+            query,
+            key,
+            value,
+            scaling=scaling,
+            attention_mask=attention_mask,
+            encoder_valid=encoder_valid,
+            decoder_valid=decoder_valid,
+            window=window,
+        )
     return _TiledAttention.apply(
         query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
     )
@@ -234,6 +259,9 @@ class TiledEncoderAttention(Gemma4TextAttention):
             value = self.v_norm(value).transpose(1, 2)
         if self.store_full_length_kv:
             shared_kv_states[self.layer_type] = (key, value)
+        valid = kwargs.get("self_valid") if getattr(self, "structured_masks", False) else None
+        if valid is not None:
+            attention_mask = {"valid": valid, "bidirectional": not self.is_causal}
         result = tiled_attention(
             query,
             key,
@@ -242,6 +270,8 @@ class TiledEncoderAttention(Gemma4TextAttention):
             scaling=self.scaling,
             dropout=self.attention_dropout if self.training else 0.0,
             attention_mask=attention_mask,
+            window=self.sliding_window,
+            backend=getattr(self, "attention_backend", "tiled_eager_fp32"),
         )
         result = result.transpose(1, 2).contiguous().reshape(batch, length, -1)
         return self.o_proj(result), None
@@ -296,6 +326,10 @@ class TiledMergedAttention(TiledEncoderAttention):
             value = torch.cat((value, cross_value), dim=2)
         if self.store_full_length_kv:
             shared_kv_states[self.layer_type] = (key, value)
+        if getattr(self, "collect_encoder_mass", False):
+            from bifocalgemma.training.v2_diagnostics import sample_encoder_mass
+
+            sample_encoder_mass(self, query, key, encoder_valid, decoder_valid)
         result = tiled_attention(
             query,
             key,
@@ -306,6 +340,7 @@ class TiledMergedAttention(TiledEncoderAttention):
             encoder_valid=encoder_valid,
             decoder_valid=decoder_valid,
             window=self.sliding_window,
+            backend=getattr(self, "attention_backend", "tiled_eager_fp32"),
         )
         result = result.transpose(1, 2).contiguous().reshape(batch, length, -1)
         return self.o_proj(result), None
@@ -315,7 +350,10 @@ def configure_memory_efficient_training(model, policy=None):
     options = {**DEFAULT_MEMORY_POLICY, **(policy or {})}
     if set(options) != set(DEFAULT_MEMORY_POLICY) or options["version"] != "tiled_recompute_v1":
         raise ValueError("Unknown memory policy.")
-    if options["attention_backend"] != "tiled_eager_fp32" or options["ple_offload"] is not False:
+    if (
+        options["attention_backend"] not in {"tiled_eager_fp32", "flex_attention", "hybrid_flex"}
+        or options["ple_offload"] is not False
+    ):
         raise ValueError(
             "Only conservative tiled FP32 attention with GPU-resident PLE is supported."
         )
@@ -340,6 +378,8 @@ def configure_memory_efficient_training(model, policy=None):
                 else TiledEncoderAttention
             )
             target.query_chunk_size = options["query_chunk_size"]
+            target.attention_backend = options["attention_backend"]
+            target.structured_masks = model.spec.architecture_version == "normalized_merged_v2"
             layer.self_attn = target
         if options["gradient_checkpointing"]:
             stack.gradient_checkpointing_enable(

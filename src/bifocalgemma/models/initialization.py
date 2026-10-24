@@ -43,7 +43,13 @@ def describe_initialization(spec: ExperimentSpec) -> InitializationPlan:
         decoder_source if spec.tie_encoder_decoder_words else None,
         "not_applicable"
         if spec.encoder is None
-        else ("new_learned_projection" if asymmetric else "identity"),
+        else (
+            "normalized_linear_rmsnorm"
+            if spec.architecture_version == "normalized_merged_v2"
+            else "new_learned_projection"
+            if asymmetric
+            else "identity"
+        ),
         spec.attention_mode,
     )
 

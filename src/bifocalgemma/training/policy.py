@@ -55,7 +55,11 @@ def validate_training_policy(policy, model=None):
     family = policy.get("family")
     if family not in {"symmetric", "asymmetric", "decoder_only"}:
         raise ValueError("Unknown training-policy family.")
-    if policy.get("version") != "attention_lora_policy_v1" or policy.get("phase") != "joint":
+    v2 = policy.get("version") == "unified_v2"
+    if (
+        policy.get("version") not in {"attention_lora_policy_v1", "unified_v2"}
+        or policy.get("phase") != "joint"
+    ):
         raise ValueError("Only joint attention LoRA policy v1 is supported.")
     if policy.get("freeze_words") is not True or policy.get("freeze_ple") is not True:
         raise ValueError("Word/PLE training needs a separately validated policy.")
@@ -68,10 +72,10 @@ def validate_training_policy(policy, model=None):
     ):
         raise ValueError("LoRA alpha must be finite and positive.")
     expected = ({"decoder"} if family == "decoder_only" else {"encoder", "decoder"}) | (
-        {"alignment"} if family == "asymmetric" else set()
+        {"alignment"} if family == "asymmetric" or (v2 and family == "symmetric") else set()
     )
     if set(policy.get("groups", {})) != expected or policy.get("train_alignment") != (
-        family == "asymmetric"
+        family == "asymmetric" or (v2 and family == "symmetric")
     ):
         raise ValueError("Policy groups/alignment do not match family.")
     for name, settings in policy["groups"].items():
@@ -91,15 +95,25 @@ def validate_training_policy(policy, model=None):
             ):
                 raise ValueError(f"Invalid {key} for {name}.")
     if model is not None:
+        if v2 and model.spec.architecture_version != "normalized_merged_v2":
+            raise ValueError("unified_v2 requires a v2 model; legacy checkpoints cannot resume this architecture.")
         if family == "decoder_only":
             if model.encoder is not None or model.encoder_projection is not None:
                 raise ValueError("Decoder-only policy requires a baseline model.")
             return
         if getattr(model, "encoder", None) is None or model.spec.tie_encoder_decoder_words != (
-            family == "symmetric"
+            family == "symmetric" and not v2
         ):
             raise ValueError("Model architecture does not match policy family.")
         projection = model.encoder_projection
+        if v2:
+            from bifocalgemma.models.alignment import NormalizedAlignment
+
+            if model.spec.architecture_version != "normalized_merged_v2" or not isinstance(
+                projection, NormalizedAlignment
+            ):
+                raise ValueError("unified_v2 requires normalized_merged_v2 alignment.")
+            return
         if family == "symmetric" and not isinstance(projection, nn.Identity):
             raise ValueError("Symmetric policy expects Identity alignment.")
         if family == "asymmetric" and not isinstance(projection, nn.Linear):
@@ -109,6 +123,8 @@ def validate_training_policy(policy, model=None):
 def configure_policy_model(model, policy):
     validate_training_policy(policy, model)
     scope = configure_probe_training(model, policy="lora", rank=policy["rank"])
+    if policy["version"] == "unified_v2" and model.encoder_projection is not None:
+        model.encoder_projection.float().requires_grad_(True)
     if policy.get("alignment_fp32") and isinstance(model.encoder_projection, nn.Linear):
         model.encoder_projection.__class__ = Float32Alignment
         model.encoder_projection.float()
@@ -196,7 +212,9 @@ def training_policy_table(groups, policy):
             "dtypes": sorted({str(p.dtype) for p in group["params"]}),
             "words_frozen": policy["freeze_words"],
             "PLE_frozen": policy["freeze_ple"],
-            "word_tying": "shared_IT_anchor" if policy["family"] == "symmetric" else "separate",
+            "word_tying": "shared_IT_anchor"
+            if policy["family"] == "symmetric" and policy["version"] != "unified_v2"
+            else "separate",
             "optimizer": policy.get("optimizer", {}).get("name", "adamw"),
             "alignment_fp32": policy.get("alignment_fp32", False),
         }

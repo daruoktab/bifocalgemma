@@ -22,14 +22,17 @@ from transformers.models.gemma4.modeling_gemma4 import (
 from bifocalgemma.config import ExperimentSpec, ModelSize
 from bifocalgemma.contracts import ModelOutput, Seq2SeqBatch, TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
+from bifocalgemma.models.alignment import NormalizedAlignment
 from bifocalgemma.models.merged_attention import build_joint_visibility
 from bifocalgemma.training.objectives import chunked_linear_cross_entropy, patch_cross_entropy
 
 
 def native_config(size: ModelSize, *, tiny: bool = True, encoder: bool = False):
     """Full dimensions are for meta inspection only; factory always uses tiny."""
-    if version("transformers") != "5.19.0":
-        raise RuntimeError("Native integration is validated against transformers==5.19.0.")
+    if version("transformers") not in {"5.19.0", "5.20.2"}:
+        raise RuntimeError(
+            "Native integration requires the validated transformers 5.19.0/5.20.2 interface."
+        )
     asset = files("bifocalgemma.assets").joinpath(f"gemma4_{size.lower()}.json")
     values = json.loads(asset.read_text(encoding="utf-8"))["text_config"]
     if tiny:
@@ -129,7 +132,11 @@ class NativeTinyModel(nn.Module):
         if self.encoder is not None:
             enc_width = self.encoder.config.hidden_size
             self.encoder_projection = (
-                nn.Identity() if enc_width == width else nn.Linear(enc_width, width, bias=False)
+                NormalizedAlignment(enc_width, width)
+                if spec.architecture_version == "normalized_merged_v2"
+                else nn.Identity()
+                if enc_width == width
+                else nn.Linear(enc_width, width, bias=False)
             )
             for index, layer in enumerate(self.decoder.layers):
                 layer = cast(Gemma4TextDecoderLayer, layer)
@@ -169,7 +176,13 @@ class NativeTinyModel(nn.Module):
             self._stage_callback({"stage": "encoder_forward"})
         hidden = self.encoder(
             input_ids=input_ids,
-            attention_mask=attention_mask,
+            attention_mask=(
+                {"full_attention": None, "sliding_attention": None}
+                if hasattr(self, "memory_policy")
+                and self.spec.architecture_version == "normalized_merged_v2"
+                else attention_mask
+            ),
+            self_valid=attention_mask,
             position_ids=self._positions(attention_mask),
             use_cache=False,
         ).last_hidden_state
@@ -205,7 +218,13 @@ class NativeTinyModel(nn.Module):
             self._stage_callback({"stage": "decoder_forward"})
         hidden = self.decoder(
             input_ids=input_ids,
-            attention_mask=decoder_mask,
+            attention_mask=(
+                {"full_attention": None, "sliding_attention": None}
+                if hasattr(self, "memory_policy")
+                and self.spec.architecture_version == "normalized_merged_v2"
+                else decoder_mask
+            ),
+            self_valid=decoder_mask,
             position_ids=self._positions(decoder_mask),
             use_cache=False,
             **kwargs,

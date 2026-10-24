@@ -92,9 +92,11 @@ def load_sft_adapters_for_inference(model, checkpoint_dir) -> dict:
         if marker.get(name) != digest:
             raise ValueError("Adapter checkpoint checksum mismatch.")
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-    if manifest.get("format") != "bifocalgemma_notebook_sft_v2":
+    if manifest.get("format") not in {"bifocalgemma_notebook_sft_v2", "bifocalgemma_normalized_sft_v3"}:
         raise ValueError("Inference loader requires checkpoint v2.")
     compatibility = manifest["compatibility"]
+    if compatibility.get("model_spec", model.spec.to_dict()) != model.spec.to_dict():
+        raise ValueError("Adapter architecture/backbone revisions do not match model.")
     if compatibility.get("experiment") != model.spec.name:
         raise ValueError("Adapter experiment does not match model.")
     policy = compatibility.get("training_policy")

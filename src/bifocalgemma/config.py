@@ -1,7 +1,7 @@
 """C01: canonical six-model registry. See docs/ARCHITECTURE.md and BUILD_GUIDE.md."""
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -69,9 +69,13 @@ class ExperimentSpec:
     training_recipe: Literal["direct_sft"] = "direct_sft"
     distillation: bool = False
     share_ple: bool = False
+    architecture_version: str = "merged_v1"
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        result = asdict(self)
+        if self.architecture_version == "merged_v1":
+            result.pop("architecture_version")
+        return result
 
 
 def _ref(size: ModelSize, *, encoder: bool) -> CheckpointRef:
@@ -110,6 +114,15 @@ def get_experiment(name: str) -> ExperimentSpec:
         if spec.name == name:
             return spec
     raise ValueError(f"Unknown experiment {name!r}. Choose from {EXPERIMENT_NAMES}.")
+
+
+def get_v2_experiment(name: str) -> ExperimentSpec:
+    """Fresh base encoder / IT decoder, with independent encoder word tables."""
+    return replace(
+        get_experiment(name),
+        tie_encoder_decoder_words=False,
+        architecture_version="normalized_merged_v2",
+    )
 
 
 def validate_experiment_matrix(path: str | Path) -> tuple[ExperimentSpec, ...]:
