@@ -8,6 +8,29 @@ _compiled_flex = None
 _compiled_mask = None
 
 
+def flex_kernel_options(head_dim, dtype):
+    """Bound backward shared-memory use for head256 as well as head512.
+
+    The old qlen>=32/head256 branch left backward tiles to compiler defaults;
+    those requested 112 KiB on the Molab runs, above its reported 99 KiB limit.
+    This conservative experimental kernel still requires target-GPU validation.
+    """
+    options: dict[str, Any] = {
+        "fwd_BLOCK_M": 16 if head_dim > 256 else 32,
+        "fwd_BLOCK_N": 16 if head_dim > 256 else 64,
+        "bwd_BLOCK_M1": 16,
+        "bwd_BLOCK_N1": 16,
+        "bwd_BLOCK_M2": 16,
+        "bwd_BLOCK_N2": 16,
+        "bwd_num_stages": 1,
+    }
+    if dtype == torch.float32:
+        options.update(
+            FLOAT32_PRECISION="'tf32x3'", fwd_num_stages=1, fwd_BLOCK_M=16, fwd_BLOCK_N=16
+        )
+    return options
+
+
 def fused_attention(
     query,
     key,
@@ -75,28 +98,7 @@ def fused_attention(
         KV_LEN=klen,
         device=str(query.device),
     )
-    options: dict[str, Any] = {
-        # Explicit tiles also avoid an invalid default decode tile with short
-        # no-grad validation batches (BLOCK_M=256 versus sparse block 128).
-        "fwd_BLOCK_M": 16 if query.shape[-1] > 256 else 32,
-        "fwd_BLOCK_N": 16 if query.shape[-1] > 256 else 64,
-    }
-    if query.dtype == torch.float32:
-        # Tensor-core decomposition preserves near-FP32 accuracy without the huge
-        # SIMT IEEE kernel generated on Ampere for a wide-head diagnostic.
-        options["FLOAT32_PRECISION"] = "'tf32x3'"
-        options["fwd_num_stages"] = 1
-        options["fwd_BLOCK_M"] = 16
-        options["fwd_BLOCK_N"] = 16
-    if query.shape[-1] > 256 or qlen < 32:
-        tile = 16
-        options.update(
-            bwd_BLOCK_M1=tile,
-            bwd_BLOCK_N1=tile,
-            bwd_BLOCK_M2=tile,
-            bwd_BLOCK_N2=tile,
-            bwd_num_stages=1,
-        )
+    options = flex_kernel_options(query.shape[-1], query.dtype)
     from typing import cast
 
     from torch.nn.attention.flex_attention import FlexKernelOptions

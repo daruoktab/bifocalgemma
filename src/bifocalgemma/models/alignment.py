@@ -11,7 +11,7 @@ class NormalizedAlignment(nn.Module):
         self.linear = nn.Linear(input_width, output_width, bias=False, dtype=torch.float32)
         self.norm = nn.RMSNorm(output_width, eps=1e-6, dtype=torch.float32)
         if not self.linear.weight.is_meta:
-            with torch.random.fork_rng(devices=[]):
+            with torch.random.fork_rng(devices=[]), torch.device("cpu"):
                 # Initialize on CPU to make initialization independent of GPU selection.
                 generator = torch.Generator(device="cpu").manual_seed(seed)
                 weight = torch.empty(output_width, input_width, device="cpu", dtype=torch.float32)

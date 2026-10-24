@@ -129,3 +129,32 @@ def test_flex_structured_native_masks_across_sequence_lengths(bidirectional):
         )
         actual = fused_attention(q, k, v, scaling=256**-0.5, attention_mask=mask, window=5)
         torch.testing.assert_close(actual, reference, atol=0.03, rtol=0.03)
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or importlib.util.find_spec("triton") is None,
+    reason="CUDA Triton toolchain required.",
+)
+def test_flex_backward_head256_sequence_above_small_sequence_branch():
+    """Regression: qlen>=32 previously used oversized default backward tiles."""
+    from bifocalgemma.models.flex_attention import fused_attention
+
+    torch.manual_seed(29)
+    tensors = [
+        torch.randn(1, heads, 35, 256, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+        for heads in (4, 1, 1)
+    ]
+    valid = torch.ones((1, 35), device="cuda", dtype=torch.bool)
+    mask = {"valid": valid, "bidirectional": False}
+    result = fused_attention(*tensors, scaling=256**-0.5, attention_mask=mask, window=8)
+    gradients = torch.autograd.grad(result.float().square().sum(), tensors)
+    fp = [t.detach().float().requires_grad_() for t in tensors]
+    from bifocalgemma.models.memory_efficient import mask_tile
+
+    reference = attention_tile(
+        fp[0], fp[1], fp[2], mask_tile(mask, None, None, 0, 35, 8), 256**-0.5, 0.0, True
+    )
+    truth = torch.autograd.grad(reference.square().sum(), fp)
+    for actual, expected in zip(gradients, truth, strict=True):
+        error = (actual.float() - expected).norm() / expected.norm().clamp_min(1e-8)
+        assert torch.isfinite(actual).all() and float(error) < 0.03

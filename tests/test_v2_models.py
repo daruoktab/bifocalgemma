@@ -97,6 +97,22 @@ def test_alignment_stays_fp32_after_bf16_conversion():
     assert all(p.dtype == torch.float32 for p in model.encoder_projection.parameters())
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Direct CUDA construction regression")
+@pytest.mark.parametrize("input_width,output_width", [(8, 8), (8, 12), (12, 8)])
+def test_alignment_initialization_with_cuda_default_device(input_width, output_width):
+    reference = NormalizedAlignment(input_width, output_width)
+    with torch.device("cuda"):
+        alignment = NormalizedAlignment(input_width, output_width)
+    assert all(p.device.type == "cuda" and p.dtype == torch.float32 for p in alignment.parameters())
+    torch.testing.assert_close(alignment.linear.weight.cpu(), reference.linear.weight, rtol=0, atol=0)
+    hidden = torch.randn(1, 3, input_width, device="cuda", dtype=torch.bfloat16, requires_grad=True)
+    result = alignment(hidden)
+    assert result.dtype == torch.bfloat16
+    result.float().square().mean().backward()
+    assert hidden.grad is not None and torch.isfinite(hidden.grad).all()
+    assert alignment.norm.weight.grad is not None
+
+
 def test_encoder_bidirectional_window_boundary_matches_native():
     model = build_native_tiny_model(get_v2_experiment(EXPERIMENT_NAMES[0])).eval()
     ids = torch.randint(2, 100, (1, 260))
