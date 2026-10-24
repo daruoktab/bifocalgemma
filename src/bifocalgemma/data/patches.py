@@ -78,12 +78,16 @@ def apply_patch_to_snapshot(snapshot: RepositorySnapshot, patch: str) -> Reposit
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(file.content.encode("utf-8"))
         command = ["git", "-c", "core.autocrlf=false", "apply", "--whitespace=nowarn"]
+        environment = git_environment()
+        # Never discover a parent checkout when TMPDIR/TEMP is inside a repo:
+        # git apply can otherwise silently skip paths outside its cwd prefix.
+        environment["GIT_CEILING_DIRECTORIES"] = str(root.parent)
         for check in (True, False):
             result = subprocess.run(
                 command + (["--check"] if check else []) + ["-"],
                 input=patch.encode("utf-8"),
                 cwd=root,
-                env=git_environment(),
+                env=environment,
                 capture_output=True,
                 timeout=30,
             )

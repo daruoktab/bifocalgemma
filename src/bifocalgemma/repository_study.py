@@ -128,7 +128,7 @@ def prepare_run(args):
                 hidden.append(private)
             seen.add(task.instance_id)
             per_repo[task.repo] += 1
-        except (ValueError, OSError, TimeoutError) as error:
+        except (ValueError, OSError) as error:
             rejects.append(
                 {
                     "row_index": index,

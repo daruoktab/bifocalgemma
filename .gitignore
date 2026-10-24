@@ -45,5 +45,9 @@ wandb/
 *.log
 working-molab-v8-exp-temp.py
 
+# Local research inputs and development scratch space
+/conversation_history.md
+/tmp/
+
 # skills
 .agents/skills/
