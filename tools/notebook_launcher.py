@@ -33,7 +33,9 @@ def prepare_runtime(root):
         parts = Path(filename).parts
         index = next(i for i, part in enumerate(parts) if part == "bifocalgemma")
         expected = root / "src" / Path(*parts[index:])
-        if not expected.is_file() or expected.read_bytes() != Path(filename).read_bytes():
+        if not expected.is_file() or expected.read_bytes().replace(b"\r\n", b"\n") != Path(
+            filename
+        ).read_bytes().replace(b"\r\n", b"\n"):
             raise RuntimeError("Restart kernel to load this notebook's pinned runtime.")
     sys.path.insert(0, str(root / "src"))
     importlib.invalidate_caches()

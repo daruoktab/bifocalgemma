@@ -46,10 +46,9 @@ def test_six_notebooks_have_one_fixed_model_and_identical_verified_bundle():
         digests.add(manifest["sha256"])
         with zipfile.ZipFile(io.BytesIO(packed)) as bundle:
             assert "src/bifocalgemma/training/v2.py" in bundle.namelist()
-            assert (
-                bundle.read("src/bifocalgemma/training/v2.py")
-                == (root / "src/bifocalgemma/training/v2.py").read_bytes()
-            )
+            assert bundle.read("src/bifocalgemma/training/v2.py") == (
+                root / "src/bifocalgemma/training/v2.py"
+            ).read_bytes().replace(b"\r\n", b"\n")
         calls = [
             n.func.id
             for n in ast.walk(tree)

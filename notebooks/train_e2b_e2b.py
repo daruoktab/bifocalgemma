@@ -35,6 +35,14 @@ def _():
 
     **Cukup Run:** pemeriksaan GPU → training → benchmark → upload hasil ke HF.
     Model dan resep sudah tetap; tidak perlu memilih tahap atau snapshot.
+    **E4B→E4B memilih satu profil bersama** berdasarkan waktu dan peak VRAM aktual.
+    Lima model lain mengikuti backend, chunk, microbatch dan accumulation yang sama.
+    Profil HF yang cocok dipakai otomatis; keenam notebook dapat langsung dijalankan.
+    Jika profil belum tersedia, E4B→E4B mengkalibrasi dan notebook lain menunggu.
+    Setiap notebook memeriksa profil terpilih dalam **2 tahap**, tanpa tuning sendiri.
+    Hasil tiap percobaan/tahap disimpan dan dipakai ulang saat resume.
+    Hasil disimpan di `outputs/v2/e2b-e2b/train/`; konfigurasi lengkap ada di manifest.
+    Run ini dimulai dari backbone resmi dan terpisah dari folder eksperimen lama.
     Jika `HF_TOKEN` sudah tersedia, proses langsung berjalan. Jika belum, isi token
     di bawah dan tekan **Jalankan** sekali. Saat sesi terputus, jalankan notebook
     yang sama lagi untuk melanjutkan checkpoint atau benchmark terakhir.
@@ -92,9 +100,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-v2-assets",
-        "filename": "runtime-eb60af790707dbd7.zip",
-        "revision": "39dc454c57268dd298f21e7d139f3debdd7b1041",
-        "sha256": "eb60af790707dbd73420ac1503da1751b46200eb90b1db4f06c16f2e82a75008",
+        "filename": "runtime-2cc7b98cf02d97d2.zip",
+        "revision": "521b546c0f078d2fb4a74c2fe45323b5a34d592b",
+        "sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],

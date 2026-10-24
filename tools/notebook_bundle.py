@@ -9,10 +9,13 @@ from pathlib import Path
 
 def source_bundle_bytes(root: Path):
     paths = sorted(
-        p
-        for directory in (root / "src", root / "configs", root / "examples/repository_study")
-        for p in directory.rglob("*")
-        if p.is_file() and p.suffix in {".py", ".json", ".jsonl", ".md"}
+        (
+            p
+            for directory in (root / "src", root / "configs", root / "examples/repository_study")
+            for p in directory.rglob("*")
+            if p.is_file() and p.suffix in {".py", ".json", ".jsonl", ".md"}
+        ),
+        key=lambda p: p.relative_to(root).as_posix(),
     )
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
@@ -25,7 +28,11 @@ def source_bundle_bytes(root: Path):
                 path.relative_to(root).as_posix(), date_time=(1980, 1, 1, 0, 0, 0)
             )
             item.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(item, path.read_bytes())
+            item.create_system = 3
+            item.external_attr = 0o100644 << 16
+            # Git may check out CRLF on Windows and LF on Molab/Linux. These are
+            # text sources: canonical newlines make the immutable bundle portable.
+            archive.writestr(item, path.read_bytes().replace(b"\r\n", b"\n"))
     payload = buffer.getvalue()
     return payload
 

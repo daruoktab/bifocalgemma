@@ -83,6 +83,7 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # Exported cells intentionally verify dependency/auth gates before native imports.
 "notebooks/bifocalgemma_train_*.ipynb" = ["E402"]
+"notebooks/legacy/bifocalgemma_train_*.ipynb" = ["E402"]
 
 [tool.setuptools.package-data]
 bifocalgemma = ["assets/*.json"]
