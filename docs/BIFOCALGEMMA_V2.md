@@ -47,9 +47,14 @@ baru yang berbeda di setiap mesin. Setup memakai `uv pip` pada interpreter kerne
 ## Menjalankan
 
 1. Buka satu notebook untuk satu instance Molab. Sediakan `HF_TOKEN` dengan akses
-   write ke repo output dan read ke Gemma gated, lalu Run notebook. Jika token
+   write ke repo output dan read ke Gemma gated, lalu Run notebook. Leader E4B→E4B
+   juga memerlukan write ke dataset `daruokta/bifocalgemma-v2-assets` untuk satu
+   profil bersama. Jika token
    belum tersedia di environment, isi kolom token dan tekan **Jalankan** sekali.
-2. Notebook otomatis menjalankan preflight GPU, training satu epoch dari backbone
+   Profil terukur G4 sudah tersedia untuk runtime saat ini; keenam notebook dapat
+   langsung dijalankan. Jika kontrak source/data berubah dan profil belum tersedia,
+   E4B→E4B mengkalibrasi dan lima notebook lain menunggu sebelum memuat backbone.
+2. Notebook otomatis menjalankan pemeriksaan memori singkat, training satu epoch dari backbone
    resmi, menyimpan checkpoint, lalu seluruh benchmark pada model hasil training.
    Tidak ada dropdown tahap, pilihan recipe, atau pilihan snapshot.
 3. Checkpoint dan hasil benchmark diunggah ke repo HF model tersebut. Jika jaringan
@@ -83,17 +88,41 @@ Data dipin ke `daruokta/bifocalgemma-data` commit
 sama ke prompt decoder. Fingerprint token target dicatat terpisah dari prefix agar
 kesetaraan target enam run dapat diaudit.
 
-## Preflight dan waktu sesi
+## Pemeriksaan memori dan waktu sesi
 
-Preflight menguji tiled chunk128/256/512 dan kandidat FlexAttention, microbatch1/2
-dengan accumulation4/2. Forward/backward diukur pada contoh pendek, median dan
-panjang; stress maksimum encoder/decoder gabungan dan dev diuji. Minimal8GiB
-headroom wajib terpenuhi. Loss/gradients kandidat dibandingkan tiled sebelum
-backend tercepat yang lolos dipilih. Biaya compile/warmup dicatat terpisah.
-Tidak ada klaim percepatan di GPU96GiB sebelum hasil preflight GPU tersebut.
-Kandidat hybrid juga diuji: local head256 memakai FlexAttention, global head512
-memakai tiled. Ini mempertahankan kesempatan mempercepat local layers ketika kernel
-GPU tidak mendukung head512. Rute backend setiap layer dicatat dalam hasil preflight.
+Semua model memakai satu profil `shared_e4b_e4b_v1`. Hanya E4B→E4B yang melakukan
+kalibrasi: tiled/Flex/hybrid, microbatch1/2/4, tiled chunk512/1024/2048, serta
+checkpointing nonaktif pada dua kandidat tercepat. Effective batch selalu4,
+loss chunk128. Kandidat diperingkat dengan waktu update sesudah warmup pada12
+contoh dari bin panjang berfrekuensi sama; maksimum absolut bukan penentu skor
+throughput. Kandidat tercepat yang lolos pemeriksaan bentuk maksimum dengan
+margin4GiB dipublikasikan ke HF assets `profiles/training.json`. Ini pencarian
+terbatas, bukan bukti optimum global. Hasil tiap percobaan disimpan untuk resume.
+
+Lima notebook lain memakai profil tersebut persis, tanpa tuning masing-masing.
+Kalau profil gagal pada salah satu model, run berhenti dengan alasan jelas, bukan
+mengganti setting diam-diam. Folder run cukup `outputs/v2/<model>/train/`; versi
+teknis dan checksum profil dicatat dalam manifest. Folder eksperimen sebelumnya
+tidak otomatis dipakai untuk resume.
+
+Pemeriksaan awal hanya dua tahap pada satu bentuk gabungan maksimum train/dev:
+forward/backward/clip/optimizer dan evaluasi tanpa gradien. State optimizer asli
+tetap berada di perangkat saat pengukuran. Bobot trainable dan RNG dikembalikan
+persis sesudah pemeriksaan; update probe tidak dihitung sebagai training. Minimal
+4GiB perkiraan peak headroom wajib terpenuhi. Konteks tidak dipotong agar muat.
+Ini bukan jaminan semua bentuk CUDA/fragmentasi/pekerjaan GPU lain bebas OOM.
+
+`diagnostics/execution_preflight.json` disimpan atomik per tahap dan langsung
+dicoba diunggah ke HF, bahkan sebelum checkpoint pertama. Network error sementara
+meninggalkan upload pending dengan retry. Resume memverifikasi checksum, identitas
+kode/data/GPU, lalu melanjutkan tahap yang belum selesai. Jika keduanya selesai,
+hanya kapasitas GPU saat ini yang diperiksa; tidak mengulang forward/backward.
+Allocated, reserved, peak allocated, serta driver free ditampilkan terpisah.
+
+FlexAttention/hybrid hanya dicoba oleh kalibrasi E4B→E4B. Error Molab `Required: 114688 Hardware limit:101376`
+merupakan batas shared memory kernel backward, bukan bukti VRAM96GiB habis.
+Tile backward head256 kini juga dibatasi; validasi pada GPU target tetap diperlukan.
+[Perbaikan eksekusi dan penjelasan kernel](EXECUTION_FIXES.md).
 
 Training menyimpan checkpoint pada optimizer boundary setiap15menit dan final;
 upload snapshot setiap30menit saat checkpoint tersedia dan final, dengan retry
@@ -166,3 +195,25 @@ Ini belum merupakan profiling GPU96GiB, pilot200step, atau hasil benchmark baru.
 Preflight pada GPU target tetap wajib lolos sebelum training otomatis dimulai.
 Pilot riset terpisah tetap tersedia; kemenangan terhadap baseline baru bisa
 dinilai setelah benchmark pada perangkat target selesai.
+
+### Perbaikan eksekusi, 25 Oktober 2026
+
+Regresi alur/profil bersama, pemulihan, Hub tiruan, data dan notebook menghasilkan
+109 passed. Enam uji guard CUDA BF16 dengan model kecil juga lolos pada microbatch
+1/2/4, termasuk rollback bobot/RNG dan pemakaian ulang receipt. Uji Flex terbaru
+menghasilkan6 passed dan1 expected failure untuk batas shared memory head512 FP32
+pada sm86. Setelah runtime baru diterbitkan,26 tes notebook/dependency/telemetri
+lolos; Pyrefly, ty dengan interpreter ai, Ruff pada source/tools/tests/notebook aktif,
+serta marimo strict keenam notebook aktif lolos.
+
+Regresi akhir setelah perbaikan alignment dan helper boundary menghasilkan116
+passed (enam guard CUDA terpisah tidak diulang), serta enam tes validasi rilis profil
+lolos. Pyrefly, ty, Ruff seluruh proyek dan marimo strict keenam notebook bersih.
+
+[Pengukuran penuh G4](COLAB_RESULTS.md) menggunakan
+[skrip diagnostik terpisah](COLAB_GPU_TEST.md), tanpa epoch training. Keenam model
+lolos batas konfigurasi penuh. Profil terpilih microbatch1/accumulation4,
+tiled chunk2048, loss chunk128, checkpointing aktif sudah dipublikasikan ke HF
+assets setelah verifikasi. Peak E4B→E4B pada32768/8192 ialah61,09GiB allocated;
+reserved65,96GiB. Flex/hybrid berjalan tetapi ditolak oleh pemeriksaan gradien.
+Pilot riset dan benchmark kualitas tetap belum dijalankan oleh pengukuran GPU ini.

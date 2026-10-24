@@ -3,7 +3,12 @@
 **Training aktif v2:** [enam notebook Molab](docs/BIFOCALGEMMA_V2.md), satu model
 per notebook dan satu resep AdamW. Empat pasangan memakai encoder base / decoder
 IT dengan normalized merged attention; dua baseline memakai decoder IT. Cukup Run:
-preflight GPU → training → benchmark → upload ke HF, tanpa pilihan tahap.
+dua pemeriksaan memori → training → benchmark → upload ke HF, tanpa pilihan tahap.
+E4B→E4B mengkalibrasi satu profil berdasarkan kecepatan dan peak VRAM nyata;
+lima notebook lain mengikuti backend/chunk/microbatch/accumulation yang sama.
+Profil [hasil ukur G4](docs/COLAB_RESULTS.md) sudah tersedia untuk runtime saat ini:
+microbatch1/accumulation4, tiled chunk2048, loss chunk128, checkpointing aktif.
+Folder hasil cukup `outputs/v2/<model>/train/`. [Perbaikan eksekusi](docs/EXECUTION_FIXES.md).
 Dashboard [Wigglystuff dan telemetri waktu](docs/WIGGLYSTUFF_TELEMETRY.md)
 menampilkan progress/loss/status otomatis; runtime bersama dipin di HF sehingga
 keenam notebook tetap ringkas.

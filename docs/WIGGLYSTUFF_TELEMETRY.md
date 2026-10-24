@@ -20,6 +20,11 @@ gradien: log dan `monitor.html` tetap tersedia. Preview diuji di browser lokal d
 data simulasi, bukan GPU96GiB. Label waktu di panel mengambang bertambah dari browser;
 setelah lima menit tanpa event tertulis **tidak ada kabar**, bukan dugaan kernel mati.
 
+Pembaruan25Oktober: dashboard membedakan allocated, reserved, peak allocated dan
+driver free. Konfigurasi batch/backend terlihat di kartu dan heartbeat; counter
+tokenisasi tidak terbawa ke tahap lain. Pemeriksaan awal kini dua tahap dengan
+receipt per tahap, bukan sweep backend. [Detail perbaikan](EXECUTION_FIXES.md).
+
 `LiveEdit` dan `StateViewer` tidak dipakai untuk membungkus training karena tracing
 Python per baris dan penyalinan variabel besar menambah overhead yang tidak perlu.
 TraceView dibangun dari callback tahap yang sudah ada.
@@ -102,7 +107,7 @@ kandidat bersih. Keenam kandidat berukuran 179 baris dan tersedia di
 `outputs/runtime-release/preview/`. Bukti tampilan (data simulasi):
 `docs/images/wiggly-dashboard-preview.png`.
 
-Runtime telah diterbitkan ke dataset publik
+Runtime pertama (24 Oktober) telah diterbitkan ke dataset publik
 [`daruokta/bifocalgemma-v2-assets`](https://huggingface.co/datasets/daruokta/bifocalgemma-v2-assets/tree/39dc454c57268dd298f21e7d139f3debdd7b1041),
 commit `39dc454c57268dd298f21e7d139f3debdd7b1041`. Unduhan tanpa token melalui
 loader notebook berhasil dan checksum arsip 259.502 byte cocok. Keenam notebook
@@ -111,3 +116,21 @@ Pyrefly, ty, Ruff, marimo strict keenam notebook aktif, serta generator `--check
 juga lolos setelah publikasi. Sebelas tes notebook/alur training-benchmark pada
 notebook aktif lolos (79,73 detik), termasuk pemulihan dan melewati pekerjaan yang
 sudah selesai. Belum ada full training atau benchmark Molab baru.
+
+Runtime aktif 25 Oktober memakai commit
+`521b546c0f078d2fb4a74c2fe45323b5a34d592b`, arsip
+`runtime-2cc7b98cf02d97d2.zip` berukuran268581byte. Keenam notebook aktif menunjuk
+revision ini. Ia mencakup kalibrasi E4B→E4B untuk satu profil bersama, receipt
+resumable dan tampilan allocated/reserved/free yang terpisah. Setelah publikasi,
+26 tes notebook/dependency/telemetri, generator `--check` dan marimo strict keenam
+notebook aktif lolos. Tes G4 menemukan konflik default device CUDA dengan
+inisialisasi alignment CPU; konteks inisialisasi kini eksplisit CPU.24 tes model
+lolos sesudah perbaikan, termasuk konstruksi alignment langsung di CUDA.
+[Rincian perubahan eksekusi](EXECUTION_FIXES.md).
+
+Kalibrasi nyata G4 dan guard batas penuh keenam model kini selesai; hasil rinci
+ada di [laporan GPU](COLAB_RESULTS.md). Satu profil HF terverifikasi telah tersedia,
+sehingga keenam notebook langsung mengambil setting yang sama jika kontraknya
+cocok. Regresi akhir116 tes serta enam pemeriksaan rilis profil lolos. Runtime
+Colab dihentikan setelah bukti hasil disalin; belum ada epoch training/benchmark
+kualitas baru yang dijalankan oleh pengukuran ini.
