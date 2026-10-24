@@ -160,6 +160,15 @@ class WigglyDashboard(TrainingDashboard):
             "GPU allocated / free (GiB)": number("gpu_allocated_gib")
             + " / "
             + number("gpu_free_gib"),
+            "GPU reserved / peak allocated (GiB)": number("gpu_reserved_gib")
+            + " / "
+            + number("gpu_peak_allocated_gib"),
+            "Microbatch / accumulation": str(state.get("batch_size", "—"))
+            + " / "
+            + str(state.get("accumulation", "—")),
+            "Attention / query chunk": str(state.get("attention_backend", "—"))
+            + " / "
+            + str(state.get("query_chunk_size", "—")),
             "RAM proses / tersedia (GiB)": number("ram_rss_gib")
             + " / "
             + number("ram_available_gib"),

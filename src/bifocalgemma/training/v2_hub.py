@@ -114,6 +114,69 @@ def upload_initial_results(repo_id, root, prefix, *, token):
     return synchronize_v2(repo_id, root, prefix, token=token, require_checkpoint=False)
 
 
+def synchronize_preflight(repo_id, root, prefix, *, token):
+    """Publish guard evidence before the first checkpoint, without a model receipt."""
+    from huggingface_hub import CommitOperationAdd, HfApi, hf_hub_download
+    from huggingface_hub.errors import HfHubHTTPError
+
+    checked_prefix(prefix)
+    root = Path(root).resolve()
+    names = ["pipeline_state.json"]
+    names.extend(
+        n
+        for n in (
+            "diagnostics/execution_preflight.json",
+            "diagnostics/calibration.json",
+            "diagnostics/shared_profile.json",
+        )
+        if (root / n).is_file()
+    )
+    names.extend(
+        p.relative_to(root).as_posix()
+        for p in sorted((root / "diagnostics/calibration").glob("*.json"))
+    )
+    if len(names) < 2:
+        raise ValueError("No calibration or memory-guard evidence is available.")
+    if not all((root / n).is_file() and not (root / n).is_symlink() for n in names):
+        raise ValueError("Preflight evidence is missing or unsafe.")
+    payloads = {n: (root / n).read_bytes() for n in names}
+    import hashlib
+
+    hashes = {n: hashlib.sha256(data).hexdigest() for n, data in payloads.items()}
+    receipt = {"format": "verified_preflight_v1", "files": hashes}
+    operations = [
+        CommitOperationAdd(path_in_repo=prefix + "/" + n, path_or_fileobj=data)
+        for n, data in payloads.items()
+    ]
+    operations.append(
+        CommitOperationAdd(
+            path_in_repo=prefix + "/diagnostics/preflight_upload_complete.json",
+            path_or_fileobj=json.dumps(receipt, indent=2).encode(),
+        )
+    )
+    api = HfApi(token=token)
+    api.create_repo(repo_id, exist_ok=True)
+    for attempt in range(3):
+        try:
+            commit = api.create_commit(
+                repo_id,
+                parent_commit=api.model_info(repo_id).sha,
+                operations=operations,
+                commit_message="Save resumable fixed memory-guard evidence",
+            )
+            break
+        except HfHubHTTPError as error:
+            if error.response.status_code != 412 or attempt == 2:
+                raise
+    else:
+        raise RuntimeError("Preflight commit retry exhausted.")
+    for name, expected in hashes.items():
+        remote = hf_hub_download(repo_id, prefix + "/" + name, revision=commit.oid, token=token)
+        if file_digest(remote) != expected:
+            raise ValueError("Remote preflight evidence checksum mismatch.")
+    return {"revision": commit.oid, "verified_at": time.time()}
+
+
 class RemoteHeartbeat:
     def __init__(self, repo_id, root, prefix, *, token, interval=300):
         self.repo_id = repo_id
@@ -130,6 +193,9 @@ class RemoteHeartbeat:
         from huggingface_hub import CommitOperationAdd, HfApi
 
         now = time.time()
+        if event.get("stage") != self.snapshot.get("stage"):
+            for key in ("items_done", "items_total"):
+                self.snapshot.pop(key, None)
         # Keep counters across fine-grained events; never carry tokens or examples.
         for key in (
             "stage",
@@ -146,6 +212,17 @@ class RemoteHeartbeat:
             "remote_revision",
             "final_synced",
             "upload_pending",
+            "batch_size",
+            "accumulation",
+            "attention_backend",
+            "query_chunk_size",
+            "loss_chunk_size",
+            "preflight_phase",
+            "gpu_allocated_gib",
+            "gpu_reserved_gib",
+            "gpu_peak_allocated_gib",
+            "gpu_peak_reserved_gib",
+            "gpu_free_gib",
         ):
             if key in event:
                 self.snapshot[key] = event[key]

@@ -24,9 +24,21 @@ def workflow(tmp_path, monkeypatch):
     previous_threads = torch.get_num_threads()
     torch.set_num_threads(2)
     state: dict[str, Any] = {"loads": [], "training_calls": [], "benchmarks": [], "uploads": []}
+    state["profile"] = {
+        "batch_size": 1,
+        "accumulation": 4,
+        "evidence_sha256": "f" * 64,
+        "memory_policy": {"query_chunk_size": 3, "loss_chunk_size": 2},
+    }
+    state["training_configs"] = []
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "get_rng_state_all", lambda: [])
     monkeypatch.setattr(v2, "recover_remote_run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        v2,
+        "resolve_shared_profile",
+        lambda *args, **kwargs: state["profile"],
+    )
 
     class Dashboard:
         def __init__(self, *args, **kwargs):
@@ -54,15 +66,21 @@ def workflow(tmp_path, monkeypatch):
     monkeypatch.setattr(v2, "prepare_curated_training", prepare)
 
     def execution(model, *args, **kwargs):
-        policy = configure_memory_efficient_training(
-            model, {"query_chunk_size": 3, "loss_chunk_size": 2}
-        )
-        return {"memory_policy": policy, "batch_size": 1, "accumulation": 4}
+        profile = kwargs["execution"]
+        policy = configure_memory_efficient_training(model, profile["memory_policy"])
+        return {
+            "memory_policy": policy,
+            "batch_size": profile["batch_size"],
+            "accumulation": profile["accumulation"],
+        }
 
     monkeypatch.setattr(v2, "select_execution", execution)
 
     def fit(*args, **kwargs):
         state["training_calls"].append(args[0].spec.name)
+        state["training_configs"].append(
+            (kwargs["batch_size"], kwargs["accumulation"], args[0].memory_policy)
+        )
         return fit_offline_sft(*args, **kwargs)
 
     monkeypatch.setattr(v2, "fit_offline_sft", fit)
@@ -120,6 +138,26 @@ def test_one_run_produces_checkpoint_and_all_benchmarks_and_rerun_skips_models(w
     assert again["status"] == "COMPLETED" and again["benchmarks"] == result["benchmarks"]
     assert len(state["training_calls"]) == 1 and len(state["loads"]) == 2
     assert state["benchmarks"] == expected
+
+
+def test_all_six_models_follow_one_profile_instead_of_tuning_independently(workflow):
+    run, state = workflow
+    state["profile"].update(
+        batch_size=2,
+        accumulation=2,
+        memory_policy={
+            "attention_backend": "tiled_eager_fp32",
+            "query_chunk_size": 1024,
+            "loss_chunk_size": 128,
+            "gradient_checkpointing": False,
+        },
+    )
+    for key in v2.MODELS:
+        assert run(key)["status"] == "COMPLETED"
+    assert len(state["training_configs"]) == 6
+    first = state["training_configs"][0]
+    assert all(config == first for config in state["training_configs"])
+    assert first[0:2] == (2, 2) and first[2]["gradient_checkpointing"] is False
 
 
 def test_run_again_after_benchmark_interruption_keeps_training_and_prediction_journal(workflow):

@@ -17,8 +17,8 @@ from bifocalgemma.data.releases import fetch_collection
 from bifocalgemma.data.tokenization import load_verified_tokenizer
 from bifocalgemma.evaluation.context import V2_EVALUATION_PROTOCOL, run_context_benchmark
 from bifocalgemma.models.memory_efficient import (
+    DEFAULT_MEMORY_POLICY,
     configure_memory_efficient_training,
-    run_training_memory_preflight,
 )
 from bifocalgemma.models.pretrained import load_local_native_model, load_sft_adapters_for_inference
 from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
@@ -27,12 +27,20 @@ from bifocalgemma.training.hub import recover_remote_run
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.policy import configure_policy_model
 from bifocalgemma.training.recipes import unified_recipe
+from bifocalgemma.training.shared_execution import (
+    HEADROOM_GIB,
+    calibrate_shared_profile,
+    publish_with_retry,
+    resolve_shared_profile,
+    shared_contract,
+)
 from bifocalgemma.training.source_identity import source_fingerprints
 from bifocalgemma.training.stages import StageLedger, atomic_json, latest_checkpoint
-from bifocalgemma.training.telemetry import TrainingDashboard
+from bifocalgemma.training.telemetry import TrainingDashboard, append_event
 from bifocalgemma.training.v2_diagnostics import encoder_diagnostics, stratified_subset
-from bifocalgemma.training.v2_hub import RemoteHeartbeat, synchronize_v2
-from bifocalgemma.training.v2_preflight import select_execution
+from bifocalgemma.training.v2_hub import RemoteHeartbeat, synchronize_preflight, synchronize_v2
+from bifocalgemma.training.v2_preflight import EXECUTION_VERSION, select_execution
+from bifocalgemma.training.v2_preflight import run_name as execution_run_name
 
 DATASET_REPO = "daruokta/bifocalgemma-data"
 DATASET_REVISION = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"
@@ -174,7 +182,7 @@ def _execute_v2(
     if not torch.cuda.is_available():
         raise RuntimeError("Molab CUDA GPU required for production execution.")
     repo = "daruokta/bifocalgemma-v2-" + model_key
-    run_name = "normalized-merged-v2-" + ("pilot" if mode == "pilot" else "train")
+    run_name = execution_run_name(mode)
     root = Path(output_root) / model_key / run_name
     prefix = f"{family}/{name}/{run_name}"
     if upload:
@@ -192,6 +200,7 @@ def _execute_v2(
         "seed": 17,
         "epochs": 1,
         "effective_batch": 4,
+        "execution_policy": EXECUTION_VERSION,
         "source_fingerprint": source_fingerprint(),
         "source_fingerprint_policy": "training_semantics_v1",
         "runtime_versions": {
@@ -215,14 +224,23 @@ def _execute_v2(
     )
     dashboard.run_dir = root
     heartbeat = RemoteHeartbeat(repo, root, prefix, token=token) if upload else None
+    guard_queue = None
 
-    def progress(event):
+    def progress(event: dict[str, Any]):
+        if upload and guard_queue is not None and guard_queue.state.get("pending"):
+            if __import__("time").time() >= guard_queue.state.get("next_retry_at", 0):
+                guard_queue.attempt(lambda: synchronize_preflight(repo, root, prefix, token=token))
         event = {
             **event,
-            "upload_pending": queue.state.get("pending", False),
+            "upload_pending": event.get("upload_pending", False)
+            or queue.state.get("pending", False)
+            or (guard_queue is not None and guard_queue.state.get("pending", False)),
             "final_synced": queue.state.get("final_synced", False),
         }
         dashboard(event)
+        if event.get("stage", "").startswith("preflight_"):
+            append_event(root / "diagnostics/preflight_events.jsonl", event)
+            print(event.get("message", event["stage"]), flush=True)
         if heartbeat:
             heartbeat(
                 event,
@@ -310,6 +328,15 @@ def _execute_v2(
             "repo": repo,
             "benchmarks": [completed_reports[stage] for _, _, stage in jobs],
         }
+    profile = None
+    if mode != "benchmark":
+        profile = resolve_shared_profile(
+            model_key,
+            root,
+            shared_contract(identity),
+            token=token,
+            progress=progress,
+        )
     model, provenance = download_model(spec, cache, token, progress)
     benchmark_mode = mode == "benchmark"
     if benchmark_mode:
@@ -459,23 +486,65 @@ def _execute_v2(
     configure_policy_model(model, policy)
     selected_resume = latest_checkpoint(root / "training")
     execution_path = root / "diagnostics/execution_preflight.json"
+    guard_queue = BenchmarkUploadQueue(
+        root / "diagnostics",
+        backoff_path=root / ".upload-backoff.json",
+        progress=dashboard,
+        interval=0,
+        label="Memory guard",
+    )
+
+    def save_guard():
+        if upload:
+            guard_queue.mark_pending()
+            guard_queue.attempt(lambda: synchronize_preflight(repo, root, prefix, token=token))
+
+    if profile is None:
+        profile = calibrate_shared_profile(
+            model,
+            full_train,
+            full_dev,
+            policy,
+            shared_contract(identity),
+            root,
+            progress=progress,
+            on_saved=save_guard,
+        )
+        # Followers cannot train until the one selected profile is published.
+        profile = publish_with_retry(profile, token=token, progress=progress)
+        atomic_json(root / "diagnostics/shared_profile.json", profile)
+    execution = select_execution(
+        model,
+        train,
+        dev,
+        progress=progress,
+        state_path=execution_path,
+        identity=identity,
+        on_saved=save_guard,
+        training_policy=policy,
+        execution=profile,
+        min_headroom_gib=HEADROOM_GIB,
+    )
+    atomic_json(execution_path, execution)
+    batch_size, accumulation = execution["batch_size"], execution["accumulation"]
+    if (batch_size, accumulation, execution["memory_policy"]) != (
+        profile["batch_size"],
+        profile["accumulation"],
+        {**DEFAULT_MEMORY_POLICY, **profile["memory_policy"]},
+    ):
+        raise ValueError(
+            "Execution differs from the shared E4B→E4B profile; per-model tuning is forbidden."
+        )
     if selected_resume:
         config = json.loads((root / "training/run_config.json").read_text())
-        execution = json.loads(execution_path.read_text())
-        configure_memory_efficient_training(model, config["memory_policy"])
-        batch_size = config["batch_size"]
-        accumulation = config["accumulation"]
-        run_training_memory_preflight(
-            model, train, batch_size=batch_size, min_headroom_gib=8, progress=progress
-        )
-        run_training_memory_preflight(
-            model, dev, batch_size=batch_size, min_headroom_gib=8, progress=progress
-        )
-    else:
-        execution = select_execution(model, train, dev, progress=progress)
-        atomic_json(execution_path, execution)
-        batch_size = execution["batch_size"]
-        accumulation = execution["accumulation"]
+        if (config["batch_size"], config["accumulation"], config["memory_policy"]) != (
+            batch_size,
+            accumulation,
+            model.memory_policy,
+        ):
+            raise ValueError(
+                "Saved training execution differs from the fixed recipe; use a fresh run."
+            )
     steps = 200 if mode == "pilot" else math.ceil(len(train) / 4)
     if spec.encoder:
         assert model.encoder is not None
@@ -493,6 +562,7 @@ def _execute_v2(
         "accumulation": accumulation,
         "training_policy": policy,
         "memory_policy": model.memory_policy,
+        "shared_execution_profile": profile["evidence_sha256"],
         "mode": mode,
         "source_fingerprint": identity["source_fingerprint"],
         "torch": str(torch.__version__),
@@ -631,7 +701,7 @@ def run_v2(
     except BaseException as error:
         if model_key in MODELS and mode in {"pilot", "train", "benchmark"}:
             name, family = MODELS[model_key]
-            run_name = "normalized-merged-v2-" + ("pilot" if mode == "pilot" else "train")
+            run_name = execution_run_name(mode)
             root = Path(output_root) / model_key / run_name
             event = {
                 "stage": "interrupted" if isinstance(error, KeyboardInterrupt) else "failed",

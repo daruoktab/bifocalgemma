@@ -54,6 +54,16 @@ def test_one_model_training_stops_and_completed_resume_does_not_reload(tmp_path,
     monkeypatch.setattr(v2, "recover_remote_run", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         v2,
+        "resolve_shared_profile",
+        lambda *args, **kwargs: {
+            "batch_size": 1,
+            "accumulation": 4,
+            "evidence_sha256": "f" * 64,
+            "memory_policy": {"query_chunk_size": 3, "loss_chunk_size": 2},
+        },
+    )
+    monkeypatch.setattr(
+        v2,
         "synchronize_v2",
         lambda *args, **kwargs: {
             "revision": "b" * 40,
@@ -105,9 +115,7 @@ def test_one_model_training_stops_and_completed_resume_does_not_reload(tmp_path,
     )
     assert again["status"] == "COMPLETED" and len(calls) == 1
     assert remote_events[-1][1]["stage"] == "training_completed" and remote_events[-1][2]
-    manifest = next(
-        tmp_path.glob("*/normalized-merged-v2-train/training/checkpoint-*/manifest.json")
-    )
+    manifest = next(tmp_path.glob("*/train/training/checkpoint-*/manifest.json"))
     assert json.loads(manifest.read_text())["format"] == "bifocalgemma_normalized_sft_v3"
 
 

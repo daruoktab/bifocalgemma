@@ -281,6 +281,9 @@ class TrainingDashboard:
         if "ram_rss_gib" not in event:
             event = {**resource_snapshot(self.device), **event}
         event = {"timestamp_utc": datetime.now(timezone.utc).isoformat(), **event}
+        if event.get("stage") != self.state.get("stage"):
+            for key in ("items_done", "items_total"):
+                self.state.pop(key, None)
         self.state.update({k: v for k, v in event.items() if k != "history"})
         if "history" in event:
             self.history = list(event["history"])
@@ -311,6 +314,10 @@ class TrainingDashboard:
             "benchmark_upload_deferred",
             "benchmark_upload_synced",
             "benchmark_upload_failed",
+            "preflight_phase_started",
+            "preflight_phase_complete",
+            "preflight_phase_reused",
+            "preflight_reused",
         }
         if now - self.last_refresh < self.refresh_seconds and not force:
             return
