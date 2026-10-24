@@ -3,6 +3,7 @@
 import ast
 import copy
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -65,6 +66,7 @@ class TestOfflineEditing(unittest.TestCase):
                 cwd=temp,
                 input=row["target_patch"].encode(),
                 capture_output=True,
+                env={**os.environ, "GIT_CEILING_DIRECTORIES": str(Path(temp).parent)},
             )
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             self.assertEqual(path.read_text(), row["after"])
@@ -231,7 +233,7 @@ class TestNotebookCellParity(unittest.TestCase):
     def test_cell_count_order_and_contents_are_matched(self):
         root = Path(__file__).resolve().parents[1]
         texts = [
-            (root / f"notebooks/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
+            (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
             for family in ("symmetric", "asymmetric", "baseline")
         ]
         cells = [
@@ -251,7 +253,7 @@ class TestNotebookCellParity(unittest.TestCase):
     def test_hub_upload_controls_and_path(self):
         root = Path(__file__).resolve().parents[1]
         for family in ("symmetric", "asymmetric"):
-            text = (root / f"notebooks/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
+            text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
             self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
             self.assertIn("HF_UPLOAD_ENABLED = True", text)
             self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)
@@ -264,7 +266,7 @@ class TestNotebookCellParity(unittest.TestCase):
 
         root = Path(__file__).resolve().parents[1]
         for family in ("symmetric", "asymmetric"):
-            path = root / f"notebooks/bifocalgemma_train_{family}.py"
+            path = root / f"notebooks/legacy/bifocalgemma_train_{family}.py"
             spec = importlib.util.spec_from_file_location(f"notebook_{family}", path)
             self.assertIsNotNone(spec)
             assert spec is not None and spec.loader is not None

@@ -10,7 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PATHS = [
-    ROOT / "notebooks" / f"bifocalgemma_train_{family}.py"
+    ROOT / "notebooks/legacy" / f"bifocalgemma_train_{family}.py"
     for family in ("symmetric", "asymmetric", "baseline")
 ]
 MO = SimpleNamespace(

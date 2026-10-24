@@ -49,7 +49,7 @@ def repository_row(index=0):
 def notebook_function(name):
     root = Path(__file__).resolve().parents[1]
     tree = ast.parse(
-        (root / "notebooks/bifocalgemma_train_symmetric.py").read_text(encoding="utf-8")
+        (root / "notebooks/legacy/bifocalgemma_train_symmetric.py").read_text(encoding="utf-8")
     )
     return next(
         node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name

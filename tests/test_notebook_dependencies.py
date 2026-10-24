@@ -142,7 +142,7 @@ def test_cpu_wheel_invalidates_matching_receipt(monkeypatch, tmp_path):
 def test_marimo_setup_token_order_precedes_native_imports():
     root = Path(__file__).resolve().parents[1]
     for family in ("symmetric", "asymmetric", "baseline"):
-        text = (root / f"notebooks/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
+        text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
         cells = [node for node in ast.parse(text).body if isinstance(node, ast.FunctionDef)]
         assert cells[0].args.args == []
         first = ast.get_source_segment(text, cells[1])
@@ -237,7 +237,7 @@ def test_preloaded_torchvision_alone_requires_restart(monkeypatch, tmp_path):
 def test_notebook_never_declares_bundled_project_as_external_package():
     root = Path(__file__).resolve().parents[1]
     for family in ("symmetric", "asymmetric", "baseline"):
-        path = root / f"notebooks/bifocalgemma_train_{family}.py"
+        path = root / f"notebooks/legacy/bifocalgemma_train_{family}.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
@@ -255,7 +255,7 @@ def test_notebook_never_declares_bundled_project_as_external_package():
 
 def test_one_uploaded_notebook_loads_source_without_repo_or_pythonpath(tmp_path):
     root = Path(__file__).resolve().parents[1]
-    source = root / "notebooks/bifocalgemma_train_symmetric.py"
+    source = root / "notebooks/legacy/bifocalgemma_train_symmetric.py"
     uploaded = tmp_path / "notebook.py"
     shutil.copyfile(source, uploaded)
     child = r"""
@@ -301,7 +301,7 @@ def test_source_bundle_checksum_failure_does_not_activate_source(tmp_path):
 def test_no_downstream_cell_can_run_before_authentication():
     root = Path(__file__).resolve().parents[1]
     for family in ("symmetric", "asymmetric", "baseline"):
-        path = root / f"notebooks/bifocalgemma_train_{family}.py"
+        path = root / f"notebooks/legacy/bifocalgemma_train_{family}.py"
         cells = [
             node
             for node in ast.parse(path.read_text(encoding="utf-8")).body
@@ -337,7 +337,7 @@ def test_apply_waits_for_submission_and_valid_token_without_native_imports(monke
             raise WaitingForToken(message)
 
     monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
-    path = Path(__file__).resolve().parents[1] / "notebooks/bifocalgemma_train_symmetric.py"
+    path = Path(__file__).resolve().parents[1] / "notebooks/legacy/bifocalgemma_train_symmetric.py"
     cells = [
         node
         for node in ast.parse(path.read_text(encoding="utf-8")).body
