@@ -14,13 +14,26 @@ from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.training.stages import atomic_json
 
 EVALUATION_PROTOCOL = "greedy_no_cache_context_v2_explicit_repair_format"
-V2_EVALUATION_PROTOCOL = "greedy_cached_normalized_merged_v2"
+V2_EVALUATION_PROTOCOL = "greedy_cached_normalized_merged_v3_exact_prompt_budget"
+BENCHMARK_RESET_ID = "2026-10-26-exact-prompt-budget-v3"
 
 
 def greedy_decode(*args, **kwargs):
     from bifocalgemma.inference.generation import greedy_decode as generate
 
     return generate(*args, **kwargs)
+
+
+def decoder_prompt(row, *, paired):
+    """One prompt renderer for actual decoding and the shared output allowance."""
+    instruction = row["instruction"]
+    if row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair":
+        instruction = "Return only a unified diff fulfilling the instruction.\n" + instruction
+    return (
+        instruction + "\nUse the supplied encoder context."
+        if paired
+        else instruction + "\n\n" + row["context"]
+    )
 
 
 def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
@@ -42,17 +55,12 @@ def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
     ):
         raise ValueError("benchmark_gold_in_model_input")
     context = row["context"]
-    instruction = row["instruction"]
-    if row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair":
-        instruction = "Return only a unified diff fulfilling the instruction.\n" + instruction
     enc = ()
     if spec.encoder:
         enc = tuple(encoder.encode(context, add_special_tokens=True))
         if len(enc) > encoder_limit:
             raise ValueError("encoder_context_overflow")
-        prompt = instruction + "\nUse the supplied encoder context."
-    else:
-        prompt = instruction + "\n\n" + context
+    prompt = decoder_prompt(row, paired=spec.encoder is not None)
     text = decoder.apply_chat_template(
         [{"role": "user", "content": prompt}],
         tokenize=False,
@@ -198,6 +206,7 @@ def run_context_benchmark(
             "max_new_tokens": max_new_tokens,
             "execution": allow_execution,
             "protocol": protocol_version,
+            "generation_budget_policy": "actual_paired_prompt_v1",
         }
     )
     output.mkdir(parents=True, exist_ok=True)
@@ -270,7 +279,7 @@ def run_context_benchmark(
         cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
         enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
         # Same output allowance for pairs and baselines: reserve the paired IT prefix.
-        paired_prompt = row["instruction"] + "\nUse the supplied encoder context."
+        paired_prompt = decoder_prompt(row, paired=True)
         paired_rendered = decoder.apply_chat_template(
             [{"role": "user", "content": paired_prompt}],
             tokenize=False,
@@ -284,6 +293,8 @@ def run_context_benchmark(
         if new_tokens < 1:
             raise ValueError("benchmark_decoder_prefix_exceeds_budget")
         total = decoder_limit if spec.encoder else cap + decoder_limit + 512
+        if len(prefix) + new_tokens > total:
+            raise ValueError("benchmark_decoder_prefix_exceeds_budget")
         generated = greedy_decode(
             model,
             enc,

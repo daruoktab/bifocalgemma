@@ -3,6 +3,7 @@
 import argparse
 import io
 import json
+import time
 from pathlib import Path
 
 from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, hf_hub_download
@@ -15,7 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--prefix", action="append", required=True)
-    parser.add_argument("--reset-id", default="2026-10-17-clean-evaluation-v1")
+    parser.add_argument("--reset-id", default="2026-10-26-exact-prompt-budget-v3")
     parser.add_argument("--archive", type=Path, default=Path("outputs/benchmark_reset"))
     parser.add_argument(
         "--apply", action="store_true", help="Requires all affected writers stopped."
@@ -26,6 +27,7 @@ def main():
     names = api.list_repo_files(args.repo, revision=revision)
     operations: list[CommitOperationAdd | CommitOperationDelete] = []
     metadata = {}
+    new_metadata = {}
     deleted = []
     for prefix in args.prefix:
         checked_prefix(prefix)
@@ -38,12 +40,28 @@ def main():
             return json.loads(value)
 
         state = read("pipeline_state.json")
-        if state["stages"].get("training", {}).get("status") != "COMPLETED":
-            raise ValueError("Refusing reset without completed training: " + prefix)
+        # Evaluation reset is also safe for interrupted training: its cursor,
+        # checkpoint tensors, optimizer and training receipt remain untouched.
+        if not state.get("identity") or not isinstance(state.get("stages"), dict):
+            raise ValueError("Refusing reset of an invalid pipeline receipt: " + prefix)
         receipt = (
             read("upload_complete.json") if prefix + "/upload_complete.json" in names else None
         )
         removed, replacements = remote_reset_plan(prefix, names, state, receipt, args.reset_id)
+        if prefix + "/last_seen.json" in names:
+            previous = read("last_seen.json")
+            replacements[prefix + "/last_seen.json"] = json.dumps(
+                {
+                    "stage": "awaiting_resume",
+                    "last_seen": previous.get("last_seen"),
+                    "run": prefix,
+                    "benchmark_reset_id": args.reset_id,
+                    "status_updated_at": time.time(),
+                    "liveness_note": "Benchmark results reset; last_seen is the previous notebook heartbeat, not reset time.",
+                },
+                indent=2,
+            ).encode()
+        new_metadata.update(replacements)
         deleted.extend(removed)
         operations.extend(CommitOperationDelete(path_in_repo=name) for name in removed)
         operations.extend(
@@ -55,7 +73,7 @@ def main():
             {
                 "source_revision": revision,
                 "delete_files": deleted,
-                "replace_metadata": list(metadata),
+                "replace_metadata": list(new_metadata),
                 "apply": args.apply,
             },
             indent=2,
@@ -87,6 +105,10 @@ def main():
     visible = set(api.list_repo_files(args.repo, revision=commit.oid))
     if any(name in visible for name in deleted):
         raise ValueError("Benchmark deletion verification failed.")
+    for name, expected in new_metadata.items():
+        remote = hf_hub_download(args.repo, name, revision=commit.oid)
+        if Path(remote).read_bytes() != expected:
+            raise ValueError("Reset metadata verification failed: " + name)
 
     # Compare Git blob identities without downloading any tensor/checkpoint bytes.
     def training_blobs(rev):

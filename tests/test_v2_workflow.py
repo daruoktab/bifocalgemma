@@ -175,6 +175,24 @@ def test_run_again_after_benchmark_interruption_keeps_training_and_prediction_jo
     assert all(row["cases"] == 2 for row in result["benchmarks"])
 
 
+def test_old_benchmarks_are_reset_once_while_completed_training_is_reused(workflow, tmp_path):
+    run, state = workflow
+    first = run()
+    ledger_path = tmp_path / "e2b-it/train/pipeline_state.json"
+    ledger = json.loads(ledger_path.read_text())
+    training = ledger["stages"]["training"]
+    ledger["benchmark_reset_id"] = "previous-protocol"
+    atomic_json(ledger_path, ledger)
+    before = len(state["benchmarks"])
+    second = run()
+    assert first["status"] == second["status"] == "COMPLETED"
+    assert len(state["training_calls"]) == 1
+    assert len(state["benchmarks"]) - before == len(v2.BENCHMARKS)
+    assert json.loads(ledger_path.read_text())["stages"]["training"] == training
+    run()
+    assert len(state["benchmarks"]) == before + len(v2.BENCHMARKS)
+
+
 def test_training_failure_never_launches_benchmarks(monkeypatch):
     calls = []
 

@@ -42,4 +42,18 @@ def source_fingerprints(root=None):
                 json.loads(path.read_text()), sort_keys=True, separators=(",", ":")
             )
         critical.update(relative.encode() + b"\0" + content.encode())
-    return {"code_sha256": full.hexdigest(), "training_semantics_sha256": critical.hexdigest()}
+    current = critical.hexdigest()
+    # Benchmark-only releases may explicitly approve one exact source tree as
+    # training-equivalent to its predecessor. Any subsequent code change breaks
+    # this match and retains the normal strict checkpoint/profile rejection.
+    approval = root.parents[1] / "configs/training_resume_compatibility.json"
+    training = current
+    if approval.is_file():
+        entry = json.loads(approval.read_text(encoding="utf-8"))
+        if entry.get("approved_source_semantics_sha256") == current:
+            training = entry["baseline_training_semantics_sha256"]
+    return {
+        "code_sha256": full.hexdigest(),
+        "training_semantics_sha256": training,
+        "source_semantics_sha256": current,
+    }

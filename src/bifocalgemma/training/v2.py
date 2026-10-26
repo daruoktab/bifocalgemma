@@ -15,12 +15,17 @@ import torch
 from bifocalgemma.config import get_v2_experiment
 from bifocalgemma.data.releases import fetch_collection
 from bifocalgemma.data.tokenization import load_verified_tokenizer
-from bifocalgemma.evaluation.context import V2_EVALUATION_PROTOCOL, run_context_benchmark
+from bifocalgemma.evaluation.context import (
+    BENCHMARK_RESET_ID,
+    V2_EVALUATION_PROTOCOL,
+    run_context_benchmark,
+)
 from bifocalgemma.models.memory_efficient import (
     DEFAULT_MEMORY_POLICY,
     configure_memory_efficient_training,
 )
 from bifocalgemma.models.pretrained import load_local_native_model, load_sft_adapters_for_inference
+from bifocalgemma.training.benchmark_reset import reset_local_benchmarks
 from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
 from bifocalgemma.training.curated_sft import prepare_curated_training
 from bifocalgemma.training.hub import recover_remote_run
@@ -189,6 +194,7 @@ def _execute_v2(
         if not token:
             raise ValueError("An HF write token is required.")
         recover_remote_run(repo, root, prefix, token=token)
+    reset_local_benchmarks(root, BENCHMARK_RESET_ID)
     identity = {
         "version": "normalized_merged_v2",
         "spec": spec.to_dict(),

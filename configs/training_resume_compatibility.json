@@ -1,0 +1,21 @@
+{
+  "version": "exact_source_training_equivalence_v1",
+  "reason": "Only evaluation prompt budgeting, one-time evaluation reset orchestration, and this exact-source compatibility check changed. Model, data and training implementation unchanged.",
+  "baseline_runtime_sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
+  "baseline_training_semantics_sha256": "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
+  "approved_source_semantics_sha256": "c67be9727109509e16ca3ed7116743f4b3186ca6266be8eecb8a5b6096abf3ac",
+  "reviewed_changed_files": {
+    "evaluation/context.py": {
+      "before": "65783802b934aee06ac74f37e8f24f1f07838cfc494bdac05b828bf679dd899e",
+      "after": "74e810fb8cf3118b74bd0b759126a651936d18a732a8b8516c453e85e3b4289d"
+    },
+    "training/source_identity.py": {
+      "before": "16311c4d53b7bb55259ac63c5563ea11eb93dd94520f3ab5caa4d2e570dd539b",
+      "after": "e7c4072aade11f07c7f45993bca4299c3a4b1b1c572bee5f76745b46b2b5de2e"
+    },
+    "training/v2.py": {
+      "before": "57f44fa00e14e79ff94df2b0f63a7b454af3ebb121763b5cb9eeadba32157429",
+      "after": "c151198346cb7b4b5d761591920cfc3ec1bcb0a33f7be27ff3b92ef754c09b60"
+    }
+  }
+}
