@@ -42,7 +42,10 @@ def _():
     Setiap notebook memeriksa profil terpilih dalam **2 tahap**, tanpa tuning sendiri.
     Hasil tiap percobaan/tahap disimpan dan dipakai ulang saat resume.
     Hasil disimpan di `outputs/v2/{{MODEL_KEY}}/train/`; konfigurasi lengkap ada di manifest.
-    Run ini dimulai dari backbone resmi dan terpisah dari folder eksperimen lama.
+    Run baru dimulai dari backbone resmi. Run lanjutan mengambil checkpoint HF
+    lengkap terakhir; training yang sudah selesai dilewati tanpa dilatih ulang.
+    Pembaruan benchmark 26 Oktober mengulang evaluasi dengan anggaran token
+    yang diperbaiki; checkpoint dan progres training tetap dipertahankan.
     Jika `HF_TOKEN` sudah tersedia, proses langsung berjalan. Jika belum, isi token
     di bawah dan tekan **Jalankan** sekali. Saat sesi terputus, jalankan notebook
     yang sama lagi untuk melanjutkan checkpoint atau benchmark terakhir.

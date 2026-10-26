@@ -42,7 +42,10 @@ def _():
     Setiap notebook memeriksa profil terpilih dalam **2 tahap**, tanpa tuning sendiri.
     Hasil tiap percobaan/tahap disimpan dan dipakai ulang saat resume.
     Hasil disimpan di `outputs/v2/e2b-e2b/train/`; konfigurasi lengkap ada di manifest.
-    Run ini dimulai dari backbone resmi dan terpisah dari folder eksperimen lama.
+    Run baru dimulai dari backbone resmi. Run lanjutan mengambil checkpoint HF
+    lengkap terakhir; training yang sudah selesai dilewati tanpa dilatih ulang.
+    Pembaruan benchmark 26 Oktober mengulang evaluasi dengan anggaran token
+    yang diperbaiki; checkpoint dan progres training tetap dipertahankan.
     Jika `HF_TOKEN` sudah tersedia, proses langsung berjalan. Jika belum, isi token
     di bawah dan tekan **Jalankan** sekali. Saat sesi terputus, jalankan notebook
     yang sama lagi untuk melanjutkan checkpoint atau benchmark terakhir.
@@ -100,9 +103,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-v2-assets",
-        "filename": "runtime-2cc7b98cf02d97d2.zip",
-        "revision": "521b546c0f078d2fb4a74c2fe45323b5a34d592b",
-        "sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
+        "filename": "runtime-3995e16b4eacd6e1.zip",
+        "revision": "69742072281e273cc0649c20ceaf28adf4f87451",
+        "sha256": "3995e16b4eacd6e1cb28aa7ba181d3cf8aca8db90e62c89f7ea33cbcbcd35c09",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],
