@@ -94,6 +94,24 @@ def benchmark_jobs(snapshot):
     ]
 
 
+def benchmark_directory_name(settings):
+    """Reuse the original Hub folder even when the evaluation protocol changes.
+
+    The actual protocol remains in the stage and prediction signatures. This
+    legacy value determines the storage address only, never evaluation behavior.
+    """
+    from bifocalgemma.data.offline_sft import stable_fingerprint
+
+    storage = {**settings, "protocol": "greedy_cached_normalized_merged_v2"}
+    return (
+        settings["snapshot"]
+        + "-"
+        + settings["benchmark"]["collection"]
+        + "-"
+        + stable_fingerprint(storage)[:12]
+    )
+
+
 def download_model(spec, cache, token, progress):
     from huggingface_hub import hf_hub_download
 
@@ -362,8 +380,6 @@ def _execute_v2(
             if stage in completed_reports:
                 report_rows.append(completed_reports[stage])
                 continue
-            from bifocalgemma.data.offline_sft import stable_fingerprint
-
             directory = Path(cache) / "benchmarks" / item["collection"]
             fetch_collection(
                 DATASET_REPO,
@@ -374,17 +390,7 @@ def _execute_v2(
                 include_gold=True,
                 token=token,
             )
-            destination = (
-                root
-                / "benchmarks"
-                / (
-                    baseline_snapshot
-                    + "-"
-                    + item["collection"]
-                    + "-"
-                    + stable_fingerprint(settings)[:12]
-                )
-            )
+            destination = root / "benchmarks" / benchmark_directory_name(settings)
             ledger.start(stage)
             report = run_context_benchmark(
                 model,

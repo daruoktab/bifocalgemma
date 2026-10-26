@@ -1,6 +1,7 @@
 """One Run trains one model, resumes evaluation, and never repeats completed work."""
 
 import ast
+import copy
 import json
 import os
 from dataclasses import replace
@@ -17,6 +18,21 @@ from bifocalgemma.training import v2
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.stages import atomic_json
 from tests.test_offline_sft_training import examples
+
+
+def test_benchmark_protocol_update_keeps_the_original_hub_directories():
+    original = {
+        "humanevalfix_python_v2": "trained-humanevalfix_python_v2-e3c83d573a81",
+        "sweqa_oracle_gemma32k_dec8k_v1": "trained-sweqa_oracle_gemma32k_dec8k_v1-70311dbddb7c",
+        "sweqa_noisy_oracle_gemma32k_dec8k_v1": "trained-sweqa_noisy_oracle_gemma32k_dec8k_v1-b7791f09e27b",
+    }
+    for item, settings, _ in v2.benchmark_jobs("trained"):
+        path = v2.benchmark_directory_name(settings)
+        if item["collection"] in original:
+            assert path == original[item["collection"]]
+        changed = copy.deepcopy(settings)
+        changed["protocol"] = "another-evaluation-protocol"
+        assert v2.benchmark_directory_name(changed) == path
 
 
 @pytest.fixture

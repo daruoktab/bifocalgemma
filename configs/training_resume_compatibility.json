@@ -3,7 +3,7 @@
   "reason": "Only evaluation prompt budgeting, one-time evaluation reset orchestration, and this exact-source compatibility check changed. Model, data and training implementation unchanged.",
   "baseline_runtime_sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
   "baseline_training_semantics_sha256": "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
-  "approved_source_semantics_sha256": "c67be9727109509e16ca3ed7116743f4b3186ca6266be8eecb8a5b6096abf3ac",
+  "approved_source_semantics_sha256": "a04f87d7e6ff57a8e34846a721e18db533eb548772adc6ef802e0639441098e7",
   "reviewed_changed_files": {
     "evaluation/context.py": {
       "before": "65783802b934aee06ac74f37e8f24f1f07838cfc494bdac05b828bf679dd899e",
@@ -15,7 +15,7 @@
     },
     "training/v2.py": {
       "before": "57f44fa00e14e79ff94df2b0f63a7b454af3ebb121763b5cb9eeadba32157429",
-      "after": "c151198346cb7b4b5d761591920cfc3ec1bcb0a33f7be27ff3b92ef754c09b60"
+      "after": "d0d47073da25bacc09d273000e2e18126b166b149a8ecb2ee09db87978179b1d"
     }
   }
 }

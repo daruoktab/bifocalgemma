@@ -3,6 +3,9 @@
 Use the latest six `notebooks/train_*.py` files and restart the Molab kernel before
 Run. The notebook keeps its existing model repository and `train` run directory.
 There is no stage selector or configuration change to make.
+Benchmark output also reuses the original collection folders, including their
+existing short suffixes. The new protocol is recorded in metadata and does not
+create another version folder on Hugging Face.
 
 - A completed, verified training stage skips training and loads its final adapter
   checkpoint for evaluation.
