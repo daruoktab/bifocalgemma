@@ -4,6 +4,7 @@ import argparse
 import ast
 import inspect
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from notebook_bundle import source_bundle_bytes
@@ -461,14 +462,15 @@ def check_followers(runtime_root, *, boundary=False):
     )
 
 
-def render(root=ROOT, *, followers=False, boundary=False):
+def render(root=ROOT, *, followers=False, boundary=False, worker: Callable | None = None):
     import hashlib
 
     manifest = json.loads((root / "notebooks/runtime-manifest.json").read_text())
     if hashlib.sha256(source_bundle_bytes(root)).hexdigest() != manifest["sha256"]:
         raise ValueError("Publish the matching runtime before exporting the Colab diagnostic.")
     loader = (root / "tools/runtime_bootstrap.py").read_text(encoding="utf-8")
-    target = check_followers if followers or boundary else probe
+    target = worker or (check_followers if followers or boundary else probe)
+    target_name = getattr(target, "__name__")
     function = inspect.getsource(declared_limit_example) + "\n\n" + inspect.getsource(target)
     ast.parse(function)
     # A fresh subprocess avoids pre-imported Colab Torch/NumPy polluting the pinned environment.
@@ -477,11 +479,7 @@ def render(root=ROOT, *, followers=False, boundary=False):
         "root = Path(sys.argv[1])\n"
         "runpy.run_path(str(root / 'tools/notebook_launcher.py'))['prepare_runtime'](root)\n"
         + function
-        + (
-            f"\n{target.__name__}(root, boundary=True)\n"
-            if boundary
-            else f"\n{target.__name__}(root)\n"
-        )
+        + (f"\n{target_name}(root, boundary=True)\n" if boundary else f"\n{target_name}(root)\n")
     )
     return (
         '"""Generated diagnostic only: no epoch training, checkpoint upload or profile publication."""\n'
