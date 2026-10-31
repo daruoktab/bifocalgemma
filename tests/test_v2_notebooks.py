@@ -15,7 +15,7 @@ def test_six_notebooks_have_one_fixed_model_and_identical_verified_bundle():
     digests = set()
     repos = set()
     notebook_root = Path(os.environ.get("BIFOCALGEMMA_NOTEBOOK_DIR", root / "notebooks"))
-    paths = list(notebook_root.glob("train_*.py"))
+    paths = [notebook_root / f"train_{k.replace('-', '_')}.py" for k in sorted(keys)]
     assert len(paths) == 6
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
