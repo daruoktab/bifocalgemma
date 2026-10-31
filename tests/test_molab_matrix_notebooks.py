@@ -34,6 +34,7 @@ from tools.molab_matrix_support import (  # noqa: E402
     configure_matrix_stage,
     is_cross_bridge_parameter,
     make_experiment_spec,
+    patch_matrix_tokenization,
     prune_matrix_checkpoints,
     restore_matrix_checkpoint,
     run_matrix_stage,
@@ -290,9 +291,7 @@ def test_save_and_restore_matrix_checkpoint_and_prune(tmp_path):
     # Save additional checkpoints
     save_matrix_checkpoint(model, optimizer, tmp_path / "checkpoint-006000", 6000, "joint", {}, {})
     save_matrix_checkpoint(model, optimizer, tmp_path / "checkpoint-007000", 7000, "joint", {}, {})
-    save_matrix_checkpoint(
-        model, optimizer, tmp_path / "checkpoint-011102", 11102, "joint", {}, {}
-    )
+    save_matrix_checkpoint(model, optimizer, tmp_path / "checkpoint-011102", 11102, "joint", {}, {})
 
     # Restore checkpoint-005551
     restored = restore_matrix_checkpoint(model, optimizer, p1)
@@ -399,3 +398,84 @@ def test_pipeline_state_ledger_creation_for_remote_resumption(tmp_path):
     assert state["stages"]["stage1_frozen"]["status"] == "COMPLETED"
     assert state["stages"]["stage1_frozen"]["result"]["status"] == "ok"
 
+
+def test_matrix_tokenization_patch_it_encoder_contract():
+    """Verify that IT encoders (which lack BOS in raw encode()) have BOS prepended properly."""
+    patch_matrix_tokenization()
+
+    import bifocalgemma.data.context_tasks as ct_mod
+    import bifocalgemma.evaluation.context as eval_ctx_mod
+
+    class MockITEncoder:
+        bos_token_id = 2
+
+        def encode(self, text, add_special_tokens=True):
+            # IT tokenizers return raw tokens without BOS when encode() is called
+            return [101, 102, 103]
+
+    class MockBaseEncoder:
+        bos_token_id = 2
+
+        def encode(self, text, add_special_tokens=True):
+            # Base tokenizers include BOS at index 0
+            return [2, 101, 102, 103]
+
+    class MockDecoder:
+        bos_token_id = 2
+
+        def apply_chat_template(
+            self, messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
+        ):
+            if add_generation_prompt:
+                return "<bos><start_of_turn>user\nrepair<end_of_turn>\n<start_of_turn>model\n"
+            return (
+                f"<bos><start_of_turn>user\nrepair<end_of_turn>\n<start_of_turn>model\n"
+                f"{messages[-1]['content']}<end_of_turn>\n<turn|>"
+            )
+
+        def encode(self, text, add_special_tokens=False):
+            if "<turn|>" in text:
+                return (2, 10, 20, 30, 40, 107)
+            return (2, 10, 20)
+
+        def convert_tokens_to_ids(self, tok):
+            return 107
+
+    row = {
+        "instance_id": "test_it_encoder_contract_1",
+        "context": "def calculate(): return 42\n",
+        "source": "nebius/SWE-rebench-V2",
+        "task_type": "repair",
+        "instruction": "Fix bug in calculate",
+        "target_text": "diff --git a/calc.py b/calc.py\n",
+    }
+
+    # 1. Test IT encoder (e.g. 4it-2it) - BOS must be prepended
+    spec_it = make_experiment_spec("4it-2it")
+    res_it = ct_mod.tokenize_context_task(
+        row, spec_it, MockITEncoder(), MockDecoder(), encoder_limit=1000, decoder_limit=1000
+    )
+    assert res_it.encoder_ids[0] == 2
+    assert res_it.encoder_ids == (2, 101, 102, 103)
+    assert res_it.decoder_prefix_ids[0] == 2
+    assert res_it.target_ids[-1] == 107
+
+    # 2. Test Base encoder (e.g. 4base-2it) - BOS must not be duplicated
+    spec_base = make_experiment_spec("4base-2it")
+    res_base = ct_mod.tokenize_context_task(
+        row, spec_base, MockBaseEncoder(), MockDecoder(), encoder_limit=1000, decoder_limit=1000
+    )
+    assert res_base.encoder_ids[0] == 2
+    assert res_base.encoder_ids == (2, 101, 102, 103)
+
+    # 3. Test prompt_ids in evaluation/context.py
+    eval_row = {
+        "role": "eval",
+        "instruction": "Fix bug",
+        "context": "def foo(): pass",
+    }
+    enc, prefix = eval_ctx_mod.prompt_ids(
+        eval_row, spec_it, MockITEncoder(), MockDecoder(), encoder_limit=1000
+    )
+    assert enc[0] == 2
+    assert enc == (2, 101, 102, 103)
