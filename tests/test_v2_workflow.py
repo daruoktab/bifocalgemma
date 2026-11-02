@@ -226,7 +226,7 @@ def test_training_failure_never_launches_benchmarks(monkeypatch):
 def test_notebook_starts_with_token_without_any_mode_selection(monkeypatch, from_environment):
     notebook_root = Path(
         os.environ.get(
-            "BIFOCALGEMMA_NOTEBOOK_DIR", Path(__file__).resolve().parents[1] / "notebooks"
+            "BIFOCALGEMMA_NOTEBOOK_DIR", Path(__file__).resolve().parents[1] / "notebooks/legacy/v2"
         )
     )
     path = notebook_root / "train_e2b_it.py"

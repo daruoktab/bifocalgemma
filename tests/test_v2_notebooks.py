@@ -14,7 +14,7 @@ def test_six_notebooks_have_one_fixed_model_and_identical_verified_bundle():
     keys = {"e2b-e2b", "e4b-e2b", "e2b-e4b", "e4b-e4b", "e2b-it", "e4b-it"}
     digests = set()
     repos = set()
-    notebook_root = Path(os.environ.get("BIFOCALGEMMA_NOTEBOOK_DIR", root / "notebooks"))
+    notebook_root = Path(os.environ.get("BIFOCALGEMMA_NOTEBOOK_DIR", root / "notebooks/legacy/v2"))
     paths = [notebook_root / f"train_{k.replace('-', '_')}.py" for k in sorted(keys)]
     assert len(paths) == 6
     for path in paths:
