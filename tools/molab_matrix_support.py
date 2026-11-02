@@ -37,13 +37,14 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import torch
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 if "torchvision" not in sys.modules or sys.modules["torchvision"] is not None:
     try:
-        import torch
         import torchvision
 
         torchvision.ops.nms(
@@ -52,16 +53,15 @@ if "torchvision" not in sys.modules or sys.modules["torchvision"] is not None:
             0.5,
         )
     except Exception:
-        sys.modules["torchvision"] = None
-        sys.modules["torchvision.transforms"] = None
+        cast(dict[str, Any], sys.modules)["torchvision"] = None
+        cast(dict[str, Any], sys.modules)["torchvision.transforms"] = None
 
 if "torchaudio" not in sys.modules or sys.modules["torchaudio"] is not None:
     try:
         import torchaudio  # noqa: F401
     except Exception:
-        sys.modules["torchaudio"] = None
+        cast(dict[str, Any], sys.modules)["torchaudio"] = None
 
-import torch
 from safetensors.torch import load_file, save_file
 from torch.nn import functional as F
 from transformers.models.gemma4.modeling_gemma4 import apply_rotary_pos_emb
@@ -102,7 +102,7 @@ from bifocalgemma.training.stages import (
 )
 from bifocalgemma.training.telemetry import TrainingDashboard, resource_snapshot
 from bifocalgemma.training.v2 import benchmark_directory_name, download_model, target_fingerprint
-from bifocalgemma.training.v2_hub import RemoteHeartbeat, synchronize_v2
+from bifocalgemma.training.v2_hub import RemoteHeartbeat
 
 
 def ensure_hardware_memory_guards() -> dict[str, Any]:
@@ -195,13 +195,13 @@ def patch_matrix_tokenization() -> None:
                 tokenizer._matrix_bos_wrapped = True
             return tokenizer, expected
 
-        tok_mod.load_verified_tokenizer = safe_load_verified_tokenizer
-        cs_mod.load_verified_tokenizer = safe_load_verified_tokenizer
+        setattr(tok_mod, "load_verified_tokenizer", safe_load_verified_tokenizer)
+        setattr(cs_mod, "load_verified_tokenizer", safe_load_verified_tokenizer)
         if hasattr(eval_ctx_mod, "load_verified_tokenizer"):
-            eval_ctx_mod.load_verified_tokenizer = safe_load_verified_tokenizer
+            setattr(eval_ctx_mod, "load_verified_tokenizer", safe_load_verified_tokenizer)
         if hasattr(gsm8k_mod, "load_verified_tokenizer"):
-            gsm8k_mod.load_verified_tokenizer = safe_load_verified_tokenizer
-        tok_mod._matrix_bos_patched = True
+            setattr(gsm8k_mod, "load_verified_tokenizer", safe_load_verified_tokenizer)
+        setattr(tok_mod, "_matrix_bos_patched", True)
 
     # 2. Defense-in-depth: patch tokenize_context_task in context_tasks and repository_sft
     if not getattr(ct_mod, "_matrix_bos_patched", False):
@@ -274,9 +274,10 @@ def patch_matrix_tokenization() -> None:
                 },
             )
 
-        ct_mod.tokenize_context_task = safe_tokenize_context_task
-        rs_mod.tokenize_context_task = safe_tokenize_context_task
-        ct_mod._matrix_bos_patched = True
+        setattr(ct_mod, "tokenize_context_task", safe_tokenize_context_task)
+        if hasattr(rs_mod, "tokenize_context_task"):
+            setattr(rs_mod, "tokenize_context_task", safe_tokenize_context_task)
+        setattr(ct_mod, "_matrix_bos_patched", True)
 
     # 3. Defense-in-depth: patch prompt_ids in evaluation/context.py
     if not getattr(eval_ctx_mod, "_matrix_bos_patched", False):
@@ -290,8 +291,8 @@ def patch_matrix_tokenization() -> None:
                     raise ValueError("encoder_context_overflow")
             return enc, prefix
 
-        eval_ctx_mod.prompt_ids = safe_prompt_ids
-        eval_ctx_mod._matrix_bos_patched = True
+        setattr(eval_ctx_mod, "prompt_ids", safe_prompt_ids)
+        setattr(eval_ctx_mod, "_matrix_bos_patched", True)
 
 
 patch_matrix_tokenization()
@@ -618,7 +619,7 @@ class SwiGLUDualGateBridge(torch.nn.Module):
             torch.nn.init.xavier_uniform_(self.w_up.weight, gain=0.5)
             torch.nn.init.normal_(self.w_down.weight, mean=0.0, std=0.01 / math.sqrt(self.d_mid))
 
-    def forward(self, h_enc: torch.Tensor) -> torch.Tensor:
+    def forward(self, h_enc: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-mutable-override]
         orig_dtype = h_enc.dtype
         compute_dtype = (
             torch.bfloat16
@@ -651,7 +652,7 @@ class StreamingPointerLoss(torch.nn.Module):
         self.w_ptr_q = torch.nn.Linear(int(d_dec), self.d_ptr, bias=False)
         self.w_ptr_k = torch.nn.Linear(int(d_dec), self.d_ptr, bias=False)
 
-    def forward(
+    def forward(  # ty: ignore[invalid-mutable-override]
         self,
         h_dec: torch.Tensor,
         z_enc: torch.Tensor,
@@ -1250,7 +1251,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
             self.out_features = int(w.shape[0])
             self.weight = torch.nn.Parameter(w)
 
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
+        def forward(self, x: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-mutable-override]
             compute_dtype = (
                 torch.bfloat16
                 if (x.device.type == "cuda" or x.dtype == torch.bfloat16)
@@ -1261,7 +1262,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
     class FullCrossTiledAttention(TiledMergedAttention):
         """Decoupled causal self-attention and stationary unrotated full-rank 16-bit gated cross-attention."""
 
-        def forward(
+        def forward(  # ty: ignore[invalid-method-override]
             self: Any,
             hidden_states: torch.Tensor,
             position_embeddings: tuple[torch.Tensor, torch.Tensor],
@@ -2039,10 +2040,12 @@ def batched_greedy_decode(
                         cache.offset, cache.offset + ids.shape[1], device=device
                     )[None, :]
                     positions = (raw_positions - pad_offsets[:, None]).clamp_min(0)
-                    cache.step_valid_mask = (
+                    setattr(
+                        cache,
+                        "step_valid_mask",
                         prefill_valid
                         if is_prefill
-                        else torch.ones((bsz, 1), dtype=torch.bool, device=device)
+                        else torch.ones((bsz, 1), dtype=torch.bool, device=device),
                     )
                     hidden = model.decoder(
                         input_ids=ids,
@@ -2699,8 +2702,8 @@ def load_matrix_adapters_for_inference(model: Any, checkpoint_dir: Path | str) -
 
 def run_matrix_stage(
     model: Any,
-    train_examples: list[Any],
-    dev_examples: list[Any],
+    train_examples: Any,
+    dev_examples: Any,
     stage_name: str,
     *,
     policy: dict[str, Any],
@@ -3459,7 +3462,8 @@ def run_matrix_training_and_benchmark(
     monitor: Any = None,
 ) -> dict[str, Any]:
     """Notebook entry point: execute matrix training curriculum, then run 8-benchmark suite."""
-    kwargs = dict(
+    training_res = run_matrix_training(
+        model_key,
         token=token,
         mo=mo,
         output_root=output_root,
@@ -3467,11 +3471,18 @@ def run_matrix_training_and_benchmark(
         upload=upload,
         monitor=monitor,
     )
-    training_res = run_matrix_training(model_key, **kwargs)
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    evaluation_res = run_matrix_benchmark(model_key, **kwargs)
+    evaluation_res = run_matrix_benchmark(
+        model_key,
+        token=token,
+        mo=mo,
+        output_root=output_root,
+        cache=cache,
+        upload=upload,
+        monitor=monitor,
+    )
     return {
         "status": evaluation_res["status"],
         "model": evaluation_res["model"],

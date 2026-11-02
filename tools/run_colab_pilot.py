@@ -72,9 +72,9 @@ def main() -> None:
         f"[Launcher] Starting pilot arm '{tag}' (steps={steps}) on Colab session {session_id} (timeout=86400s)...",
         flush=True,
     )
-    print(f"[Launcher] Live notifications: https://ntfy.sh/bifocalgemma-daru", flush=True)
-    print(f"[Launcher] Auto-sync dataset: https://huggingface.co/datasets/daruokta/bifocalgemma-pilot-results", flush=True)
-    print(f"[Launcher] Auto-shutdown: enabled via runtime.unassign()", flush=True)
+    print("[Launcher] Live notifications: https://ntfy.sh/bifocalgemma-daru", flush=True)
+    print("[Launcher] Auto-sync dataset: https://huggingface.co/datasets/daruokta/bifocalgemma-pilot-results", flush=True)
+    print("[Launcher] Auto-shutdown: enabled via runtime.unassign()", flush=True)
 
     proc = subprocess.Popen(
         cmd,
@@ -99,8 +99,8 @@ def main() -> None:
 
     # 4. Download results
     zip_target = Path(f"outputs/colab/{tag}_results.zip")
-    print(f"[Launcher] Checking for local result download...", flush=True)
-    dl = subprocess.run(
+    print("[Launcher] Checking for local result download...", flush=True)
+    subprocess.run(
         [
             "colab",
             "download",

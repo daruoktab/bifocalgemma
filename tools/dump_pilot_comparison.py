@@ -1,4 +1,5 @@
-import zipfile, json
+import json
+import zipfile
 
 with zipfile.ZipFile('outputs/colab/it_encoder_frozen_then_joint_results.zip') as z:
     d = json.loads(z.read('pilot_e2b_e2b.json').decode('utf-8'))

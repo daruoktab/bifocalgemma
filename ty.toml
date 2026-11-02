@@ -1,0 +1,5 @@
+[environment]
+python = "C:/Users/daru/miniconda3/envs/ai/python.exe"
+
+[src]
+include = ["src", "tools", "tests"]

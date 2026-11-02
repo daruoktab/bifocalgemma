@@ -9,6 +9,7 @@ import math
 import sys
 import zipfile
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import torch
@@ -245,9 +246,9 @@ def test_notebook_has_correct_metadata_and_centralized_hf_repo(model_key):
     assert f'HF_SUBFOLDER = "{expected["subfolder"]}"' in code
     if expected["encoder_id"] is not None:
         assert expected["encoder_id"] in code
-        assert expected["encoder_rev"] in code
-    assert expected["decoder_id"] in code
-    assert expected["decoder_rev"] in code
+        assert expected["encoder_rev"] is not None and expected["encoder_rev"] in code
+    assert expected["decoder_id"] is not None and expected["decoder_id"] in code
+    assert expected["decoder_rev"] is not None and expected["decoder_rev"] in code
 
 
 @pytest.mark.parametrize("model_key", list(EXPECTED_MODELS.keys()))
@@ -268,7 +269,7 @@ def test_embedded_bundle_can_be_extracted_and_contains_matrix_support(model_key)
                     elif target.id == "BUNDLE_SHA256" and isinstance(node.value, ast.Constant):
                         bundle_sha = node.value.value
 
-    assert bundle_val is not None, "SOURCE_BUNDLE string constant must be present"
+    assert isinstance(bundle_val, str), "SOURCE_BUNDLE string constant must be present"
     assert bundle_sha is not None, "BUNDLE_SHA256 string constant must be present"
 
     raw_zip = base64.b85decode(bundle_val)
@@ -306,7 +307,7 @@ def test_configure_full_rank_cross_attention_v3_specs(model_key):
         assert info["kv_owner_layers"] > 0
         assert info["total_cross_bridge_parameters"] > 0
         assert isinstance(model.encoder_projection, SwiGLUDualGateBridge)
-        first_attn = model.decoder.layers[0].self_attn
+        first_attn = cast(Any, model.decoder.layers[0].self_attn)
         assert torch.allclose(
             torch.tanh(first_attn.cross_gate.detach()),
             torch.full_like(first_attn.cross_gate, GATE_INIT_TANH),
@@ -655,8 +656,8 @@ def test_cached_uncached_and_batched_greedy_decode_equivalence():
     assert gen_uncached.token_ids == gen_cached.token_ids
 
     # Heterogeneous encoder lengths, heterogeneous prefix lengths, and heterogeneous generation budgets
-    het_enc = [(2, 10, 20), (2, 15, 25, 35, 45, 55), (2, 12)]
-    het_pref = [(2, 30, 40, 50), (2, 35), (2, 41, 42)]
+    het_enc: list[tuple[int, ...]] = [(2, 10, 20), (2, 15, 25, 35, 45, 55), (2, 12)]
+    het_pref: list[tuple[int, ...]] = [(2, 30, 40, 50), (2, 35), (2, 41, 42)]
     het_budgets = [4, 3, 5]
     singles = [
         greedy_decode(model, enc_i, pref_i, max_new_tokens=b_i, use_cache=True)
@@ -670,7 +671,7 @@ def test_cached_uncached_and_batched_greedy_decode_equivalence():
         encode_calls.append(tuple(input_ids.shape))
         return orig_encode(input_ids, attention_mask)
 
-    model.encode_context = spy_encode
+    setattr(model, "encode_context", spy_encode)
     try:
         batched = batched_greedy_decode(
             model,
@@ -680,7 +681,7 @@ def test_cached_uncached_and_batched_greedy_decode_equivalence():
             use_cache=True,
         )
     finally:
-        model.encode_context = orig_encode
+        setattr(model, "encode_context", orig_encode)
 
     assert encode_calls == [(3, 6)]  # Single true batched encoder pass across all 3 heterogeneous items
     assert len(batched) == 3
@@ -751,7 +752,7 @@ def test_synchronize_matrix_v3_retains_stage1_milestone_and_retries_412_contenti
 
     def make_412():
         resp = SimpleNamespace(status_code=412, headers={}, request=None)
-        return HfHubHTTPError("Precondition Failed", response=resp)
+        return HfHubHTTPError("Precondition Failed", response=cast(Any, resp))
 
     class FakeHfApi:
         def __init__(self, token=None):

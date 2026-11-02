@@ -73,9 +73,6 @@ project-includes = ["src/**/*.py", "tools/**/*.py", "tests/**/*.py"]
 search-path = ["src", "tools", "."]
 python-interpreter-path = "C:/Users/daru/miniconda3/envs/ai/python.exe"
 
-[tool.ty.src]
-include = ["src", "tools", "tests"]
-
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
