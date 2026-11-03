@@ -49,7 +49,7 @@ working-molab-v8-exp-temp.py
 /conversation_history.md
 /tmp/
 
-# skills
-.agents/skills/
-.agents/teamwork/*/
-!.agents/teamwork/sentinel/
+# skills & agent scratch
+.agents/
+.codex/
+AGENTS.md

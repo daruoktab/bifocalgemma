@@ -1,7 +1,6 @@
 """Comprehensive verification tests for the 10 Molab V3 matrix training notebooks and runner."""
 
 import ast
-import base64
 import hashlib
 import io
 import json
@@ -261,23 +260,30 @@ def test_embedded_bundle_can_be_extracted_and_contains_matrix_support(model_key)
     code = notebook_path.read_text(encoding="utf-8")
 
     tree = ast.parse(code)
-    bundle_val = None
-    bundle_sha = None
+    manifest = None
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
-                    if target.id == "SOURCE_BUNDLE" and isinstance(node.value, ast.Constant):
-                        bundle_val = node.value.value
-                    elif target.id == "BUNDLE_SHA256" and isinstance(node.value, ast.Constant):
-                        bundle_sha = node.value.value
+                    if target.id in ("runtime_manifest", "RUNTIME_MANIFEST"):
+                        try:
+                            manifest = ast.literal_eval(node.value)
+                        except (ValueError, TypeError):
+                            pass
 
-    assert isinstance(bundle_val, str), "SOURCE_BUNDLE string constant must be present"
-    assert bundle_sha is not None, "BUNDLE_SHA256 string constant must be present"
+    assert isinstance(manifest, dict), "runtime_manifest dictionary constant must be present"
+    assert manifest["repo_id"] == CENTRALIZED_HF_REPO
+    assert manifest["sha256"]
+    assert len(manifest["revision"]) == 40 or manifest["revision"] == "LOCAL-PREVIEW"
+    assert len(code.splitlines()) < 250, (
+        f"Notebook {filename} is too long ({len(code.splitlines())} lines)"
+    )
 
-    raw_zip = base64.b85decode(bundle_val)
+    archive_path = ROOT / "notebooks/runtime" / Path(manifest["filename"]).name
+    assert archive_path.is_file(), f"Runtime archive {archive_path} must exist"
+    raw_zip = archive_path.read_bytes()
     computed_sha = hashlib.sha256(raw_zip).hexdigest()
-    assert computed_sha == bundle_sha
+    assert computed_sha == manifest["sha256"]
 
     with zipfile.ZipFile(io.BytesIO(raw_zip)) as archive:
         namelist = set(archive.namelist())
