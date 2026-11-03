@@ -48,10 +48,10 @@ def simulated_environment(monkeypatch):
         calls.append(command)
         torch_pin = next((arg for arg in command if arg.startswith("torch==")), None)
         if torch_pin:
-            versions["torch"] = torch_pin.removeprefix("torch==") + "+cu130"
+            versions["torch"] = torch_pin.removeprefix("torch==") + "+cu132"
             vision_pin = next((arg for arg in command if arg.startswith("torchvision==")), None)
             if vision_pin:
-                versions["torchvision"] = vision_pin.removeprefix("torchvision==") + "+cu130"
+                versions["torchvision"] = vision_pin.removeprefix("torchvision==") + "+cu132"
         else:
             versions.update(numpy="2.5.3", marimo="0.25.1", PyYAML="6.0.3", psutil="7.0.0")
         return SimpleNamespace(returncode=0)
@@ -67,7 +67,7 @@ def test_force_reinstall_targets_kernel_and_receipt_skips_next_install(monkeypat
     assert result["installed_now"] and len(calls) == 2
     assert all("--reinstall" in command for command in calls)
     assert all(command[command.index("--python") + 1] == sys.executable for command in calls)
-    assert calls[0][-1] == "https://download.pytorch.org/whl/cu130"
+    assert calls[0][-1] == "https://download.pytorch.org/whl/cu132"
     assert "torch==2.14.1" in calls[0] and "torchvision==0.29.1" in calls[0]
     assert not any(arg.startswith("torchvision==") for arg in calls[1])
     again = bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
@@ -96,11 +96,11 @@ def test_new_torch_pin_forces_reinstall_despite_old_receipt_or_matching_install(
     old_pins = {name: value for name, value in PINS.items() if name != "torchvision"}
     old_pins["torch"] = "2.11.0"
     bootstrap_notebook_dependencies(old_pins, state_directory=str(tmp_path))
-    assert versions["torch"] == "2.11.0+cu130" and len(calls) == 2
+    assert versions["torch"] == "2.11.0+cu132" and len(calls) == 2
     # The cloud image may already have the correct version, but no matching
     # reinstall receipt: FORCE_REINSTALL must still execute the installer.
     versions["torch"] = "2.14.1+cu130"
-    versions["torchvision"] = "0.29.1+cu130"
+    versions["torchvision"] = PINS["torchvision"] + "+cu132"
     result = bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
     assert result["installed_now"] and len(calls) == 4
     assert "torch==2.14.1" in calls[2] and "--reinstall" in calls[2]
@@ -188,7 +188,7 @@ def test_native_import_loads_direct_modules_and_expected_symbols(monkeypatch):
     torch = SimpleNamespace(empty=lambda *a, **kw: object(), float32=object())
     vision = SimpleNamespace(
         ops=SimpleNamespace(nms=lambda *args: probes.append(args)),
-        __version__="0.29.1+cu130",
+        __version__=PINS["torchvision"] + "+cu132",
         __file__="/tmp/uv-venv/torchvision/__init__.py",
     )
     configuration = SimpleNamespace(Gemma4TextConfig=object())
@@ -214,7 +214,7 @@ def test_native_import_loads_direct_modules_and_expected_symbols(monkeypatch):
     result = import_native_gemma4()
     assert result["Gemma4TextConfig"] is configuration.Gemma4TextConfig
     assert result["Gemma4TextModel"] is modeling.Gemma4TextModel
-    assert result["torchvision_version"] == "0.29.1+cu130" and len(probes) == 1
+    assert result["torchvision_version"] == PINS["torchvision"] + "+cu132" and len(probes) == 1
 
 
 @pytest.mark.parametrize("bad_vision", ["0.26.0", "0.29.1+cpu"])
@@ -224,7 +224,7 @@ def test_inherited_or_wrong_cuda_torchvision_invalidates_receipt(monkeypatch, tm
     versions["torchvision"] = bad_vision
     result = bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
     assert result["installed_now"] and len(calls) == 4
-    assert versions["torchvision"] == "0.29.1+cu130"
+    assert versions["torchvision"] == PINS["torchvision"] + "+cu132"
 
 
 def test_preloaded_torchvision_alone_requires_restart(monkeypatch, tmp_path):

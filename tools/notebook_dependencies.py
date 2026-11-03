@@ -156,7 +156,7 @@ def bootstrap_notebook_dependencies(
         "python_version": list(sys.version_info[:2]),
         "pins": dict(pins),
         "extras": ["PyYAML>=6.0", "psutil>=7.0"],
-        "torch_index": "https://download.pytorch.org/whl/cu130",
+        "torch_index": "https://download.pytorch.org/whl/cu132",
     }
     signature = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     root = Path(state_directory)
@@ -188,7 +188,7 @@ def bootstrap_notebook_dependencies(
             if actual is None or actual.split("+")[0] != expected:
                 return False
         for name in ("torch", "torchvision"):
-            if name in pins and versions.get(name) != pins[name] + "+cu130":
+            if name in pins and versions.get(name) != pins[name] + "+cu132":
                 return False
         for name, minimum in (("PyYAML", 6), ("psutil", 7)):
             actual = versions.get(name)
@@ -266,7 +266,7 @@ def bootstrap_notebook_dependencies(
     versions = installed_versions()
     if not matches(versions):
         raise RuntimeError("Installed dependency versions differ from the notebook pins.")
-    if versions["torch"] != pins["torch"] + "+cu130":
+    if versions["torch"] != pins["torch"] + "+cu132":
         raise RuntimeError("Expected the CUDA 13.0 Torch wheel; verify the installed build.")
     root.mkdir(parents=True, exist_ok=True)
     temporary = receipt_path.with_suffix(f".{uuid4().hex}.tmp")

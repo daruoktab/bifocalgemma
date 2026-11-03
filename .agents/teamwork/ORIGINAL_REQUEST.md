@@ -82,3 +82,29 @@ Immediate verification results on the clean workspace:
 - `marimo check`: All 10 notebooks clean (Exit code 0)
 
 Please trigger the clean re-audit now.
+
+## Follow-up — 2026-11-03T04:09:11Z
+
+Task: Cek dan verifikasi secara mendalam perkataan/analisis model lain mengenai evaluasi dampak performa, stabilitas, dan temuan kelemahan/masalah pada perubahan commit 13b76cc1fcbf2431ad781cd31167180c2ecd8f4c hingga HEAD (a2c0428) di project BifocalGemma.
+
+Konteks dan Teks Lengkap Perkataan Model Lain:
+"""
+**Kesimpulannya: perubahan sejak `13b76cc` berpotensi memperbaiki stabilitas dan kualitas training untuk konfigurasi simetris maupun asimetris, tetapi belum ada bukti bahwa skor model atau kecepatan meningkat.** Manfaat teknis yang paling masuk akal adalah penurunan kebutuhan memori saat menghitung pointer loss, dengan kemungkinan training per langkah menjadi lebih lambat.
+
+1. Checkpoint pointer loss per chunk: Mengurangi aktivasi yang disimpan untuk backward sehingga berpotensi menurunkan puncak VRAM (-42% pada E2B, -31% pada E4B), dengan biaya komputasi (+31% waktu forward+backward).
+2. Pembobotan token diff: Marker penambahan (+), penghapusan (-), dan header kini mendapat bobot (4x, 3x, 2.4x relatif terhadap token biasa); tetapi berlaku pada token marker berdasarkan ID token (termasuk operator aritmatika di kode biasa), bukan otomatis seluruh isi baris yang berubah. Normalisasi bobot dilakukan per microbatch sehingga saat OOM fallback memecah batch, bobot efektif berubah.
+3. Replay dan kurikulum: Memprioritaskan contoh comprehension autentik (rasio 20%). Namun generator sintetis memilih span/jawaban secara acak dengan instruksi generik tanpa menjelaskan target mana. Pada baseline decoder-only, terjadi regresi di mana target diambil dari prefix asli lalu prefix diganti instruksi generik sehingga sumber jawaban hilang dari input!
+4. Pemulihan state optimizer: Format checkpoint baru menyimpan nama parameter sehingga saat Stage 1 -> Stage 2 mengubah grup optimizer, momentum parameter aktif dapat dipulihkan. Namun checkpoint lama belum menyimpan nama tersebut.
+5. Inconsistency versi dependensi (Blocker):
+   - Metadata notebook & pyproject.toml: transformers==5.22.1, torch==2.15.0
+   - Launcher runtime: transformers==5.20.2, torch==2.14.1
+   - Pemeriksaan native model di src/bifocalgemma/models/native.py:30 hanya menerima 5.19.0 atau 5.20.2. Di luar pytest (karena tests/conftest.py memalsukan versi), native_config('E2B', tiny=True) melempar RuntimeError!
+"""
+
+Instruksi Verifikasi untuk Tim:
+1. Verifikasi Masalah Versi Dependensi: Cek `src/bifocalgemma/models/native.py`, `pyproject.toml`, `tools/notebook_launcher.py`, `tools/notebook_dependencies.py`, dan `tests/conftest.py`. Apakah benar `native_config` menolak transformers 5.22.1 jika dijalankan di luar pytest?
+2. Verifikasi Masalah Replay Sintetis pada Decoder-Only: Cek `synthesize_comprehension_replay` dan `build_anti_forgetting_curriculum` di `tools/molab_matrix_support.py`. Apakah benar saat contoh sintetis dibuat untuk baseline decoder-only, teks sumber (context) hilang dari prompt input sehingga model disuruh memprediksi span yang tidak ada di prompt?
+3. Verifikasi Masalah Bobot Diff Token: Cek `compute_diff_token_weights` dan penanganan microbatch di `run_matrix_stage` saat OOM fallback. Apakah normalisasi per microbatch mengubah bobot efektif saat batch=2 dipecah menjadi 2x batch=1?
+4. Verifikasi Penghematan Memori vs Waktu Pointer Loss: Apakah temuan memori -42%/-31% vs waktu +31% valid secara arsitektur?
+5. Evaluasi Dampak Performa untuk Konfigurasi Simetris (2B-2B, 4B-4B) vs Asimetris (2B-4B, 4B-2B).
+6. Berikan laporan komprehensif: Mana poin yang 100% BENAR dan VALID, mana poin yang PARSIAL/DAPAT DIPERDEBATKAN, serta langkah perbaikan yang direkomendasikan sebelum training 11.102 steps dijalankan.

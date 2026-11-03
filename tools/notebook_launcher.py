@@ -9,19 +9,19 @@ from pathlib import Path
 def prepare_runtime(root):
     helpers = runpy.run_path(str(root / "tools/notebook_dependencies.py"))
     pins = {
-        "torch": "2.14.1",
-        "torchvision": "0.29.1",
-        "transformers": "5.20.2",
+        "torch": "2.15.0",
+        "torchvision": "0.29.2",
+        "transformers": "5.22.1",
         "marimo": "0.25.2",
-        "huggingface-hub": "2.2.0",
+        "huggingface-hub": "2.4.0",
         "safetensors": "0.8.0",
         "tokenizers": "0.23.3",
         "pyarrow": "26.0.0",
         "numpy": "2.5.4",
-        "pytest": "8.4.2",
+        "pytest": "9.2.0",
         "psutil": "7.2.2",
         "wigglystuff": "0.5.36",
-        **({"triton-windows": "3.8.0.post29"} if sys.platform == "win32" else {"triton": "3.8.0"}),
+        **({"triton-windows": "3.9.0.post30"} if sys.platform == "win32" else {"triton": "3.9.0"}),
     }
     result = helpers["bootstrap_notebook_dependencies"](pins, reinstall=False)
     for name, module in list(sys.modules.items()):

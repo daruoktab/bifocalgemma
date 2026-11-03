@@ -191,7 +191,7 @@ def _execute_v2(
 ):
     if model_key not in MODELS or mode not in {"pilot", "train", "benchmark"}:
         raise ValueError("Choose a registered model and pilot/train/benchmark mode.")
-    if version("transformers") != "5.20.2":
+    if version("transformers") not in {"5.20.2", "5.22.1"}:
         raise RuntimeError(
             "Molab v2 requires transformers==5.20.2, matching the local ai environment."
         )

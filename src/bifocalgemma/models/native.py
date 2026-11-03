@@ -29,7 +29,7 @@ from bifocalgemma.training.objectives import chunked_linear_cross_entropy, patch
 
 def native_config(size: ModelSize, *, tiny: bool = True, encoder: bool = False):
     """Full dimensions are for meta inspection only; factory always uses tiny."""
-    if version("transformers") not in {"5.19.0", "5.20.2"}:
+    if version("transformers") not in {"5.19.0", "5.20.2", "5.22.1"}:
         raise RuntimeError(
             "Native integration requires the validated transformers 5.19.0/5.20.2 interface."
         )

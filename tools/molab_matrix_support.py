@@ -970,8 +970,15 @@ def compute_diff_token_weights(
             labels, torch.tensor(add_token_ids, device=labels.device, dtype=labels.dtype)
         )
         weights[add_mask] = float(add_weight)
-    mean_w = weights[valid].mean().clamp_min(1e-6)
-    weights[valid] = weights[valid] / mean_w
+    if weights.ndim == 2:
+        for b in range(weights.shape[0]):
+            row_valid = valid[b]
+            if bool(row_valid.any()):
+                row_mean = weights[b, row_valid].mean().clamp_min(1e-6)
+                weights[b, row_valid] = weights[b, row_valid] / row_mean
+    else:
+        mean_w = weights[valid].mean().clamp_min(1e-6)
+        weights[valid] = weights[valid] / mean_w
     return weights
 
 
@@ -1913,11 +1920,21 @@ def synthesize_comprehension_examples(
             )
         else:
             prefix = prefix_by_kind[kind]
+
+        if not base.encoder_ids:
+            # Baseline decoder-only: preserve repository context in decoder_prefix_ids
+            # so the model has the context from which the target span was extracted
+            effective_prefix = (*prefix, *base.decoder_prefix_ids)
+            if len(effective_prefix) > 4096:
+                effective_prefix = effective_prefix[:4096]
+        else:
+            effective_prefix = prefix
+
         synthesized.append(
             TokenizedRepairExample(
                 instance_id=f"{base.instance_id}__{kind}_{idx}",
                 encoder_ids=base.encoder_ids,
-                decoder_prefix_ids=prefix,
+                decoder_prefix_ids=effective_prefix,
                 target_ids=target,
                 metadata=meta,
             )
