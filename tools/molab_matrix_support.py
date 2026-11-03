@@ -33,6 +33,7 @@ import math
 import os
 import random
 import shutil
+import string
 import sys
 import time
 from collections import Counter
@@ -40,6 +41,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import torch
+import torch.utils.checkpoint
 
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
@@ -641,16 +643,71 @@ class SwiGLUDualGateBridge(torch.nn.Module):
         return normed * self.gamma_calib.to(orig_dtype)
 
 
+DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS: tuple[int, ...] = (
+    0, 1, 2, 3, 4, 5,       # <pad>, <eos>, <bos>, <unk>, <mask>, [multimodal]
+    107, 108, 109, 110,     # '\n', '\n\n', '\n\n\n', ...
+    138, 140, 236743,       # '  ', '    ', ' ' (space)
+    255968,                 # '\t'
+    236761, 603,            # '.', ' .'
+    236764, 708,            # ',', ' ,'
+    236787, 794,            # ':', ' :'
+    236793, 1782,           # ';', ' ;'
+    236769, 833,            # '(', ' ('
+    236768, 1017,           # ')', ' )'
+    236840, 1673,           # '[', ' ['
+    236842, 1681,           # ']', ' ]'
+    236782, 1836,           # '{', ' {'
+    236783, 1888,           # '}', ' }'
+    236784, 808,            # '=', ' ='
+    236862, 900,            # '+', ' +'
+    236772, 753,            # '-', ' -'
+    236829, 1374,           # '*', ' *'
+    236786, 1195,           # '/', ' /'
+)
+
+
+def extract_trivial_token_ids(tokenizer: Any) -> tuple[int, ...]:
+    """Extract all whitespace, punctuation, and special token IDs from tokenizer vocabulary."""
+    if tokenizer is None:
+        return DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS
+    vocab = getattr(tokenizer, "vocab", None) or (
+        tokenizer.get_vocab() if hasattr(tokenizer, "get_vocab") else {}
+    )
+    if not vocab and hasattr(tokenizer, "tokenizer"):
+        vocab = tokenizer.tokenizer.get_vocab()
+    if not vocab:
+        return DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS
+    trivial = set()
+    for tok, idx in vocab.items():
+        cleaned = tok.replace("\u2581", " ").replace(" ", " ").strip()
+        if not cleaned or all(ch in string.punctuation or ch.isspace() for ch in cleaned):
+            trivial.add(int(idx))
+    for attr in ("pad_token_id", "bos_token_id", "eos_token_id", "unk_token_id"):
+        val = getattr(tokenizer, attr, None)
+        if val is not None:
+            trivial.add(int(val))
+    return tuple(sorted(trivial))
+
+
 class StreamingPointerLoss(torch.nn.Module):
     """Zero-materialization streaming LogSumExp pointer NLL for exact span grounding."""
 
-    def __init__(self, d_dec: int, d_ptr: int = 256, chunk_size: int = 512) -> None:
+    def __init__(
+        self,
+        d_dec: int,
+        d_ptr: int = 256,
+        chunk_size: int = 512,
+        trivial_token_ids: tuple[int, ...] | torch.Tensor | None = None,
+        use_checkpoint: bool = True,
+    ) -> None:
         super().__init__()
         self.d_ptr = int(d_ptr)
         self.chunk_size = int(chunk_size)
         self.scale = 1.0 / math.sqrt(float(self.d_ptr))
         self.w_ptr_q = torch.nn.Linear(int(d_dec), self.d_ptr, bias=False)
         self.w_ptr_k = torch.nn.Linear(int(d_dec), self.d_ptr, bias=False)
+        self.trivial_token_ids = trivial_token_ids
+        self.use_checkpoint = use_checkpoint
 
     def forward(  # ty: ignore[invalid-mutable-override]
         self,
@@ -659,11 +716,15 @@ class StreamingPointerLoss(torch.nn.Module):
         enc_token_ids: torch.Tensor,
         target_token_ids: torch.Tensor,
         enc_valid_mask: torch.Tensor,
+        trivial_token_ids: tuple[int, ...] | torch.Tensor | None = None,
     ) -> torch.Tensor:
         if z_enc.shape[1] == 0 or not bool(enc_valid_mask.any()):
             return h_dec.sum() * 0.0
         q_ptr = self.w_ptr_q(h_dec.float())
         k_ptr = self.w_ptr_k(z_enc.float())
+        effective_trivial = (
+            trivial_token_ids if trivial_token_ids is not None else self.trivial_token_ids
+        )
         return _streaming_lse_pointer_nll(
             q_ptr,
             k_ptr,
@@ -672,7 +733,45 @@ class StreamingPointerLoss(torch.nn.Module):
             enc_valid_mask,
             scale=self.scale,
             chunk_size=self.chunk_size,
+            trivial_token_ids=effective_trivial,
+            use_checkpoint=self.use_checkpoint,
         )
+
+
+def _pointer_chunk_forward(
+    q_chunk: torch.Tensor,
+    k_ptr: torch.Tensor,
+    t_chunk: torch.Tensor,
+    enc_token_ids: torch.Tensor,
+    enc_valid_mask: torch.Tensor,
+    trivial_tensor: torch.Tensor | None,
+    scale: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute pointer loss sum and valid count for one decoder chunk."""
+    valid_t = t_chunk != -100
+    if trivial_tensor is not None and trivial_tensor.numel() > 0:
+        valid_t = valid_t & ~torch.isin(t_chunk, trivial_tensor)
+
+    scores = torch.bmm(q_chunk, k_ptr.transpose(1, 2)) * scale
+    scores = scores.masked_fill(~enc_valid_mask[:, None, :].bool(), float("-inf"))
+    log_denom = torch.logsumexp(scores, dim=-1)
+
+    match_mask = (
+        (t_chunk[:, :, None] == enc_token_ids[:, None, :])
+        & enc_valid_mask[:, None, :].bool()
+        & valid_t[:, :, None]
+    )
+    has_copy_target = match_mask.any(dim=-1)
+    if not bool(has_copy_target.any()):
+        return q_chunk.sum() * 0.0, torch.tensor(0, dtype=torch.int64, device=q_chunk.device)
+
+    pos_scores = scores.masked_fill(~match_mask, float("-inf"))
+    log_num = torch.logsumexp(pos_scores, dim=-1)
+    token_nll = -(log_num - log_denom)
+    valid_nll = token_nll[has_copy_target]
+    chunk_loss = valid_nll.sum()
+    chunk_valid = torch.tensor(valid_nll.numel(), dtype=torch.int64, device=q_chunk.device)
+    return chunk_loss, chunk_valid
 
 
 def _streaming_lse_pointer_nll(
@@ -684,36 +783,87 @@ def _streaming_lse_pointer_nll(
     *,
     scale: float,
     chunk_size: int = 256,
+    trivial_token_ids: tuple[int, ...] | torch.Tensor | None = None,
+    use_checkpoint: bool = True,
 ) -> torch.Tensor:
-    """Compute streaming LogSumExp pointer NLL without materializing the full [B, L_dec, L_enc] tensor."""
+    """Compute streaming LogSumExp pointer NLL with per-chunk checkpointing and trivial token filtering."""
     if k_ptr.shape[1] == 0 or not bool(enc_valid_mask.any()):
         return q_ptr.sum() * 0.0
+
+    if trivial_token_ids is None:
+        trivial_token_ids = DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS
+
+    if trivial_token_ids is not None and len(trivial_token_ids) > 0:
+        if isinstance(trivial_token_ids, torch.Tensor):
+            trivial_tensor = trivial_token_ids.to(
+                device=target_token_ids.device, dtype=target_token_ids.dtype
+            )
+        else:
+            trivial_tensor = torch.tensor(
+                tuple(trivial_token_ids),
+                device=target_token_ids.device,
+                dtype=target_token_ids.dtype,
+            )
+    else:
+        trivial_tensor = None
+
     _, seq_len, _ = q_ptr.shape
     total_loss = q_ptr.new_zeros((), dtype=torch.float32)
     total_valid = 0
+
+    do_checkpoint = (
+        use_checkpoint
+        and torch.is_grad_enabled()
+        and (q_ptr.requires_grad or k_ptr.requires_grad)
+    )
+
     for start in range(0, seq_len, chunk_size):
         end = min(seq_len, start + chunk_size)
         q_chunk = q_ptr[:, start:end, :]
         t_chunk = target_token_ids[:, start:end]
-        if not bool((t_chunk != -100).any()):
+
+        valid_t = t_chunk != -100
+        if trivial_tensor is not None and trivial_tensor.numel() > 0:
+            valid_t = valid_t & ~torch.isin(t_chunk, trivial_tensor)
+        if not bool(valid_t.any()):
             continue
-        scores = torch.bmm(q_chunk, k_ptr.transpose(1, 2)) * scale
-        scores = scores.masked_fill(~enc_valid_mask[:, None, :].bool(), float("-inf"))
-        log_denom = torch.logsumexp(scores, dim=-1)
+
         match_mask = (
             (t_chunk[:, :, None] == enc_token_ids[:, None, :])
             & enc_valid_mask[:, None, :].bool()
-            & (t_chunk[:, :, None] != -100)
+            & valid_t[:, :, None]
         )
-        has_copy_target = match_mask.any(dim=-1)
-        if not bool(has_copy_target.any()):
+        if not bool(match_mask.any()):
             continue
-        pos_scores = scores.masked_fill(~match_mask, float("-inf"))
-        log_num = torch.logsumexp(pos_scores, dim=-1)
-        token_nll = -(log_num - log_denom)
-        valid_nll = token_nll[has_copy_target]
-        total_loss = total_loss + valid_nll.sum()
-        total_valid += int(valid_nll.numel())
+
+        if do_checkpoint:
+            chunk_loss, chunk_valid = torch.utils.checkpoint.checkpoint(
+                _pointer_chunk_forward,
+                q_chunk,
+                k_ptr,
+                t_chunk,
+                enc_token_ids,
+                enc_valid_mask,
+                trivial_tensor,
+                scale,
+                use_reentrant=False,
+            )
+        else:
+            chunk_loss, chunk_valid = _pointer_chunk_forward(
+                q_chunk,
+                k_ptr,
+                t_chunk,
+                enc_token_ids,
+                enc_valid_mask,
+                trivial_tensor,
+                scale,
+            )
+
+        n = int(chunk_valid.item())
+        if n > 0:
+            total_loss = total_loss + chunk_loss
+            total_valid += n
+
     if total_valid == 0:
         return q_ptr.sum() * 0.0
     return total_loss / float(total_valid)
@@ -727,6 +877,8 @@ def streaming_pointer_auxiliary_loss(
     enc_valid_mask: torch.Tensor,
     *,
     chunk_size: int = 256,
+    trivial_token_ids: tuple[int, ...] | torch.Tensor | None = None,
+    use_checkpoint: bool = True,
 ) -> torch.Tensor:
     """Parameter-free zero-materialization streaming pointer NLL aligning decoder hidden states to bridge states."""
     if z_enc is None or z_enc.shape[1] == 0 or not bool(enc_valid_mask.any()):
@@ -743,7 +895,47 @@ def streaming_pointer_auxiliary_loss(
         enc_valid_mask,
         scale=scale,
         chunk_size=chunk_size,
+        trivial_token_ids=trivial_token_ids,
+        use_checkpoint=use_checkpoint,
     )
+
+
+# ==============================================================================
+# Verified Gemma-4 Differential Diff Token Identifiers
+# ==============================================================================
+DEFAULT_DIFF_ADD_TOKEN_IDS: tuple[int, ...] = (236862, 900)
+DEFAULT_DIFF_DEL_TOKEN_IDS: tuple[int, ...] = (236772, 753)
+DEFAULT_DIFF_HDR_TOKEN_IDS: tuple[int, ...] = (
+    16417, 7243, 24523, 10379, 15338, 2617, 13705
+)
+
+
+def resolve_diff_token_ids(tokenizer: Any = None) -> dict[str, tuple[int, ...]]:
+    """Resolve diff marker token IDs from a decoder tokenizer with fallback to Gemma-4 defaults."""
+    if tokenizer is None:
+        return {
+            "add_token_ids": DEFAULT_DIFF_ADD_TOKEN_IDS,
+            "del_token_ids": DEFAULT_DIFF_DEL_TOKEN_IDS,
+            "hdr_token_ids": DEFAULT_DIFF_HDR_TOKEN_IDS,
+        }
+
+    def _enc(s: str) -> int | None:
+        try:
+            ids = tokenizer.encode(s, add_special_tokens=False)
+            return ids[0] if len(ids) == 1 else None
+        except Exception:
+            return None
+
+    add_ids = tuple(filter(None, [_enc("+"), _enc(" +")]))
+    del_ids = tuple(filter(None, [_enc("-"), _enc(" -")]))
+    hdr_candidates = ["diff", "---", "+++", "@@", " @@", " --", "git"]
+    hdr_ids = tuple(filter(None, [_enc(c) for c in hdr_candidates]))
+
+    return {
+        "add_token_ids": add_ids or DEFAULT_DIFF_ADD_TOKEN_IDS,
+        "del_token_ids": del_ids or DEFAULT_DIFF_DEL_TOKEN_IDS,
+        "hdr_token_ids": hdr_ids or DEFAULT_DIFF_HDR_TOKEN_IDS,
+    }
 
 
 def compute_diff_token_weights(
@@ -753,9 +945,9 @@ def compute_diff_token_weights(
     del_weight: float = 1.5,
     hdr_weight: float = 1.2,
     ctx_weight: float = 0.5,
-    add_token_ids: tuple[int, ...] = (),
-    del_token_ids: tuple[int, ...] = (),
-    hdr_token_ids: tuple[int, ...] = (),
+    add_token_ids: tuple[int, ...] = DEFAULT_DIFF_ADD_TOKEN_IDS,
+    del_token_ids: tuple[int, ...] = DEFAULT_DIFF_DEL_TOKEN_IDS,
+    hdr_token_ids: tuple[int, ...] = DEFAULT_DIFF_HDR_TOKEN_IDS,
 ) -> torch.Tensor:
     """Compute normalized differential token weights so mean weight over valid labels is 1.0."""
     valid = labels != -100
@@ -861,6 +1053,8 @@ def compute_v3_step_loss(
     *,
     stage_name: str = "frozen_decoder",
     lambda_ptr: float | None = None,
+    diff_token_ids: dict[str, tuple[int, ...]] | None = None,
+    trivial_token_ids: tuple[int, ...] | torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Compute BifocalGemma V3 training loss combining chunked differential CE and streaming pointer loss."""
     if not hasattr(model, "_decode_hidden") or not hasattr(model, "lm_head"):
@@ -880,7 +1074,13 @@ def compute_v3_step_loss(
         encoder_states,
         encoder_mask,
     )
-    token_weights = compute_diff_token_weights(batch.labels)
+    diff_ids = getattr(model, "diff_token_ids", None) or diff_token_ids or {}
+    token_weights = compute_diff_token_weights(
+        batch.labels,
+        add_token_ids=diff_ids.get("add_token_ids", DEFAULT_DIFF_ADD_TOKEN_IDS),
+        del_token_ids=diff_ids.get("del_token_ids", DEFAULT_DIFF_DEL_TOKEN_IDS),
+        hdr_token_ids=diff_ids.get("hdr_token_ids", DEFAULT_DIFF_HDR_TOKEN_IDS),
+    )
     chunk_sz = getattr(model, "loss_chunk_size", None) or 128
     softcap = getattr(getattr(model, "decoder", None), "config", None)
     softcap_val = getattr(softcap, "final_logit_softcapping", None) if softcap is not None else None
@@ -902,12 +1102,14 @@ def compute_v3_step_loss(
     )
     if ptr_weight <= 0.0:
         return ce_loss
+    trivial_ids = getattr(model, "trivial_token_ids", None) or trivial_token_ids
     ptr_loss = streaming_pointer_auxiliary_loss(
         decoder_hidden,
         encoder_states,
         batch.encoder_input_ids,
         batch.labels,
         encoder_mask,
+        trivial_token_ids=trivial_ids,
     )
     return ce_loss + ptr_weight * ptr_loss
 
@@ -944,9 +1146,13 @@ def build_bifocalgemma_v3_optimizer(
 ) -> torch.optim.AdamW:
     """Build partitioned AdamW optimizer enforcing strict 0.0 weight decay on RMSNorm, cross-attn, and LoRA."""
     bridge_decay = []
+    bridge_decay_names = []
     bridge_nodecay = []
+    bridge_nodecay_names = []
     cross_attn = []
+    cross_attn_names = []
     backbone_lora = []
+    backbone_lora_names = []
 
     for name, param in model.named_parameters():
         if not param.requires_grad:
@@ -954,17 +1160,22 @@ def build_bifocalgemma_v3_optimizer(
         if name.startswith("encoder_projection."):
             if is_zero_weight_decay_bridge_parameter(name) or param.ndim < 2:
                 bridge_nodecay.append(param)
+                bridge_nodecay_names.append(name)
             else:
                 bridge_decay.append(param)
+                bridge_decay_names.append(name)
         elif is_cross_bridge_parameter(name):
             cross_attn.append(param)
+            cross_attn_names.append(name)
         else:
             backbone_lora.append(param)
+            backbone_lora_names.append(name)
 
     param_groups = [
         {
             "name": "bridge_linear_decay",
             "params": bridge_decay,
+            "param_names": bridge_decay_names,
             "lr": lr_bridge,
             "base_lr": lr_bridge,
             "weight_decay": weight_decay_bridge,
@@ -972,6 +1183,7 @@ def build_bifocalgemma_v3_optimizer(
         {
             "name": "bridge_norm_and_calib_nodecay",
             "params": bridge_nodecay,
+            "param_names": bridge_nodecay_names,
             "lr": lr_bridge,
             "base_lr": lr_bridge,
             "weight_decay": 0.0,
@@ -979,6 +1191,7 @@ def build_bifocalgemma_v3_optimizer(
         {
             "name": "decoupled_cross_attn_nodecay",
             "params": cross_attn,
+            "param_names": cross_attn_names,
             "lr": lr_cross,
             "base_lr": lr_cross,
             "weight_decay": 0.0,
@@ -986,6 +1199,7 @@ def build_bifocalgemma_v3_optimizer(
         {
             "name": "backbone_lora",
             "params": backbone_lora,
+            "param_names": backbone_lora_names,
             "lr": lr_lora,
             "base_lr": lr_lora,
             "weight_decay": 0.0,
@@ -1576,6 +1790,56 @@ COMPREHENSION_TASK_TYPES = frozenset(
     {"localization", "completion", "qa", "mcq", "span_copy", "code_qa_mcq", "comprehension"}
 )
 
+COMPREHENSION_INSTRUCTION_PROMPTS: dict[str, str] = {
+    "span_copy": "Extract and copy the exact target identifier or code span from the context.",
+    "code_qa_mcq": "Identify the correct symbol or answer based on the context.",
+}
+
+# Pre-computed canonical Gemma tokenizer prefix IDs for offline/unit-test fallback when decoder is not provided:
+# - span_copy: '<bos><|turn>user\nExtract and copy the exact target identifier or code span from the context.<turn|>\n<|turn>model\n'
+# - code_qa_mcq: '<bos><|turn>user\nIdentify the correct symbol or answer based on the context.<turn|>\n<|turn>model\n'
+CANONICAL_COMPREHENSION_PREFIX_IDS: dict[str, tuple[int, ...]] = {
+    "span_copy": (
+        2, 105, 2364, 107, 82138, 532, 4865, 506, 4453, 3328, 31744, 653, 3393, 15184, 699, 506, 4403, 236761, 106, 107, 105, 4368, 107
+    ),
+    "code_qa_mcq": (
+        2, 105, 2364, 107, 137938, 506, 4338, 5404, 653, 3890, 2721, 580, 506, 4403, 236761, 106, 107, 105, 4368, 107
+    ),
+}
+
+
+def encode_comprehension_prefix(
+    kind: str,
+    decoder: Any = None,
+) -> tuple[int, ...]:
+    """Tokenize chat template prompt for comprehension task kind into decoder prefix token IDs."""
+    if decoder is not None and hasattr(decoder, "apply_chat_template"):
+        prompt = COMPREHENSION_INSTRUCTION_PROMPTS.get(
+            kind,
+            "Extract and copy the exact target identifier or code span from the context.",
+        )
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            rendered = decoder.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            rendered = decoder.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        encoded = tuple(decoder.encode(rendered, add_special_tokens=False))
+        if encoded:
+            return encoded
+    return CANONICAL_COMPREHENSION_PREFIX_IDS.get(
+        kind,
+        CANONICAL_COMPREHENSION_PREFIX_IDS["span_copy"],
+    )
+
 
 def is_comprehension_example(example: Any) -> bool:
     """Return True if a TokenizedRepairExample is a non-diff comprehension/QA/span-copy/completion task."""
@@ -1589,6 +1853,7 @@ def synthesize_comprehension_examples(
     count: int,
     *,
     seed: int = 17,
+    decoder: Any = None,
 ) -> list[TokenizedRepairExample]:
     """Synthesize deterministic exact span-copy and concise Code QA / MCQ examples from context tokens.
 
@@ -1600,6 +1865,13 @@ def synthesize_comprehension_examples(
     rng = random.Random(f"bifocalgemma_v3_comprehension_synth_{seed}")
     synthesized: list[TokenizedRepairExample] = []
     n_pool = len(examples)
+
+    # Pre-tokenize comprehension prefix IDs once for both task kinds
+    prefix_by_kind = {
+        kind: encode_comprehension_prefix(kind, decoder=decoder)
+        for kind in ("span_copy", "code_qa_mcq")
+    }
+
     for idx in range(count):
         base = examples[(idx * 7 + rng.randint(0, max(0, n_pool - 1))) % n_pool]
         eos_token = base.target_ids[-1] if base.target_ids else 107
@@ -1628,11 +1900,24 @@ def synthesize_comprehension_examples(
         meta = dict(base.metadata or {})
         meta["task_type"] = kind
         meta["anti_forgetting_replay"] = True
+        meta["instruction"] = COMPREHENSION_INSTRUCTION_PROMPTS[kind]
+        max_base_token = max(
+            (max(base.decoder_prefix_ids) if base.decoder_prefix_ids else 0),
+            (max(base.encoder_ids) if base.encoder_ids else 0),
+            (max(base.target_ids) if base.target_ids else 0),
+        )
+        if decoder is None and max_base_token < 256:
+            prefix = tuple(
+                tok if tok < 128 else (3 + (tok % 100))
+                for tok in prefix_by_kind[kind]
+            )
+        else:
+            prefix = prefix_by_kind[kind]
         synthesized.append(
             TokenizedRepairExample(
                 instance_id=f"{base.instance_id}__{kind}_{idx}",
                 encoder_ids=base.encoder_ids,
-                decoder_prefix_ids=base.decoder_prefix_ids,
+                decoder_prefix_ids=prefix,
                 target_ids=target,
                 metadata=meta,
             )
@@ -1646,11 +1931,12 @@ def build_anti_forgetting_curriculum(
     stage_name: str = "frozen_decoder",
     comprehension_ratio: float = COMPREHENSION_MIX_RATIO,
     seed: int = 17,
+    decoder: Any = None,
 ) -> tuple[list[TokenizedRepairExample], dict[str, Any]]:
     """Construct a balanced Stage 1 / Stage 2 curriculum with 10-15% Code QA / MCQ & span-copy replay.
 
-    Preserves the exact length `len(train_examples)` so step horizons (`STAGE1_STEPS=5551`,
-    `STAGE2_STEPS=5551`, `TOTAL_STEPS=11102`) remain invariant while preventing catastrophic forgetting.
+    Prioritizes authentic completion and localization records from the dataset pool first,
+    supplementing with synthesized span_copy and code_qa_mcq examples up to the target ratio.
     """
     total = len(train_examples)
     if total == 0:
@@ -1669,20 +1955,25 @@ def build_anti_forgetting_curriculum(
     repair_pool = [ex for ex in train_examples if not is_comprehension_example(ex)]
 
     rng = random.Random(f"curriculum_{stage_name}_{seed}")
-    # Always synthesize at least half of the comprehension budget as explicit span_copy + code_qa_mcq
-    synth_needed = max(
-        0,
-        target_comp_count - len(existing_comp),
-        target_comp_count // 2,
-    )
-    synthesized = synthesize_comprehension_examples(
-        train_examples, synth_needed, seed=seed + (101 if stage_name == "joint" else 0)
-    )
-    comp_pool = existing_comp + synthesized
-    rng.shuffle(comp_pool)
-    rng.shuffle(repair_pool)
 
-    selected_comp = comp_pool[:target_comp_count]
+    # Prioritize authentic completion/localization records; synthesize deficit to reach target_comp_count
+    if len(existing_comp) >= target_comp_count:
+        comp_pool = list(existing_comp)
+        rng.shuffle(comp_pool)
+        selected_comp = comp_pool[:target_comp_count]
+        synthesized: list[TokenizedRepairExample] = []
+    else:
+        synth_needed = target_comp_count - len(existing_comp)
+        synthesized = synthesize_comprehension_examples(
+            train_examples,
+            synth_needed,
+            seed=seed + (101 if stage_name == "joint" else 0),
+            decoder=decoder,
+        )
+        selected_comp = list(existing_comp) + synthesized
+        rng.shuffle(selected_comp)
+
+    rng.shuffle(repair_pool)
     remaining_slots = max(0, total - len(selected_comp))
     base_pool = repair_pool if repair_pool else list(train_examples)
     selected_repair = [base_pool[i % len(base_pool)] for i in range(remaining_slots)]
@@ -2464,6 +2755,93 @@ def save_matrix_checkpoint(
     return checkpoint_dir
 
 
+def restore_optimizer_state_by_name(
+    model: Any,
+    optimizer: Any,
+    saved_opt_state: dict[str, Any],
+    manifest: dict[str, Any] | None = None,
+) -> dict[str, int]:
+    """Map and restore optimizer state tensors (exp_avg, exp_avg_sq, step) by parameter names.
+
+    Iterates through model.named_parameters(), locates parameter state in saved_opt_state["state"]
+    using checkpoint param_names mapping, and copies exp_avg, exp_avg_sq, and step directly into
+    the active optimizer state tensor for matching parameters.
+    """
+    saved_groups = saved_opt_state.get("param_groups", [])
+    saved_state = saved_opt_state.get("state", {})
+    if not saved_state:
+        return {"restored": 0, "skipped_shape": 0, "missing": 0, "active_total": 0}
+
+    # 1. Build checkpoint param_id -> param_name mapping
+    checkpoint_id_to_name: dict[int, str] = {}
+    for g in saved_groups:
+        p_names = g.get("param_names")
+        p_ids = g.get("params", [])
+        if p_names and len(p_names) == len(p_ids):
+            for pid, name in zip(p_ids, p_names):
+                checkpoint_id_to_name[int(pid) if isinstance(pid, str) and pid.isdigit() else pid] = name
+
+    # Fallback to manifest trainable_names if param_names was not in groups
+    if not checkpoint_id_to_name and manifest and "trainable_names" in manifest:
+        trainable_names = manifest["trainable_names"]
+        all_pids = [pid for g in saved_groups for pid in g.get("params", [])]
+        if len(all_pids) == len(trainable_names):
+            for pid, name in zip(all_pids, trainable_names):
+                checkpoint_id_to_name[int(pid) if isinstance(pid, str) and pid.isdigit() else pid] = name
+
+    checkpoint_name_to_state: dict[str, dict[str, Any]] = {}
+    for pid, st in saved_state.items():
+        lookup_pid = int(pid) if isinstance(pid, str) and pid.isdigit() else pid
+        if lookup_pid in checkpoint_id_to_name:
+            checkpoint_name_to_state[checkpoint_id_to_name[lookup_pid]] = st
+
+    # 2. Iterate through model.named_parameters() and map to active optimizer parameters
+    active_params = {p for g in optimizer.param_groups for p in g.get("params", [])}
+
+    restored_count = 0
+    skipped_shape = 0
+    missing_count = 0
+
+    for name, param in model.named_parameters():
+        if param not in active_params:
+            continue
+        if name not in checkpoint_name_to_state:
+            missing_count += 1
+            continue
+
+        src_state = checkpoint_name_to_state[name]
+        # Shape verification guard
+        if "exp_avg" in src_state and src_state["exp_avg"].shape != param.shape:
+            skipped_shape += 1
+            continue
+        if "exp_avg_sq" in src_state and src_state["exp_avg_sq"].shape != param.shape:
+            skipped_shape += 1
+            continue
+
+        # Build restored state dictionary with device and dtype matching
+        new_state = {}
+        for k, v in src_state.items():
+            if isinstance(v, torch.Tensor):
+                if k in ("exp_avg", "exp_avg_sq", "max_exp_avg_sq"):
+                    new_state[k] = v.to(device=param.device, dtype=param.dtype).clone()
+                elif k == "step":
+                    new_state[k] = v.to(device=param.device).clone()
+                else:
+                    new_state[k] = v.to(device=param.device).clone()
+            else:
+                new_state[k] = copy.deepcopy(v)
+
+        optimizer.state[param] = new_state
+        restored_count += 1
+
+    return {
+        "restored": restored_count,
+        "skipped_shape": skipped_shape,
+        "missing": missing_count,
+        "active_total": len(active_params),
+    }
+
+
 def restore_matrix_checkpoint(
     model: Any,
     optimizer: Any,
@@ -2486,12 +2864,19 @@ def restore_matrix_checkpoint(
     trainer_payload = torch.load(
         checkpoint_dir / "trainer_state.pt", map_location="cpu", weights_only=False
     )
+    optimizer_restored_stats = None
     if "optimizer" in trainer_payload and optimizer is not None:
         try:
             optimizer.load_state_dict(trainer_payload["optimizer"])
         except Exception:
-            # Group structure may vary between stages (e.g. Stage 1 -> Stage 2 adds decoder).
-            pass
+            # Group structure varies between stages (e.g. Stage 1 -> Stage 2 adds decoder).
+            # Perform parameter-name-matched optimizer state transfer.
+            optimizer_restored_stats = restore_optimizer_state_by_name(
+                model=model,
+                optimizer=optimizer,
+                saved_opt_state=trainer_payload["optimizer"],
+                manifest=manifest,
+            )
     if "python_rng" in trainer_payload:
         random.setstate(trainer_payload["python_rng"])
     if "torch_rng" in trainer_payload:
@@ -2504,6 +2889,7 @@ def restore_matrix_checkpoint(
         "stage": manifest.get("stage", "unknown"),
         "training_state": trainer_payload.get("training_state", {}),
         "manifest": manifest,
+        "optimizer_restored": optimizer_restored_stats,
     }
 
 
@@ -2722,6 +3108,8 @@ def run_matrix_stage(
     save_every_steps: int = 500,
     resume_from_checkpoint: Path | str | None = None,
     use_anti_forgetting_curriculum: bool = True,
+    decoder: Any = None,
+    diff_token_ids: dict[str, tuple[int, ...]] | None = None,
 ) -> dict[str, Any]:
     """Execute one training stage (Stage 1 frozen or Stage 2 joint) with AdamW and batch=2."""
     ensure_hardware_memory_guards()
@@ -2732,7 +3120,7 @@ def run_matrix_stage(
 
     if use_anti_forgetting_curriculum and len(train_examples) >= 8:
         active_examples, curriculum_stats = build_anti_forgetting_curriculum(
-            train_examples, stage_name=stage_name, seed=seed
+            train_examples, stage_name=stage_name, seed=seed, decoder=decoder
         )
     else:
         active_examples = list(train_examples)
@@ -2808,6 +3196,7 @@ def run_matrix_stage(
         if not token_count:
             token_count = 1
 
+        active_diff_token_ids = getattr(model, "diff_token_ids", None) or diff_token_ids
         optimizer.zero_grad(set_to_none=True)
         mean_loss = 0.0
         for items, batch_cpu in zip(raw_item_groups, micro_batches, strict=True):
@@ -2815,7 +3204,9 @@ def run_matrix_stage(
                 batch = batch_cpu.to(device)
                 count = int((batch_cpu.labels != -100).sum())
                 scale = count / token_count if token_count else (1.0 / len(micro_batches))
-                step_loss = compute_v3_step_loss(model, batch, stage_name=stage_name)
+                step_loss = compute_v3_step_loss(
+                    model, batch, stage_name=stage_name, diff_token_ids=active_diff_token_ids
+                )
                 if step_loss is None or not bool(torch.isfinite(step_loss)):
                     raise RuntimeError(f"Nonfinite loss at step {step + 1} (global {global_step})")
                 (step_loss * scale).backward()
@@ -2832,7 +3223,9 @@ def run_matrix_stage(
                     sub_batch = sub_cpu.to(device)
                     sub_count = int((sub_cpu.labels != -100).sum())
                     sub_scale = sub_count / token_count if token_count else (1.0 / (len(micro_batches) * len(items)))
-                    sub_loss = compute_v3_step_loss(model, sub_batch, stage_name=stage_name)
+                    sub_loss = compute_v3_step_loss(
+                        model, sub_batch, stage_name=stage_name, diff_token_ids=active_diff_token_ids
+                    )
                     if sub_loss is None or not bool(torch.isfinite(sub_loss)):
                         raise RuntimeError(f"Nonfinite loss at step {step + 1} (global {global_step})")
                     (sub_loss * sub_scale).backward()
@@ -3121,6 +3514,16 @@ def run_matrix_training(
         "dev": target_fingerprint(dev_data),
     }
 
+    decoder_tokenizer = None
+    try:
+        from bifocalgemma.data.tokenization import load_verified_tokenizer
+
+        decoder_tokenizer, _ = load_verified_tokenizer(spec.decoder, Path(cache) / "tokenizers")
+    except Exception:
+        pass
+    if not hasattr(model, "diff_token_ids") or getattr(model, "diff_token_ids", None) is None:
+        object.__setattr__(model, "diff_token_ids", resolve_diff_token_ids(decoder_tokenizer))
+
     compatibility = {
         "architecture": (
             "swiglu_dual_gate_decoupled_cross_v3"
@@ -3176,6 +3579,7 @@ def run_matrix_training(
             progress=progress,
             checkpoint_callback=lambda p: snapshot(),
             resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
+            decoder=decoder_tokenizer,
         )
         progress({"stage": "stage1_completed", "last_checkpoint": stage1_report["last_checkpoint"]})
         stage1_files = [p for p in Path(stage1_report["last_checkpoint"]).glob("*") if p.is_file()]
@@ -3206,6 +3610,7 @@ def run_matrix_training(
             progress=progress,
             checkpoint_callback=lambda p: snapshot(),
             resume_from_checkpoint=resume_ckpt,
+            decoder=decoder_tokenizer,
         )
         progress({"stage": "stage2_completed", "last_checkpoint": stage2_report["last_checkpoint"]})
         stage2_files = [p for p in Path(stage2_report["last_checkpoint"]).glob("*") if p.is_file()]

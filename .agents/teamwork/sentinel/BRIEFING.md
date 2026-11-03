@@ -1,37 +1,38 @@
-# BRIEFING — 2026-10-07T09:46:00Z
+# BRIEFING — 2026-11-02T10:24:30Z
 
 ## Mission
-Oversee dataset search, verification, and evaluation for SFT BifocalGemma without code modifications.
+Oversee BifocalGemma V3 architecture & training pipeline technical fixes and verification.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: d:\Codings\bifocalgemma\.agents\teamwork\sentinel
-- Orchestrator: 25871991-f75d-4c31-a84f-84a5e07b84ad
-- Victory Auditor: to be spawned on victory claim
+- Orchestrator: 539b03b4-8c50-41e5-bab1-54ecf75f78b4
+- Victory Auditor: eed74509-f3b5-4f95-a3f3-f29d2ce98054
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
 - Victory Audit is MANDATORY before reporting completion
-- No code modification to notebooks, src/, tools/, or tests/
-- Offline SFT data only (instruction + pre-code + post-code/diff), no RL/VM/Docker
-- Independent verification against source APIs/pages
-- Strict contamination/overlap checks against benchmarks (HumanEvalFix, CanItEdit, CrossCodeEval)
+- Delegate implementation across specialized subagents
+- Full verification suite must pass (pyrefly, ty, ruff, pytest, marimo)
+- Do NOT edit files under src/bifocalgemma/ directly; all logic belongs in tools/molab_matrix_support.py
 
 ## User Context
-- **Last user request**: Cari dan evaluasi dataset tambahan untuk SFT BifocalGemma (instruction-to-patch, code editing/repair Python) yang selaras dengan benchmark evaluasi repo ini.
+- **Last user request**: Lead Architect confirmed relocation of challenger scratch scripts. Workspace cleaned. Trigger clean re-audit.
 - **Pending clarifications**: none
-- **Delivered results**: none
+- **Delivered results**: Re-audit dispatched to victory_auditor_2.
 
 ## Project Status
-- **Phase**: in progress
-- **Cron 1 (Progress)**: 1e01ff46-5059-4db2-a4e4-af2cd4263387/task-14
-- **Cron 2 (Liveness)**: 1e01ff46-5059-4db2-a4e4-af2cd4263387/task-16
+- **Phase**: auditing
+- **Cron 1 (Progress)**: b75ab541-d04d-42e1-90ca-9b6e65bef535/task-33
+- **Cron 2 (Liveness)**: b75ab541-d04d-42e1-90ca-9b6e65bef535/task-35
 
 ## Victory Audit Status
-- **Triggered**: no
+- **Triggered**: yes
 - **Verdict**: pending
-- **Retry count**: 0
+- **Retry count**: 1
 
 ## Artifact Index
-- d:\Codings\bifocalgemma\.agents\teamwork\ORIGINAL_REQUEST.md — Original user request
-- d:\Codings\bifocalgemma\.agents\teamwork\orchestrator_1\ — Orchestrator workspace
+- d:\Codings\bifocalgemma\.agents\teamwork\ORIGINAL_REQUEST.md — Original user request & follow-up steering
+- d:\Codings\bifocalgemma\.agents\teamwork\orchestrator_2\ — Orchestrator workspace
+- d:\Codings\bifocalgemma\.agents\teamwork\orchestrator_2\handoff.md — Orchestrator handoff report
+- d:\Codings\bifocalgemma\.agents\teamwork\victory_auditor_2\ — Victory auditor 2 workspace

@@ -51,3 +51,5 @@ working-molab-v8-exp-temp.py
 
 # skills
 .agents/skills/
+.agents/teamwork/*/
+!.agents/teamwork/sentinel/

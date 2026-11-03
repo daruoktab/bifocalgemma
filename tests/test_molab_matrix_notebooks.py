@@ -34,6 +34,7 @@ from tools.molab_matrix_support import (  # noqa: E402
     BENCHMARKS,
     CENTRALIZED_HF_REPO,
     COMPREHENSION_MIX_RATIO,
+    DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS,
     EFFECTIVE_BATCH,
     GATE_INIT_TANH,
     HEAVY_BENCHMARK_SAMPLE_LIMIT,
@@ -53,6 +54,7 @@ from tools.molab_matrix_support import (  # noqa: E402
     configure_matrix_stage,
     critical_attention_beta,
     differential_diff_cross_entropy,
+    extract_trivial_token_ids,
     format_query_injected_context,
     is_comprehension_example,
     is_cross_bridge_parameter,
@@ -62,6 +64,7 @@ from tools.molab_matrix_support import (  # noqa: E402
     prune_matrix_checkpoints,
     resolve_optimal_eval_batch_size,
     restore_matrix_checkpoint,
+    restore_optimizer_state_by_name,
     run_matrix_stage,
     save_matrix_checkpoint,
 )
@@ -906,3 +909,127 @@ def test_matrix_tokenization_patch_it_encoder_and_query_prefix_contract():
         eval_row, spec_it, MockITEncoder(), MockDecoder(), encoder_limit=1000
     )
     assert enc == (2, 101, 102, 103)
+
+
+def test_pointer_loss_gradient_checkpointing_and_trivial_filtering():
+    assert 107 in DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS  # \n
+    assert 236743 in DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS  # space
+    assert 236764 in DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS  # comma
+
+    # extract_trivial_token_ids fallback on None
+    assert extract_trivial_token_ids(None) == DEFAULT_GEMMA_TRIVIAL_TOKEN_IDS
+
+    # Mock tokenizer extraction
+    class MockTokenizer:
+        def get_vocab(self):
+            return {" ": 10, "foo": 20, ",": 30, "\n": 40, "bar": 50}
+
+    mock_ids = extract_trivial_token_ids(MockTokenizer())
+    assert 10 in mock_ids and 30 in mock_ids and 40 in mock_ids
+    assert 20 not in mock_ids and 50 not in mock_ids
+
+    # Compare checkpointed vs non-checkpointed loss and gradients
+    torch.manual_seed(42)
+    h_dec_cp = torch.randn(2, 6, 32, requires_grad=True)
+    z_enc_cp = torch.randn(2, 8, 32, requires_grad=True)
+    h_dec_no_cp = h_dec_cp.detach().clone().requires_grad_(True)
+    z_enc_no_cp = z_enc_cp.detach().clone().requires_grad_(True)
+
+    # enc: [2, 10, 20, 30, 40, 107, 236743, 70]
+    # target: [10, 107, 236743, -100, 40, 50] -> 107 and 236743 are trivial, 10 and 40 match!
+    enc_ids = torch.tensor([[2, 10, 20, 30, 40, 107, 236743, 70], [2, 11, 21, 31, 41, 107, 236743, 71]])
+    target_ids = torch.tensor([[10, 107, 236743, -100, 40, 50], [11, 107, 236743, 41, -100, -100]])
+    enc_mask = torch.ones_like(enc_ids, dtype=torch.bool)
+
+    loss_fn_cp = StreamingPointerLoss(d_dec=32, d_ptr=16, chunk_size=3, use_checkpoint=True)
+    loss_fn_no_cp = StreamingPointerLoss(d_dec=32, d_ptr=16, chunk_size=3, use_checkpoint=False)
+    loss_fn_no_cp.w_ptr_q.weight.data.copy_(loss_fn_cp.w_ptr_q.weight.data)
+    loss_fn_no_cp.w_ptr_k.weight.data.copy_(loss_fn_cp.w_ptr_k.weight.data)
+
+    loss_cp = loss_fn_cp(h_dec_cp, z_enc_cp, enc_ids, target_ids, enc_mask)
+    loss_no_cp = loss_fn_no_cp(h_dec_no_cp, z_enc_no_cp, enc_ids, target_ids, enc_mask)
+
+    assert torch.allclose(loss_cp, loss_no_cp, atol=1e-6)
+    loss_cp.backward()
+    loss_no_cp.backward()
+    grad_h_cp = h_dec_cp.grad
+    grad_h_no_cp = h_dec_no_cp.grad
+    assert grad_h_cp is not None and grad_h_no_cp is not None
+    assert torch.allclose(grad_h_cp, grad_h_no_cp, atol=1e-6)
+    grad_z_cp = z_enc_cp.grad
+    grad_z_no_cp = z_enc_no_cp.grad
+    assert grad_z_cp is not None and grad_z_no_cp is not None
+    assert torch.allclose(grad_z_cp, grad_z_no_cp, atol=1e-6)
+
+    # Pure trivial tokens in target returns 0.0 without errors
+    pure_trivial_target = torch.tensor([[107, 236743, -100], [107, 107, -100]])
+    zero_loss = loss_fn_cp(h_dec_cp, z_enc_cp, enc_ids, pure_trivial_target, enc_mask)
+    assert float(zero_loss.item()) == 0.0
+
+
+def test_stage1_to_stage2_optimizer_state_transfer(tmp_path):
+    spec = make_experiment_spec("2base-2it")
+    policy = unified_recipe("symmetric")
+    model = NativeTinyModel(spec, tiny=True)
+    configure_policy_model(model, policy)
+    configure_memory_efficient_training(model)
+    configure_full_rank_cross_attention(model)
+
+    # 1. Verify build_bifocalgemma_v3_optimizer includes param_names
+    v3_opt = build_bifocalgemma_v3_optimizer(model)
+    for g in v3_opt.param_groups:
+        assert "param_names" in g
+        assert len(g["param_names"]) == len(g["params"])
+
+    # 2. Stage 1: freeze_decoder=True (3 groups)
+    groups1, _ = configure_matrix_stage(model, policy, freeze_decoder=True, total_steps=5551)
+    opt1 = torch.optim.AdamW(groups1)
+    for g in opt1.param_groups:
+        assert "param_names" in g
+
+    # Run one optimization step so exp_avg, exp_avg_sq, and step are created
+    trainable_params_1 = [p for p in model.parameters() if p.requires_grad]
+    assert trainable_params_1
+    loss1 = torch.stack([p.sum() for p in trainable_params_1]).sum()
+    loss1.backward()
+    opt1.step()
+    opt1.zero_grad()
+    stage1_state_count = len(opt1.state)
+    assert stage1_state_count > 0
+
+    # Save Stage 1 checkpoint
+    ckpt_path = save_matrix_checkpoint(
+        model, opt1, tmp_path / "checkpoint-005551", 5551, "frozen_decoder", {}, {"step": 5551}
+    )
+
+    # 3. Stage 2: freeze_decoder=False (4 groups: encoder, decoder, alignment_bridge_decay, alignment)
+    groups2, _ = configure_matrix_stage(model, policy, freeze_decoder=False, total_steps=5551)
+    opt2 = torch.optim.AdamW(groups2)
+    assert len(opt2.param_groups) > len(opt1.param_groups)
+    assert len(opt2.state) == 0
+
+    # 4. Restore Stage 2 optimizer from Stage 1 checkpoint
+    restored = restore_matrix_checkpoint(model, opt2, ckpt_path)
+    assert restored["optimizer_restored"] is not None
+    assert restored["optimizer_restored"]["restored"] == stage1_state_count
+    assert len(opt2.state) == stage1_state_count
+
+    # 5. Verify tensor values and dtypes match bit-for-bit
+    sample_p = next(iter(opt1.state))
+    assert torch.allclose(opt2.state[sample_p]["exp_avg"], opt1.state[sample_p]["exp_avg"])
+    assert torch.allclose(opt2.state[sample_p]["exp_avg_sq"], opt1.state[sample_p]["exp_avg_sq"])
+    assert opt2.state[sample_p]["exp_avg"].dtype == sample_p.dtype
+    assert opt2.state[sample_p]["exp_avg"].device == sample_p.device
+
+    # 6. Verify Stage 2 can take a step cleanly without device or shape mismatch
+    trainable_params_2 = [p for p in model.parameters() if p.requires_grad]
+    assert trainable_params_2
+    loss2 = torch.stack([p.sum() for p in trainable_params_2]).sum()
+    loss2.backward()
+    opt2.step()
+    assert len(opt2.state) > stage1_state_count  # newly activated decoder parameters joined
+
+    # 7. Direct verification of restore_optimizer_state_by_name helper
+    direct_restored = restore_optimizer_state_by_name(model, opt2, opt1.state_dict())
+    assert direct_restored["restored"] == stage1_state_count
+
