@@ -467,7 +467,13 @@ def main():
         filename = f"runtime/runtime-{bundle_sha[:16]}.zip"
         repo_id = CENTRALIZED_HF_REPO
         api = HfApi()
-        print(f"Publishing runtime bundle to {repo_id}:{filename}...")
+        print(f"Publishing runtime bundle to {repo_id}:{filename} and runtime/latest.zip...")
+        api.upload_file(
+            repo_id=repo_id,
+            path_in_repo="runtime/latest.zip",
+            path_or_fileobj=payload,
+            commit_message="Update latest BifocalGemma notebook runtime",
+        )
         commit = api.upload_file(
             repo_id=repo_id,
             path_in_repo=filename,

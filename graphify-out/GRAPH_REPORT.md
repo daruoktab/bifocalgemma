@@ -1,7 +1,7 @@
 # Graph Report - bifocalgemma  (2026-11-07)
 
 ## Corpus Check
-- 290 files · ~364,130 words
+- 290 files · ~364,185 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 14 file(s) not represented in the graph (top: .tex 5, .ipynb 3, (none) 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `fdc71af9`
+- Built from commit: `c1b225cc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -145,8 +145,8 @@
   tests/test_training_telemetry_v2.py → src/bifocalgemma/training/wiggly_dashboard.py
 - `benchmark()` --calls--> `atomic_json()`  [INFERRED]
   tests/test_training_recipes.py → src/bifocalgemma/training/stages.py
-- `test_context_benchmark_mcq_budget_floor_execution()` --calls--> `run_context_benchmark()`  [INFERRED]
-  tests/test_molab_remediation.py → src/bifocalgemma/evaluation/context.py
+- `test_fast_training_config_and_pipeline_baseline_single_stage()` --uses--> `FastTrainingConfig`  [INFERRED]
+  tests/test_molab_matrix_notebooks.py → src/bifocalgemma/training/fast_pipeline.py
 
 ## Import Cycles
 - None detected.
@@ -506,7 +506,7 @@ Nodes (3): test_each_family_sequence_runs_both_tiny_models_then_skips_completed_
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `atomic_json()` connect `atomic_json` to `calibrate_shared_profile`, `v2.py`, `prepare_colab_pilot.py`, `subprocess`, `test_checkpoint_upload_and_retention_receipt_are_one_scoped_commit`, `molab_pilot_support.py`, `score_context_case`, `v2_preflight.py`, `full_pool.py`, `Tensor`, `matrix.py`, `audit_context_tokens.py`, `audit_context_release.py`, `benchmark_upload.py`, `shared_execution.py`, `test_molab_matrix_notebooks.py`, `json`, `fit_offline_sft`, `BenchmarkUploadQueue`, `score_context_case`, `test_full_then_checkpoint_only_upload_refreshes_receipt_for_cold_resume`, `check_followers`, `benchmark.py`, `calibration`, `training/offline_sft.py`, `test_v2_workflow.py`, `workflow`, `test_completed_benchmark_with_pending_upload_resumes_without_model_load`, `test_snapshot_verifies_replacement_before_pruning`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
 - **Are the 14 inferred relationships involving `atomic_json()` (e.g. with `test_completed_benchmark_with_pending_upload_resumes_without_model_load()` and `benchmark()`) actually correct?**
   _`atomic_json()` has 14 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `bifocalgemma` to the rest of the system?**
@@ -514,8 +514,8 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `test_notebook_dependencies.py` be split into smaller, more focused modules?**
   _Cohesion score 0.08858858858858859 - nodes in this community are weakly interconnected._
 - **Why does `TestBifocalGemmaArchitecture` connect `TestBifocalGemmaArchitecture` to `typing`, `GatedCrossAttentionBridge`, `ASTGraphProjector`?**
-  _High betweenness centrality (0.027) - this node is a cross-community bridge._
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **Should `remediation.py` be split into smaller, more focused modules?**
   _Cohesion score 0.11931818181818182 - nodes in this community are weakly interconnected._
-- **Why does `test_snapshot_verifies_replacement_before_pruning()` connect `test_snapshot_verifies_replacement_before_pruning` to `json`, `fit_offline_sft`, `atomic_json`, `pytest`, `test_one_model_training_stops_and_completed_resume_does_not_reload`?**
-  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **Why does `TestTrainingPolicy` connect `TestTrainingPolicy` to `pytest`, `test_pretrained_hf_model.py`?**
+  _High betweenness centrality (0.021) - this node is a cross-community bridge._

@@ -1419,9 +1419,9 @@
     "semantic_hash": "027c91f5a99f9a3c2cfa04a62a735e45"
   },
   "tools/generate_full_matrix_notebooks.py": {
-    "mtime": 1794063140.7776031,
-    "seen": 1794063240.9279382,
-    "ast_hash": "d4a12c22354682c6235655fc4873a84a",
+    "mtime": 1794063534.215911,
+    "seen": 1794063650.6327775,
+    "ast_hash": "39be958e208745557e42cf3a73e8b951",
     "semantic_hash": ""
   },
   "tools/generate_pilot_notebook.py": {
@@ -2571,9 +2571,9 @@
     "semantic_hash": ""
   },
   "notebooks/train_bifocalgemma_fast.py": {
-    "mtime": 1794062968.3179348,
-    "seen": 1794063240.9279382,
-    "ast_hash": "2a93334119083ea2687dd12b08d9e2c1",
+    "mtime": 1794063614.9470024,
+    "seen": 1794063650.6327775,
+    "ast_hash": "0b4876d43f35e47b167731bbb2c8e00b",
     "semantic_hash": ""
   },
   "src/bifocalgemma/configuration_bifocalgemma.py": {

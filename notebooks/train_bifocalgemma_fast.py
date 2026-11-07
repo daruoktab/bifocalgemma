@@ -43,12 +43,24 @@ def _():
 
 @app.cell
 def _():
+    import io
     import os
     import sys
+    import urllib.request
+    import zipfile
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path.cwd()
     src_dir = root / "src"
+    if not (src_dir / "bifocalgemma").is_dir():
+        runtime_dir = Path("outputs/runtime").resolve()
+        if not (runtime_dir / "src/bifocalgemma").is_dir():
+            url = "https://huggingface.co/daruokta/bifocalgemma-2026-11-02/resolve/main/runtime/latest.zip"
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:
+                    zf.extractall(runtime_dir)
+        src_dir = runtime_dir / "src"
+
     if str(src_dir) not in sys.path:
         sys.path.insert(0, str(src_dir))
 
