@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from bifocalgemma.config import get_experiment
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.optimizers import GrokOrScaleLoRA, orthogonal_direction
 from bifocalgemma.training.policy import configure_policy_model

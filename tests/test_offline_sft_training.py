@@ -18,7 +18,7 @@ from bifocalgemma.data.offline_sft import (
     prepare_editing_records,
     split_editing_records,
 )
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.memory_probe import configure_probe_training
 from bifocalgemma.training.objectives import patch_cross_entropy
 from bifocalgemma.training.offline_sft import fit_offline_sft, restore_sft_checkpoint

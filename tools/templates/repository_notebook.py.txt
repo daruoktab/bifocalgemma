@@ -111,8 +111,8 @@ def _(mo):
     sys.path.insert(0, str(runtime_root / "src"))
     from bifocalgemma.config import get_experiment
     from bifocalgemma.repository_study import fetch_tokenizer_assets, prepare_run, generate_run, score_run, read_source_rows, write_json
-    from bifocalgemma.models.native import build_native_model
-    from bifocalgemma.models.pretrained import load_local_native_model
+    from bifocalgemma.models.v2.native import build_native_model
+    from bifocalgemma.models.v2.pretrained import load_local_native_model
     from bifocalgemma.training.memory_probe import tensor_bytes
     from bifocalgemma.data.repository import SOURCE_REVISIONS
     environment = {"torch": str(torch.__version__), "cuda": torch.cuda.is_available(), "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None, "source_sha256": bundle_sha}

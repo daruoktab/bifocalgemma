@@ -108,9 +108,9 @@ def repair_prompt_ids(
         if len(encoder_ids) > max_encoder_tokens:
             raise ValueError("encoder_generation_budget_exceeded")
         prompt = (
-            "Return only a unified diff fulfilling the instruction using the encoder context.\n"
+            "Return only a unified diff fulfilling the instruction.\n"
             if context is not None
-            else "Return only a unified diff that fixes this issue using the encoder context.\n"
+            else "Return only a unified diff that fixes this issue.\n"
         ) + example.issue
     else:
         prompt = (
@@ -186,7 +186,7 @@ def generate_diagnostic_text(
         enc = tuple(encoder.encode(context, add_special_tokens=True))
         if len(enc) > max_encoder_tokens:
             raise ValueError("diagnostic_input_overflow")
-        prompt = instruction + "\nUse the supplied encoder context."
+        prompt = instruction
     else:
         prompt = instruction + "\n\n" + context
     text = decoder.apply_chat_template(

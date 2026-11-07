@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from bifocalgemma.config import EXPERIMENT_SPECS
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.memory_probe import ProbeLoRALinear
 from bifocalgemma.training.offline_sft import file_digest, fit_offline_sft
 from bifocalgemma.training.policy import (

@@ -5016,7 +5016,7 @@ def _(
             [
                 {
                     "role": "user",
-                    "content": "Return only a unified diff fulfilling the instruction using the encoder context.\n"
+                    "content": "Return only a unified diff fulfilling the instruction.\n\n"
                     + row["instruction"],
                 }
             ],
@@ -5027,7 +5027,7 @@ def _(
         messages = [
             {
                 "role": "user",
-                "content": "Return only a unified diff fulfilling the instruction using the encoder context.\n"
+                "content": "Return only a unified diff fulfilling the instruction.\n\n"
                 + row["instruction"],
             },
             {"role": "assistant", "content": row["target_patch"]},

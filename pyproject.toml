@@ -7,7 +7,7 @@ name = "bifocalgemma"
 version = "0.1.0"
 description = "BifocalGemma research scaffold: merged base-encoder / IT-decoder code repair"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "daruoktab" },
@@ -96,4 +96,5 @@ url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "tests_e2e"]
+pythonpath = ["src"]

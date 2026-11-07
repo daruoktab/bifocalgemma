@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.policy import default_training_profiles
 from bifocalgemma.training.stages import StageLedger, latest_checkpoint

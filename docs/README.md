@@ -1,6 +1,11 @@
 # Dokumentasi BifocalGemma
 
-Dokumen di sini menjelaskan satu rancangan aktif: **langsung membangun encoder base
+> **Arsitektur produksi saat ini adalah V3** — `SwiGLUDualGateBridge` +
+> decoupled full-rank cross-attention di [`src/bifocalgemma/v3/`](../src/bifocalgemma/v3/).
+> Mulai dari [peta repo](REPO_LAYOUT.md). Dokumen bertanda V2 di bawah menjelaskan
+> generasi sebelumnya yang kini berada di [`src/bifocalgemma/models/v2/`](../src/bifocalgemma/models/v2/).
+
+Dokumen V2 menjelaskan rancangan lama: **langsung membangun encoder base
 dan decoder IT dengan merged attention, lalu direct supervised fine-tuning**.
 Word tying lintas encoder/decoder hanya dipakai pada pasangan simetris; PLE terpisah.
 Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
@@ -9,6 +14,7 @@ Distillation dan konversi dari attention terpisah adalah eksperimen opsional.
 
 | Dokumen | Pertanyaan yang dijawab |
 | --- | --- |
+| [Peta repo](REPO_LAYOUT.md) | Batas V2/V3, isi tiap modul, dan di mana memperbaiki bug |
 | [Proposal](proposal.md) | Masalah, tiga kontribusi dan batas klaim |
 | [Desain eksperimen](EXPERIMENT_DESIGN.md) | Empat pasangan, dua baseline, kontrol dan analisis |
 | [Arsitektur](ARCHITECTURE.md) | Aliran tensor, merged attention, initialization dan tying |

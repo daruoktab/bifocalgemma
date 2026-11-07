@@ -1,6 +1,12 @@
 # BifocalGemma: Arsitektur Aktif dan Kontrak Implementasi
 
-Jalur training aktif sekarang adalah [normalized merged attention v2](BIFOCALGEMMA_V2.md).
+> **Status dokumen (2026-11-03):** halaman ini menjelaskan **V2 legacy**.
+> Jalur produksi sekarang **V3** (`SwiGLUDualGateBridge` + decoupled full-rank
+> cross-attention) di [`src/bifocalgemma/v3/`](../src/bifocalgemma/v3/).
+> Lihat [peta repo](REPO_LAYOUT.md) dan
+> [proposal riset V3](BIFOCALGEMMA_V3_RESEARCH_PROPOSAL.md).
+
+Jalur training V2 adalah [normalized merged attention v2](BIFOCALGEMMA_V2.md).
 Kontrak di bawah mendokumentasikan implementasi v1 yang tetap dapat dibaca:
 v2 memakai linear+RMSNorm untuk semua pasangan dan embedding encoder terpisah.
 
@@ -54,7 +60,7 @@ prefix disuplai; target tidak tersedia.
 ## Initialization dan provenance
 
 [Registry](../src/bifocalgemma/config.py) mem-pin encoder base dan decoder IT per
-ukuran. [Initialization plan](../src/bifocalgemma/models/initialization.py) dapat
+ukuran. [Initialization plan](../src/bifocalgemma/models/v2/initialization.py) dapat
 diinspeksi tanpa memuat bobot.
 
 - Encoder layers, norm dan PLE berasal dari checkpoint base.
@@ -137,10 +143,10 @@ dasar hitungan; initializer/factory perlu menghitung model akhir secara aktual.
 
 ## Apa yang bisa dijalankan sekarang
 
-[M01](../src/bifocalgemma/models/merged_attention.py) memeriksa joint softmax,
+[M01](../src/bifocalgemma/models/v2/merged_attention.py) memeriksa joint softmax,
 GQA, asymmetric projection, causal/window/padding masks dan finite gradients.
-[M02](../src/bifocalgemma/models/embeddings.py) memeriksa parameter sharing.
-[M03](../src/bifocalgemma/models/reference.py) merakit embedding, satu generic
+[M02](../src/bifocalgemma/models/v2/embeddings.py) memeriksa parameter sharing.
+[M03](../src/bifocalgemma/models/v2/reference.py) merakit embedding, satu generic
 bidirectional TransformerEncoder dan satu reference merged-attention decoder.
 
 M03 **bukan Gemma kecil lengkap**: tidak ada native RoPE, PLE, 35/42 decoder stack,

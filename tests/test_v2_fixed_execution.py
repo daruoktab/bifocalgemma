@@ -11,7 +11,7 @@ import torch
 
 from bifocalgemma.config import EXPERIMENT_NAMES, get_v2_experiment
 from bifocalgemma.models.flex_attention import flex_kernel_options
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training import v2_preflight as guard
 from bifocalgemma.training.policy import configure_policy_model
 from bifocalgemma.training.recipes import unified_recipe

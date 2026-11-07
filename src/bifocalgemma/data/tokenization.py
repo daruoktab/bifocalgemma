@@ -83,7 +83,7 @@ def tokenize_repair_example(
         encoder_ids = tuple(encoder.encode(context, add_special_tokens=True))
         if encoder_ids[0] != encoder.bos_token_id:
             raise ValueError("Audited base tokenizer did not prepend BOS.")
-        prompt = f"Return only a unified diff that fixes this issue using the encoder context.\n{example.issue}"
+        prompt = f"Return only a unified diff that fixes this issue.\n\n{example.issue}"
     else:
         prompt = f"Return only a unified diff that fixes the issue.\n\n{context}"
     messages = [{"role": "user", "content": prompt}]

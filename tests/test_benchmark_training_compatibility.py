@@ -22,7 +22,7 @@ def test_exact_benchmark_release_preserves_training_identity_and_rejects_model_c
     assert actual["source_semantics_sha256"] == approval["approved_source_semantics_sha256"]
     assert actual["training_semantics_sha256"] == approval["baseline_training_semantics_sha256"]
     assert actual["source_semantics_sha256"] != actual["training_semantics_sha256"]
-    for relative in ("models/native.py", "training/offline_sft.py", "training/v2.py"):
+    for relative in ("models/v2/native.py", "training/offline_sft.py", "training/v2.py"):
         path = root / relative
         before = path.read_text()
         path.write_text(before + "\nUNAPPROVED_CHANGE = 1\n")

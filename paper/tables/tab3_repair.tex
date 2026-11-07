@@ -1,0 +1,20 @@
+\begin{table*}[t]
+\centering
+\small
+\caption{\textbf{Program Repair and Completion Diagnostics: Deconstructing Methodological Pathologies.} Deconstruction of HumanEvalFix dual failure mode (syntax artifact vs.\ logic repair deficit), continuous token metrics on CrossCodeLong, and multi-step reasoning anchor on GSM8K.}
+\label{tab:repair_and_completion}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Model} & \textbf{HumanEvalFix} & \textbf{Patch Apply} & \textbf{Cond.\ Pass@1} & \textbf{CrossCode Chunk} & \textbf{CrossCode Func} & \textbf{GSM8K 8-Shot} \\
+& Raw Pass@1 & (\texttt{git apply} \%) & (Given Applied) & (Exact / SeqSim) & (Exact / Regex F1) & Accuracy (\%) \\
+\midrule
+\texttt{Baseline-E2B-IT} & \textbf{15.24\%} (25/164) & 45.12\% (74/164) & \textbf{33.78\%} (25/74) & 0.00\% / 0.1237 & 0.00\% / 0.3670 & \textbf{73.09\%} (964/1,319) \\
+\texttt{Baseline-E4B-IT} & 28.05\% (46/164) & --- & --- & 1.00\% / 0.1410 & 5.00\% / 0.4120 & 35.56\% (469/1,319) \\
+\midrule
+\texttt{Bifocal-2it-2it} & 0.61\% (1/164) & 31.71\% (52/164)$^\dagger$ & 1.92\% (1/52)$^\ddagger$ & 0.00\% / 0.1520 & 0.00\% / 0.3810 & [73.09\% anchor] \\
+\bottomrule
+\end{tabular}
+\vskip 0.05in
+\footnotesize{$^\dagger$\textit{Layer 1 Pathology: 112/164 syntax rejections caused by prompt leakage (`\texttt{using the encoder context}') hallucinating \texttt{def ...(..., encoder: object)}.} \\
+$^\ddagger$\textit{Layer 2 Pathology: Conditional functional deficit caused by streaming pointer loss ($\lambda_{\text{ptr}} = 0.05$) enforcing verbatim context copying over bug remediation.}}
+\end{table*}

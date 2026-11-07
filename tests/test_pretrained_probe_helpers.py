@@ -10,8 +10,8 @@ from safetensors.torch import save_file
 from bifocalgemma.config import EXPERIMENT_SPECS
 from bifocalgemma.contracts import TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
-from bifocalgemma.models.checkpoint_transfer import transfer_text_checkpoint
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.checkpoint_transfer import transfer_text_checkpoint
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.memory_probe import (
     ProbeLoRALinear,
     configure_probe_training,

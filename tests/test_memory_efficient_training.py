@@ -14,7 +14,7 @@ from bifocalgemma.models.memory_efficient import (
     configure_memory_efficient_training,
     tiled_attention,
 )
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.objectives import chunked_linear_cross_entropy, patch_cross_entropy
 from bifocalgemma.training.offline_sft import evaluate_sft_loss, fit_offline_sft
 from bifocalgemma.training.policy import configure_policy_model, default_training_profiles

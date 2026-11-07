@@ -153,7 +153,7 @@ def test_six_generation_paths_cache_assets_and_never_read_gold(spec, monkeypatch
 
 def test_bad_generation_budget_rejected_before_loading_weights(tmp_path, monkeypatch):
     import bifocalgemma.data.tokenization as assets
-    import bifocalgemma.models.pretrained as pretrained
+    import bifocalgemma.models.v2.pretrained as pretrained
 
     spec = EXPERIMENT_SPECS[4]
     public, _, _ = gsm8k.make_records(fixture_rows(), [], shots=0)

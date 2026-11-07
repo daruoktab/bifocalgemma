@@ -756,8 +756,8 @@ def _(auth_info, torch, F, mo):
 @app.cell
 def _(auth_info, mo):
     assert auth_info["verified"], "Apply a valid HF token before running this cell."
-    from bifocalgemma.models.native import NativeMergedAttention
-    from bifocalgemma.models.merged_attention import build_joint_visibility
+    from bifocalgemma.models.v2.native import NativeMergedAttention
+    from bifocalgemma.models.v2.merged_attention import build_joint_visibility
     mo.md("## 5 · Attention reference\nSatu joint softmax; self causal/windowed dan encoder global. Training memakai tiled FP32 dengan recompute dari implementasi bersama.")
     return (NativeMergedAttention, build_joint_visibility)
 
@@ -766,7 +766,7 @@ def _(auth_info, mo):
 def _(auth_info, torch, mo):
     assert auth_info["verified"], "Apply a valid HF token before running this cell."
     # Native architecture is shared with the bundled package: one maintained implementation.
-    from bifocalgemma.models.native import NativeTinyModel
+    from bifocalgemma.models.v2.native import NativeTinyModel
     from bifocalgemma.models.memory_efficient import configure_memory_efficient_training, run_training_memory_preflight
     from bifocalgemma.training.telemetry import TrainingDashboard, resource_snapshot
 
@@ -1125,10 +1125,10 @@ def _(auth_info, AutoTokenizer, CHECKPOINTS, Counter, Path, PurePosixPath, Repai
         context = row.get("context") or f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
         encoder_ids = tuple(encoder.encode(context,add_special_tokens=True))
         prefix = decoder.apply_chat_template([{"role":"user","content":
-            "Return only a unified diff fulfilling the instruction using the encoder context.\n"+row["instruction"]}],
+            "Return only a unified diff fulfilling the instruction.\n\n"+row["instruction"]}],
             tokenize=False,add_generation_prompt=True,enable_thinking=False)
         messages = [{"role":"user","content":
-            "Return only a unified diff fulfilling the instruction using the encoder context.\n"+row["instruction"]},
+            "Return only a unified diff fulfilling the instruction.\n\n"+row["instruction"]},
             {"role":"assistant","content":row["target_patch"]}]
         complete = decoder.apply_chat_template(messages,tokenize=False,add_generation_prompt=False,enable_thinking=False)
         assert isinstance(prefix,str) and isinstance(complete,str)

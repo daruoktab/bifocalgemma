@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 560" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <defs>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.1"/>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="425" y="32" text-anchor="middle" font-size="18" font-weight="bold" fill="#202124">Repository Comprehension Under Distractor Noise (SWEQA, N = 9,072)</text>
+  <text x="425" y="52" text-anchor="middle" font-size="12" fill="#5f6368">Decoupled Bidirectional Encoding Provides 11.4x Higher Noise Resilience (p &lt; 0.001)</text>
+
+  <!-- Chart Background & Grid -->
+  <rect x="90" y="80" width="670" height="380" fill="#f8f9fa" rx="6" stroke="#dadce0" stroke-width="1"/>
+
+  <!-- Y-Axis Gridlines & Labels (Range: 70% to 76%) -->
+  <!-- 70% -> y = 430, 71% -> y = 370, 72% -> y = 310, 73% -> y = 250, 74% -> y = 190, 75% -> y = 130 -->
+  <line x1="90" y1="430" x2="760" y2="430" stroke="#e8eaed" stroke-width="1"/>
+  <text x="80" y="434" text-anchor="end" font-size="11" fill="#5f6368">70.0%</text>
+
+  <line x1="90" y1="370" x2="760" y2="370" stroke="#e8eaed" stroke-width="1"/>
+  <text x="80" y="374" text-anchor="end" font-size="11" fill="#5f6368">71.0%</text>
+
+  <line x1="90" y1="310" x2="760" y2="310" stroke="#e8eaed" stroke-width="1"/>
+  <text x="80" y="314" text-anchor="end" font-size="11" fill="#5f6368">72.0%</text>
+
+  <line x1="90" y1="250" x2="760" y2="250" stroke="#e8eaed" stroke-width="1"/>
+  <text x="80" y="254" text-anchor="end" font-size="11" fill="#5f6368">73.0%</text>
+
+  <line x1="90" y1="190" x2="760" y2="190" stroke="#e8eaed" stroke-width="1"/>
+  <text x="80" y="194" text-anchor="end" font-size="11" fill="#5f6368">74.0%</text>
+
+  <line x1="90" y1="130" x2="760" y2="130" stroke="#e8eaed" stroke-width="1"/>
+  <text x="80" y="134" text-anchor="end" font-size="11" fill="#5f6368">75.0%</text>
+
+  <!-- Vertical Condition Markers (X-Coordinates: Clean = 260, Noisy = 590) -->
+  <line x1="260" y1="80" x2="260" y2="460" stroke="#dadce0" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="590" y1="80" x2="590" y2="460" stroke="#dadce0" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+  <text x="260" y="482" text-anchor="middle" font-size="13" font-weight="bold" fill="#202124">Clean Oracle Context</text>
+  <text x="260" y="498" text-anchor="middle" font-size="10.5" fill="#5f6368">Uncorrupted Repository Files</text>
+
+  <text x="590" y="482" text-anchor="middle" font-size="13" font-weight="bold" fill="#202124">Noisy Oracle Context</text>
+  <text x="590" y="498" text-anchor="middle" font-size="10.5" fill="#5f6368">Distractor Functions &amp; Files Injected</text>
+
+  <!-- Y-Axis Title -->
+  <text x="28" y="270" text-anchor="middle" transform="rotate(-90 28 270)" font-size="12" font-weight="bold" fill="#3c4043">Benchmark Accuracy (%)</text>
+
+  <!-- Slope Lines & Data Points -->
+  <!-- 
+    Baseline-E2B-IT:
+    Clean: 74.04% -> y = 190 - (0.04 * 60) = 187.6
+    Noisy: 71.87% -> y = 370 - (0.87 * 60) = 317.8
+  -->
+  <line x1="260" y1="187.6" x2="590" y2="317.8" stroke="#d93025" stroke-width="3.5" stroke-linecap="round"/>
+  
+  <!-- 
+    BifocalGemma-2it-2it:
+    Clean: 73.88% -> y = 190 + (0.12 * 60) = 197.2
+    Noisy: 73.69% -> y = 250 - (0.69 * 60) = 208.6
+  -->
+  <line x1="260" y1="197.2" x2="590" y2="208.6" stroke="#1a73e8" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Data Circles & Labels: Baseline E2B -->
+  <circle cx="260" cy="187.6" r="6" fill="#d93025" stroke="#ffffff" stroke-width="2"/>
+  <rect x="155" y="165" width="95" height="24" rx="4" fill="#ffffff" stroke="#d93025" stroke-width="1" filter="url(#shadow)"/>
+  <text x="202" y="181" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#d93025">74.04%</text>
+
+  <circle cx="590" cy="317.8" r="6" fill="#d93025" stroke="#ffffff" stroke-width="2"/>
+  <rect x="605" y="305" width="135" height="34" rx="4" fill="#ffffff" stroke="#d93025" stroke-width="1" filter="url(#shadow)"/>
+  <text x="672" y="321" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#d93025">71.87%</text>
+  <text x="672" y="334" text-anchor="middle" font-size="9.5" fill="#d93025">Δ = -2.17 pp drop</text>
+
+  <!-- Data Circles & Labels: BifocalGemma -->
+  <circle cx="260" cy="197.2" r="6" fill="#1a73e8" stroke="#ffffff" stroke-width="2"/>
+  <rect x="155" y="200" width="95" height="24" rx="4" fill="#ffffff" stroke="#1a73e8" stroke-width="1" filter="url(#shadow)"/>
+  <text x="202" y="216" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1a73e8">73.88%</text>
+
+  <circle cx="590" cy="208.6" r="6" fill="#1a73e8" stroke="#ffffff" stroke-width="2"/>
+  <rect x="605" y="193" width="145" height="34" rx="4" fill="#ffffff" stroke="#1a73e8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="677" y="209" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#1a73e8">73.69%</text>
+  <text x="677" y="222" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#185abc">Δ = -0.19 pp drop (Flat)</text>
+
+  <!-- Highlight Box: Statistical Parity & Victory -->
+  <!-- Parity Box (Clean) -->
+  <rect x="290" y="145" width="140" height="36" rx="4" fill="#ffffff" stroke="#5f6368" stroke-width="0.8"/>
+  <text x="360" y="160" text-anchor="middle" font-size="10" font-weight="bold" fill="#202124">Clean Context Parity</text>
+  <text x="360" y="174" text-anchor="middle" font-size="9" fill="#5f6368">Δ = -0.16 pp (p = 0.81)</text>
+
+  <!-- Hero Victory Box (Noisy) -->
+  <rect x="420" y="240" width="155" height="54" rx="5" fill="#e8f0fe" stroke="#1a73e8" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="497" y="258" text-anchor="middle" font-size="11" font-weight="bold" fill="#185abc">+1.82 pp Hero Victory</text>
+  <text x="497" y="272" text-anchor="middle" font-size="9.5" fill="#185abc">p &lt; 0.001 (~3.9 Std Errors)</text>
+  <text x="497" y="286" text-anchor="middle" font-size="9" font-weight="bold" fill="#137333">11.4x Higher Noise Resilience</text>
+
+  <!-- Legend (Bottom) -->
+  <rect x="260" y="520" width="330" height="32" rx="4" fill="#ffffff" stroke="#dadce0" stroke-width="1"/>
+  <line x1="280" y1="536" x2="310" y2="536" stroke="#1a73e8" stroke-width="3"/>
+  <circle cx="295" cy="536" r="4" fill="#1a73e8"/>
+  <text x="320" y="540" font-size="11" font-weight="bold" fill="#202124">BifocalGemma-2it-2it (Ours)</text>
+
+  <line x1="450" y1="536" x2="480" y2="536" stroke="#d93025" stroke-width="3"/>
+  <circle cx="465" cy="536" r="4" fill="#d93025"/>
+  <text x="490" y="540" font-size="11" font-weight="bold" fill="#202124">Baseline-E2B-IT (Causal)</text>
+</svg>

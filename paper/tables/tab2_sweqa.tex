@@ -1,0 +1,21 @@
+\begin{table*}[t]
+\centering
+\small
+\caption{\textbf{Repository Comprehension Benchmark Performance: Clean vs.\ Noisy Context.} Primary empirical evaluation on SWEQA (9,072 repository cases) and LongCodeQA (107 pinpoint retrieval cases). $\Delta_{\text{noise}} = \text{Noisy} - \text{Clean}$. Statistical significance evaluated via two-tailed paired bootstrap hypothesis testing ($N=10{,}000$).}
+\label{tab:sweqa_results}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Model} & \textbf{SWEQA Clean} & \textbf{SWEQA Noisy} & \textbf{Noise Degradation} & \textbf{Robustness Ratio} & \textbf{Stat.\ Sig.} & \textbf{LongCodeQA} \\
+& (Acc \% / 9,072) & (Acc \% / 9,072) & ($\Delta_{\text{noise}}$) & (vs Baseline) & ($p$-value) & (Acc \% / 107) \\
+\midrule
+\texttt{Baseline-E2B-IT} (2B) & \textbf{74.04\%} (6,717) & 71.87\% (6,520) & $-2.17$ pp & $1.0\times$ (Ref) & --- & \textbf{65.42\%} (70) \\
+\texttt{Baseline-E4B-IT} (4B)$^\dagger$ & 61.94\% (5,620) & 56.90\% (5,162) & $-5.04$ pp & $0.43\times$ & --- & 52.34\% (56) \\
+\midrule
+\texttt{Bifocal-2it-2it} (4B) & 73.88\% (6,702) & \textbf{73.69\%} (6,685) & \textbf{$-0.19$ pp} & \textbf{11.4$\times$ More Robust} & \boldmath$p < 0.001$ & 55.14\% (59) \\
+\midrule
+$\Delta$ (\texttt{Bifocal} vs \texttt{E2B}) & $-0.16$ pp ($p=0.81$) & \textbf{+1.82 pp} & \textbf{+1.98 pp Protection} & --- & $\sim 3.9$ Std.\ Errors & $-10.28$ pp (Dilution) \\
+\bottomrule
+\end{tabular}
+\vskip 0.05in
+\footnotesize{$^\dagger$\textit{Note: \texttt{Baseline-E4B-IT} suffered from a 32-token generation cap in legacy evaluation harnesses, producing 1,696 \texttt{length\_limit} truncation errors.}}
+\end{table*}

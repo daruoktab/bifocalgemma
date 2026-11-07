@@ -2021,8 +2021,8 @@ def _(mo):
     sys.path.insert(0, str(runtime_root / "src"))
     from bifocalgemma.config import get_experiment
     from bifocalgemma.data.repository import SOURCE_REVISIONS
-    from bifocalgemma.models.native import build_native_model
-    from bifocalgemma.models.pretrained import load_local_native_model
+    from bifocalgemma.models.v2.native import build_native_model
+    from bifocalgemma.models.v2.pretrained import load_local_native_model
     from bifocalgemma.repository_study import (
         fetch_tokenizer_assets,
         generate_run,

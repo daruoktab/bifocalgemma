@@ -230,7 +230,7 @@ def evaluate_grounding(
                 seed_header = ""
             elif cond == "instruction_file_grounded":
                 grounded_prompt = (
-                    f"Return only a unified diff modifying '{target_file}' fulfilling the instruction using the encoder context.\\n"
+                    f"Return only a unified diff modifying '{target_file}' fulfilling the instruction.\n"
                     + row["instruction"]
                 )
                 text = dec_tok.apply_chat_template(
@@ -245,7 +245,7 @@ def evaluate_grounding(
                 # Seed the assistant message with diff header
                 seed_header = f"diff --git a/{target_file} b/{target_file}\\n--- a/{target_file}\\n+++ b/{target_file}\\n"
                 prompt_text = (
-                    f"Return only a unified diff modifying '{target_file}' fulfilling the instruction using the encoder context.\\n"
+                    f"Return only a unified diff modifying '{target_file}' fulfilling the instruction.\n"
                     + row["instruction"]
                 )
                 messages = [

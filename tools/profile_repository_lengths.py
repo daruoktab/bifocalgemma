@@ -51,7 +51,7 @@ def profile(source, rows_file, tokenizer_cache):
             {
                 "role": "user",
                 "content": (
-                    "Return only a unified diff fulfilling the instruction using the encoder context.\n"
+                    "Return only a unified diff fulfilling the instruction.\n\n"
                     + issue.strip()
                 ),
             }

@@ -11,9 +11,9 @@ if str(_SRC_DIR) not in sys.path:
 
 import torch  # noqa: E402
 
-from bifocalgemma.models.bridge import GatedCrossAttentionBridge  # noqa: E402
-from bifocalgemma.models.code_graph_projector import ASTGraphProjector  # noqa: E402
-from bifocalgemma.models.routing import RepoContextRouter  # noqa: E402
+from bifocalgemma.models.v2.bridge import GatedCrossAttentionBridge  # noqa: E402
+from bifocalgemma.models.v2.code_graph_projector import ASTGraphProjector  # noqa: E402
+from bifocalgemma.models.v2.routing import RepoContextRouter  # noqa: E402
 
 
 class TestBifocalGemmaArchitecture(unittest.TestCase):

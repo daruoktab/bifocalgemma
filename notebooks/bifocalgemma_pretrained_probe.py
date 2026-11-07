@@ -1443,7 +1443,7 @@ def _(
             encoder_ids = tuple(encoder.encode(context, add_special_tokens=True)[:encoder_tokens])
             assert encoder_ids[0] == 2 and len(encoder_ids) == encoder_tokens
             prompt = (
-                f"Return only a unified diff fixing this issue using the encoder context.\n{issue}"
+                f"Return only a unified diff fixing this issue.\n\n{issue}"
             )
             encoder_policy = "synthetic_comment_padding_then_explicit_token_crop"
         else:

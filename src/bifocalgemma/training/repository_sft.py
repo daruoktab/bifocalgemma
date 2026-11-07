@@ -28,7 +28,7 @@ def tokenize_repository_record(
     encoder_ids = tuple(encoder.encode(context, add_special_tokens=True)) if spec.encoder else ()
     if spec.encoder:
         prompt = (
-            "Return only a unified diff fulfilling the instruction using the encoder context.\n"
+            "Return only a unified diff fulfilling the instruction.\n\n"
             + row["instruction"]
         )
     else:

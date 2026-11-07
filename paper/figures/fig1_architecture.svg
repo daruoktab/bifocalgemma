@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="100%" height="100%" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <defs>
+    <linearGradient id="encGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8f0fe"/>
+      <stop offset="100%" stop-color="#c2e7ff"/>
+    </linearGradient>
+    <linearGradient id="bridgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef7e0"/>
+      <stop offset="100%" stop-color="#fee5a5"/>
+    </linearGradient>
+    <linearGradient id="decGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e6f4ea"/>
+      <stop offset="100%" stop-color="#ceead6"/>
+    </linearGradient>
+    <linearGradient id="lossGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fce8e6"/>
+      <stop offset="100%" stop-color="#fad2cf"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#444746"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#1a73e8"/>
+    </marker>
+  </defs>
+
+  <!-- Title & Subtitle -->
+  <text x="500" y="32" text-anchor="middle" font-size="20" font-weight="bold" fill="#202124">BifocalGemma Dual-Stream Architecture</text>
+  <text x="500" y="52" text-anchor="middle" font-size="12" fill="#5f6368">32k Bidirectional Encoder + SwiGLU Dual-Gate Bridge + 8k Causal Decoder with Decoupled Cross-Attention</text>
+
+  <!-- ================= ENCODER STREAM (TOP) ================= -->
+  <rect x="40" y="75" width="920" height="150" rx="10" fill="url(#encGrad)" stroke="#1a73e8" stroke-width="1.5"/>
+  <text x="60" y="100" font-size="14" font-weight="bold" fill="#185abc">1. BIDIRECTIONAL REPOSITORY ENCODER STREAM (Context: up to 32,768 tokens)</text>
+  
+  <!-- Enc Input Box -->
+  <rect x="60" y="115" width="220" height="90" rx="6" fill="#ffffff" stroke="#1a73e8" stroke-width="1"/>
+  <text x="75" y="138" font-size="12" font-weight="bold" fill="#202124">Multi-File Repository Context</text>
+  <text x="75" y="156" font-size="10" fill="#5f6368">Full file trees, module definitions,</text>
+  <text x="75" y="172" font-size="10" fill="#5f6368">cross-file imports, class structures</text>
+  <text x="75" y="190" font-size="10" font-family="monospace" fill="#1967d2">T_enc &lt;= 32,768 tokens</text>
+
+  <!-- Enc Flow Arrow -->
+  <line x1="280" y1="160" x2="330" y2="160" stroke="#1a73e8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- Enc Layers Box -->
+  <rect x="335" y="115" width="340" height="90" rx="6" fill="#ffffff" stroke="#1a73e8" stroke-width="1"/>
+  <text x="350" y="138" font-size="12" font-weight="bold" fill="#202124">Gemma 4 2B Base (Bidirectional Mode)</text>
+  <text x="350" y="156" font-size="10" fill="#3c4043">• Full unmasked self-attention across 32k tokens</text>
+  <text x="350" y="172" font-size="10" fill="#3c4043">• Every token attends globally to all files simultaneously</text>
+  <text x="350" y="188" font-size="10" fill="#3c4043">• Attenuates distractor token salience via global graph</text>
+
+  <!-- Enc Out Arrow -->
+  <line x1="675" y1="160" x2="725" y2="160" stroke="#1a73e8" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+  <!-- Enc Output Repr -->
+  <rect x="730" y="115" width="210" height="90" rx="6" fill="#ffffff" stroke="#1a73e8" stroke-width="1"/>
+  <text x="745" y="140" font-size="12" font-weight="bold" fill="#202124">Global Context Manifold</text>
+  <text x="745" y="162" font-size="11" font-family="monospace" fill="#185abc">H_enc in R^(N_enc x d_enc)</text>
+  <text x="745" y="184" font-size="10" fill="#5f6368">d_enc = 2048, N_enc &lt;= 32768</text>
+
+  <!-- ================= MANIFOLD WARPING BRIDGE ================= -->
+  <!-- Downward Arrow from Enc to Bridge -->
+  <line x1="500" y1="225" x2="500" y2="255" stroke="#e37400" stroke-width="2.5" marker-end="url(#arrow)"/>
+  
+  <rect x="180" y="260" width="640" height="110" rx="10" fill="url(#bridgeGrad)" stroke="#b06000" stroke-width="1.5"/>
+  <text x="200" y="283" font-size="13" font-weight="bold" fill="#b06000">2. NON-LINEAR MANIFOLD WARPING BRIDGE (SwiGLUDualGateBridge)</text>
+
+  <rect x="200" y="295" width="180" height="60" rx="5" fill="#ffffff" stroke="#b06000" stroke-width="0.8"/>
+  <text x="210" y="315" font-size="11" font-weight="bold" fill="#202124">Pre-RMSNorm</text>
+  <text x="210" y="332" font-size="10" fill="#5f6368">Stabilizes 32k variance</text>
+  <text x="210" y="345" font-size="9" font-family="monospace" fill="#b06000">RMSNorm(H_enc)</text>
+
+  <text x="395" y="330" font-size="14" font-weight="bold" fill="#b06000">→</text>
+
+  <rect x="420" y="295" width="220" height="60" rx="5" fill="#ffffff" stroke="#b06000" stroke-width="0.8"/>
+  <text x="430" y="315" font-size="11" font-weight="bold" fill="#202124">SwiGLU Non-Linear Warping</text>
+  <text x="430" y="330" font-size="9.5" font-family="monospace" fill="#b06000">G = SiLU(H * W_gate)</text>
+  <text x="430" y="345" font-size="9.5" font-family="monospace" fill="#b06000">Warped = (G (x) (H * W_up)) * W_down</text>
+
+  <text x="655" y="330" font-size="14" font-weight="bold" fill="#b06000">→</text>
+
+  <rect x="680" y="295" width="125" height="60" rx="5" fill="#ffffff" stroke="#b06000" stroke-width="0.8"/>
+  <text x="690" y="315" font-size="10.5" font-weight="bold" fill="#202124">Post-RMSNorm</text>
+  <text x="690" y="332" font-size="10" fill="#5f6368">&amp; gamma_calib</text>
+  <text x="690" y="347" font-size="9" font-family="monospace" fill="#b06000">H_warped</text>
+
+  <!-- Downward Arrow from Bridge to Decoder -->
+  <line x1="500" y1="370" x2="500" y2="400" stroke="#137333" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- ================= DECODER STREAM (BOTTOM) ================= -->
+  <rect x="40" y="405" width="920" height="155" rx="10" fill="url(#decGrad)" stroke="#137333" stroke-width="1.5"/>
+  <text x="60" y="428" font-size="14" font-weight="bold" fill="#0d652d">3. CAUSAL DECODER &amp; DECOUPLED CROSS-ATTENTION (Context: up to 8,192 tokens)</text>
+
+  <!-- Dec Input -->
+  <rect x="60" y="442" width="220" height="105" rx="6" fill="#ffffff" stroke="#137333" stroke-width="1"/>
+  <text x="75" y="464" font-size="12" font-weight="bold" fill="#202124">Causal Query &amp; Generation</text>
+  <text x="75" y="482" font-size="10" fill="#5f6368">• Task instruction &amp; prompt prefix</text>
+  <text x="75" y="498" font-size="10" fill="#5f6368">• Autoregressive token sequence</text>
+  <text x="75" y="514" font-size="10" fill="#5f6368">• Sliding window + causal mask</text>
+  <text x="75" y="532" font-size="10" font-family="monospace" fill="#137333">T_dec &lt;= 8,192 tokens</text>
+
+  <!-- Dec Flow Arrow -->
+  <line x1="280" y1="492" x2="330" y2="492" stroke="#137333" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Cross Attention Box -->
+  <rect x="335" y="442" width="340" height="105" rx="6" fill="#ffffff" stroke="#137333" stroke-width="1"/>
+  <text x="350" y="464" font-size="12" font-weight="bold" fill="#202124">Decoupled Stationary Cross-Attention</text>
+  <text x="350" y="482" font-size="10" fill="#3c4043">• Causal self-attention uses standard RoPE rotary coords</text>
+  <text x="350" y="498" font-size="10" fill="#3c4043">• Cross-attention operates in stationary coords (Zero RoPE)</text>
+  <text x="350" y="514" font-size="9.5" font-family="monospace" fill="#0d652d">CrossAttn(Q_stat, K_stat, V_stat) = softmax(Q K^T / sqrt(d)) V</text>
+  <text x="350" y="532" font-size="10" fill="#3c4043">• Static Cross-KV Cache computed once per sequence</text>
+
+  <!-- Dec Out Arrow -->
+  <line x1="675" y1="492" x2="725" y2="492" stroke="#137333" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Dec Output Logits -->
+  <rect x="730" y="442" width="210" height="105" rx="6" fill="#ffffff" stroke="#137333" stroke-width="1"/>
+  <text x="745" y="466" font-size="12" font-weight="bold" fill="#202124">Token Logits &amp; Diffs</text>
+  <text x="745" y="486" font-size="10" fill="#5f6368">• Candidate token probability</text>
+  <text x="745" y="504" font-size="10" fill="#5f6368">• Synthesized code diffs</text>
+  <text x="745" y="522" font-size="10" fill="#5f6368">• Multi-choice answer options</text>
+  <text x="745" y="538" font-size="9.5" font-family="monospace" fill="#0d652d">P(y_t | y_&lt;t, H_enc)</text>
+
+  <!-- ================= TRAINING SAFEGUARDS & LOSSES (BOTTOM FOOTER) ================= -->
+  <rect x="40" y="575" width="920" height="85" rx="8" fill="url(#lossGrad)" stroke="#c5221f" stroke-width="1.2"/>
+  <text x="60" y="598" font-size="12" font-weight="bold" fill="#b31412">4. DUAL TRAINING OBJECTIVE &amp; MEMORY OPTIMIZATIONS</text>
+
+  <rect x="60" y="608" width="280" height="42" rx="4" fill="#ffffff" stroke="#c5221f" stroke-width="0.8"/>
+  <text x="70" y="624" font-size="10" font-weight="bold" fill="#202124">Streaming LogSumExp Pointer Loss</text>
+  <text x="70" y="640" font-size="9" font-family="monospace" fill="#b31412">L_ptr = -log(sum_{i in match} exp(s_i) / sum exp(s_k))</text>
+
+  <rect x="360" y="608" width="280" height="42" rx="4" fill="#ffffff" stroke="#c5221f" stroke-width="0.8"/>
+  <text x="370" y="624" font-size="10" font-weight="bold" fill="#202124">Differential Diff Token Weighting</text>
+  <text x="370" y="640" font-size="9" font-family="monospace" fill="#b31412">L_diff = sum w_t * L_CE(y_t) [w_diff = 2.5x vs prefix]</text>
+
+  <rect x="660" y="608" width="280" height="42" rx="4" fill="#ffffff" stroke="#c5221f" stroke-width="0.8"/>
+  <text x="670" y="624" font-size="10" font-weight="bold" fill="#202124">Hardware Safeguards (32k/8k VRAM)</text>
+  <text x="670" y="640" font-size="9.5" fill="#3c4043">Tiled Attention • Chunked CE (128) • 43.8 GiB Peak</text>
+</svg>

@@ -54,7 +54,7 @@ Angka v3 pada format/protokol tidak berarti kita sudah memiliki arsitektur V3.
 
 Sumber kode: [konfigurasi](../src/bifocalgemma/config.py),
 [merged attention](../src/bifocalgemma/models/memory_efficient.py),
-[alignment](../src/bifocalgemma/models/alignment.py),
+[alignment](../src/bifocalgemma/models/v2/alignment.py),
 [policy](../src/bifocalgemma/training/policy.py),
 [recipe](../src/bifocalgemma/training/recipes.py).
 

@@ -1,0 +1,18 @@
+\begin{table*}[t]
+\centering
+\small
+\caption{\textbf{Model Topology, Parameter Budget, and Computational Resource Footprint.} Memory and throughput measured during backward pass over 32,768 encoder context and 8,192 decoder context tokens on NVIDIA A100-SXM4-80GB GPUs with BF16 precision and gradient checkpointing.}
+\label{tab:model_configurations}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Model Identifier} & \textbf{Encoder Backbone} & \textbf{Decoder Backbone} & \textbf{Total Params} & \textbf{Trainable Params} & \textbf{Peak VRAM (32k/8k)} & \textbf{Step Throughput} \\
+\midrule
+\texttt{Baseline-E2B-IT} & None (Causal Only) & Gemma 4 2B IT & 2.15 B & 2.15 B (Full SFT) & 34.81 GiB & 3.85 s / update \\
+\texttt{Baseline-E4B-IT} & None (Causal Only) & Gemma 4 4B IT & 4.22 B & 4.22 B (Full SFT) & 45.23 GiB & 5.20 s / update \\
+\midrule
+\texttt{Bifocal-2base-2it} & Gemma 4 2B Base & Gemma 4 2B IT & 4.30 B & 85.4 M (LoRA+Bridge) & 43.83 GiB & 4.22 s / update \\
+\texttt{Bifocal-2it-2it} & Gemma 4 2B IT & Gemma 4 2B IT & 4.30 B & 85.4 M (LoRA+Bridge) & 43.83 GiB & 4.18 s / update \\
+\texttt{Bifocal-E2B-E4B} & Gemma 4 2B Base & Gemma 4 4B IT & 6.37 B & 112.1 M (LoRA+Bridge) & 51.79 GiB & 5.63 s / update \\
+\bottomrule
+\end{tabular}
+\end{table*}

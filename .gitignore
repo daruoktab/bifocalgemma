@@ -10,6 +10,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.egg-info/
 .pytest_cache/
 .ruff_cache/
 __marimo__/
@@ -52,4 +53,9 @@ working-molab-v8-exp-temp.py
 # skills & agent scratch
 .agents/
 .codex/
+.gemini/
+.mimocode/
 AGENTS.md
+
+graphify-out/cache/
+uv.lock

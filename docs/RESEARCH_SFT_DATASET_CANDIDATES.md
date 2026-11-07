@@ -122,7 +122,7 @@ Tokenization strictly couples the base encoder and IT decoder using the official
 - **Decoder Prompt & Prefix**: Rendered using Gemma 4's official IT chat template with `add_generation_prompt=True` and `enable_thinking=False`:
   ```text
   <start_of_turn>user
-  Return only a unified diff fulfilling the instruction using the encoder context.
+  Return only a unified diff fulfilling the instruction.
   {instruction}<end_of_turn>
   <start_of_turn>model
   ```

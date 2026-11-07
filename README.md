@@ -1,41 +1,60 @@
-# BifocalGemma: Research Scaffold for Local Code Repair
-
-**Training aktif v2:** [enam notebook Molab](docs/BIFOCALGEMMA_V2.md), satu model
-per notebook dan satu resep AdamW. Empat pasangan memakai encoder base / decoder
-IT dengan normalized merged attention; dua baseline memakai decoder IT. Cukup Run:
-dua pemeriksaan memori → training → benchmark → upload ke HF, tanpa pilihan tahap.
-E4B→E4B mengkalibrasi satu profil berdasarkan kecepatan dan peak VRAM nyata;
-lima notebook lain mengikuti backend/chunk/microbatch/accumulation yang sama.
-Profil [hasil ukur G4](docs/COLAB_RESULTS.md) sudah tersedia untuk runtime saat ini:
-microbatch1/accumulation4, tiled chunk2048, loss chunk128, checkpointing aktif.
-Folder hasil cukup `outputs/v2/<model>/train/`. [Perbaikan eksekusi](docs/EXECUTION_FIXES.md).
-Dashboard [Wigglystuff dan telemetri waktu](docs/WIGGLYSTUFF_TELEMETRY.md)
-menampilkan progress/loss/status otomatis; runtime bersama dipin di HF sehingga
-keenam notebook tetap ringkas.
-Notebook training sebelumnya tersedia di `notebooks/legacy/`; uraian recipe
-base/optimized di bawah adalah dokumentasi eksperimen v1.
+# BifocalGemma: Bidirectional Repository Encoding for Local Code Repair
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-blue)](pyproject.toml)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue)](pyproject.toml)
 [![GitHub](https://img.shields.io/badge/GitHub-bifocalgemma-green)](https://github.com/daruoktab/bifocalgemma)
 
-**Paper:** *BifocalGemma: Evaluating Bidirectional Repository Encoding for Local Code Repair*
+**BifocalGemma** is an open-source research framework and Hugging Face PreTrainedModel architecture designed for local, repository-level code repair. It couples a bidirectional long-context encoder (32k tokens) with a non-linear SwiGLU dual-gate manifold bridge and a decoupled cross-attention causal decoder (8k tokens), built directly on top of Google Gemma-4 backbones.
 
-BifocalGemma meneliti bagaimana kapasitas reader dan generator memengaruhi pemahaman
-codebase serta perbaikan bug lintas file. Rancangan aktif memakai **encoder Gemma 4
-base + decoder Gemma 4 IT**, langsung dibangun dengan merged attention, lalu
-supervised fine-tuning. Teacher network dan distillation bersifat opsional.
+For full architectural details, mathematical formulations, and empirical evaluations, see the preprint paper in [`paper/main.tex`](paper/main.tex) and the repository layout guide in [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md).
 
-Default tuning memakai koleksi private HF **`mixed_context_enc32k_dec8k_v3`**:
-**44.408 train / 4.934 dev**, gabungan editing EditPackFT, CommitPackFT Python,
-NextCoder Python, serta repair/localization/dependency completion dari snapshot
-pre-fix SWE-rebench. Target mengikuti task: unified diff, path JSON, atau kode.
-Split dan source revision dibekukan; overflow ditolak tanpa pemotongan diam-diam.
-**RL dan VM/Docker tidak diperlukan pada jalur tuning.** Lisensi kode seed sintetis
-NextCoder belum terverifikasi. [Rilis context v3](docs/CONTEXT_DATA_RELEASE_V3.md)
-menjelaskan cohort aktif; [audit v2](docs/DATASET_REMEDIATION_V2.md) mencatat
-fondasi kurasi sebelumnya. Status dan SHA rilis ada di
-[dataset releases](docs/DATASET_RELEASES.md).
+---
+
+## Quickstart
+
+### 1. Standalone Hugging Face Model Usage
+
+`BifocalGemmaForCausalLM` is a standard Hugging Face `PreTrainedModel` with full `AutoModelForCausalLM` compatibility, automatic LoRA parameter consolidation via `merge_and_unload()`, and zero-dependency standalone exports.
+
+```python
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from bifocalgemma import BifocalGemmaConfig, BifocalGemmaForCausalLM
+
+# Option A: Build and initialize from pretrained Gemma-4 backbones
+model = BifocalGemmaForCausalLM.from_pretrained_backbones(
+    decoder_path_or_id="google/gemma-4-E2B-it",
+    encoder_path_or_id="google/gemma-4-E2B",
+    device="cuda" if torch.cuda.is_available() else "cpu",
+)
+
+# Option B: Load an exported standalone checkpoint directly
+model = BifocalGemmaForCausalLM.from_pretrained("outputs/bifocalgemma_2b/final_pretrained_model")
+
+# Standard Hugging Face autoregressive generation with 32k bidirectional context
+tokens = model.generate(
+    input_ids=decoder_prefix_ids,
+    encoder_input_ids=repo_context_ids,
+    max_new_tokens=256,
+)
+
+# Save intact, portable Hugging Face model (auto-merges LoRA adapters)
+model.save_pretrained("outputs/my_bifocalgemma_model")
+```
+
+### 2. Fast From-Scratch Training
+
+Train BifocalGemma-2B or the baseline model end-to-end with our two-stage curriculum (Stage 1: Bridge Alignment $\to$ Stage 2: Joint LoRA SFT):
+
+```bash
+# Run CLI training (auto-detects CUDA/BF16, saves intact Hugging Face model)
+python -m bifocalgemma train-fast --model bifocalgemma-2b --steps 2000 --output-dir outputs/bifocalgemma_2b
+
+# Or interactive training via Marimo notebook
+uv run marimo edit notebooks/train_bifocalgemma_fast.py
+```
+
+---
 
 ## Matriks penelitian
 
@@ -198,6 +217,8 @@ profiling untuk hyperparameters; teacher_required=false.
 | Folder | Isi |
 | --- | --- |
 | `src/bifocalgemma/` | Implementasi model, data, training, evaluasi, dan CLI |
+| `src/bifocalgemma/v3/` | Arsitektur dan training V3 (jalur produksi) |
+| `src/bifocalgemma/models/v2/` | Arsitektur V2 legacy (merged attention) |
 | `notebooks/` | Notebook standalone dan ekspor Jupyter training |
 | `tools/` | Generator notebook, template bersama, kurasi dan audit data |
 | `tests/` | Tes dan fixture kecil untuk kontrak/numerik/resume |

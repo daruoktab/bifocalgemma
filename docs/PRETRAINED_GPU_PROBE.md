@@ -55,7 +55,7 @@ loader memakai akses anonim eksplisit untuk checkpoint publik. Token invalid
 menghentikan downstream loaders. Nilai token tidak ditulis ke report atau cache
 login; report hanya menyimpan mode/source/username/verified.
 
-[transfer_text_checkpoint](../src/bifocalgemma/models/checkpoint_transfer.py)
+[transfer_text_checkpoint](../src/bifocalgemma/models/v2/checkpoint_transfer.py)
 memeriksa seluruh required text keys/shapes sebelum copy. Unexpected text keys
 menimbulkan error, kecuali K/V/norm pada native shared-KV layers yang memang tidak
 memiliki proyeksi sendiri. Semua nontext tensors diabaikan dengan count pada report.

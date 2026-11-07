@@ -123,7 +123,7 @@ def prepare_sweqa(cache, output):
                     "visible_paths": paths,
                     "task_scope": "conditional_code_comprehension",
                     "max_encoder_tokens": 8192,
-                    "max_new_tokens": 32,
+                    "max_new_tokens": 128,
                     "context_policy": "released_" + condition,
                     "official_protocol": False,
                     "dataset_license": "apache-2.0",
@@ -277,7 +277,7 @@ def prepare_longcodeqa(cache, output):
                 "context": row["prompt"],
                 "task_scope": "repository_comprehension",
                 "max_encoder_tokens": 32768,
-                "max_new_tokens": 32,
+                "max_new_tokens": 128,
                 "context_policy": "full_released_32k_prompt",
                 "official_protocol": False,
                 "dataset_license": "apache-2.0",
@@ -343,7 +343,7 @@ def matched_eval_cohort(source, output, tokenizer_cache, *, encoder_limit, decod
                 lengths[spec.name]["prefix"] for spec in EXPERIMENT_SPECS if spec.encoder
             )
             generation_budget = min(
-                32 if row["task_type"] == "mcq" else 8192, decoder_limit - paired_prefix
+                128 if row["task_type"] == "mcq" else 8192, decoder_limit - paired_prefix
             )
             if generation_budget < 1:
                 raise ValueError("decoder_prefix_exceeds_budget")

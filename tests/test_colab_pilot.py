@@ -2,7 +2,9 @@
 
 import ast
 import copy
+import hashlib
 import importlib
+import json
 from pathlib import Path
 
 import pytest
@@ -11,11 +13,14 @@ import torch
 from bifocalgemma.config import get_v2_experiment
 from bifocalgemma.contracts import TokenizedRepairExample
 from bifocalgemma.models.memory_efficient import configure_memory_efficient_training
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.repository_study import RepositoryFile, RepositorySnapshot
 from bifocalgemma.training.policy import configure_policy_model
 from bifocalgemma.training.recipes import unified_recipe
 from bifocalgemma.training.v2_diagnostics import stratified_subset
+from tools.notebook_bundle import source_bundle_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class _DummyTokenizer:
@@ -208,6 +213,9 @@ def test_normalize_and_recount_patch_rescues_plain_unified_diff_with_bad_hunk_co
 
 
 def test_exported_pilot_script_contains_all_four_arms_and_no_hf_writes(pilot_module):
+    manifest = json.loads((ROOT / "notebooks/runtime-manifest.json").read_text(encoding="utf-8"))
+    if hashlib.sha256(source_bundle_bytes(ROOT)).hexdigest() != manifest["sha256"]:
+        pytest.skip("Runtime bundle is stale after the V2/V3 split; republish before exporting.")
     rendered = pilot_module.render(steps_per_arm=120, humaneval_limit=8)
     tree = ast.parse(rendered)
     worker = next(

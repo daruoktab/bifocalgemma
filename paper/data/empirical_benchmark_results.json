@@ -1,0 +1,29 @@
+{
+  "sweqa_clean_oracle": {
+    "accuracy": 0.7388,
+    "n": 9072
+  },
+  "sweqa_noisy_oracle": {
+    "accuracy": 0.7369,
+    "n": 9072,
+    "degradation": -0.0019
+  },
+  "longcodeqa": {
+    "accuracy": 0.5514,
+    "n": 107
+  },
+  "humanevalfix_clean": {
+    "syntax_pass_rate": 0.3171,
+    "functional_pass_rate": 0.0192,
+    "headline": 0.0061
+  },
+  "crosscodelong": {
+    "sequence_similarity": 0.3187,
+    "regex_f1": 0.3670,
+    "exact_match": 0.0
+  },
+  "gsm8k_8shot": {
+    "accuracy": 0.7309,
+    "n": 1319
+  }
+}

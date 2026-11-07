@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from bifocalgemma.models.model import BifocalGemmaModel
+from bifocalgemma.models.v2.model import BifocalGemmaModel
 from bifocalgemma.scaffold import FeatureNotReadyError
 
 

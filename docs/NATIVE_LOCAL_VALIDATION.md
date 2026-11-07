@@ -29,7 +29,7 @@ Hasil aktual berada di [VALIDATION](VALIDATION.md).
 
 ## M07 — factory native tiny
 
-API [build_native_tiny_model(spec)](../src/bifocalgemma/models/native.py) terpisah
+API [build_native_tiny_model(spec)](../src/bifocalgemma/models/v2/native.py) terpisah
 secara eksplisit dari M04/M05 pretrained factory. Semua bobot diinisialisasi acak.
 `native_config(size, tiny=False)` hanya untuk inspeksi bentuk pada `meta`.
 Metadata kecil dikemas dalam package assets sehingga factory tidak bergantung

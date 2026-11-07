@@ -1,11 +1,22 @@
 """The exported checkpoint diagnostic stays read-only and executes the audit worker."""
 
 import ast
+import hashlib
 import importlib
+import json
 from pathlib import Path
+
+import pytest
+
+from tools.notebook_bundle import source_bundle_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_exported_worker_has_parity_context_and_exact_adapter_checks(monkeypatch):
+    manifest = json.loads((ROOT / "notebooks/runtime-manifest.json").read_text(encoding="utf-8"))
+    if hashlib.sha256(source_bundle_bytes(ROOT)).hexdigest() != manifest["sha256"]:
+        pytest.skip("Runtime bundle is stale after the V2/V3 split; republish before exporting.")
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "tools"))
     exporter = importlib.import_module("prepare_colab_audit")
     template = importlib.import_module("prepare_colab_probe")

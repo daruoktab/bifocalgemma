@@ -346,7 +346,7 @@ def score_run(args):
 
 def generate_run(args):
     from bifocalgemma.inference.generation import generate_patch
-    from bifocalgemma.models.pretrained import (
+    from bifocalgemma.models.v2.pretrained import (
         load_local_native_model,
         load_sft_adapters_for_inference,
     )

@@ -106,16 +106,7 @@ def task_prompt(row, *, paired):
     kind = row.get("task_type", "repair")
     if kind not in TASK_INSTRUCTIONS:
         raise ValueError("unsupported_sft_task")
-    if kind == "repair":
-        prompt = (
-            "Return only a unified diff fulfilling the instruction using the encoder context.\n"
-            if paired
-            else "Return only a unified diff fulfilling the instruction.\n\n"
-        )
-    else:
-        prompt = TASK_INSTRUCTIONS[kind] + (
-            "\nUse the supplied encoder context.\n" if paired else "\n\n"
-        )
+    prompt = TASK_INSTRUCTIONS[kind] + "\n\n"
     return prompt + row["instruction"] if paired else prompt + row["context"]
 
 

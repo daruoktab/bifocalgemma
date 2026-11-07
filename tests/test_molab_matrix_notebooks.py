@@ -22,7 +22,7 @@ if str(ROOT / "src") not in sys.path:
 from bifocalgemma.contracts import TokenizedRepairExample  # noqa: E402
 from bifocalgemma.inference.generation import greedy_decode  # noqa: E402
 from bifocalgemma.models.memory_efficient import configure_memory_efficient_training  # noqa: E402
-from bifocalgemma.models.native import NativeTinyModel  # noqa: E402
+from bifocalgemma.models.v2.native import NativeTinyModel  # noqa: E402
 from bifocalgemma.training.hub import checked_prefix  # noqa: E402
 from bifocalgemma.training.policy import configure_policy_model  # noqa: E402
 from bifocalgemma.training.recipes import unified_recipe  # noqa: E402
@@ -66,6 +66,7 @@ from tools.molab_matrix_support import (  # noqa: E402
     restore_optimizer_state_by_name,
     run_matrix_stage,
     save_matrix_checkpoint,
+    synthesize_comprehension_examples,
 )
 
 EXPECTED_MODELS = {
@@ -363,7 +364,9 @@ def test_v3_critical_attention_beta_and_triton_tile_clamping():
     enc_valid[1, :512] = True  # N_enc = 512 -> beta == 1.0
     scaled_q = _compute_per_row_cross_query(q_cross, enc_valid, 4096)
     expected_beta_0 = critical_attention_beta(4096)
-    assert torch.allclose(scaled_q[0], torch.full_like(scaled_q[0], 1.0 / expected_beta_0), atol=1e-6)
+    assert torch.allclose(
+        scaled_q[0], torch.full_like(scaled_q[0], 1.0 / expected_beta_0), atol=1e-6
+    )
     assert torch.allclose(scaled_q[1], torch.ones_like(scaled_q[1]), atol=1e-6)
 
     clamp_256 = clamped_triton_kernel_options(256)
@@ -462,14 +465,37 @@ def test_anti_forgetting_curriculum_balances_comprehension_and_preserves_length(
     assert empty_cur == [] and empty_stats["total_examples"] == 0
 
 
+def test_comprehension_targets_stay_inside_baseline_visible_prefix():
+    # Unique tokens so a target sampled beyond the 4096-token window cannot
+    # coincidentally also appear inside it.
+    long_prefix = (2, *tuple(1000 + i for i in range(6000)))
+    base = TokenizedRepairExample(
+        "long_baseline",
+        (),
+        long_prefix,
+        (7001, 7002, 999),
+        metadata={"source": "synthetic", "task_type": "repair"},
+    )
+    synthesized = synthesize_comprehension_examples([base], 40, seed=17)
+    assert len(synthesized) == 40
+    for example in synthesized:
+        assert len(example.decoder_prefix_ids) <= 4096
+        visible = set(example.decoder_prefix_ids)
+        assert all(token in visible for token in example.target_ids[:-1])
+
+
 def test_prepare_sampled_benchmark_collection_deterministic_100_cases(tmp_path):
     src_dir = tmp_path / "crosscodelong_chunk_gemma32k_dec8k_v1"
     src_dir.mkdir(parents=True)
-    with (src_dir / "inputs.jsonl").open("w", encoding="utf-8", newline="\n") as f_in, (
-        src_dir / "hidden_gold.jsonl"
-    ).open("w", encoding="utf-8", newline="\n") as f_gold:
+    with (
+        (src_dir / "inputs.jsonl").open("w", encoding="utf-8", newline="\n") as f_in,
+        (src_dir / "hidden_gold.jsonl").open("w", encoding="utf-8", newline="\n") as f_gold,
+    ):
         for i in range(250):
-            f_in.write(json.dumps({"instance_id": f"case_{i:04d}", "role": "eval", "context": f"x={i}"}) + "\n")
+            f_in.write(
+                json.dumps({"instance_id": f"case_{i:04d}", "role": "eval", "context": f"x={i}"})
+                + "\n"
+            )
             f_gold.write(json.dumps({"instance_id": f"case_{i:04d}", "reference": f"x={i}"}) + "\n")
 
     # Full benchmark (sample_limit=None) returns original directory untouched
@@ -480,9 +506,18 @@ def test_prepare_sampled_benchmark_collection_deterministic_100_cases(tmp_path):
     sampled_2 = prepare_sampled_benchmark_collection(
         src_dir, sample_limit=100, sample_seed=17, output_dir=tmp_path / "second_check"
     )
-    rows_1 = [json.loads(line) for line in (sampled_1 / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
-    gold_1 = [json.loads(line) for line in (sampled_1 / "hidden_gold.jsonl").read_text(encoding="utf-8").splitlines()]
-    rows_2 = [json.loads(line) for line in (sampled_2 / "inputs.jsonl").read_text(encoding="utf-8").splitlines()]
+    rows_1 = [
+        json.loads(line)
+        for line in (sampled_1 / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    gold_1 = [
+        json.loads(line)
+        for line in (sampled_1 / "hidden_gold.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    rows_2 = [
+        json.loads(line)
+        for line in (sampled_2 / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
 
     assert len(rows_1) == 100
     assert [r["instance_id"] for r in rows_1] == [g["instance_id"] for g in gold_1]
@@ -531,10 +566,17 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline():
             assert not param.requires_grad
 
     # Stage 2: Joint SFT on paired model
-    groups2, summary2 = configure_matrix_stage(model, policy, freeze_decoder=False, total_steps=5551)
+    groups2, summary2 = configure_matrix_stage(
+        model, policy, freeze_decoder=False, total_steps=5551
+    )
     assert summary2["freeze_decoder"] is False
     assert summary2["active_groups"] == ["encoder", "decoder", "alignment"]
-    assert [g["name"] for g in groups2] == ["encoder", "decoder", "alignment_bridge_decay", "alignment"]
+    assert [g["name"] for g in groups2] == [
+        "encoder",
+        "decoder",
+        "alignment_bridge_decay",
+        "alignment",
+    ]
     assert summary2["decoder_trainable_tensors"] > 0
 
     # Baseline decoder-only model (`e2b-it`) keeps decoder LoRA active in both stages
@@ -544,7 +586,9 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline():
     configure_policy_model(model_base, policy_base)
     configure_memory_efficient_training(model_base)
     configure_full_rank_cross_attention(model_base)
-    _, sum_base = configure_matrix_stage(model_base, policy_base, freeze_decoder=True, total_steps=5551)
+    _, sum_base = configure_matrix_stage(
+        model_base, policy_base, freeze_decoder=True, total_steps=5551
+    )
     assert sum_base["freeze_decoder"] is False
     assert sum_base["active_groups"] == ["decoder"]
     assert sum_base["decoder_trainable_tensors"] > 0
@@ -692,7 +736,9 @@ def test_cached_uncached_and_batched_greedy_decode_equivalence():
     finally:
         setattr(model, "encode_context", orig_encode)
 
-    assert encode_calls == [(3, 6)]  # Single true batched encoder pass across all 3 heterogeneous items
+    assert encode_calls == [
+        (3, 6)
+    ]  # Single true batched encoder pass across all 3 heterogeneous items
     assert len(batched) == 3
     for b_idx in range(3):
         assert batched[b_idx].token_ids == singles[b_idx].token_ids
@@ -746,10 +792,14 @@ def test_synchronize_matrix_v3_retains_stage1_milestone_and_retries_412_contenti
     groups, _ = configure_matrix_stage(model, policy, freeze_decoder=True, total_steps=5551)
     optimizer = torch.optim.AdamW(groups)
 
-    save_matrix_checkpoint(model, optimizer, train_dir / "checkpoint-005551", 5551, "frozen_decoder", {}, {})
+    save_matrix_checkpoint(
+        model, optimizer, train_dir / "checkpoint-005551", 5551, "frozen_decoder", {}, {}
+    )
     save_matrix_checkpoint(model, optimizer, train_dir / "checkpoint-006000", 6000, "joint", {}, {})
     save_matrix_checkpoint(model, optimizer, train_dir / "checkpoint-007000", 7000, "joint", {}, {})
-    save_matrix_checkpoint(model, optimizer, train_dir / "checkpoint-011102", 11102, "joint", {}, {})
+    save_matrix_checkpoint(
+        model, optimizer, train_dir / "checkpoint-011102", 11102, "joint", {}, {}
+    )
 
     prefix = f"2base-2it/{spec.name}/train"
     add_attempts = 0
@@ -848,7 +898,10 @@ def test_matrix_tokenization_patch_it_encoder_and_query_prefix_contract():
     import bifocalgemma.data.context_tasks as ct_mod
     import bifocalgemma.evaluation.context as eval_ctx_mod
 
-    assert format_query_injected_context("def foo(): pass", "Fix foo") == "[QUERY] Fix foo\ndef foo(): pass"
+    assert (
+        format_query_injected_context("def foo(): pass", "Fix foo")
+        == "[QUERY] Fix foo\ndef foo(): pass"
+    )
 
     class MockITEncoder:
         bos_token_id = 2
@@ -943,7 +996,9 @@ def test_pointer_loss_gradient_checkpointing_and_trivial_filtering():
 
     # enc: [2, 10, 20, 30, 40, 107, 236743, 70]
     # target: [10, 107, 236743, -100, 40, 50] -> 107 and 236743 are trivial, 10 and 40 match!
-    enc_ids = torch.tensor([[2, 10, 20, 30, 40, 107, 236743, 70], [2, 11, 21, 31, 41, 107, 236743, 71]])
+    enc_ids = torch.tensor(
+        [[2, 10, 20, 30, 40, 107, 236743, 70], [2, 11, 21, 31, 41, 107, 236743, 71]]
+    )
     target_ids = torch.tensor([[10, 107, 236743, -100, 40, 50], [11, 107, 236743, 41, -100, -100]])
     enc_mask = torch.ones_like(enc_ids, dtype=torch.bool)
 
@@ -1038,4 +1093,3 @@ def test_stage1_to_stage2_optimizer_state_transfer(tmp_path):
     # 7. Direct verification of restore_optimizer_state_by_name helper
     direct_restored = restore_optimizer_state_by_name(model, opt2, opt1.state_dict())
     assert direct_restored["restored"] == stage1_state_count
-

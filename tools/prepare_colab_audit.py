@@ -28,7 +28,7 @@ def audit(runtime_root):
     from bifocalgemma.inference.generation import greedy_decode
     from bifocalgemma.models.inference_cache import InferenceCache, cached_logits
     from bifocalgemma.models.memory_efficient import configure_memory_efficient_training
-    from bifocalgemma.models.pretrained import load_sft_adapters_for_inference
+    from bifocalgemma.models.v2.pretrained import load_sft_adapters_for_inference
     from bifocalgemma.training.stages import atomic_json
     from bifocalgemma.training.v2 import DATASET_REPO, DATASET_REVISION, MODELS, download_model
 
@@ -292,7 +292,7 @@ def audit_controls(runtime_root):
     from bifocalgemma.evaluation.context import prompt_ids, score_context_case
     from bifocalgemma.inference.generation import greedy_decode
     from bifocalgemma.models.memory_efficient import configure_memory_efficient_training
-    from bifocalgemma.models.pretrained import load_sft_adapters_for_inference
+    from bifocalgemma.models.v2.pretrained import load_sft_adapters_for_inference
     from bifocalgemma.training.stages import atomic_json
     from bifocalgemma.training.v2 import MODELS, download_model
 
@@ -437,7 +437,7 @@ def audit_decoder_control(runtime_root):
     from bifocalgemma.evaluation.context import score_context_case
     from bifocalgemma.inference.generation import greedy_decode
     from bifocalgemma.models.memory_efficient import configure_memory_efficient_training
-    from bifocalgemma.models.pretrained import (
+    from bifocalgemma.models.v2.pretrained import (
         load_local_native_model,
         load_sft_adapters_for_inference,
     )

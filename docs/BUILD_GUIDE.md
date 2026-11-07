@@ -1,5 +1,9 @@
 # Build Guide: Blok Konstruksi dan Acceptance Criteria
 
+> **Status dokumen (2026-11-03):** panduan ini mencakup blok **V2 legacy**
+> (`src/bifocalgemma/models/v2/`). Arsitektur produksi V3 dan peta modulnya ada di
+> [peta repo](REPO_LAYOUT.md).
+
 Setiap blok memiliki ID, file sumber, kontrak dan batas readiness. Implemented/reference
 tidak membuat placeholder sesudahnya otomatis siap. Teacher/conversion/distillation
 tidak berada pada jalur default direct SFT.
@@ -15,13 +19,13 @@ tidak berada pada jalur default direct SFT.
 | [D04](#d04) | placeholder | [data/adapters.py](../src/bifocalgemma/data/adapters.py) | Training dataset adapters and overlap audit |
 | [D05](#d05) | placeholder | [data/ast.py](../src/bifocalgemma/data/ast.py) | Tree-sitter features aligned to original token offsets |
 | [D06](#d06) | implemented | [data/swesmith.py](../src/bifocalgemma/data/swesmith.py) | Local patch direction and snapshot hash contract |
-| [M07](#m07) | native_tiny | [models/native.py](../src/bifocalgemma/models/native.py) | Native random-weight encoder/merged decoder integration |
-| [M01](#m01) | reference | [models/merged_attention.py](../src/bifocalgemma/models/merged_attention.py) | Joint softmax, GQA and asymmetric projection |
-| [M02](#m02) | implemented | [models/embeddings.py](../src/bifocalgemma/models/embeddings.py) | Symmetric word parameter sharing |
-| [M03](#m03) | reference | [models/reference.py](../src/bifocalgemma/models/reference.py) | Tiny offline assembly and backward |
-| [M04](#m04) | placeholder | [models/initialization.py](../src/bifocalgemma/models/initialization.py) | Base/IT weight mapping into Gemma layers |
-| [M05](#m05) | placeholder | [models/model.py](../src/bifocalgemma/models/model.py) | Full Gemma encoder/merged decoder integration |
-| [M06](#m06) | placeholder | [models/cache.py](../src/bifocalgemma/models/cache.py) | Production self/cross KV and repository cache |
+| [M07](#m07) | native_tiny | [models/v2/native.py](../src/bifocalgemma/models/v2/native.py) | Native random-weight encoder/merged decoder integration |
+| [M01](#m01) | reference | [models/v2/merged_attention.py](../src/bifocalgemma/models/v2/merged_attention.py) | Joint softmax, GQA and asymmetric projection |
+| [M02](#m02) | implemented | [models/v2/embeddings.py](../src/bifocalgemma/models/v2/embeddings.py) | Symmetric word parameter sharing |
+| [M03](#m03) | reference | [models/v2/reference.py](../src/bifocalgemma/models/v2/reference.py) | Tiny offline assembly and backward |
+| [M04](#m04) | placeholder | [models/v2/initialization.py](../src/bifocalgemma/models/v2/initialization.py) | Base/IT weight mapping into Gemma layers |
+| [M05](#m05) | placeholder | [models/v2/model.py](../src/bifocalgemma/models/v2/model.py) | Full Gemma encoder/merged decoder integration |
+| [M06](#m06) | placeholder | [models/v2/cache.py](../src/bifocalgemma/models/v2/cache.py) | Production self/cross KV and repository cache |
 | [T01](#t01) | implemented | [training/objectives.py](../src/bifocalgemma/training/objectives.py) | Patch-only supervised cross entropy |
 | [T02](#t02) | placeholder | [training/trainer.py](../src/bifocalgemma/training/trainer.py) | Profiled PEFT optimizer and training loop |
 | [T03](#t03) | placeholder | [training/profiling.py](../src/bifocalgemma/training/profiling.py) | Actual memory and latency measurements |
@@ -136,7 +140,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M01 — Joint softmax, GQA and asymmetric projection
 
-**Status:** reference. **Source:** [models/merged_attention.py](../src/bifocalgemma/models/merged_attention.py).
+**Status:** reference. **Source:** [models/v2/merged_attention.py](../src/bifocalgemma/models/v2/merged_attention.py).
 
 - Dependencies: D01/D02 at assembly.
 - Contract: ReferenceMergedAttention(X,H,encoder_valid,decoder_valid) → [B,Ldec,Ddec].
@@ -147,7 +151,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M02 — Symmetric word parameter sharing
 
-**Status:** implemented. **Source:** [models/embeddings.py](../src/bifocalgemma/models/embeddings.py).
+**Status:** implemented. **Source:** [models/v2/embeddings.py](../src/bifocalgemma/models/v2/embeddings.py).
 
 - Dependencies: C01.
 - Contract: apply_word_embedding_policy(encoder_words,decoder_words,lm_head,tie_encoder_decoder=...) → policy summary.
@@ -158,7 +162,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M03 — Tiny offline assembly and backward
 
-**Status:** reference. **Source:** [models/reference.py](../src/bifocalgemma/models/reference.py).
+**Status:** reference. **Source:** [models/v2/reference.py](../src/bifocalgemma/models/v2/reference.py).
 
 - Dependencies: D02, M01, M02, T01.
 - Contract: TinyReferenceModel.forward(batch) → ModelOutput; run_reference_smoke(spec,device) → synthetic report.
@@ -169,7 +173,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M04 — Base/IT weight mapping into Gemma layers
 
-**Status:** placeholder. **Source:** [models/initialization.py](../src/bifocalgemma/models/initialization.py).
+**Status:** placeholder. **Source:** [models/v2/initialization.py](../src/bifocalgemma/models/v2/initialization.py).
 
 - Dependencies: C01, M02.
 - Contract: describe_initialization(spec) → provenance plan; initialize_pretrained_components(spec) → InitializedComponents(encoder, decoder, H adapter, provenance).
@@ -180,7 +184,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M05 — Full Gemma encoder/merged decoder integration
 
-**Status:** placeholder. **Source:** [models/model.py](../src/bifocalgemma/models/model.py).
+**Status:** placeholder. **Source:** [models/v2/model.py](../src/bifocalgemma/models/v2/model.py).
 
 - Dependencies: M04, M01/M02 semantics.
 - Contract: BifocalGemmaModel.forward(batch) → logits/loss; encode_context/decode_logits → native tensor operations.
@@ -191,7 +195,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M06 — Production self/cross KV and repository cache
 
-**Status:** placeholder. **Source:** [models/cache.py](../src/bifocalgemma/models/cache.py).
+**Status:** placeholder. **Source:** [models/v2/cache.py](../src/bifocalgemma/models/v2/cache.py).
 
 - Dependencies: M05.
 - Contract: RepositoryCache.get_or_encode(context_fingerprint) → EncoderMemory; future decoder cache wiring.
@@ -301,7 +305,7 @@ Tidak ada skor/checkpoint dummy atau fallback model synthetic pada factory nativ
 
 ### M07 — Native tiny integration
 
-**Status:** native_tiny. **Source:** [models/native.py](../src/bifocalgemma/models/native.py).
+**Status:** native_tiny. **Source:** [models/v2/native.py](../src/bifocalgemma/models/v2/native.py).
 
 - Dependencies: C01/D02/T01 and packaged config snapshots; no M04 weight loader.
 - Contract: build_native_tiny_model(spec), run_native_smoke(spec,device); six models.

@@ -175,7 +175,7 @@ def test_complete_epoch_training_budget_all_families(index, tmp_path):
 
     from bifocalgemma.config import EXPERIMENT_SPECS
     from bifocalgemma.contracts import TokenizedRepairExample
-    from bifocalgemma.models.native import build_native_tiny_model
+    from bifocalgemma.models.v2.native import build_native_tiny_model
     from bifocalgemma.training.curated_sft import fit_curated_sft
 
     previous = torch.get_num_threads()
@@ -217,7 +217,7 @@ def test_curated_resume_rejects_runtime_drift(tmp_path, monkeypatch):
 
     from bifocalgemma.config import EXPERIMENT_SPECS
     from bifocalgemma.contracts import TokenizedRepairExample
-    from bifocalgemma.models.native import build_native_tiny_model
+    from bifocalgemma.models.v2.native import build_native_tiny_model
     from bifocalgemma.training.curated_sft import fit_curated_sft
 
     previous = torch.get_num_threads()

@@ -49,7 +49,7 @@ SHA-256 payload sampel first-rows InstructCoder yang diperiksa: `f1ccb4fbfdb3f93
 
 ## Pemeriksaan kode dan working tree
 
-`src/bifocalgemma/config.py` menetapkan `share_ple=False`. `_tie_words` pada `src/bifocalgemma/models/native.py` hanya menyamakan decoder/head dan ordinary words encoder simetris. Template notebook juga mengeluarkan `PLE_shared=False`.
+`src/bifocalgemma/config.py` menetapkan `share_ple=False`. `_tie_words` pada `src/bifocalgemma/models/v2/native.py` hanya menyamakan decoder/head dan ordinary words encoder simetris. Template notebook juga mengeluarkan `PLE_shared=False`.
 
 `editing_record` menghasilkan diff dan metadata; validasi fungsi ini tidak menerapkan patch ke repo upstream. Adapter code review memperlakukan potongan window sebagai virtual-file source: validitas patch atas window berbeda dari validitas patch atas file asli pada commit upstream. Simpan offset/snapshot/provenance apabila ingin menggunakan output sebagai patch repo nyata. Parsing dedented chunk juga belum membuktikan potongan itu complete module; `return` di luar fungsi dapat lolos `ast.parse`.
 

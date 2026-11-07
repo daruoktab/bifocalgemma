@@ -17,7 +17,7 @@ def test_joint_gqa_output_and_gradients_at_native_head_widths(width, dtype):
     v = torch.randn_like(k, requires_grad=True)
     enc_valid = torch.tensor([[1, 1, 1, 0, 0]], dtype=torch.bool)
     dec_valid = torch.tensor([[0, 1, 1, 1, 1, 1, 1]], dtype=torch.bool)
-    from bifocalgemma.models.merged_attention import build_joint_visibility
+    from bifocalgemma.models.v2.merged_attention import build_joint_visibility
 
     mask = build_joint_visibility(enc_valid, dec_valid, 3)
     # Match native Gemma eager's BF16 score/probability rounding. SDPA accumulates
@@ -83,7 +83,7 @@ def test_flex_joint_gqa_matches_reference_on_cuda(width, dtype):
             )
         raise
     if dtype == torch.bfloat16:
-        from bifocalgemma.models.merged_attention import build_joint_visibility
+        from bifocalgemma.models.v2.merged_attention import build_joint_visibility
 
         # Native BF16 rounds scores and probabilities; fused attention accumulates
         # them differently. Check BOTH against FP32 rather than relaxing an

@@ -23,8 +23,8 @@ from bifocalgemma.data.repository import (
 )
 from bifocalgemma.evaluation.native_python import score_python_patch, summarize_native_results
 from bifocalgemma.inference.generation import greedy_decode
-from bifocalgemma.models.native import build_native_tiny_model
-from bifocalgemma.models.pretrained import load_sft_adapters_for_inference
+from bifocalgemma.models.v2.native import build_native_tiny_model
+from bifocalgemma.models.v2.pretrained import load_sft_adapters_for_inference
 from bifocalgemma.training.offline_sft import save_sft_checkpoint
 from bifocalgemma.training.policy import (
     build_training_groups,
@@ -415,7 +415,7 @@ def test_last_token_logits_match_full_head():
 def test_local_loader_preflights_and_preserves_shared_words(tmp_path):
     from safetensors.torch import save_file
 
-    from bifocalgemma.models.pretrained import load_local_native_model
+    from bifocalgemma.models.v2.pretrained import load_local_native_model
 
     original = build_native_tiny_model(EXPERIMENT_SPECS[0])
     assert original.encoder is not None

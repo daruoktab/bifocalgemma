@@ -11,7 +11,7 @@ post-training conversion dan teacher network adalah opsi, bukan pipeline wajib.
 | Bagian | Spec utama | Kode |
 | --- | --- | --- |
 | Enam model dan RQ | [EXPERIMENT_DESIGN](EXPERIMENT_DESIGN.md) | [C01](../src/bifocalgemma/config.py) |
-| Tensor/attention/init | [ARCHITECTURE](ARCHITECTURE.md) | [M01](../src/bifocalgemma/models/merged_attention.py), [M04](../src/bifocalgemma/models/initialization.py) |
+| Tensor/attention/init | [ARCHITECTURE](ARCHITECTURE.md) | [M01](../src/bifocalgemma/models/v2/merged_attention.py), [M04](../src/bifocalgemma/models/v2/initialization.py) |
 | Data dan masking | [DATA_PIPELINE](DATA_PIPELINE.md) | [D01](../src/bifocalgemma/contracts.py), [D02](../src/bifocalgemma/data/collator.py) |
 | Objective/trainer | [TRAINING](TRAINING.md) | [T01](../src/bifocalgemma/training/objectives.py), [T02](../src/bifocalgemma/training/trainer.py) |
 | Inference/evaluation | [EVALUATION](EVALUATION.md) | [I01](../src/bifocalgemma/inference/generation.py), [E01](../src/bifocalgemma/evaluation/harness.py) |
@@ -47,7 +47,7 @@ convergence atau kualitas repair.
 
 ## Batas estimasi KV lama
 
-[RepoContextRouter](../src/bifocalgemma/models/routing.py) tetap utilitas reference.
+[RepoContextRouter](../src/bifocalgemma/models/v2/routing.py) tetap utilitas reference.
 calculate_decoder_self_kv_savings memakai full-attention layers seragam:
 
 ```text

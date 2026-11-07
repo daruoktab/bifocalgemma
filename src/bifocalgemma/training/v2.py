@@ -24,7 +24,10 @@ from bifocalgemma.models.memory_efficient import (
     DEFAULT_MEMORY_POLICY,
     configure_memory_efficient_training,
 )
-from bifocalgemma.models.pretrained import load_local_native_model, load_sft_adapters_for_inference
+from bifocalgemma.models.v2.pretrained import (
+    load_local_native_model,
+    load_sft_adapters_for_inference,
+)
 from bifocalgemma.training.benchmark_reset import reset_local_benchmarks
 from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
 from bifocalgemma.training.curated_sft import prepare_curated_training

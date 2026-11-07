@@ -129,7 +129,7 @@ BifocalGemma V3 is engineered to surpass the decoder-only baselines decisively a
 ### 2.1 Double Linear Projection Redundancy and Absence of Manifold Warping
 
 #### 2.1.1 Composition of Linear Maps
-In BifocalGemma V2 (`src/bifocalgemma/models/alignment.py:8-37` and `memory_efficient.py:319-324`), the bridge adapter `NormalizedAlignment` consists of an unnormalized linear transformation $W_{\text{align}} \in \mathbb{R}^{d_{\text{dec}} \times d_{\text{enc}}}$ followed by RMSNorm. Subsequently, within each decoder layer $l \in [1, L_{\text{dec}}]$, the aligned hidden state is projected by the decoder's native key projection $W_k^{(l)} \in \mathbb{R}^{d_{\text{kv}} \times d_{\text{dec}}}$ and value projection $W_v^{(l)} \in \mathbb{R}^{d_{\text{kv}} \times d_{\text{dec}}}$.
+In BifocalGemma V2 (`src/bifocalgemma/models/v2/alignment.py:8-37` and `memory_efficient.py:319-324`), the bridge adapter `NormalizedAlignment` consists of an unnormalized linear transformation $W_{\text{align}} \in \mathbb{R}^{d_{\text{dec}} \times d_{\text{enc}}}$ followed by RMSNorm. Subsequently, within each decoder layer $l \in [1, L_{\text{dec}}]$, the aligned hidden state is projected by the decoder's native key projection $W_k^{(l)} \in \mathbb{R}^{d_{\text{kv}} \times d_{\text{dec}}}$ and value projection $W_v^{(l)} \in \mathbb{R}^{d_{\text{kv}} \times d_{\text{dec}}}$.
 
 Neglecting the scalar variance scaling of RMSNorm for a moment, the composite transformation for layer $l$ is:
 $$W_{\text{eff}, k}^{(l)} = W_k^{(l)} \cdot W_{\text{align}}, \quad W_{\text{eff}, v}^{(l)} = W_v^{(l)} \cdot W_{\text{align}}$$

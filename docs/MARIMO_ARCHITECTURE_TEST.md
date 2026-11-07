@@ -117,7 +117,7 @@ model/data download, HF token, upload artifact, RL, atau VM pada alur notebook.
 
 ## Menjaga standalone tetap konsisten
 
-Core definitions disalin dari [native.py](../src/bifocalgemma/models/native.py),
+Core definitions disalin dari [native.py](../src/bifocalgemma/models/v2/native.py),
 [collator](../src/bifocalgemma/data/collator.py), contracts, visibility helper dan CE.
 Perubahan core harus diselaraskan dengan notebook lalu diperiksa memakai marimo
 check dan real graph execution. Pinned version/config revisions dan semantic parity checks

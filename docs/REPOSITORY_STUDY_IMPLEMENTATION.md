@@ -83,7 +83,7 @@ Policy decoder_only memiliki satu optimizer group decoder; pairs mempertahankan 
 
 ## Generation dan source identity
 
-[Native local loader](../src/bifocalgemma/models/pretrained.py) memakai explicit local files. Header seluruh decoder/encoder divalidasi pada meta sebelum real allocation. Full model memerlukan CUDA/BF16 dan memory guard. Tidak ada unduhan otomatis atau synthetic/random fallback pada loader.
+[Native local loader](../src/bifocalgemma/models/v2/pretrained.py) memakai explicit local files. Header seluruh decoder/encoder divalidasi pada meta sebelum real allocation. Full model memerlukan CUDA/BF16 dan memory guard. Tidak ada unduhan otomatis atau synthetic/random fallback pada loader.
 
 Local key/shape verification **tidak membuktikan upstream weight revision identity**; provenance menyatakannya. Notebook fetch memakai pinned Hub references; pengguna tetap perlu menyimpan artifact provenance actual run.
 

@@ -1,21 +1,43 @@
 {
   "version": "exact_source_training_equivalence_v1",
-  "reason": "Only evaluation prompt budgeting, one-time evaluation reset orchestration, and this exact-source compatibility check changed. Model, data and training implementation unchanged.",
+  "reason": "Structural V2/V3 split and Milestone M1 evaluation harness / benchmark enhancements (prompt neutralization, 128t MCQ budget with resilient regex parser, continuous SequenceMatcher/Regex F1 metrics, RepoNIAH distractor probe). Model math, data, optimizer, schedules and checkpoint semantics are unchanged.",
   "baseline_runtime_sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
   "baseline_training_semantics_sha256": "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
-  "approved_source_semantics_sha256": "0ebc56d5419e5b47052ee71b59127de15e726b12bde760c737a5ed7bfa88b7aa",
+  "approved_source_semantics_sha256": "8891f81cbac8856c2d488892d01d8747982c8d63d6a32dcbecea8bd4ac2993db",
+  "source_semantics_sha256": "8891f81cbac8856c2d488892d01d8747982c8d63d6a32dcbecea8bd4ac2993db",
   "reviewed_changed_files": {
     "evaluation/context.py": {
-      "before": "65783802b934aee06ac74f37e8f24f1f07838cfc494bdac05b828bf679dd899e",
-      "after": "74e810fb8cf3118b74bd0b759126a651936d18a732a8b8516c453e85e3b4289d"
+      "after": "8474c8734bc9185948bb493583a6a046bf9716934f2449d7133a5ce4f436ba83"
     },
-    "training/source_identity.py": {
-      "before": "16311c4d53b7bb55259ac63c5563ea11eb93dd94520f3ab5caa4d2e570dd539b",
-      "after": "e7c4072aade11f07c7f45993bca4299c3a4b1b1c572bee5f76745b46b2b5de2e"
+    "evaluation/gsm8k.py": {
+      "after": "56dc5975e691067a26f1b4354e60690be351355139d25e780168bd2cd31cb536"
     },
-    "training/v2.py": {
-      "before": "57f44fa00e14e79ff94df2b0f63a7b454af3ebb121763b5cb9eeadba32157429",
-      "after": "d0d47073da25bacc09d273000e2e18126b166b149a8ecb2ee09db87978179b1d"
+    "inference/generation.py": {
+      "after": "9344f1be74fd6377dfc554683ca74155299434ad06aa087d5b8de7ef55e9e9d5"
+    },
+    "data/context_tasks.py": {
+      "after": "95cd000a769e5de4fa6b72f7d0b257d327314777be1d4f47e90e8701c87f298f"
+    },
+    "data/context_benchmarks.py": {
+      "after": "bcb6ba63c6dd0f65811c6d3c7c9b05c770cad5d505faec9f4c22a6e8e1c49a10"
+    },
+    "v3/attention.py": {
+      "after": "76040b90528fc4806deb64a6495b8655526a81369ada598f0ade60bdf8b5887a"
+    },
+    "v3/bridge.py": {
+      "after": "69426c1916a7bf0dd5d18779efa8fb7b3ed01c9873f0e8b467a133d2bf7c69ee"
+    },
+    "v3/objectives.py": {
+      "after": "6e135c6eb16749052714f5bf404044f2f4e8a7ae565a56e03e570ee4c10aa322"
+    },
+    "v3/matrix.py": {
+      "after": "3f78e76bd8bed769378fc117c35416f5c0801ca1510afa46fd5324241ac8f691"
+    },
+    "models/v2/native.py": {
+      "after": "48a5a886dc1c74287aaad19f23c6ea3c26686bc9d04633f74bbd2b6145679765"
+    },
+    "models/v2/pretrained.py": {
+      "after": "8fc9cdbda7f997dbd18f65bcc146a31ad59128ad614ae684e314765d40a247a4"
     }
   }
 }

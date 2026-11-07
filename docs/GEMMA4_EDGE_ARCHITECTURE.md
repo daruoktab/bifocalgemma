@@ -72,9 +72,9 @@ otomatis menjadi satu ruang alamat; metode pembagian bobot dan aktivasi perlu di
 ## Implikasi integrasi BifocalGemma
 
 - Encoder yang diadaptasi dapat mengaktifkan bidirectional attention secara native via `Gemma4TextConfig(use_bidirectional_attention="all")`, yang telah diverifikasi mengalirkan konteks global ke token awal dan menghubungkan gradien ke bridge.
-- [Bridge](../src/bifocalgemma/models/bridge.py) dapat menerima dimensi berbeda,
+- [Bridge](../src/bifocalgemma/models/v2/bridge.py) dapat menerima dimensi berbeda,
   tetapi kompatibilitas residual, normalization, posisi layer, dan cache masih harus diuji.
-- [AST projector](../src/bifocalgemma/models/code_graph_projector.py) menerima ID
+- [AST projector](../src/bifocalgemma/models/v2/code_graph_projector.py) menerima ID
   tipe/kedalaman. Dimensi integrasi adalah 1536 untuk E2B dan 2560 untuk E4B;
   default generiknya bukan konfigurasi backbone yang otomatis terhubung.
 - Empat pasangan E2B–E2B IT, E4B–E4B IT, E2B–E4B IT dan E4B–E2B IT menjadi

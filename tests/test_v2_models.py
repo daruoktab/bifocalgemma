@@ -8,10 +8,10 @@ from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention
 
 from bifocalgemma.config import EXPERIMENT_NAMES, get_v2_experiment
 from bifocalgemma.data.collator import RepairCollator
-from bifocalgemma.models.alignment import NormalizedAlignment
 from bifocalgemma.models.inference_cache import InferenceCache, cached_logits
 from bifocalgemma.models.memory_efficient import configure_memory_efficient_training
-from bifocalgemma.models.native import build_native_tiny_model
+from bifocalgemma.models.v2.alignment import NormalizedAlignment
+from bifocalgemma.models.v2.native import build_native_tiny_model
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.policy import build_training_groups, configure_policy_model
 from bifocalgemma.training.recipes import unified_recipe

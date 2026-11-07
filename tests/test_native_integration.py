@@ -10,7 +10,7 @@ from transformers import Gemma4TextModel
 from transformers.models.gemma4.modeling_gemma4 import Gemma4TextDecoderLayer
 
 from bifocalgemma.config import EXPERIMENT_SPECS
-from bifocalgemma.models.native import (
+from bifocalgemma.models.v2.native import (
     NativeMergedAttention,
     build_native_tiny_model,
     native_config,

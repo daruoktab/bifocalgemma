@@ -23,9 +23,9 @@ from bifocalgemma.contracts import (
 from bifocalgemma.data.collator import RepairCollator
 from bifocalgemma.data.tokenization import format_encoder_context
 from bifocalgemma.evaluation.predictions import write_swebench_predictions
-from bifocalgemma.models.embeddings import apply_word_embedding_policy
-from bifocalgemma.models.merged_attention import ReferenceMergedAttention, build_joint_visibility
-from bifocalgemma.models.reference import run_reference_smoke
+from bifocalgemma.models.v2.embeddings import apply_word_embedding_policy
+from bifocalgemma.models.v2.merged_attention import ReferenceMergedAttention, build_joint_visibility
+from bifocalgemma.models.v2.reference import run_reference_smoke
 from bifocalgemma.training.objectives import patch_cross_entropy
 
 ROOT = Path(__file__).resolve().parent.parent

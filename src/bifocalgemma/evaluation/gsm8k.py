@@ -234,7 +234,7 @@ def gsm8k_prompt_ids(spec, row, encoder, decoder, *, max_encoder_tokens=2048):
         enc = tuple(encoder.encode(row["context"], add_special_tokens=True))
         if len(enc) > max_encoder_tokens:
             raise ValueError("gsm8k_encoder_overflow")
-        prompt = row["instruction"] + "\nUse the supplied encoder context."
+        prompt = row["instruction"]
     else:
         prompt = row["instruction"] + "\n\n" + row["context"]
     rendered = decoder.apply_chat_template(
@@ -299,7 +299,7 @@ def generate_run(args):
     import torch
 
     from bifocalgemma.config import get_experiment
-    from bifocalgemma.models.pretrained import (
+    from bifocalgemma.models.v2.pretrained import (
         load_local_native_model,
         load_sft_adapters_for_inference,
     )

@@ -15,7 +15,7 @@ import torch
 from transformers import Gemma4TextConfig, Gemma4TextModel
 from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention, Gemma4TextMLP
 
-from bifocalgemma.models import GatedCrossAttentionBridge
+from bifocalgemma.models.v2 import GatedCrossAttentionBridge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PROFILES = {

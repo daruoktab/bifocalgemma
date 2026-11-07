@@ -107,7 +107,7 @@ def validate_training_policy(policy, model=None):
             raise ValueError("Model architecture does not match policy family.")
         projection = model.encoder_projection
         if v2:
-            from bifocalgemma.models.alignment import NormalizedAlignment
+            from bifocalgemma.models.v2.alignment import NormalizedAlignment
 
             if model.spec.architecture_version != "normalized_merged_v2" or not isinstance(
                 projection, NormalizedAlignment
