@@ -159,8 +159,10 @@ def _(
     total_steps,
     train_button,
 ):
-    if not train_button.value:
-        mo.stop()
+    mo.stop(
+        not train_button.value,
+        mo.md("Tekan tombol **Mulai Training Dari Awal** di atas untuk menjalankan pelatihan."),
+    )
 
     steps = int(total_steps.value)
     if model_choice.value == "baseline-2b":
