@@ -13,9 +13,9 @@ import hashlib
 import io
 import json
 import re
+import zipfile
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-import zipfile
 
 import pytest
 import torch
