@@ -475,6 +475,58 @@ def test_fast_training_pipeline_features_and_export(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="No dataset available for non-tiny fast training"):
         FastTrainingPipeline(non_tiny_cfg)
 
+    # 5. Synthetic fallback when tiny=False, auto_download_curated=False, and data_dir=None
+    from bifocalgemma.training.fast_pipeline import SyntheticRepairDataset
+
+    fallback_cfg = FastTrainingConfig(
+        model_choice="bifocalgemma-2b",
+        total_steps=10,
+        tiny=False,
+        data_dir=None,
+        auto_download_curated=False,
+    )
+    fallback_pipeline = FastTrainingPipeline(fallback_cfg)
+    assert isinstance(fallback_pipeline.train_loader.dataset, SyntheticRepairDataset)
+
+
+def test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues(tmp_path, monkeypatch):
+    """Verify that corrupt checkpoints (missing manifest.json) are caught and quarantined cleanly."""
+    output_corrupt = tmp_path / "corrupt_run"
+    run_dir = output_corrupt / "2base-2it" / "train"
+    train_dir = run_dir / "training"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    ckpt_dir = train_dir / "checkpoint-001000"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    # Put READY.json but no manifest.json
+    (ckpt_dir / "READY.json").write_text(json.dumps({"manifest.json": "corrupt"}), encoding="utf-8")
+
+    logged_events = []
+
+    class MockMonitor:
+        def __init__(self):
+            self.run_dir = None
+
+        def __call__(self, event):
+            logged_events.append(event)
+
+    monkeypatch.setattr("bifocalgemma.v3.matrix.recover_remote_run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
+    )
+
+    with pytest.raises(StopIteration):
+        run_matrix_training(
+            "2base-2it",
+            output_root=output_corrupt,
+            upload=False,
+            token=None,
+            monitor=MockMonitor(),
+        )
+
+    stages = [e.get("stage") for e in logged_events if isinstance(e, dict)]
+    assert "discarded_legacy_checkpoint" in stages
+    assert not (run_dir / "training").exists()
+
 
 def test_matrix_notebooks_strict_line_count_and_ast():
     """Verify all 10 matrix notebooks parse cleanly and strictly adhere to < 250 lines bound."""

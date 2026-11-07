@@ -511,7 +511,10 @@ def run_matrix_training(
                     return True
             except Exception:
                 return True
-        existing_ckpt = latest_checkpoint(train_dir)
+        try:
+            existing_ckpt = latest_checkpoint(train_dir)
+        except Exception:
+            return True
         if existing_ckpt:
             manifest_file = Path(existing_ckpt) / "manifest.json"
             if manifest_file.is_file():
@@ -524,6 +527,8 @@ def run_matrix_training(
                         return True
                 except Exception:
                     return True
+            else:
+                return True
         return False
 
     if force_fresh:

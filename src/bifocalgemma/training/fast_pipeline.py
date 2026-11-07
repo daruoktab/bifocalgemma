@@ -407,7 +407,7 @@ class FastTrainingPipeline:
                     shuffle=False,
                     collate_fn=collator,
                 )
-            elif not self.cfg.tiny:
+            elif not self.cfg.tiny and (self.cfg.auto_download_curated or self.cfg.data_dir):
                 raise RuntimeError(
                     "No dataset available for non-tiny fast training. "
                     "Provide data_dir or enable auto_download_curated with network access."
