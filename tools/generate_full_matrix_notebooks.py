@@ -2,7 +2,6 @@
 
 import argparse
 import ast
-import base64
 import hashlib
 import io
 import json
@@ -180,7 +179,7 @@ def render_notebook(model_key: str, manifest: dict[str, str]) -> str:
         - **Backbone:** Decoder `{decoder_id}` (rev `{decoder_rev}`)
         - **Kurikulum:** Full Decoder SFT = 11,102 steps terbuka penuh dari awal tanpa pembagian tahap (Batch=2, Accum=2)
         - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
-        ready_message = "**Runtime Baseline siap** · bundle `{runtime_manifest['sha256'][:12]}` · Full Decoder SFT & dynamic benchmark batching aktif."
+        ready_message = "**Runtime Baseline siap** · Full Decoder SFT & dynamic benchmark batching aktif."
     else:
         cell1_md = f"""        # {title}
 
@@ -189,7 +188,7 @@ def render_notebook(model_key: str, manifest: dict[str, str]) -> str:
         - **Backbones:** Encoder `{encoder_id}` (rev `{encoder_rev}`) | Decoder `{decoder_id}` (rev `{decoder_rev}`)
         - **Kurikulum:** Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps (Batch=2, Accum=2)
         - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
-        ready_message = "**Runtime BifocalGemma siap** · bundle `{runtime_manifest['sha256'][:12]}` · SwiGLUDualGateBridge & dynamic benchmark batching aktif."
+        ready_message = "**Runtime BifocalGemma siap** · SwiGLUDualGateBridge & dynamic benchmark batching aktif."
 
     code = f'''# /// script
 # requires-python = ">=3.12,<3.14"
@@ -233,12 +232,7 @@ def _():
 def _(mo):
     import runpy
 
-    EMBEDDED_RUNTIME_B85 = "__EMBEDDED_RUNTIME_B85_PLACEHOLDER__"
-
-    def load_runtime(
-        repo_id, filename, revision, expected_sha, notebook_file=None, embedded_b85=""
-    ):
-        import base64
+    def load_runtime(repo_id, filename, revision, expected_sha, notebook_file=None):
         import hashlib
         import io
         import sys
@@ -256,13 +250,6 @@ def _(mo):
         cached = root / "runtime.zip"
         source = local if local is not None and local.is_file() else cached
         data = source.read_bytes() if source.is_file() else b""
-        if hashlib.sha256(data).hexdigest() != expected_sha and embedded_b85:
-            try:
-                decoded = base64.b85decode(embedded_b85)
-                if hashlib.sha256(decoded).hexdigest() == expected_sha:
-                    data = decoded
-            except Exception:
-                pass
         if hashlib.sha256(data).hexdigest() != expected_sha:
             urls = [
                 f"https://huggingface.co/{{repo_id}}/resolve/{{revision}}/{{filename}}",
@@ -322,12 +309,11 @@ def _(mo):
         runtime_manifest["revision"],
         runtime_manifest["sha256"],
         notebook_file=globals().get("__file__"),
-        embedded_b85=EMBEDDED_RUNTIME_B85,
     )
     launcher = runpy.run_path(str(runtime_root / "tools/notebook_launcher.py"))
     dependency_runtime = launcher["prepare_runtime"](runtime_root)
     mo.md(
-        f"{ready_message}"
+        "{ready_message}"
     )
     return dependency_runtime, runtime_manifest, runtime_root
 
@@ -467,7 +453,6 @@ def main():
 
     print("Building deterministic source bundle...")
     payload, bundle_sha = matrix_bundle(ROOT)
-    payload_b85 = base64.b85encode(payload).decode("ascii")
     print(f"Source bundle hash: {bundle_sha}")
 
     notebooks_dir = ROOT / "notebooks"
@@ -487,7 +472,7 @@ def main():
             repo_id=repo_id,
             path_in_repo=filename,
             path_or_fileobj=payload,
-            commit_message="Publish immutable BifocalGemma V3 matrix notebook runtime",
+            commit_message="Publish immutable BifocalGemma matrix notebook runtime",
         )
         print(f"Uploaded commit: {commit.oid}")
         remote = hf_hub_download(repo_id, filename, revision=commit.oid)
@@ -499,6 +484,11 @@ def main():
             "revision": commit.oid,
             "sha256": bundle_sha,
         }
+        for old_zip in runtime_dir.glob("runtime-*.zip"):
+            try:
+                old_zip.unlink()
+            except OSError:
+                pass
         (runtime_dir / f"runtime-{bundle_sha[:16]}.zip").write_bytes(payload)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"Updated {manifest_path}")
@@ -519,10 +509,18 @@ def main():
             except OSError:
                 pass
         (runtime_dir / f"runtime-{bundle_sha[:16]}.zip").write_bytes(payload)
+        existing_rev = "LOCAL-PREVIEW"
+        if manifest_path.is_file():
+            try:
+                prev = json.loads(manifest_path.read_text(encoding="utf-8"))
+                if prev.get("sha256") == bundle_sha and prev.get("revision"):
+                    existing_rev = prev["revision"]
+            except Exception:
+                pass
         manifest = {
             "repo_id": CENTRALIZED_HF_REPO,
             "filename": filename,
-            "revision": "LOCAL-PREVIEW",
+            "revision": existing_rev,
             "sha256": bundle_sha,
         }
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
@@ -536,10 +534,6 @@ def main():
 
         raw_code = render_notebook(model_key, manifest)
         formatted_code = format_code(raw_code, filename)
-        formatted_code = formatted_code.replace(
-            '"__EMBEDDED_RUNTIME_B85_PLACEHOLDER__"',
-            f'"{payload_b85}"  # fmt: skip  # noqa: E501',
-        )
 
         # Validate syntax
         ast.parse(formatted_code, filename=str(target_path))
@@ -562,30 +556,6 @@ def main():
         generated_files.append(target_path)
 
     print(f"\nSuccessfully generated and validated {len(generated_files)} matrix notebooks!")
-
-    fast_notebook = notebooks_dir / "train_bifocalgemma_fast.py"
-    if fast_notebook.is_file():
-        import re
-
-        fast_text = fast_notebook.read_text(encoding="utf-8")
-        fast_updated = re.sub(
-            r'RUNTIME_SHA256 = "[a-f0-9]+"',
-            f'RUNTIME_SHA256 = "{bundle_sha}"',
-            fast_text,
-        )
-        fast_updated = re.sub(
-            r'EMBEDDED_RUNTIME_B85 = ".*?"  # fmt: skip  # noqa: E501',
-            f'EMBEDDED_RUNTIME_B85 = "{payload_b85}"  # fmt: skip  # noqa: E501',
-            fast_updated,
-        )
-        if args.check:
-            if fast_text != fast_updated:
-                raise SystemExit(
-                    f"Notebook out of sync: {fast_notebook}. Run without --check to update."
-                )
-        else:
-            fast_notebook.write_text(fast_updated, encoding="utf-8")
-            print(f"Synchronized fast training notebook: {fast_notebook}")
 
 
 if __name__ == "__main__":

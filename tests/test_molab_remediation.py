@@ -8,11 +8,9 @@
 """
 
 import ast
-import base64
 import hashlib
 import io
 import json
-import re
 import zipfile
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -325,36 +323,33 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
     assert res["message"] == "Full matrix training already completed."
 
 
-def test_embedded_runtime_extraction_from_real_matrix_notebook(tmp_path):
-    """Verify that EMBEDDED_RUNTIME_B85 inside train_2base_2it.py extracts offline and bifocalgemma is importable."""
+def test_clean_notebooks_have_no_embedded_b85_and_valid_runtime_archive(tmp_path):
+    """Verify that notebooks contain clean code without EMBEDDED_RUNTIME_B85 and the runtime zip extracts cleanly."""
     notebook_path = ROOT / "notebooks/train_2base_2it.py"
     code = notebook_path.read_text(encoding="utf-8")
+    assert "EMBEDDED_RUNTIME_B85" not in code
+    assert "RUNTIME_SHA256" not in code
 
     tree = ast.parse(code)
-    embedded_b85 = None
-    expected_sha = None
+    manifest = None
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for t in node.targets:
-                if isinstance(t, ast.Name):
-                    if t.id == "EMBEDDED_RUNTIME_B85" and isinstance(node.value, ast.Constant):
-                        embedded_b85 = node.value.value
-                    elif t.id in ("runtime_manifest", "RUNTIME_MANIFEST"):
-                        try:
-                            m = ast.literal_eval(node.value)
-                            expected_sha = m.get("sha256")
-                        except Exception:
-                            pass
+                if isinstance(t, ast.Name) and t.id in ("runtime_manifest", "RUNTIME_MANIFEST"):
+                    try:
+                        manifest = ast.literal_eval(node.value)
+                    except Exception:
+                        pass
 
-    assert embedded_b85 is not None, "EMBEDDED_RUNTIME_B85 constant not found in notebook"
-    assert expected_sha is not None, "runtime_manifest sha256 not found in notebook"
-
-    decoded = base64.b85decode(embedded_b85)
-    assert hashlib.sha256(decoded).hexdigest() == expected_sha
+    assert isinstance(manifest, dict) and manifest.get("sha256")
+    archive_path = ROOT / "notebooks/runtime" / (manifest["filename"].split("/")[-1])
+    assert archive_path.is_file()
+    raw_bytes = archive_path.read_bytes()
+    assert hashlib.sha256(raw_bytes).hexdigest() == manifest["sha256"]
 
     extract_dir = tmp_path / "runtime_extracted"
     extract_dir.mkdir()
-    with zipfile.ZipFile(io.BytesIO(decoded)) as archive:
+    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
         for entry in archive.infolist():
             target = (extract_dir / entry.filename).resolve()
             assert target.is_relative_to(extract_dir)
@@ -363,35 +358,16 @@ def test_embedded_runtime_extraction_from_real_matrix_notebook(tmp_path):
 
     assert (extract_dir / "tools/molab_matrix_support.py").is_file()
     assert (extract_dir / "src/bifocalgemma/__init__.py").is_file()
+    assert (extract_dir / "src/bifocalgemma/training/fast_pipeline.py").is_file()
 
 
-def test_embedded_runtime_extraction_from_fast_notebook(tmp_path):
-    """Verify that EMBEDDED_RUNTIME_B85 inside train_bifocalgemma_fast.py extracts offline."""
+def test_fast_notebook_is_clean_without_embedded_b85():
+    """Verify that train_bifocalgemma_fast.py contains clean code without EMBEDDED_RUNTIME_B85 or RUNTIME_SHA256."""
     notebook_path = ROOT / "notebooks/train_bifocalgemma_fast.py"
     code = notebook_path.read_text(encoding="utf-8")
-
-    sha_match = re.search(r'RUNTIME_SHA256\s*=\s*"([a-f0-9]+)"', code)
-    b85_match = re.search(r'EMBEDDED_RUNTIME_B85\s*=\s*"(.*?)"', code)
-    assert sha_match is not None, "RUNTIME_SHA256 not found in fast notebook"
-    assert b85_match is not None, "EMBEDDED_RUNTIME_B85 not found in fast notebook"
-
-    expected_sha = sha_match.group(1)
-    embedded_b85 = b85_match.group(1)
-
-    decoded = base64.b85decode(embedded_b85)
-    assert hashlib.sha256(decoded).hexdigest() == expected_sha
-
-    extract_dir = tmp_path / "runtime_fast_extracted"
-    extract_dir.mkdir()
-    with zipfile.ZipFile(io.BytesIO(decoded)) as archive:
-        for entry in archive.infolist():
-            target = (extract_dir / entry.filename).resolve()
-            assert target.is_relative_to(extract_dir)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(archive.read(entry))
-
-    assert (extract_dir / "src/bifocalgemma/training/fast_pipeline.py").is_file()
-    assert (extract_dir / "src/bifocalgemma/__init__.py").is_file()
+    assert "EMBEDDED_RUNTIME_B85" not in code
+    assert "RUNTIME_SHA256" not in code
+    ast.parse(code, filename=str(notebook_path))
 
 
 def test_fast_training_pipeline_features_and_export(tmp_path, monkeypatch):
