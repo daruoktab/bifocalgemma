@@ -6,6 +6,8 @@ import math
 from typing import Any
 
 CENTRALIZED_HF_REPO = "daruokta/bifocalgemma-2026-11-02"
+CLEAN_RECIPE_VERSION = "bifocalgemma_clean_2026_11_07"
+CLEAN_DEFAULT_HF_REPO = "daruokta/bifocalgemma-clean"
 ARCHIVE_HF_REPO = "daruokta/bifocalgemma-archive"
 DATASET_REPO = "daruokta/bifocalgemma-data"
 DATASET_REVISION = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"
@@ -28,7 +30,7 @@ GATE_INIT_ATANH = math.atanh(GATE_INIT_TANH)
 
 MATRIX_MODELS: dict[str, dict[str, Any]] = {
     "2base-2it": {
-        "title": "BifocalGemma V3 · 2Base → 2IT (Symmetric)",
+        "title": "BifocalGemma · 2Base → 2IT (Symmetric)",
         "family": "symmetric",
         "encoder_id": "google/gemma-4-E2B",
         "encoder_revision": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
@@ -42,7 +44,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "2base-2it",
     },
     "2it-2it": {
-        "title": "BifocalGemma V3 · 2IT → 2IT (Symmetric)",
+        "title": "BifocalGemma · 2IT → 2IT (Symmetric)",
         "family": "symmetric",
         "encoder_id": "google/gemma-4-E2B-it",
         "encoder_revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
@@ -56,7 +58,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "2it-2it",
     },
     "4base-4it": {
-        "title": "BifocalGemma V3 · 4Base → 4IT (Symmetric)",
+        "title": "BifocalGemma · 4Base → 4IT (Symmetric)",
         "family": "symmetric",
         "encoder_id": "google/gemma-4-E4B",
         "encoder_revision": "411aa17b749aa952df1359d2dcea73917a544d9a",
@@ -70,7 +72,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "4base-4it",
     },
     "4it-4it": {
-        "title": "BifocalGemma V3 · 4IT → 4IT (Symmetric)",
+        "title": "BifocalGemma · 4IT → 4IT (Symmetric)",
         "family": "symmetric",
         "encoder_id": "google/gemma-4-E4B-it",
         "encoder_revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
@@ -84,7 +86,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "4it-4it",
     },
     "4base-2it": {
-        "title": "BifocalGemma V3 · 4Base → 2IT (Asymmetric)",
+        "title": "BifocalGemma · 4Base → 2IT (Asymmetric)",
         "family": "asymmetric",
         "encoder_id": "google/gemma-4-E4B",
         "encoder_revision": "411aa17b749aa952df1359d2dcea73917a544d9a",
@@ -98,7 +100,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "4base-2it",
     },
     "4it-2it": {
-        "title": "BifocalGemma V3 · 4IT → 2IT (Asymmetric)",
+        "title": "BifocalGemma · 4IT → 2IT (Asymmetric)",
         "family": "asymmetric",
         "encoder_id": "google/gemma-4-E4B-it",
         "encoder_revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
@@ -112,7 +114,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "4it-2it",
     },
     "2base-4it": {
-        "title": "BifocalGemma V3 · 2Base → 4IT (Asymmetric)",
+        "title": "BifocalGemma · 2Base → 4IT (Asymmetric)",
         "family": "asymmetric",
         "encoder_id": "google/gemma-4-E2B",
         "encoder_revision": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
@@ -126,7 +128,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "2base-4it",
     },
     "2it-4it": {
-        "title": "BifocalGemma V3 · 2IT → 4IT (Asymmetric)",
+        "title": "BifocalGemma · 2IT → 4IT (Asymmetric)",
         "family": "asymmetric",
         "encoder_id": "google/gemma-4-E2B-it",
         "encoder_revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
@@ -140,7 +142,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "2it-4it",
     },
     "e2b-it": {
-        "title": "BifocalGemma V3 · Baseline E2B-IT (Decoder-Only)",
+        "title": "BifocalGemma · Baseline E2B-IT (Decoder-Only)",
         "family": "decoder_only",
         "encoder_id": None,
         "encoder_revision": None,
@@ -154,7 +156,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "subfolder": "e2b-it",
     },
     "e4b-it": {
-        "title": "BifocalGemma V3 · Baseline E4B-IT (Decoder-Only)",
+        "title": "BifocalGemma · Baseline E4B-IT (Decoder-Only)",
         "family": "decoder_only",
         "encoder_id": None,
         "encoder_revision": None,

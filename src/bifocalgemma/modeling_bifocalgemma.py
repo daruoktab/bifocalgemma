@@ -621,12 +621,15 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
             from huggingface_hub import HfApi
 
             repo_id = kwargs.get("repo_id")
+            path_in_repo: str | None = kwargs.get("path_in_repo")
             if repo_id:
                 api = HfApi(token=token)
+                api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
                 api.upload_folder(
                     folder_path=str(save_dir),
                     repo_id=repo_id,
                     repo_type="model",
+                    path_in_repo=path_in_repo,
                 )
 
     @classmethod
@@ -641,17 +644,24 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
         **kwargs: Any,
     ) -> BifocalGemmaForCausalLM:
         """Load an intact BifocalGemma pre-trained model from local path or Hub."""
+        subfolder: str | None = kwargs.pop("subfolder", None)
         model_path = Path(pretrained_model_name_or_path)
-        if not model_path.exists():
+        if model_path.exists():
+            if subfolder:
+                model_path = model_path / subfolder
+        else:
             from huggingface_hub import snapshot_download
 
-            model_path = Path(
+            patterns = [f"{subfolder.strip('/')}/*"] if subfolder else None
+            downloaded = Path(
                 snapshot_download(
                     str(pretrained_model_name_or_path),
                     cache_dir=cache_dir,
                     token=kwargs.get("token"),
+                    allow_patterns=patterns,
                 )
             )
+            model_path = downloaded / subfolder.strip("/") if subfolder else downloaded
 
         if config is None:
             config = BifocalGemmaConfig.from_pretrained(model_path)
@@ -789,6 +799,8 @@ def export_matrix_pretrained_model(
     push_to_hub: bool = False,
     repo_id: str | None = None,
     token: str | bool | None = None,
+    path_in_repo: str | None = None,
+    tokenizer_cache: str | Path | None = None,
 ) -> Path:
     """Export a consolidated standalone Hugging Face PreTrainedModel directory from matrix model."""
     export_path = Path(export_dir)
@@ -939,26 +951,55 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
     (export_path / "README.md").write_text(model_card, encoding="utf-8")
 
     # 8. Save tokenizer assets if available
-    if tokenizer is not None and hasattr(tokenizer, "save_pretrained"):
-        tokenizer.save_pretrained(export_path)
-    else:
-        default_tok_dir = Path("outputs/context_tokenizers/raw/google__gemma-4-E2B-it")
-        if default_tok_dir.is_dir():
+    dec_slug = ""
+    if spec is not None and getattr(spec, "decoder", None) is not None:
+        dec_slug = spec.decoder.model_id.replace("/", "__")
+    elif hasattr(config, "decoder_config") and isinstance(config.decoder_config, dict):
+        dec_id = config.decoder_config.get("_name_or_path") or config.decoder_config.get("model_id", "")
+        dec_slug = str(dec_id).replace("/", "__") if dec_id else ""
+
+    tok_candidates = []
+    if tokenizer_cache is not None:
+        tok_base = Path(tokenizer_cache)
+        if dec_slug:
+            tok_candidates.append(tok_base / "raw" / dec_slug)
+            tok_candidates.append(tok_base / dec_slug)
+        tok_candidates.append(tok_base)
+    if dec_slug:
+        tok_candidates.append(Path(f"outputs/v2_cache/tokenizers/raw/{dec_slug}"))
+        tok_candidates.append(Path(f"outputs/context_tokenizers/raw/{dec_slug}"))
+    tok_candidates.append(Path("outputs/context_tokenizers/raw/google__gemma-4-E2B-it"))
+
+    for tok_dir in tok_candidates:
+        if tok_dir.is_dir():
             for tok_file in (
                 "tokenizer.json",
                 "tokenizer_config.json",
                 "chat_template.jinja",
                 "special_tokens_map.json",
             ):
-                src = default_tok_dir / tok_file
-                if src.is_file():
-                    shutil.copy2(src, export_path / tok_file)
+                src = tok_dir / tok_file
+                dest = export_path / tok_file
+                if src.is_file() and not dest.exists():
+                    shutil.copy2(src, dest)
+
+    if tokenizer is not None and hasattr(tokenizer, "save_pretrained"):
+        tokenizer.save_pretrained(export_path)
+    elif tokenizer is not None and hasattr(tokenizer, "save"):
+        if not (export_path / "tokenizer.json").exists():
+            tokenizer.save(str(export_path / "tokenizer.json"))
 
     if push_to_hub and repo_id:
         from huggingface_hub import HfApi
 
         api = HfApi(token=token)
-        api.upload_folder(folder_path=str(export_path), repo_id=repo_id, repo_type="model")
+        api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
+        api.upload_folder(
+            folder_path=str(export_path),
+            repo_id=repo_id,
+            path_in_repo=path_in_repo,
+            repo_type="model",
+        )
 
     return export_path
 

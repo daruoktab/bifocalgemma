@@ -58,19 +58,28 @@ class FastTrainingConfig:
     tokenizer_path: str = "outputs/context_tokenizers/raw/google__gemma-4-E2B-it"
     push_to_hub: bool = False
     hub_repo: str | None = None
+    hf_token: str | None = None
+    auto_download_curated: bool = True
+    collection: str = "mixed_context_enc32k_dec8k_v3"
+    dataset_repo: str = "daruokta/bifocalgemma-data"
+    dataset_revision: str = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 42
     tiny: bool = False  # Set True for instant CI/smoke validation
 
     def __post_init__(self) -> None:
-        if self.stage1_steps + self.stage2_steps != self.total_steps:
-            if self.stage1_steps == 1000 and self.stage2_steps == 1000:
-                self.stage1_steps = self.total_steps // 2
+        if self.model_choice == "baseline-2b":
+            self.stage1_steps = 0
+            self.stage2_steps = self.total_steps
+        else:
+            if self.stage1_steps + self.stage2_steps != self.total_steps:
+                if self.stage1_steps == 1000 and self.stage2_steps == 1000:
+                    self.stage1_steps = self.total_steps // 2
+                    self.stage2_steps = self.total_steps - self.stage1_steps
+                else:
+                    self.total_steps = self.stage1_steps + self.stage2_steps
+            if self.stage1_steps + self.stage2_steps != self.total_steps:
                 self.stage2_steps = self.total_steps - self.stage1_steps
-            else:
-                self.total_steps = self.stage1_steps + self.stage2_steps
-        if self.stage1_steps + self.stage2_steps != self.total_steps:
-            self.stage2_steps = self.total_steps - self.stage1_steps
 
 
 class JSONLRepairDataset(Dataset):
@@ -147,16 +156,28 @@ class JSONLRepairDataset(Dataset):
         context = row.get("context") or (
             f"### Instruction\n{row.get('instruction', '')}\n\n### File: {row.get('path', '')}\n{row.get('before', '')}"
         )
-        instruction = row.get("instruction", "Repair the bug.")
-        target_patch = row.get("target_patch") or row.get("after") or row.get("patch") or ""
+        target_patch = (
+            row.get("target_text")
+            or row.get("target_patch")
+            or row.get("after")
+            or row.get("patch")
+            or ""
+        )
+        task_kind = str(row.get("task_type", "repair")).lower()
+        task_instruction_header = {
+            "repair": "Return only a unified diff fulfilling the instruction.",
+            "localization": "Return only a JSON list of repository file paths relevant to fixing the issue.",
+            "completion": "Return only the missing Python code, preserving its indentation.",
+        }.get(task_kind, "Return only a unified diff fulfilling the instruction.")
+        instruction_body = row.get("instruction") or "Repair the bug."
 
         if tokenizer is not None:
             if is_baseline:
                 enc_ids = ()
-                prompt = f"Return only a unified diff fulfilling the instruction.\n\n{context}"
+                prompt = f"{task_instruction_header}\n\n{context}"
             else:
                 enc_ids = tuple(tokenizer.encode(context, add_special_tokens=True))
-                prompt = f"Return only a unified diff fulfilling the instruction.\n\n{instruction}"
+                prompt = f"{task_instruction_header}\n\n{instruction_body}"
 
             messages = [{"role": "user", "content": prompt}]
             try:
@@ -171,11 +192,7 @@ class JSONLRepairDataset(Dataset):
                 )
                 prefix_ids = tuple(tokenizer.encode(prefix, add_special_tokens=False))
                 full_ids = tuple(tokenizer.encode(full.rstrip(), add_special_tokens=False))
-                target = (
-                    full_ids[len(prefix_ids) :]
-                    if len(full_ids) >= len(prefix_ids)
-                    else (106,)
-                )
+                target = full_ids[len(prefix_ids) :] if len(full_ids) >= len(prefix_ids) else (106,)
             except Exception:
                 prefix_ids = tuple(
                     tokenizer.encode(f"<user>\n{prompt}\n<assistant>\n", add_special_tokens=True)
@@ -252,10 +269,7 @@ class SyntheticRepairDataset(Dataset):
 
 
 def collate_fast_batch(items: list[dict[str, torch.Tensor]]) -> dict[str, torch.Tensor]:
-    return {
-        key: torch.stack([item[key] for item in items], dim=0)
-        for key in items[0]
-    }
+    return {key: torch.stack([item[key] for item in items], dim=0) for key in items[0]}
 
 
 class FastTrainingPipeline:
@@ -305,9 +319,7 @@ class FastTrainingPipeline:
                 device=self.cfg.device,
             )
 
-        self.model.enable_memory_efficient_training(
-            gradient_checkpointing=not self.cfg.tiny
-        )
+        self.model.enable_memory_efficient_training(gradient_checkpointing=not self.cfg.tiny)
 
         # 2. Setup tokenizer if available (only for full-scale models; tiny uses synthetic vocab_size)
         self.tokenizer = None
@@ -325,8 +337,26 @@ class FastTrainingPipeline:
         vocab = self.model_config.vocab_size
         max_vocab = vocab if self.cfg.tiny else None
         if train_dataloader is None:
-            if self.cfg.data_dir and Path(self.cfg.data_dir).exists():
-                data_path = Path(self.cfg.data_dir)
+            data_path = Path(self.cfg.data_dir) if self.cfg.data_dir else None
+            if data_path is None and not self.cfg.tiny and self.cfg.auto_download_curated:
+                pool_dir = Path("outputs/v2_cache/dataset") / self.cfg.collection
+                try:
+                    from bifocalgemma.data.releases import fetch_collection
+
+                    fetch_collection(
+                        self.cfg.dataset_repo,
+                        self.cfg.dataset_revision,
+                        self.cfg.collection,
+                        pool_dir,
+                        expected_role="train",
+                        token=self.cfg.hf_token,
+                    )
+                    if pool_dir.exists():
+                        data_path = pool_dir
+                except Exception as _exc:
+                    logger.warning("Curated collection fetch skipped: %s", _exc)
+
+            if data_path is not None and data_path.exists():
                 train_file = (
                     data_path / "train.jsonl"
                     if (data_path / "train.jsonl").is_file()
@@ -342,11 +372,7 @@ class FastTrainingPipeline:
                 val_file = (
                     data_path / "val.jsonl"
                     if (data_path / "val.jsonl").is_file()
-                    else (
-                        data_path / "dev.jsonl"
-                        if (data_path / "dev.jsonl").is_file()
-                        else None
-                    )
+                    else (data_path / "dev.jsonl" if (data_path / "dev.jsonl").is_file() else None)
                 )
                 if val_file is not None:
                     val_ds: Dataset = JSONLRepairDataset(
@@ -381,6 +407,11 @@ class FastTrainingPipeline:
                     shuffle=False,
                     collate_fn=collator,
                 )
+            elif not self.cfg.tiny:
+                raise RuntimeError(
+                    "No dataset available for non-tiny fast training. "
+                    "Provide data_dir or enable auto_download_curated with network access."
+                )
             else:
                 train_ds = SyntheticRepairDataset(num_samples=256, vocab_size=vocab)
                 self.train_loader = DataLoader(
@@ -398,9 +429,7 @@ class FastTrainingPipeline:
                 )
         else:
             self.train_loader = train_dataloader
-            self.val_loader = (
-                val_dataloader if val_dataloader is not None else train_dataloader
-            )
+            self.val_loader = val_dataloader if val_dataloader is not None else train_dataloader
 
         self.out_path = Path(self.cfg.output_dir)
         self.out_path.mkdir(parents=True, exist_ok=True)
@@ -468,8 +497,12 @@ class FastTrainingPipeline:
             if self.model.encoder is None and seq2seq_batch.encoder_input_ids.shape[1] > 0:
                 bsz = seq2seq_batch.decoder_input_ids.shape[0]
                 seq2seq_batch = Seq2SeqBatch(
-                    encoder_input_ids=torch.empty((bsz, 0), dtype=torch.long, device=self.cfg.device),
-                    encoder_attention_mask=torch.empty((bsz, 0), dtype=torch.bool, device=self.cfg.device),
+                    encoder_input_ids=torch.empty(
+                        (bsz, 0), dtype=torch.long, device=self.cfg.device
+                    ),
+                    encoder_attention_mask=torch.empty(
+                        (bsz, 0), dtype=torch.bool, device=self.cfg.device
+                    ),
                     decoder_input_ids=seq2seq_batch.decoder_input_ids,
                     decoder_attention_mask=seq2seq_batch.decoder_attention_mask,
                     labels=seq2seq_batch.labels,
@@ -483,7 +516,9 @@ class FastTrainingPipeline:
                 if "decoder_attention_mask" in batch and batch["decoder_attention_mask"] is not None
                 else torch.ones_like(dec_ids, dtype=torch.bool)
             )
-            labels = (batch.get("labels") if "labels" in batch else batch.get("targets", dec_ids)).to(device)
+            labels = (
+                batch.get("labels") if "labels" in batch else batch.get("targets", dec_ids)
+            ).to(device)
 
             if (
                 "encoder_input_ids" in batch
@@ -494,7 +529,8 @@ class FastTrainingPipeline:
                 enc_ids = batch["encoder_input_ids"].to(device)
                 enc_mask = (
                     batch["encoder_attention_mask"].to(device)
-                    if "encoder_attention_mask" in batch and batch["encoder_attention_mask"] is not None
+                    if "encoder_attention_mask" in batch
+                    and batch["encoder_attention_mask"] is not None
                     else torch.ones_like(enc_ids, dtype=torch.bool)
                 )
             else:
@@ -529,6 +565,30 @@ class FastTrainingPipeline:
         self.model.train()
         return total_loss / max(1, count)
 
+    def export_pretrained(
+        self,
+        export_dir: str | Path | None = None,
+        push_to_hub: bool | None = None,
+        hub_repo: str | None = None,
+        token: str | None = None,
+    ) -> Path:
+        """Export standalone PreTrainedModel, merging LoRA weights and optionally uploading to Hub."""
+        target_dir = (
+            Path(export_dir) if export_dir is not None else self.out_path / "final_pretrained_model"
+        )
+        should_push = self.cfg.push_to_hub if push_to_hub is None else push_to_hub
+        repo = self.cfg.hub_repo if hub_repo is None else hub_repo
+        hf_token = self.cfg.hf_token if token is None else token
+
+        self.model.save_pretrained(
+            target_dir,
+            push_to_hub=should_push,
+            repo_id=repo,
+            token=hf_token,
+            tokenizer=self.tokenizer,
+        )
+        return target_dir
+
     def run(self) -> dict[str, Any]:
         """Execute complete fast two-stage training and export standalone model."""
         start_time = time.time()
@@ -536,9 +596,56 @@ class FastTrainingPipeline:
         data_iter = iter(self.train_loader)
 
         # -------------------------------------------------------------
-        # STAGE 1: Bridge Manifold Alignment (only when encoder present)
+        # Training Execution (Single-Stage Baseline or Two-Stage Paired)
         # -------------------------------------------------------------
-        if self.model.encoder is not None:
+        if self.model.encoder is None:
+            # Baseline decoder-only model: single continuous full Decoder SFT pass
+            full_steps = self.cfg.total_steps
+            logger.info("Starting Full Decoder SFT (Baseline Decoder-Only, %d steps)", full_steps)
+            opt = self.configure_stage2()
+
+            while global_step < full_steps:
+                self.model.train()
+                opt.zero_grad()
+                accum_loss = 0.0
+
+                for _ in range(self.cfg.gradient_accumulation_steps):
+                    try:
+                        batch = next(data_iter)
+                    except StopIteration:
+                        data_iter = iter(self.train_loader)
+                        batch = next(data_iter)
+
+                    loss = (
+                        self.train_step(batch, stage_name="full_decoder_sft")
+                        / self.cfg.gradient_accumulation_steps
+                    )
+                    loss.backward()
+                    accum_loss += float(loss.item())
+
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                opt.step()
+                global_step += 1
+
+                if global_step % 50 == 0 or global_step == full_steps:
+                    val_loss = (
+                        self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
+                    )
+                    record = {
+                        "stage": "full_decoder_sft",
+                        "step": global_step,
+                        "loss": accum_loss * self.cfg.gradient_accumulation_steps,
+                        "val_loss": val_loss,
+                        "elapsed_sec": time.time() - start_time,
+                    }
+                    self.history.append(record)
+                    if self.callback:
+                        self.callback(record)
+        else:
+            # Paired BifocalGemma model: Two-Stage Training (Stage 1 Bridge Alignment + Stage 2 Joint SFT)
+            # -------------------------------------------------------------
+            # STAGE 1: Bridge Manifold Alignment
+            # -------------------------------------------------------------
             logger.info("Starting Stage 1: Bridge Alignment (%d steps)", self.cfg.stage1_steps)
             opt1 = self.configure_stage1()
 
@@ -554,7 +661,10 @@ class FastTrainingPipeline:
                         data_iter = iter(self.train_loader)
                         batch = next(data_iter)
 
-                    loss = self.train_step(batch, stage_name="stage1") / self.cfg.gradient_accumulation_steps
+                    loss = (
+                        self.train_step(batch, stage_name="stage1")
+                        / self.cfg.gradient_accumulation_steps
+                    )
                     loss.backward()
                     accum_loss += float(loss.item())
 
@@ -563,7 +673,9 @@ class FastTrainingPipeline:
                 global_step += 1
 
                 if global_step % 50 == 0 or global_step == self.cfg.stage1_steps:
-                    val_loss = self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
+                    val_loss = (
+                        self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
+                    )
                     record = {
                         "stage": "stage1_bridge_align",
                         "step": global_step,
@@ -574,53 +686,52 @@ class FastTrainingPipeline:
                     self.history.append(record)
                     if self.callback:
                         self.callback(record)
-        else:
-            logger.info(
-                "Skipping Stage 1 (Bridge Alignment) for baseline decoder-only model; "
-                "allocating all %d steps to Stage 2.",
-                self.cfg.stage1_steps + self.cfg.stage2_steps,
-            )
 
-        # -------------------------------------------------------------
-        # STAGE 2: Joint LoRA Fine-Tuning
-        # -------------------------------------------------------------
-        stage2_target = self.cfg.stage1_steps + self.cfg.stage2_steps
-        remaining_stage2_steps = stage2_target - global_step
-        logger.info("Starting Stage 2: Joint LoRA SFT (%d steps)", remaining_stage2_steps)
-        opt2 = self.configure_stage2()
+            # -------------------------------------------------------------
+            # STAGE 2: Joint LoRA Fine-Tuning
+            # -------------------------------------------------------------
+            stage2_target = self.cfg.stage1_steps + self.cfg.stage2_steps
+            remaining_stage2_steps = stage2_target - global_step
+            logger.info("Starting Stage 2: Joint LoRA SFT (%d steps)", remaining_stage2_steps)
+            opt2 = self.configure_stage2()
 
-        while global_step < stage2_target:
-            self.model.train()
-            opt2.zero_grad()
-            accum_loss = 0.0
+            while global_step < stage2_target:
+                self.model.train()
+                opt2.zero_grad()
+                accum_loss = 0.0
 
-            for _ in range(self.cfg.gradient_accumulation_steps):
-                try:
-                    batch = next(data_iter)
-                except StopIteration:
-                    data_iter = iter(self.train_loader)
-                    batch = next(data_iter)
+                for _ in range(self.cfg.gradient_accumulation_steps):
+                    try:
+                        batch = next(data_iter)
+                    except StopIteration:
+                        data_iter = iter(self.train_loader)
+                        batch = next(data_iter)
 
-                loss = self.train_step(batch, stage_name="stage2") / self.cfg.gradient_accumulation_steps
-                loss.backward()
-                accum_loss += float(loss.item())
+                    loss = (
+                        self.train_step(batch, stage_name="stage2")
+                        / self.cfg.gradient_accumulation_steps
+                    )
+                    loss.backward()
+                    accum_loss += float(loss.item())
 
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-            opt2.step()
-            global_step += 1
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                opt2.step()
+                global_step += 1
 
-            if global_step % 50 == 0 or global_step == stage2_target:
-                val_loss = self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
-                record = {
-                    "stage": "stage2_joint_sft",
-                    "step": global_step,
-                    "loss": accum_loss * self.cfg.gradient_accumulation_steps,
-                    "val_loss": val_loss,
-                    "elapsed_sec": time.time() - start_time,
-                }
-                self.history.append(record)
-                if self.callback:
-                    self.callback(record)
+                if global_step % 50 == 0 or global_step == stage2_target:
+                    val_loss = (
+                        self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
+                    )
+                    record = {
+                        "stage": "stage2_joint_sft",
+                        "step": global_step,
+                        "loss": accum_loss * self.cfg.gradient_accumulation_steps,
+                        "val_loss": val_loss,
+                        "elapsed_sec": time.time() - start_time,
+                    }
+                    self.history.append(record)
+                    if self.callback:
+                        self.callback(record)
 
         # -------------------------------------------------------------
         # Automatic Standalone PreTrainedModel Export
@@ -629,13 +740,7 @@ class FastTrainingPipeline:
         export_dir = self.out_path / "final_pretrained_model"
         logger.info("Training complete. Exporting standalone Hugging Face model to %s", export_dir)
 
-        # save_pretrained automatically calls merge_and_unload()
-        self.model.save_pretrained(
-            export_dir,
-            push_to_hub=self.cfg.push_to_hub,
-            repo_id=self.cfg.hub_repo,
-            tokenizer=self.tokenizer,
-        )
+        self.export_pretrained(export_dir)
 
         # Save training summary
         summary = {
@@ -664,7 +769,9 @@ def run_fast_training(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--steps", type=int, default=2000, help="Total training steps")
     parser.add_argument("--output-dir", type=str, default="outputs/bifocalgemma_2b")
-    parser.add_argument("--data-dir", type=str, default=None, help="Directory containing training data")
+    parser.add_argument(
+        "--data-dir", type=str, default=None, help="Directory containing training data"
+    )
     parser.add_argument(
         "--pretrained-backbone-dir",
         type=str,
@@ -694,11 +801,13 @@ def run_fast_training(argv: list[str] | None = None) -> int:
     parser.add_argument("--tiny", action="store_true", help="Run tiny smoke training for CI")
 
     args = parser.parse_args(argv)
+    stage1 = 0 if args.model == "baseline-2b" else args.steps // 2
+    stage2 = args.steps if args.model == "baseline-2b" else args.steps - stage1
     cfg = FastTrainingConfig(
         model_choice=args.model,
         total_steps=args.steps,
-        stage1_steps=args.steps // 2,
-        stage2_steps=args.steps // 2,
+        stage1_steps=stage1,
+        stage2_steps=stage2,
         output_dir=args.output_dir,
         data_dir=args.data_dir,
         pretrained_backbone_dir=args.pretrained_backbone_dir,
@@ -717,4 +826,5 @@ def run_fast_training(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(run_fast_training())

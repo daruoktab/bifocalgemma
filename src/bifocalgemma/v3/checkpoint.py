@@ -21,6 +21,7 @@ from bifocalgemma.training.stages import (
     validate_checkpoint_files,
 )
 from bifocalgemma.v3.constants import (
+    CLEAN_RECIPE_VERSION,
     STAGE1_STEPS,
     TOTAL_STEPS,
 )
@@ -61,6 +62,7 @@ def save_matrix_checkpoint(
 
     manifest = {
         "format": "bifocalgemma_full_matrix_v1",
+        "recipe_version": compatibility.get("recipe_version", CLEAN_RECIPE_VERSION),
         "global_step": global_step,
         "stage": stage_name,
         "compatibility": compatibility,

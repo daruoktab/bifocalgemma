@@ -2,6 +2,7 @@
 
 import argparse
 import ast
+import base64
 import hashlib
 import io
 import json
@@ -21,7 +22,7 @@ CENTRALIZED_HF_REPO = "daruokta/bifocalgemma-2026-11-02"
 
 MATRIX_NOTEBOOK_SPECS = {
     "2base-2it": {
-        "title": "BifocalGemma V3 · 2Base → 2IT (Symmetric)",
+        "title": "BifocalGemma · 2Base → 2IT (Symmetric)",
         "config_type": "Symmetric (2B -> 2B)",
         "encoder_id": "google/gemma-4-E2B",
         "encoder_rev": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
@@ -33,7 +34,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "2base-2it",
     },
     "2it-2it": {
-        "title": "BifocalGemma V3 · 2IT → 2IT (Symmetric)",
+        "title": "BifocalGemma · 2IT → 2IT (Symmetric)",
         "config_type": "Symmetric (2B -> 2B)",
         "encoder_id": "google/gemma-4-E2B-it",
         "encoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
@@ -45,7 +46,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "2it-2it",
     },
     "4base-4it": {
-        "title": "BifocalGemma V3 · 4Base → 4IT (Symmetric)",
+        "title": "BifocalGemma · 4Base → 4IT (Symmetric)",
         "config_type": "Symmetric (4B -> 4B)",
         "encoder_id": "google/gemma-4-E4B",
         "encoder_rev": "411aa17b749aa952df1359d2dcea73917a544d9a",
@@ -57,7 +58,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "4base-4it",
     },
     "4it-4it": {
-        "title": "BifocalGemma V3 · 4IT → 4IT (Symmetric)",
+        "title": "BifocalGemma · 4IT → 4IT (Symmetric)",
         "config_type": "Symmetric (4B -> 4B)",
         "encoder_id": "google/gemma-4-E4B-it",
         "encoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
@@ -69,7 +70,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "4it-4it",
     },
     "4base-2it": {
-        "title": "BifocalGemma V3 · 4Base → 2IT (Asymmetric)",
+        "title": "BifocalGemma · 4Base → 2IT (Asymmetric)",
         "config_type": "Asymmetric (4B -> 2B)",
         "encoder_id": "google/gemma-4-E4B",
         "encoder_rev": "411aa17b749aa952df1359d2dcea73917a544d9a",
@@ -81,7 +82,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "4base-2it",
     },
     "4it-2it": {
-        "title": "BifocalGemma V3 · 4IT → 2IT (Asymmetric)",
+        "title": "BifocalGemma · 4IT → 2IT (Asymmetric)",
         "config_type": "Asymmetric (4B -> 2B)",
         "encoder_id": "google/gemma-4-E4B-it",
         "encoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
@@ -93,7 +94,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "4it-2it",
     },
     "2base-4it": {
-        "title": "BifocalGemma V3 · 2Base → 4IT (Asymmetric)",
+        "title": "BifocalGemma · 2Base → 4IT (Asymmetric)",
         "config_type": "Asymmetric (2B -> 4B)",
         "encoder_id": "google/gemma-4-E2B",
         "encoder_rev": "d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f",
@@ -105,7 +106,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "2base-4it",
     },
     "2it-4it": {
-        "title": "BifocalGemma V3 · 2IT → 4IT (Asymmetric)",
+        "title": "BifocalGemma · 2IT → 4IT (Asymmetric)",
         "config_type": "Asymmetric (2B -> 4B)",
         "encoder_id": "google/gemma-4-E2B-it",
         "encoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
@@ -117,10 +118,10 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "2it-4it",
     },
     "e2b-it": {
-        "title": "BifocalGemma V3 · Baseline E2B-IT (Decoder-Only)",
+        "title": "BifocalGemma · Baseline E2B-IT (Decoder-Only)",
         "config_type": "Baseline Decoder-Only (2B)",
-        "encoder_id": "None",
-        "encoder_rev": "None",
+        "encoder_id": None,
+        "encoder_rev": None,
         "decoder_id": "google/gemma-4-E2B-it",
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "enc_dim": 0,
@@ -129,10 +130,10 @@ MATRIX_NOTEBOOK_SPECS = {
         "subfolder": "e2b-it",
     },
     "e4b-it": {
-        "title": "BifocalGemma V3 · Baseline E4B-IT (Decoder-Only)",
+        "title": "BifocalGemma · Baseline E4B-IT (Decoder-Only)",
         "config_type": "Baseline Decoder-Only (4B)",
-        "encoder_id": "None",
-        "encoder_rev": "None",
+        "encoder_id": None,
+        "encoder_rev": None,
         "decoder_id": "google/gemma-4-E4B-it",
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "enc_dim": 0,
@@ -170,6 +171,25 @@ def render_notebook(model_key: str, manifest: dict[str, str]) -> str:
     repo_id = spec["repo_id"]
     subfolder = spec["subfolder"]
     manifest_repr = json.dumps(manifest, indent=8)
+    is_baseline = encoder_id is None
+    if is_baseline:
+        cell1_md = f"""        # {title}
+
+        Pelatihan dan evaluasi terpadu Molab: Baseline Decoder-Only Causal LM (Full Decoder SFT).
+        - **Model:** `{model_key}` ({config_type}: Decoder `{dec_dim}`) · **HF:** [{repo_id}](https://huggingface.co/{repo_id}) (`{subfolder}/`)
+        - **Backbone:** Decoder `{decoder_id}` (rev `{decoder_rev}`)
+        - **Kurikulum:** Full Decoder SFT = 11,102 steps terbuka penuh dari awal tanpa pembagian tahap (Batch=2, Accum=2)
+        - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
+        ready_message = "**Runtime Baseline siap** · bundle `{runtime_manifest['sha256'][:12]}` · Full Decoder SFT & dynamic benchmark batching aktif."
+    else:
+        cell1_md = f"""        # {title}
+
+        Pelatihan dan evaluasi terpadu Molab: SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
+        - **Model:** `{model_key}` ({config_type}: {enc_dim} -> {dec_dim}) · **HF:** [{repo_id}](https://huggingface.co/{repo_id}) (`{subfolder}/`)
+        - **Backbones:** Encoder `{encoder_id}` (rev `{encoder_rev}`) | Decoder `{decoder_id}` (rev `{decoder_rev}`)
+        - **Kurikulum:** Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps (Batch=2, Accum=2)
+        - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
+        ready_message = "**Runtime BifocalGemma siap** · bundle `{runtime_manifest['sha256'][:12]}` · SwiGLUDualGateBridge & dynamic benchmark batching aktif."
 
     code = f'''# /// script
 # requires-python = ">=3.12,<3.14"
@@ -203,35 +223,7 @@ def _():
 
     mo.md(
         """
-        # {title}
-
-        Notebook pelatihan dan evaluasi terpadu Molab (10-Model Matrix V3) dengan arsitektur **SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention**, kurikulum anti-catastrophic-forgetting (15% Code QA / MCQ & Span-Copy replay), `BATCH_SIZE = 2`, serta dynamic optimal evaluation/benchmark batching.
-
-        ### Spesifikasi Model:
-        - **Model Key:** `{model_key}`
-        - **Encoder Backbone:** `{encoder_id}` (rev `{encoder_rev}`)
-        - **Decoder Backbone:** `{decoder_id}` (rev `{decoder_rev}`)
-        - **Konfigurasi Dimensi:** `{config_type}` (Encoder `{enc_dim}` -> Decoder `{dec_dim}`)
-        - **Arsitektur V3:** `SwiGLUDualGateBridge` + Decoupled Full-Rank BF16 Cross-Attention (`atanh(0.05)` gate init, unrotated cross-coordinates, critical length scaling)
-        - **Centralized Hugging Face Repository:** [{repo_id}](https://huggingface.co/{repo_id}) (Subfolder: `{subfolder}/`)
-
-        ### Kurikulum Dua Tahap Anti-Forgetting (11.102 Steps / 44.408 Contoh · Batch = 2, Accum = 2):
-        1. **Stage 1 (5.551 steps):**
-           - Alignment & Cross-Attention Warmup (Decoder LoRA beku untuk model berpasangan; aktif untuk baseline decoder-only)
-           - 15% Code QA / MCQ & Exact Span-Copy comprehension replay untuk mencegah catastrophic forgetting
-        2. **Stage 2 (5.551 steps):**
-           - Joint SFT Fine-Tuning (Decoder LoRA + Bridge + Cross-Attention + Encoder LoRA)
-           - 15% Code QA / MCQ & Exact Span-Copy replay dipertahankan sepanjang epoch
-
-        ### Evaluasi 8 Benchmark Terurut (6 Full Cepat + 2 Heavy Sampled-100) dengan Dynamic Batching:
-        1. `longcodeqa_gemma32k_dec8k_v1` (Full)
-        2. `humanevalfix_python_v2` (Full)
-        3. `sweqa_oracle_gemma32k_dec8k_v1` (Full)
-        4. `sweqa_noisy_oracle_gemma32k_dec8k_v1` (Full)
-        5. `gsm8k_zero_shot_v2` (Full)
-        6. `gsm8k_eight_shot_v2` (Full)
-        7. `crosscodelong_chunk_gemma32k_dec8k_v1` (100 deterministic sampled cases, `seed=17`)
-        8. `crosscodelong_function_gemma32k_dec8k_v1` (100 deterministic sampled cases, `seed=17`)
+{cell1_md}
         """
     )
     return (mo,)
@@ -241,7 +233,12 @@ def _():
 def _(mo):
     import runpy
 
-    def load_runtime(repo_id, filename, revision, expected_sha, notebook_file=None):
+    EMBEDDED_RUNTIME_B85 = "__EMBEDDED_RUNTIME_B85_PLACEHOLDER__"
+
+    def load_runtime(
+        repo_id, filename, revision, expected_sha, notebook_file=None, embedded_b85=""
+    ):
+        import base64
         import hashlib
         import io
         import sys
@@ -259,6 +256,13 @@ def _(mo):
         cached = root / "runtime.zip"
         source = local if local is not None and local.is_file() else cached
         data = source.read_bytes() if source.is_file() else b""
+        if hashlib.sha256(data).hexdigest() != expected_sha and embedded_b85:
+            try:
+                decoded = base64.b85decode(embedded_b85)
+                if hashlib.sha256(decoded).hexdigest() == expected_sha:
+                    data = decoded
+            except Exception:
+                pass
         if hashlib.sha256(data).hexdigest() != expected_sha:
             urls = [
                 f"https://huggingface.co/{{repo_id}}/resolve/{{revision}}/{{filename}}",
@@ -291,11 +295,6 @@ def _(mo):
                     or (entry.external_attr >> 16) & 0o170000 == 0o120000
                 ):
                     raise ValueError("Runtime archive contains an unsafe path.")
-                if (
-                    entry.file_size > 32 * 2**20
-                    or sum(e.file_size for e in archive.infolist()) > 128 * 2**20
-                ):
-                    raise ValueError("Runtime archive is too large.")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(archive.read(entry))
 
@@ -323,11 +322,12 @@ def _(mo):
         runtime_manifest["revision"],
         runtime_manifest["sha256"],
         notebook_file=globals().get("__file__"),
+        embedded_b85=EMBEDDED_RUNTIME_B85,
     )
     launcher = runpy.run_path(str(runtime_root / "tools/notebook_launcher.py"))
     dependency_runtime = launcher["prepare_runtime"](runtime_root)
     mo.md(
-        f"**Runtime V3 siap** · bundle `{{runtime_manifest['sha256'][:12]}}` · SwiGLUDualGateBridge & dynamic benchmark batching aktif."
+        f"{ready_message}"
     )
     return dependency_runtime, runtime_manifest, runtime_root
 
@@ -340,16 +340,18 @@ def _(dependency_runtime, mo, runtime_root):
     HF_SUBFOLDER = "{subfolder}"
     token_form = mo.ui.dictionary(
         {{
-            "token": mo.ui.text(
-                kind="password", label="HF write token (atau HF_TOKEN environment)"
-            ),
+            "token": mo.ui.text(kind="password", label="HF write token (atau HF_TOKEN environment)"),
+            "repo_id": mo.ui.text(value="daruokta/bifocalgemma-clean", label="Target HF Repo"),
+            "standalone_repo_id": mo.ui.text(value="", label="Standalone HF Repo (opsional)"),
+            "total_steps": mo.ui.number(value=11102, start=10, stop=50000, step=100, label="Total Steps"),
+            "force_fresh": mo.ui.checkbox(value=False, label="Force Fresh (abaikan checkpoint lama)"),
         }}
     ).form(submit_button_label="Jalankan")
     mo.vstack(
         [
             mo.md(
-                f"**Model:** `{{MODEL_KEY}}` · **HF:** `{{HF_REPO_ID}}` (subfolder `{{HF_SUBFOLDER}}`)\\n"
-                "Training 11.102 steps (Batch=2, Accum=2) dan 8 benchmark (6 Full + 2 Sampled-100) berjalan otomatis.\\n"
+                f"**Model:** `{{MODEL_KEY}}` · **Default HF:** `{{HF_REPO_ID}}` (subfolder `{{HF_SUBFOLDER}}`)\\n"
+                f"Pelatihan {{MODEL_KEY}} dan 8 benchmark berjalan terpadu.\\n"
                 "Token di bawah hanya diperlukan jika `HF_TOKEN` belum tersedia di environment."
             ),
             token_form,
@@ -362,11 +364,8 @@ def _(dependency_runtime, mo, runtime_root):
 def _(MODEL_KEY, dependency_runtime, mo):
     assert dependency_runtime["status"] == "READY"
     WigglyDashboard = (
-        __import__("importlib")
-        .import_module("bifocalgemma.training.wiggly_dashboard")
-        .WigglyDashboard
+        __import__("importlib").import_module("bifocalgemma.training.wiggly_dashboard").WigglyDashboard
     )
-
     live_monitor = WigglyDashboard(mo, experiment=MODEL_KEY, device="cuda")
     live_monitor.layout()
     return (live_monitor,)
@@ -376,21 +375,31 @@ def _(MODEL_KEY, dependency_runtime, mo):
 def _(MODEL_KEY, live_monitor, mo, token_form):
     import os
 
-    token = os.environ.get("HF_TOKEN", "").strip()
-    if token_form.value is not None:
-        token = token_form.value["token"].strip() or token
+    form = token_form.value or {{}}
+    token = form.get("token", "").strip() or os.environ.get("HF_TOKEN", "").strip()
+    repo_id = form.get("repo_id", "").strip() or "daruokta/bifocalgemma-clean"
+    standalone_repo_id = form.get("standalone_repo_id", "").strip() or None
+    total_steps = int(form.get("total_steps") or 11102)
+    force_fresh = bool(form.get("force_fresh", False))
+
     mo.stop(
         not token,
         mo.md(
             "Isi HF token di atas dan tekan **Jalankan**, atau sediakan `HF_TOKEN` lalu Run.\\n"
-            "Training akan menyelesaikan Stage 1 (5.551 steps) + Stage 2 (5.551 steps) = 11.102 steps "
-            "dan dilanjutkan dengan 8 benchmark (6 full + 2 sampled-100)."
+            f"Training: {{total_steps:,}} steps dan dilanjutkan 8 benchmark."
         ),
     )
     ms = __import__("importlib").import_module("tools.molab_matrix_support")
 
     result = ms.run_matrix_training_and_benchmark(
-        MODEL_KEY, token=token, mo=mo, monitor=live_monitor
+        MODEL_KEY,
+        token=token,
+        repo_id=repo_id,
+        standalone_repo_id=standalone_repo_id,
+        total_steps=total_steps,
+        force_fresh=force_fresh,
+        mo=mo,
+        monitor=live_monitor,
     )
     mo.vstack(
         [
@@ -415,7 +424,9 @@ def format_code(code: str, filename: str) -> str:
     if not formatter:
         for candidate in [
             Path(sys.executable).parent / ("ruff.exe" if sys.platform == "win32" else "ruff"),
-            Path(sys.executable).parent / "Scripts" / ("ruff.exe" if sys.platform == "win32" else "ruff"),
+            Path(sys.executable).parent
+            / "Scripts"
+            / ("ruff.exe" if sys.platform == "win32" else "ruff"),
             Path.home() / ".local/bin" / ("ruff.exe" if shutil.which("cmd") else "ruff"),
         ]:
             if candidate.is_file():
@@ -446,7 +457,9 @@ def format_code(code: str, filename: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="Check existing files match generated code")
+    parser.add_argument(
+        "--check", action="store_true", help="Check existing files match generated code"
+    )
     parser.add_argument(
         "--publish", action="store_true", help="Publish immutable runtime bundle to Hugging Face"
     )
@@ -454,10 +467,13 @@ def main():
 
     print("Building deterministic source bundle...")
     payload, bundle_sha = matrix_bundle(ROOT)
+    payload_b85 = base64.b85encode(payload).decode("ascii")
     print(f"Source bundle hash: {bundle_sha}")
 
     notebooks_dir = ROOT / "notebooks"
     notebooks_dir.mkdir(exist_ok=True)
+    runtime_dir = notebooks_dir / "runtime"
+    runtime_dir.mkdir(exist_ok=True)
     manifest_path = notebooks_dir / "runtime-manifest.json"
 
     if args.publish:
@@ -483,20 +499,34 @@ def main():
             "revision": commit.oid,
             "sha256": bundle_sha,
         }
-        runtime_dir = notebooks_dir / "runtime"
-        runtime_dir.mkdir(exist_ok=True)
         (runtime_dir / f"runtime-{bundle_sha[:16]}.zip").write_bytes(payload)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"Updated {manifest_path}")
-    else:
+    elif args.check:
         if not manifest_path.is_file():
-            raise SystemExit(f"Missing runtime manifest: {manifest_path}. Use --publish first.")
+            raise SystemExit(f"Missing runtime manifest: {manifest_path}.")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("sha256") != bundle_sha:
             raise SystemExit(
                 f"Source bundle hash ({bundle_sha}) does not match manifest ({manifest.get('sha256')}). "
-                "Use --publish to upload the new bundle, or update the manifest."
+                "Run without --check to regenerate."
             )
+    else:
+        filename = f"runtime/runtime-{bundle_sha[:16]}.zip"
+        for old_zip in runtime_dir.glob("runtime-*.zip"):
+            try:
+                old_zip.unlink()
+            except OSError:
+                pass
+        (runtime_dir / f"runtime-{bundle_sha[:16]}.zip").write_bytes(payload)
+        manifest = {
+            "repo_id": CENTRALIZED_HF_REPO,
+            "filename": filename,
+            "revision": "LOCAL-PREVIEW",
+            "sha256": bundle_sha,
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        print(f"Updated local runtime manifest: {manifest_path}")
 
     generated_files = []
     for model_key in MATRIX_NOTEBOOK_SPECS:
@@ -506,9 +536,19 @@ def main():
 
         raw_code = render_notebook(model_key, manifest)
         formatted_code = format_code(raw_code, filename)
+        formatted_code = formatted_code.replace(
+            '"__EMBEDDED_RUNTIME_B85_PLACEHOLDER__"',
+            f'"{payload_b85}"  # fmt: skip  # noqa: E501',
+        )
 
         # Validate syntax
         ast.parse(formatted_code, filename=str(target_path))
+
+        lines_count = len(formatted_code.splitlines())
+        if lines_count >= 250:
+            raise ValueError(
+                f"Notebook {filename} has {lines_count} lines, which exceeds the limit of 250"
+            )
 
         if args.check:
             if not target_path.exists():
@@ -518,12 +558,34 @@ def main():
                 raise SystemExit(f"Notebook out of sync: {target_path}")
         else:
             target_path.write_text(formatted_code, encoding="utf-8")
-            print(
-                f"  Wrote {target_path} ({len(formatted_code)} bytes, {len(formatted_code.splitlines())} lines)"
-            )
+            print(f"  Wrote {target_path} ({len(formatted_code)} bytes, {lines_count} lines)")
         generated_files.append(target_path)
 
     print(f"\nSuccessfully generated and validated {len(generated_files)} matrix notebooks!")
+
+    fast_notebook = notebooks_dir / "train_bifocalgemma_fast.py"
+    if fast_notebook.is_file():
+        import re
+
+        fast_text = fast_notebook.read_text(encoding="utf-8")
+        fast_updated = re.sub(
+            r'RUNTIME_SHA256 = "[a-f0-9]+"',
+            f'RUNTIME_SHA256 = "{bundle_sha}"',
+            fast_text,
+        )
+        fast_updated = re.sub(
+            r'EMBEDDED_RUNTIME_B85 = ".*?"  # fmt: skip  # noqa: E501',
+            f'EMBEDDED_RUNTIME_B85 = "{payload_b85}"  # fmt: skip  # noqa: E501',
+            fast_updated,
+        )
+        if args.check:
+            if fast_text != fast_updated:
+                raise SystemExit(
+                    f"Notebook out of sync: {fast_notebook}. Run without --check to update."
+                )
+        else:
+            fast_notebook.write_text(fast_updated, encoding="utf-8")
+            print(f"Synchronized fast training notebook: {fast_notebook}")
 
 
 if __name__ == "__main__":

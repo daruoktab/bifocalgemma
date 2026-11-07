@@ -37,11 +37,17 @@ def main(argv: list[str] | None = None) -> int:
     native.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     train = sub.add_parser("train", help="Documented production placeholder.")
     train.add_argument("--experiment", choices=EXPERIMENT_NAMES, default=EXPERIMENT_NAMES[0])
-    fast_train = sub.add_parser("train-fast", help="Fast from-scratch training pipeline for BifocalGemma-2B.")
-    fast_train.add_argument("--model", choices=["bifocalgemma-2b", "baseline-2b"], default="bifocalgemma-2b")
+    fast_train = sub.add_parser(
+        "train-fast", help="Fast from-scratch training pipeline for BifocalGemma-2B."
+    )
+    fast_train.add_argument(
+        "--model", choices=["bifocalgemma-2b", "baseline-2b"], default="bifocalgemma-2b"
+    )
     fast_train.add_argument("--steps", type=int, default=2000)
     fast_train.add_argument("--output-dir", type=str, default="outputs/bifocalgemma_2b")
-    fast_train.add_argument("--data-dir", type=str, default=None, help="Directory containing training data")
+    fast_train.add_argument(
+        "--data-dir", type=str, default=None, help="Directory containing training data"
+    )
     fast_train.add_argument(
         "--pretrained-backbone-dir",
         type=str,
@@ -128,8 +134,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "train-fast":
             from bifocalgemma.training.fast_pipeline import FastTrainingConfig, FastTrainingPipeline
 
-            stage1 = args.steps // 2
-            stage2 = args.steps - stage1
+            if args.model == "baseline-2b":
+                stage1 = 0
+                stage2 = args.steps
+            else:
+                stage1 = args.steps // 2
+                stage2 = args.steps - stage1
             cfg = FastTrainingConfig(
                 model_choice=args.model,
                 total_steps=args.steps,

@@ -121,6 +121,47 @@ def loss_chart(history):
     <p class="muted">● Biru: train CE per optimizer window (kurva diringkas, log lengkap). ● Oranye: held-out CE seluruh dev. Ini bukan skor repair.</p>"""
 
 
+def format_stage_display(stage: str, state: dict[str, Any] | None = None) -> str:
+    """Format technical training stage key into user-facing dashboard label."""
+    if state is None:
+        state = {}
+    exp = str(state.get("experiment", "")).lower()
+    is_baseline = (
+        exp.startswith(("e2b-it", "e4b-it", "baseline"))
+        or "baseline" in exp
+        or stage
+        in {
+            "full_decoder_sft",
+            "starting_decoder_sft",
+            "decoder_sft_completed",
+            "configured_decoder_baseline",
+        }
+    )
+    if is_baseline:
+        if stage in {
+            "full_decoder_sft",
+            "starting_decoder_sft",
+            "matrix_training_step",
+            "optimizer_step_complete",
+            "frozen_decoder",
+            "joint",
+            "starting_stage1_frozen",
+            "starting_stage2_joint",
+        }:
+            return "Full Decoder SFT"
+        if stage in {"decoder_sft_completed", "stage1_completed", "stage2_completed"}:
+            return "Full Decoder SFT selesai"
+        if stage == "configured_decoder_baseline":
+            return "Decoder baseline siap"
+        return stage
+    else:
+        if stage in {"frozen_decoder", "starting_stage1_frozen"}:
+            return "Stage 1 · Alignment (Frozen Decoder)"
+        if stage in {"joint", "starting_stage2_joint"}:
+            return "Stage 2 · Joint Training"
+        return stage
+
+
 def render_dashboard(state, history, recent):
     def esc(value):
         return html.escape(str(value), quote=True)
@@ -130,7 +171,10 @@ def render_dashboard(state, history, recent):
 
     step, maximum = int(state.get("step", 0)), max(1, int(state.get("max_steps", 1)))
     percent = min(100, 100 * step / maximum)
+    stage_raw = state.get("stage", "preparing")
+    stage_display = format_stage_display(stage_raw, state)
     cards = [
+        ("Tahap", stage_display),
         ("Model berurutan", f"{state.get('model_index', 1)} / {state.get('model_total', 1)}"),
         ("Optimizer step", f"{step:,} / {maximum:,}"),
         ("Epoch", number(state.get("epoch_fraction"), 3)),
@@ -245,7 +289,7 @@ def render_dashboard(state, history, recent):
     .bgm table {{width:100%;font-size:12px;border-collapse:collapse}} .bgm td {{padding:6px;border-bottom:1px solid #334155;overflow-wrap:anywhere}}
     .bgm .failure {{background:#7f1d1d;padding:12px;border-radius:8px;margin:10px 0;overflow-wrap:anywhere}}
     </style><section class="bgm"><h2>BifocalGemma · Training monitor</h2>
-    <p>{esc(state.get("experiment", ""))} <span class="badge">{esc(state.get("stage", "preparing"))}</span></p>
+    <p>{esc(state.get("experiment", ""))} <span class="badge">{esc(stage_display)}</span></p>
     <progress max="{maximum}" value="{step}"></progress><p class="muted">{percent:.2f}% optimizer budget · Dev, checkpoint, dan upload terlihat sebagai tahap terpisah.</p>
     <p>{esc(state.get("message", ""))}</p>
     <p class="muted">Train {esc(state.get("train_examples", "—"))} · Dev {esc(state.get("dev_examples", "—"))} · Query chunk {esc(state.get("query_chunk_size", "—"))} · Loss chunk {esc(state.get("loss_chunk_size", "—"))}</p>
@@ -287,7 +331,17 @@ class TrainingDashboard:
         self.state.update({k: v for k, v in event.items() if k != "history"})
         if "history" in event:
             self.history = list(event["history"])
-        if event.get("stage") == "optimizer_step_complete":
+        if (
+            event.get("stage")
+            in {
+                "optimizer_step_complete",
+                "frozen_decoder",
+                "joint",
+                "full_decoder_sft",
+                "matrix_training_step",
+            }
+            and "train_loss" in event
+        ):
             self.history.append(dict(event))
         if event.get("stage") == "validation_complete":
             for row in reversed(self.history):

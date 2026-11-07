@@ -7,6 +7,7 @@ import gc
 import json
 import logging
 import random
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,8 @@ from bifocalgemma.v3.constants import (
     ACCUMULATION,
     BATCH_SIZE,
     BENCHMARKS,
+    CLEAN_DEFAULT_HF_REPO,
+    CLEAN_RECIPE_VERSION,
     COLLECTION,
     COMPREHENSION_MIX_RATIO,
     DATASET_REPO,
@@ -147,6 +150,7 @@ def run_matrix_stage(
     use_anti_forgetting_curriculum: bool = True,
     decoder: Any = None,
     diff_token_ids: dict[str, tuple[int, ...]] | None = None,
+    total_steps: int | None = None,
 ) -> dict[str, Any]:
     """Execute one training stage (Stage 1 frozen or Stage 2 joint) with AdamW and batch=2."""
     ensure_hardware_memory_guards()
@@ -314,7 +318,7 @@ def run_matrix_stage(
             "stage_step": step + 1,
             "stage": stage_name,
             "freeze_decoder": effective_freeze_decoder,
-            "max_steps": TOTAL_STEPS,
+            "max_steps": total_steps if total_steps is not None else TOTAL_STEPS,
             "train_loss": mean_loss,
             "target_tokens": token_count,
             "gradient_norm": grad_norm,
@@ -412,8 +416,13 @@ def run_matrix_training(
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
+    repo_id: str | None = None,
+    standalone_repo_id: str | None = None,
+    total_steps: int | None = None,
+    stage1_steps: int | None = None,
+    force_fresh: bool = False,
 ) -> dict[str, Any]:
-    """Execute complete two-stage matrix training run (5,551 Stage 1 + 5,551 Stage 2 = 11,102 steps)."""
+    """Execute complete two-stage matrix training run with configurable steps and clean recipe version."""
     ensure_hardware_memory_guards()
     patch_matrix_tokenization()
     if model_key not in MATRIX_MODELS:
@@ -423,8 +432,29 @@ def run_matrix_training(
     policy = unified_recipe(cfg["family"])
     for grp_settings in policy.get("groups", {}).values():
         grp_settings["warmup_ratio"] = WARMUP_RATIO
-    repo = cfg["repo"]
+    repo = (
+        (repo_id.strip() if repo_id and repo_id.strip() else None)
+        or cfg.get("repo")
+        or CLEAN_DEFAULT_HF_REPO
+    )
     subfolder = cfg.get("subfolder", model_key)
+
+    resolved_total = int(total_steps) if total_steps is not None else TOTAL_STEPS
+    if spec.encoder is None:
+        resolved_stage1 = resolved_total
+        resolved_stage2 = 0
+    else:
+        if stage1_steps is not None:
+            resolved_stage1 = int(stage1_steps)
+        elif total_steps is None:
+            resolved_stage1 = STAGE1_STEPS
+        else:
+            resolved_stage1 = max(1, resolved_total // 2)
+        resolved_stage2 = (
+            STAGE2_STEPS
+            if total_steps is None and stage1_steps is None
+            else max(0, resolved_total - resolved_stage1)
+        )
 
     root = Path(output_root) / model_key / "train"
     root.mkdir(parents=True, exist_ok=True)
@@ -437,12 +467,83 @@ def run_matrix_training(
     )
     dashboard.run_dir = root
 
-    if upload and token:
-        recover_remote_run(repo, root, prefix, token=token)
+    train_dir = root / "training"
+    bench_dir = root / "benchmarks"
+    ledger_file = root / "pipeline_state.json"
+    legacy_ledger_file = root / "ledger.json"
+    rep_file = train_dir / "training_report.json"
+
+    def wipe_stale_artifacts():
+        if train_dir.exists():
+            shutil.rmtree(train_dir, ignore_errors=True)
+        if bench_dir.exists():
+            shutil.rmtree(bench_dir, ignore_errors=True)
+        if ledger_file.exists():
+            ledger_file.unlink(missing_ok=True)
+        if legacy_ledger_file.exists():
+            legacy_ledger_file.unlink(missing_ok=True)
+
+    def check_legacy_artifacts() -> bool:
+        if legacy_ledger_file.is_file():
+            try:
+                l_data = json.loads(legacy_ledger_file.read_text(encoding="utf-8"))
+                rec_ver = l_data.get("recipe_version") or l_data.get("identity", {}).get(
+                    "recipe_version"
+                )
+                if rec_ver != CLEAN_RECIPE_VERSION:
+                    return True
+            except Exception:
+                return True
+        if ledger_file.is_file():
+            try:
+                l_data = json.loads(ledger_file.read_text(encoding="utf-8"))
+                rec_ver = l_data.get("recipe_version") or l_data.get("identity", {}).get(
+                    "recipe_version"
+                )
+                if rec_ver != CLEAN_RECIPE_VERSION:
+                    return True
+            except Exception:
+                return True
+        if rep_file.is_file():
+            try:
+                rep_data = json.loads(rep_file.read_text(encoding="utf-8"))
+                if rep_data.get("recipe_version") != CLEAN_RECIPE_VERSION:
+                    return True
+            except Exception:
+                return True
+        existing_ckpt = latest_checkpoint(train_dir)
+        if existing_ckpt:
+            manifest_file = Path(existing_ckpt) / "manifest.json"
+            if manifest_file.is_file():
+                try:
+                    m_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                    rec_ver = m_data.get("recipe_version") or m_data.get("compatibility", {}).get(
+                        "recipe_version"
+                    )
+                    if rec_ver != CLEAN_RECIPE_VERSION:
+                        return True
+                except Exception:
+                    return True
+        return False
+
+    if force_fresh:
+        wipe_stale_artifacts()
+    else:
+        if upload and token:
+            recover_remote_run(repo, root, prefix, token=token)
+        if check_legacy_artifacts():
+            wipe_stale_artifacts()
+            dashboard(
+                {
+                    "stage": "discarded_legacy_checkpoint",
+                    "message": "Discarded legacy checkpoint lacking clean recipe version.",
+                }
+            )
 
     identity = {
         "format": "bifocalgemma_pipeline_v1",
         "version": "bifocalgemma_v3_swiglu_cross",
+        "recipe_version": CLEAN_RECIPE_VERSION,
         "spec": spec.to_dict(),
         "policy": policy,
         "dataset_repo": DATASET_REPO,
@@ -450,9 +551,9 @@ def run_matrix_training(
         "collection": COLLECTION,
         "run_name": "train",
         "seed": 17,
-        "total_steps": TOTAL_STEPS,
-        "stage1_steps": STAGE1_STEPS,
-        "stage2_steps": STAGE2_STEPS,
+        "total_steps": resolved_total,
+        "stage1_steps": resolved_stage1,
+        "stage2_steps": resolved_stage2,
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
         "model_key": model_key,
@@ -519,20 +620,22 @@ def run_matrix_training(
             )
         return result
 
-    train_dir = root / "training"
     existing_ckpt = latest_checkpoint(train_dir)
     completed_report_path = root / "training/training_report.json"
     if completed_report_path.is_file() and existing_ckpt:
         rep = json.loads(completed_report_path.read_text(encoding="utf-8"))
-        if rep.get("global_step") == TOTAL_STEPS:
-            progress({"stage": "training_completed", "step": TOTAL_STEPS})
+        if (
+            rep.get("global_step") == resolved_total
+            and rep.get("recipe_version") == CLEAN_RECIPE_VERSION
+        ):
+            progress({"stage": "training_completed", "step": resolved_total})
             snapshot(final=True)
             return {
                 "status": "COMPLETED",
                 "model_key": model_key,
                 "repo": repo,
                 "subfolder": subfolder,
-                "global_step": TOTAL_STEPS,
+                "global_step": resolved_total,
                 "pretrained_model": str(root / "pretrained_model"),
                 "message": "Full matrix training already completed.",
             }
@@ -544,7 +647,10 @@ def run_matrix_training(
     configure_policy_model(model, copy.deepcopy(policy))
     configure_memory_efficient_training(model)
     cross_info = configure_full_rank_cross_attention(model)
-    progress({"stage": "configured_cross_attention", **cross_info})
+    if spec.encoder is None:
+        progress({"stage": "configured_decoder_baseline", **cross_info})
+    else:
+        progress({"stage": "configured_cross_attention", **cross_info})
 
     # Prepare curated dataset
     pool = Path(cache) / "dataset" / COLLECTION
@@ -579,6 +685,7 @@ def run_matrix_training(
             if spec.encoder is not None
             else "decoder_only_causal_v3"
         ),
+        "recipe_version": CLEAN_RECIPE_VERSION,
         "experiment": spec.name,
         "model_key": model_key,
         "repo": repo,
@@ -593,9 +700,9 @@ def run_matrix_training(
         "comprehension_mix_ratio": COMPREHENSION_MIX_RATIO,
         "training_policy": policy,
         "memory_policy": model.memory_policy,
-        "total_steps": TOTAL_STEPS,
-        "stage1_steps": STAGE1_STEPS,
-        "stage2_steps": STAGE2_STEPS,
+        "total_steps": resolved_total,
+        "stage1_steps": resolved_stage1,
+        "stage2_steps": resolved_stage2,
     }
 
     # Determine resume point
@@ -608,63 +715,122 @@ def run_matrix_training(
         current_global_step = manifest_meta.get("global_step", 0)
 
     stage1_report = None
-    if current_global_step < STAGE1_STEPS:
-        progress({"stage": "starting_stage1_frozen", "step": current_global_step})
-        stage1_report = run_matrix_stage(
-            model,
-            train_data,
-            dev_data,
-            stage_name="frozen_decoder",
-            policy=copy.deepcopy(policy),
-            max_steps=STAGE1_STEPS,
-            freeze_decoder=spec.encoder is not None,
-            run_dir=root,
-            compatibility=compatibility,
-            start_global_step=0,
-            batch_size=BATCH_SIZE,
-            accumulation=ACCUMULATION,
-            clip_norm=1.0,
-            seed=17,
-            progress=progress,
-            checkpoint_callback=lambda p: snapshot(),
-            resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
-            decoder=decoder_tokenizer,
-        )
-        progress({"stage": "stage1_completed", "last_checkpoint": stage1_report["last_checkpoint"]})
-        stage1_files = [p for p in Path(stage1_report["last_checkpoint"]).glob("*") if p.is_file()]
-        ledger.finish("stage1_frozen", stage1_files, stage1_report)
-        snapshot(final=True)
-        current_global_step = STAGE1_STEPS
-        resume_ckpt = stage1_report["last_checkpoint"]
-
     stage2_report = None
-    if current_global_step < TOTAL_STEPS:
-        progress({"stage": "starting_stage2_joint", "step": current_global_step})
-        stage2_steps_remaining = TOTAL_STEPS - STAGE1_STEPS
-        stage2_report = run_matrix_stage(
-            model,
-            train_data,
-            dev_data,
-            stage_name="joint",
-            policy=copy.deepcopy(policy),
-            max_steps=stage2_steps_remaining,
-            freeze_decoder=False,
-            run_dir=root,
-            compatibility=compatibility,
-            start_global_step=STAGE1_STEPS,
-            batch_size=BATCH_SIZE,
-            accumulation=ACCUMULATION,
-            clip_norm=1.0,
-            seed=17,
-            progress=progress,
-            checkpoint_callback=lambda p: snapshot(),
-            resume_from_checkpoint=resume_ckpt,
-            decoder=decoder_tokenizer,
-        )
-        progress({"stage": "stage2_completed", "last_checkpoint": stage2_report["last_checkpoint"]})
-        stage2_files = [p for p in Path(stage2_report["last_checkpoint"]).glob("*") if p.is_file()]
-        ledger.finish("stage2_joint", stage2_files, stage2_report)
-        snapshot(final=True)
+    if spec.encoder is None:
+        if current_global_step < resolved_total:
+            progress(
+                {
+                    "stage": "starting_decoder_sft",
+                    "step": current_global_step,
+                    "max_steps": resolved_total,
+                }
+            )
+            stage1_report = run_matrix_stage(
+                model,
+                train_data,
+                dev_data,
+                stage_name="full_decoder_sft",
+                policy=copy.deepcopy(policy),
+                max_steps=resolved_total,
+                freeze_decoder=False,
+                run_dir=root,
+                compatibility=compatibility,
+                start_global_step=0,
+                batch_size=BATCH_SIZE,
+                accumulation=ACCUMULATION,
+                clip_norm=1.0,
+                seed=17,
+                progress=progress,
+                checkpoint_callback=lambda p: snapshot(),
+                resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
+                decoder=decoder_tokenizer,
+                total_steps=resolved_total,
+            )
+            progress(
+                {
+                    "stage": "decoder_sft_completed",
+                    "last_checkpoint": stage1_report["last_checkpoint"],
+                }
+            )
+            stage1_files = [
+                p for p in Path(stage1_report["last_checkpoint"]).glob("*") if p.is_file()
+            ]
+            ledger.finish("full_decoder_sft", stage1_files, stage1_report)
+            snapshot(final=True)
+            stage2_report = None
+    else:
+        if current_global_step < resolved_stage1:
+            progress({"stage": "starting_stage1_frozen", "step": current_global_step})
+            stage1_report = run_matrix_stage(
+                model,
+                train_data,
+                dev_data,
+                stage_name="frozen_decoder",
+                policy=copy.deepcopy(policy),
+                max_steps=resolved_stage1,
+                freeze_decoder=True,
+                run_dir=root,
+                compatibility=compatibility,
+                start_global_step=0,
+                batch_size=BATCH_SIZE,
+                accumulation=ACCUMULATION,
+                clip_norm=1.0,
+                seed=17,
+                progress=progress,
+                checkpoint_callback=lambda p: snapshot(),
+                resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
+                decoder=decoder_tokenizer,
+                total_steps=resolved_total,
+            )
+            progress(
+                {
+                    "stage": "stage1_completed",
+                    "last_checkpoint": stage1_report["last_checkpoint"],
+                }
+            )
+            stage1_files = [
+                p for p in Path(stage1_report["last_checkpoint"]).glob("*") if p.is_file()
+            ]
+            ledger.finish("stage1_frozen", stage1_files, stage1_report)
+            snapshot(final=True)
+            current_global_step = resolved_stage1
+            resume_ckpt = stage1_report["last_checkpoint"]
+
+        if current_global_step < resolved_total:
+            progress({"stage": "starting_stage2_joint", "step": current_global_step})
+            stage2_steps_remaining = resolved_total - resolved_stage1
+            stage2_report = run_matrix_stage(
+                model,
+                train_data,
+                dev_data,
+                stage_name="joint",
+                policy=copy.deepcopy(policy),
+                max_steps=stage2_steps_remaining,
+                freeze_decoder=False,
+                run_dir=root,
+                compatibility=compatibility,
+                start_global_step=resolved_stage1,
+                batch_size=BATCH_SIZE,
+                accumulation=ACCUMULATION,
+                clip_norm=1.0,
+                seed=17,
+                progress=progress,
+                checkpoint_callback=lambda p: snapshot(),
+                resume_from_checkpoint=resume_ckpt,
+                decoder=decoder_tokenizer,
+                total_steps=resolved_total,
+            )
+            progress(
+                {
+                    "stage": "stage2_completed",
+                    "last_checkpoint": stage2_report["last_checkpoint"],
+                }
+            )
+            stage2_files = [
+                p for p in Path(stage2_report["last_checkpoint"]).glob("*") if p.is_file()
+            ]
+            ledger.finish("stage2_joint", stage2_files, stage2_report)
+            snapshot(final=True)
 
     # Export standalone Hugging Face PreTrainedModel artifact
     export_dir = root / "pretrained_model"
@@ -679,29 +845,44 @@ def run_matrix_training(
             push_to_hub=upload and bool(token),
             repo_id=repo if upload and token else None,
             token=token,
+            path_in_repo=f"{subfolder}/pretrained_model",
+            tokenizer_cache=Path(cache) / "tokenizers",
         )
+        if standalone_repo_id and standalone_repo_id.strip() and upload and token:
+            export_matrix_pretrained_model(
+                model=model,
+                spec=spec,
+                export_dir=export_dir,
+                tokenizer=decoder_tokenizer,
+                push_to_hub=True,
+                repo_id=standalone_repo_id.strip(),
+                token=token,
+                path_in_repo=None,
+                tokenizer_cache=Path(cache) / "tokenizers",
+            )
         progress({"stage": "pretrained_model_exported", "export_dir": str(export_dir)})
     except Exception as exc:
         logger.warning("Failed to export standalone pretrained model: %s", exc)
 
     final_report = {
         "status": "COMPLETED",
+        "recipe_version": CLEAN_RECIPE_VERSION,
         "model_key": model_key,
         "repo": repo,
         "subfolder": subfolder,
         "spec": spec.to_dict(),
-        "global_step": TOTAL_STEPS,
+        "global_step": resolved_total,
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
         "provenance": provenance,
         "stage1": stage1_report,
         "stage2": stage2_report,
-        "last_checkpoint": str(train_dir / f"checkpoint-{TOTAL_STEPS:06d}"),
+        "last_checkpoint": str(train_dir / f"checkpoint-{resolved_total:06d}"),
         "pretrained_model": str(export_dir),
     }
     atomic_json(root / "training/training_report.json", final_report)
     snapshot(final=True)
-    progress({"stage": "training_completed", "step": TOTAL_STEPS})
+    progress({"stage": "training_completed", "step": resolved_total})
 
     del model
     gc.collect()
@@ -720,6 +901,11 @@ def run_matrix_benchmark(
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
+    repo_id: str | None = None,
+    standalone_repo_id: str | None = None,
+    total_steps: int | None = None,
+    stage1_steps: int | None = None,
+    force_fresh: bool = False,
 ) -> dict[str, Any]:
     """Execute 8-benchmark suite (6 full first + 2 deterministic 100-sample last) with dynamic batching."""
     ensure_hardware_memory_guards()
@@ -731,8 +917,25 @@ def run_matrix_benchmark(
     policy = unified_recipe(cfg["family"])
     for grp_settings in policy.get("groups", {}).values():
         grp_settings["warmup_ratio"] = WARMUP_RATIO
-    repo = cfg["repo"]
+    repo = (repo_id.strip() if repo_id and repo_id.strip() else None) or cfg["repo"]
     subfolder = cfg.get("subfolder", model_key)
+
+    resolved_total = int(total_steps) if total_steps is not None else TOTAL_STEPS
+    if spec.encoder is None:
+        resolved_stage1 = resolved_total
+        resolved_stage2 = 0
+    else:
+        if stage1_steps is not None:
+            resolved_stage1 = int(stage1_steps)
+        elif total_steps is None:
+            resolved_stage1 = STAGE1_STEPS
+        else:
+            resolved_stage1 = max(1, resolved_total // 2)
+        resolved_stage2 = (
+            STAGE2_STEPS
+            if total_steps is None and stage1_steps is None
+            else max(0, resolved_total - resolved_stage1)
+        )
 
     root = Path(output_root) / model_key / "train"
     prefix = f"{subfolder}/{spec.name}/train"
@@ -744,12 +947,17 @@ def run_matrix_benchmark(
     )
     dashboard.run_dir = root
 
-    if upload and token:
+    bench_dir = root / "benchmarks"
+    if force_fresh:
+        if bench_dir.exists():
+            shutil.rmtree(bench_dir, ignore_errors=True)
+    elif upload and token:
         recover_remote_run(repo, root, prefix, token=token)
 
     identity = {
         "format": "bifocalgemma_pipeline_v1",
         "version": "bifocalgemma_v3_swiglu_cross",
+        "recipe_version": CLEAN_RECIPE_VERSION,
         "spec": spec.to_dict(),
         "policy": policy,
         "dataset_repo": DATASET_REPO,
@@ -757,9 +965,9 @@ def run_matrix_benchmark(
         "collection": COLLECTION,
         "run_name": "train",
         "seed": 17,
-        "total_steps": TOTAL_STEPS,
-        "stage1_steps": STAGE1_STEPS,
-        "stage2_steps": STAGE2_STEPS,
+        "total_steps": resolved_total,
+        "stage1_steps": resolved_stage1,
+        "stage2_steps": resolved_stage2,
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
         "model_key": model_key,
@@ -806,6 +1014,21 @@ def run_matrix_benchmark(
     checkpoint_path = latest_checkpoint(root / "training")
     if not checkpoint_path:
         raise ValueError(f"No completed training checkpoint found in {root / 'training'}.")
+
+    manifest_file = Path(checkpoint_path) / "manifest.json"
+    if manifest_file.is_file():
+        try:
+            m_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            rec_ver = m_data.get("recipe_version") or m_data.get("compatibility", {}).get(
+                "recipe_version"
+            )
+            if rec_ver != CLEAN_RECIPE_VERSION:
+                raise ValueError(
+                    f"Checkpoint in {checkpoint_path} has legacy recipe_version {rec_ver!r} "
+                    f"(expected {CLEAN_RECIPE_VERSION!r}). Training must be run with clean recipe."
+                )
+        except json.JSONDecodeError:
+            raise ValueError(f"Corrupt manifest in {manifest_file}.")
 
     checkpoint_identity = json.loads(
         (Path(checkpoint_path) / "READY.json").read_text(encoding="utf-8")
@@ -933,6 +1156,11 @@ def run_matrix_training_and_benchmark(
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
+    repo_id: str | None = None,
+    standalone_repo_id: str | None = None,
+    total_steps: int | None = None,
+    stage1_steps: int | None = None,
+    force_fresh: bool = False,
 ) -> dict[str, Any]:
     """Notebook entry point: execute matrix training curriculum, then run 8-benchmark suite."""
     training_res = run_matrix_training(
@@ -943,6 +1171,11 @@ def run_matrix_training_and_benchmark(
         cache=cache,
         upload=upload,
         monitor=monitor,
+        repo_id=repo_id,
+        standalone_repo_id=standalone_repo_id,
+        total_steps=total_steps,
+        stage1_steps=stage1_steps,
+        force_fresh=force_fresh,
     )
     gc.collect()
     if torch.cuda.is_available():
@@ -955,6 +1188,11 @@ def run_matrix_training_and_benchmark(
         cache=cache,
         upload=upload,
         monitor=monitor,
+        repo_id=repo_id,
+        standalone_repo_id=standalone_repo_id,
+        total_steps=total_steps,
+        stage1_steps=stage1_steps,
+        force_fresh=force_fresh,
     )
     return {
         "status": evaluation_res["status"],

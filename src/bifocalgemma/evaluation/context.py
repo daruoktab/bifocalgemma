@@ -404,9 +404,10 @@ def run_context_benchmark(
             enable_thinking=False,
         )
         paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
-        new_tokens = min(
-            row.get("max_new_tokens", max_new_tokens), decoder_limit - paired_prefix_size
-        )
+        row_budget = int(row.get("max_new_tokens", max_new_tokens))
+        if str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"} and max_new_tokens >= 256:
+            row_budget = max(row_budget, 256)
+        new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
         if new_tokens < 1:
             raise ValueError("benchmark_decoder_prefix_exceeds_budget")
         total = decoder_limit if spec.encoder else cap + decoder_limit + 512

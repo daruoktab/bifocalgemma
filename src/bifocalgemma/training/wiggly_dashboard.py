@@ -13,7 +13,7 @@ from wigglystuff import (
     TraceView,
 )
 
-from bifocalgemma.training.telemetry import TrainingDashboard, format_duration
+from bifocalgemma.training.telemetry import TrainingDashboard, format_duration, format_stage_display
 
 
 class LastSeenWidget(HTMLRefreshWidget):
@@ -105,8 +105,9 @@ class WigglyDashboard(TrainingDashboard):
             ),
         ]
         pin = mo.ui.anywidget(self.pin)
+        panel_title = f"{self.state.get('experiment') or 'Monitor'} · status terakhir"
         if mo.running_in_notebook():
-            pieces.append(FloatingPanel(pin, title="BifocalGemma · status terakhir", width=340))
+            pieces.append(FloatingPanel(pin, title=panel_title, width=340))
         else:
             pieces.append(pin)
         return mo.vstack(pieces)
@@ -133,6 +134,7 @@ class WigglyDashboard(TrainingDashboard):
         self.progress_bar.max_value = maximum
         self.progress_bar.value = min(step, maximum)
         stage = state.get("stage", "preparing")
+        stage_display = format_stage_display(stage, state)
         done, total = state.get("items_done", 0), state.get("items_total", 1)
         if stage.startswith("validation"):
             done, total = state.get("eval_examples_done", 0), state.get("eval_examples_total", 1)
@@ -144,7 +146,7 @@ class WigglyDashboard(TrainingDashboard):
             return "—" if value is None else f"{value:,.4g}"
 
         cards = {
-            "Tahap": stage,
+            "Tahap": stage_display,
             "Train CE": number("train_loss"),
             "Dev CE": number("dev_loss"),
             "Aktif teramati training": format_duration(state.get("elapsed_seconds")),
@@ -198,7 +200,7 @@ class WigglyDashboard(TrainingDashboard):
                     self.loss.append(x=int(row["step"]), y=float(value), color=split)
                     self.plotted.add(identity)
         self.pin.html = (
-            f"<strong>{esc(state.get('experiment', ''))}</strong><br>{esc(stage)} · {step:,}/{maximum:,}<br>"
+            f"<strong>{esc(state.get('experiment', ''))}</strong><br>{esc(stage_display)} · {step:,}/{maximum:,}<br>"
             f"HF pending: {esc(state.get('upload_pending', '—'))}<br>"
             f'<small data-last-seen="{time.time() * 1000:.0f}"></small>'
         )

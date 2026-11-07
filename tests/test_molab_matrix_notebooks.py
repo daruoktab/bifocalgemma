@@ -1093,3 +1093,209 @@ def test_stage1_to_stage2_optimizer_state_transfer(tmp_path):
     # 7. Direct verification of restore_optimizer_state_by_name helper
     direct_restored = restore_optimizer_state_by_name(model, opt2, opt1.state_dict())
     assert direct_restored["restored"] == stage1_state_count
+
+
+def test_baseline_notebooks_contain_no_two_stage_or_bridge_labels():
+    forbidden = (
+        "Joint",
+        "Stage 1",
+        "Stage 2",
+        "Frozen Decoder",
+        "Joint Training",
+        "join training",
+        "SwiGLUDualGateBridge",
+        "Cross-Attention",
+        "Encoder None",
+        "Stage 1 Warmup",
+        "Stage 2 Joint SFT",
+    )
+    for fname in ("train_e2b_it.py", "train_e4b_it.py"):
+        code = (ROOT / "notebooks" / fname).read_text(encoding="utf-8")
+        for term in forbidden:
+            assert term.lower() not in code.lower(), f"Forbidden term {term!r} found in {fname}"
+        assert "Baseline Decoder-Only Causal LM (Full Decoder SFT)" in code
+        assert "Full Decoder SFT = 11,102 steps terbuka penuh" in code
+        assert "Runtime Baseline siap" in code
+        assert "Full Decoder SFT & dynamic benchmark batching aktif." in code
+
+
+def test_paired_notebooks_contain_bifocalgemma_and_two_stage_labels():
+    for fname in ("train_2base_2it.py", "train_4base_4it.py"):
+        code = (ROOT / "notebooks" / fname).read_text(encoding="utf-8")
+        assert "SwiGLUDualGateBridge" in code
+        assert "Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps" in code
+        assert "Runtime BifocalGemma siap" in code
+
+
+def test_dashboard_stage_display_formatting():
+    from bifocalgemma.training.telemetry import format_stage_display
+
+    # Baseline models mapping
+    for exp in ("e2b-it", "e4b-it", "Baseline-2B", "baseline_run"):
+        assert format_stage_display("full_decoder_sft", {"experiment": exp}) == "Full Decoder SFT"
+        assert (
+            format_stage_display("starting_decoder_sft", {"experiment": exp}) == "Full Decoder SFT"
+        )
+        assert (
+            format_stage_display("matrix_training_step", {"experiment": exp}) == "Full Decoder SFT"
+        )
+        assert (
+            format_stage_display("optimizer_step_complete", {"experiment": exp})
+            == "Full Decoder SFT"
+        )
+        assert format_stage_display("frozen_decoder", {"experiment": exp}) == "Full Decoder SFT"
+        assert format_stage_display("joint", {"experiment": exp}) == "Full Decoder SFT"
+        assert (
+            format_stage_display("decoder_sft_completed", {"experiment": exp})
+            == "Full Decoder SFT selesai"
+        )
+        assert (
+            format_stage_display("configured_decoder_baseline", {"experiment": exp})
+            == "Decoder baseline siap"
+        )
+
+    # Paired BifocalGemma models mapping
+    for exp in ("2base-2it", "4base-4it", "BifocalGemma-2B"):
+        assert (
+            format_stage_display("frozen_decoder", {"experiment": exp})
+            == "Stage 1 · Alignment (Frozen Decoder)"
+        )
+        assert (
+            format_stage_display("starting_stage1_frozen", {"experiment": exp})
+            == "Stage 1 · Alignment (Frozen Decoder)"
+        )
+        assert format_stage_display("joint", {"experiment": exp}) == "Stage 2 · Joint Training"
+        assert (
+            format_stage_display("starting_stage2_joint", {"experiment": exp})
+            == "Stage 2 · Joint Training"
+        )
+
+
+def test_telemetry_history_appends_all_active_stages():
+    from bifocalgemma.training.telemetry import TrainingDashboard
+
+    dashboard = TrainingDashboard(None, experiment="test")
+    stages = [
+        "optimizer_step_complete",
+        "frozen_decoder",
+        "joint",
+        "full_decoder_sft",
+        "matrix_training_step",
+    ]
+    for i, stage in enumerate(stages):
+        dashboard({"stage": stage, "train_loss": 1.5 - i * 0.1, "step": i + 1})
+    assert len(dashboard.history) == len(stages)
+    # Events without train_loss should not be added to loss history
+    dashboard({"stage": "full_decoder_sft", "message": "status update without loss"})
+    assert len(dashboard.history) == len(stages)
+
+
+def test_fast_training_config_and_pipeline_baseline_single_stage(tmp_path):
+    from bifocalgemma.training.fast_pipeline import FastTrainingConfig, FastTrainingPipeline
+
+    # Verify FastTrainingConfig post_init allocates all steps to single stage for baseline-2b
+    cfg = FastTrainingConfig(model_choice="baseline-2b", total_steps=120)
+    assert cfg.stage1_steps == 0
+    assert cfg.stage2_steps == 120
+
+    # Paired model divides into two stages
+    cfg_paired = FastTrainingConfig(model_choice="bifocalgemma-2b", total_steps=120)
+    assert cfg_paired.stage1_steps == 60
+    assert cfg_paired.stage2_steps == 60
+
+    # Fast verification with tiny mode
+    tiny_cfg = FastTrainingConfig(
+        model_choice="baseline-2b",
+        total_steps=4,
+        tiny=True,
+        eval_interval=2,
+        output_dir=str(tmp_path / "tiny_baseline"),
+    )
+    pipeline = FastTrainingPipeline(tiny_cfg)
+    summary = pipeline.run()
+    assert summary["model_choice"] == "baseline-2b"
+    assert summary["total_steps"] == 4
+    for record in pipeline.history:
+        assert record["stage"] == "full_decoder_sft"
+        assert "stage1" not in record["stage"]
+        assert "stage2" not in record["stage"]
+        assert "joint" not in record["stage"]
+
+
+def test_matrix_baseline_single_stage_resolution(tmp_path):
+    from bifocalgemma.training.recipes import unified_recipe
+    from bifocalgemma.training.stages import StageLedger
+    from bifocalgemma.v3.constants import (
+        CLEAN_RECIPE_VERSION,
+        STAGE1_STEPS,
+        STAGE2_STEPS,
+        TOTAL_STEPS,
+    )
+    from bifocalgemma.v3.matrix import MATRIX_MODELS, make_experiment_spec
+
+    # 1. Baseline specs have encoder=None
+    for base_key in ("e2b-it", "e4b-it"):
+        spec = make_experiment_spec(base_key)
+        assert spec.encoder is None
+
+        # Verify default 11,102 step resolution in training and benchmark
+        total = TOTAL_STEPS
+        s1 = total if spec.encoder is None else STAGE1_STEPS
+        s2 = 0 if spec.encoder is None else STAGE2_STEPS
+        assert s1 == 11102
+        assert s2 == 0
+
+        # Verify custom steps resolution
+        custom_total = 400
+        s1_custom = custom_total if spec.encoder is None else custom_total // 2
+        s2_custom = 0 if spec.encoder is None else custom_total - s1_custom
+        assert s1_custom == 400
+        assert s2_custom == 0
+
+    # 2. Verify paired models resolve 50/50 stages
+    spec_paired = make_experiment_spec("2base-2it")
+    assert spec_paired.encoder is not None
+    s1_paired = TOTAL_STEPS if spec_paired.encoder is None else STAGE1_STEPS
+    s2_paired = 0 if spec_paired.encoder is None else STAGE2_STEPS
+    assert s1_paired == 5551
+    assert s2_paired == 5551
+
+    # 3. Verify StageLedger identity contract between training and benchmark for baseline model
+    run_dir = tmp_path / "e2b_ledger_test"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    cfg = MATRIX_MODELS["e2b-it"]
+    spec_e2b = make_experiment_spec("e2b-it")
+    policy = unified_recipe(cfg["family"])
+
+    def make_identity(stage1_steps, stage2_steps, total_steps):
+        return {
+            "format": "bifocalgemma_pipeline_v1",
+            "version": "bifocalgemma_v3_swiglu_cross",
+            "recipe_version": CLEAN_RECIPE_VERSION,
+            "spec": spec_e2b.to_dict(),
+            "policy": policy,
+            "dataset_repo": "daruokta/bifocalgemma-data",
+            "dataset_revision": "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23",
+            "collection": "mixed_context_enc32k_dec8k_v3",
+            "run_name": "train",
+            "seed": 17,
+            "total_steps": total_steps,
+            "stage1_steps": stage1_steps,
+            "stage2_steps": stage2_steps,
+            "batch_size": 2,
+            "accumulation": 2,
+            "model_key": "e2b-it",
+            "repo": cfg["repo"],
+            "subfolder": cfg.get("subfolder", "e2b-it"),
+        }
+
+    training_id = make_identity(stage1_steps=11102, stage2_steps=0, total_steps=11102)
+    ledger_train = StageLedger(run_dir, training_id)
+    dummy_ckpt_file = run_dir / "dummy_checkpoint.txt"
+    dummy_ckpt_file.write_text("model_bytes", encoding="utf-8")
+    ledger_train.finish("full_decoder_sft", [dummy_ckpt_file], {"status": "ok"})
+
+    # Benchmark identity must match exactly and load existing ledger without ValueError
+    benchmark_id = make_identity(stage1_steps=11102, stage2_steps=0, total_steps=11102)
+    ledger_bench = StageLedger(run_dir, benchmark_id)
+    assert ledger_bench.completed("full_decoder_sft")
