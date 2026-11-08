@@ -659,25 +659,28 @@ class FastTrainingPipeline:
                 opt.step()
                 global_step += 1
 
+                step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+                val_loss = (
+                    self.evaluate()
+                    if (global_step % self.cfg.eval_interval == 0 or global_step == full_steps)
+                    else None
+                )
+                record = {
+                    "stage": "full_decoder_sft",
+                    "step": global_step,
+                    "loss": step_loss,
+                    "val_loss": val_loss,
+                    "elapsed_sec": time.time() - start_time,
+                }
                 if global_step % log_step == 0 or global_step == full_steps:
-                    val_loss = (
-                        self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
-                    )
-                    record = {
-                        "stage": "full_decoder_sft",
-                        "step": global_step,
-                        "loss": accum_loss * self.cfg.gradient_accumulation_steps,
-                        "val_loss": val_loss,
-                        "elapsed_sec": time.time() - start_time,
-                    }
                     self.history.append(record)
                     val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
                     print(
                         f"[{time.strftime('%X')}] Step {global_step}/{full_steps} [full_decoder_sft] - loss={record['loss']:.4f}{val_str}",
                         flush=True,
                     )
-                    if self.callback:
-                        self.callback(record)
+                if self.callback:
+                    self.callback(record)
         else:
             # Paired BifocalGemma model: Two-Stage Training (Stage 1 Bridge Alignment + Stage 2 Joint SFT)
             # -------------------------------------------------------------
@@ -714,25 +717,28 @@ class FastTrainingPipeline:
                 opt1.step()
                 global_step += 1
 
+                step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+                val_loss = (
+                    self.evaluate()
+                    if (global_step % self.cfg.eval_interval == 0 or global_step == self.cfg.stage1_steps)
+                    else None
+                )
+                record = {
+                    "stage": "stage1_bridge_align",
+                    "step": global_step,
+                    "loss": step_loss,
+                    "val_loss": val_loss,
+                    "elapsed_sec": time.time() - start_time,
+                }
                 if global_step % log_step1 == 0 or global_step == self.cfg.stage1_steps:
-                    val_loss = (
-                        self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
-                    )
-                    record = {
-                        "stage": "stage1_bridge_align",
-                        "step": global_step,
-                        "loss": accum_loss * self.cfg.gradient_accumulation_steps,
-                        "val_loss": val_loss,
-                        "elapsed_sec": time.time() - start_time,
-                    }
                     self.history.append(record)
                     val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
                     print(
                         f"[{time.strftime('%X')}] Step {global_step}/{self.cfg.stage1_steps} [stage1] - loss={record['loss']:.4f}{val_str}",
                         flush=True,
                     )
-                    if self.callback:
-                        self.callback(record)
+                if self.callback:
+                    self.callback(record)
 
             # -------------------------------------------------------------
             # STAGE 2: Joint LoRA Fine-Tuning
@@ -770,25 +776,28 @@ class FastTrainingPipeline:
                 opt2.step()
                 global_step += 1
 
+                step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+                val_loss = (
+                    self.evaluate()
+                    if (global_step % self.cfg.eval_interval == 0 or global_step == stage2_target)
+                    else None
+                )
+                record = {
+                    "stage": "stage2_joint_sft",
+                    "step": global_step,
+                    "loss": step_loss,
+                    "val_loss": val_loss,
+                    "elapsed_sec": time.time() - start_time,
+                }
                 if global_step % log_step2 == 0 or global_step == stage2_target:
-                    val_loss = (
-                        self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
-                    )
-                    record = {
-                        "stage": "stage2_joint_sft",
-                        "step": global_step,
-                        "loss": accum_loss * self.cfg.gradient_accumulation_steps,
-                        "val_loss": val_loss,
-                        "elapsed_sec": time.time() - start_time,
-                    }
                     self.history.append(record)
                     val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
                     print(
                         f"[{time.strftime('%X')}] Step {global_step}/{stage2_target} [stage2] - loss={record['loss']:.4f}{val_str}",
                         flush=True,
                     )
-                    if self.callback:
-                        self.callback(record)
+                if self.callback:
+                    self.callback(record)
 
         # -------------------------------------------------------------
         # Automatic Standalone PreTrainedModel Export
