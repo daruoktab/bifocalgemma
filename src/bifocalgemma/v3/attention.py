@@ -424,7 +424,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
         q_base = getattr(attn.q_proj, "base", attn.q_proj)
         dev = q_base.weight.device
         num_heads = int(q_base.weight.shape[0] // attn.head_dim)
-        attn.cross_q_norm = copy.deepcopy(attn.q_norm).float().to(dev)
+        attn.cross_q_norm = copy.deepcopy(attn.q_norm).to(dev)
         attn.cross_gate = torch.nn.Parameter(
             torch.full((num_heads,), float(GATE_INIT_ATANH), dtype=torch.float32, device=dev)
         )
@@ -437,8 +437,8 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
         if not attn.is_kv_shared_layer:
             attn.cross_k_proj = Bf16FullLinear(attn.k_proj).to(dev)
             attn.cross_v_proj = Bf16FullLinear(attn.v_proj).to(dev)
-            attn.cross_k_norm = copy.deepcopy(attn.k_norm).float().to(dev)
-            attn.cross_v_norm = copy.deepcopy(attn.v_norm).float().to(dev)
+            attn.cross_k_norm = copy.deepcopy(attn.k_norm).to(dev)
+            attn.cross_v_norm = copy.deepcopy(attn.v_norm).to(dev)
             kv_owner_layers += 1
         attn.query_chunk_size = getattr(attn, "query_chunk_size", 128)
         attn.attention_backend = getattr(attn, "attention_backend", "tiled_eager_fp32")

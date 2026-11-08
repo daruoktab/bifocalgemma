@@ -62,7 +62,7 @@ class SwiGLUDualGateBridge(torch.nn.Module):
             else orig_dtype
         )
         x = h_enc.to(compute_dtype)
-        h_tilde = self.pre_norm(x.float()).to(compute_dtype)
+        h_tilde = self.pre_norm(x.to(self.pre_norm.weight.dtype)).to(compute_dtype)
         gated = F.silu(F.linear(h_tilde, self.w_gate.weight.to(compute_dtype))) * F.linear(
             h_tilde, self.w_up.weight.to(compute_dtype)
         )
@@ -72,5 +72,5 @@ class SwiGLUDualGateBridge(torch.nn.Module):
         else:
             res = h_tilde
         z = res + warped
-        normed = self.post_norm(z.float()).to(orig_dtype)
+        normed = self.post_norm(z.to(self.post_norm.weight.dtype)).to(orig_dtype)
         return normed * self.gamma_calib.to(orig_dtype)
