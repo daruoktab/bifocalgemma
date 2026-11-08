@@ -137,7 +137,7 @@ def _(FastTrainingConfig, mo, os):
 
 @app.cell
 def _(mo):
-    train_button = mo.ui.button(label="Mulai Training Dari Awal", kind="success")
+    train_button = mo.ui.run_button(label="Mulai Training Dari Awal", kind="success")
     train_button
     return (train_button,)
 
