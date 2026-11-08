@@ -18,7 +18,7 @@ def transfer_text_checkpoint(
     expected = {
         key: value
         for key, value in target.items()
-        if not (skip_words and key == "embed_tokens.weight")
+        if not (skip_words and key == "embed_tokens.weight") and "cross_" not in key
     }
     with safe_open(str(path), framework="pt", device="cpu") as reader:
         available = set(reader.keys())
