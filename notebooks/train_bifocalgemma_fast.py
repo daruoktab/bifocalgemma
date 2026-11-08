@@ -46,6 +46,7 @@ def _():
     import io
     import os
     import sys
+    import time
     import urllib.request
     import zipfile
     from pathlib import Path
@@ -66,7 +67,7 @@ def _():
 
     from bifocalgemma.training.fast_pipeline import FastTrainingConfig, FastTrainingPipeline
 
-    return FastTrainingConfig, FastTrainingPipeline, Path, os, root, src_dir, sys
+    return FastTrainingConfig, FastTrainingPipeline, Path, os, root, src_dir, sys, time
 
 
 @app.cell
@@ -187,6 +188,7 @@ def _(
     output_dir,
     pretrained_backbone_dir,
     push_hub,
+    time,
     tiny_mode,
     total_steps,
     train_button,
@@ -236,30 +238,60 @@ def _(
         auto_download_curated=True,
     )
 
-    if model_choice.value == "baseline-2b":
-        mo.output.replace(
-            mo.md(
-                f"🚀 Memulai Full Decoder SFT {cfg.model_choice} ({steps} langkah penuh tanpa pembagian tahap)..."
+    progress_tracker = {"last_step": 0}
+    with mo.status.progress_bar(total=steps, title=f"Melatih {cfg.model_choice}") as bar:
+
+        def on_step(record):
+            curr_step = record["step"]
+            delta = max(0, curr_step - progress_tracker["last_step"])
+            progress_tracker["last_step"] = curr_step
+            stage = record.get("stage", "training")
+            loss = record.get("loss", 0.0)
+            val_loss = record.get("val_loss")
+            val_str = f" | Val: {val_loss:.4f}" if val_loss is not None else ""
+            bar.update(
+                increment=delta,
+                subtitle=f"[{stage}] Step {curr_step}/{steps} | Loss: {loss:.4f}{val_str}",
             )
-        )
-    else:
-        mo.output.replace(
-            mo.md(
-                f"🚀 Memulai pelatihan {cfg.model_choice} (Stage 1: {stage1} steps, Stage 2: {stage2} steps)..."
-            )
-        )
-    pipeline = FastTrainingPipeline(cfg)
-    summary = pipeline.run()
+
+        pipeline = FastTrainingPipeline(cfg, callback=on_step)
+        summary = pipeline.run()
+
+    history_rows = [
+        {
+            "Step": h["step"],
+            "Stage": h["stage"],
+            "Train Loss": f"{h['loss']:.4f}",
+            "Val Loss": f"{h['val_loss']:.4f}" if h.get("val_loss") is not None else "-",
+            "Durasi": f"{h.get('elapsed_sec', 0):.1f}s",
+        }
+        for h in pipeline.history
+    ]
+
+    hub_info = (
+        f"- **Hugging Face Hub:** [{cfg.hub_repo}](https://huggingface.co/{cfg.hub_repo})\n"
+        if cfg.push_to_hub and cfg.hub_repo
+        else ""
+    )
 
     mo.output.replace(
-        mo.md(
-            f"""
-            ### ✅ Pelatihan Selesai!
-            - **Model:** `{summary["model_choice"]}`
-            - **Langkah Selesai:** `{summary["total_steps"]}`
-            - **Final Validation Loss:** `{summary["final_val_loss"]:.4f}`
-            - **Artefak Hugging Face Utuh Disimpan di:** `{summary["export_dir"]}`
-            """
+        mo.vstack(
+            [
+                mo.md(
+                    f"""
+                    ### 🎉 Pelatihan Selesai!
+                    - **Model Target:** `{summary['model_choice']}`
+                    - **Total Langkah:** `{summary['total_steps']}`
+                    - **Final Validation Loss:** `{summary['final_val_loss']:.4f}`
+                    - **Total Waktu:** `{summary.get('elapsed_time_sec', 0):.1f} detik`
+                    - **Artefak Model Utuh Disimpan di:** `{summary['export_dir']}`
+                    {hub_info}
+                    """
+                ),
+                mo.ui.table(history_rows, label="Riwayat Pelatihan (Milestones)")
+                if history_rows
+                else mo.md(""),
+            ]
         )
     )
     return cfg, pipeline, steps, summary

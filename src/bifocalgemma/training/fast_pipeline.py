@@ -50,6 +50,7 @@ class FastTrainingConfig:
     weight_decay_bridge: float = 1e-4
     eval_interval: int = 200
     save_interval: int = 500
+    log_interval: int = 25
     output_dir: str = "outputs/bifocalgemma_2b"
     data_dir: str | None = None  # Path to real repair dataset (jsonl or directory)
     pretrained_backbone_dir: str | None = None  # Local directory containing backbone safetensors
@@ -628,7 +629,12 @@ class FastTrainingPipeline:
             # Baseline decoder-only model: single continuous full Decoder SFT pass
             full_steps = self.cfg.total_steps
             logger.info("Starting Full Decoder SFT (Baseline Decoder-Only, %d steps)", full_steps)
+            print(
+                f"[{time.strftime('%X')}] 🚀 Memulai Full Decoder SFT (Baseline-2B, {full_steps} steps)...",
+                flush=True,
+            )
             opt = self.configure_stage2()
+            log_step = max(1, min(self.cfg.log_interval, full_steps // 20))
 
             while global_step < full_steps:
                 self.model.train()
@@ -653,7 +659,7 @@ class FastTrainingPipeline:
                 opt.step()
                 global_step += 1
 
-                if global_step % 50 == 0 or global_step == full_steps:
+                if global_step % log_step == 0 or global_step == full_steps:
                     val_loss = (
                         self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
                     )
@@ -665,6 +671,11 @@ class FastTrainingPipeline:
                         "elapsed_sec": time.time() - start_time,
                     }
                     self.history.append(record)
+                    val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                    print(
+                        f"[{time.strftime('%X')}] Step {global_step}/{full_steps} [full_decoder_sft] - loss={record['loss']:.4f}{val_str}",
+                        flush=True,
+                    )
                     if self.callback:
                         self.callback(record)
         else:
@@ -673,7 +684,12 @@ class FastTrainingPipeline:
             # STAGE 1: Bridge Manifold Alignment
             # -------------------------------------------------------------
             logger.info("Starting Stage 1: Bridge Alignment (%d steps)", self.cfg.stage1_steps)
+            print(
+                f"[{time.strftime('%X')}] 🚀 Memulai Stage 1: Bridge Alignment ({self.cfg.stage1_steps} steps)...",
+                flush=True,
+            )
             opt1 = self.configure_stage1()
+            log_step1 = max(1, min(self.cfg.log_interval, max(1, self.cfg.stage1_steps // 20)))
 
             while global_step < self.cfg.stage1_steps:
                 self.model.train()
@@ -698,7 +714,7 @@ class FastTrainingPipeline:
                 opt1.step()
                 global_step += 1
 
-                if global_step % 50 == 0 or global_step == self.cfg.stage1_steps:
+                if global_step % log_step1 == 0 or global_step == self.cfg.stage1_steps:
                     val_loss = (
                         self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
                     )
@@ -710,6 +726,11 @@ class FastTrainingPipeline:
                         "elapsed_sec": time.time() - start_time,
                     }
                     self.history.append(record)
+                    val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                    print(
+                        f"[{time.strftime('%X')}] Step {global_step}/{self.cfg.stage1_steps} [stage1] - loss={record['loss']:.4f}{val_str}",
+                        flush=True,
+                    )
                     if self.callback:
                         self.callback(record)
 
@@ -719,7 +740,12 @@ class FastTrainingPipeline:
             stage2_target = self.cfg.stage1_steps + self.cfg.stage2_steps
             remaining_stage2_steps = stage2_target - global_step
             logger.info("Starting Stage 2: Joint LoRA SFT (%d steps)", remaining_stage2_steps)
+            print(
+                f"[{time.strftime('%X')}] 🚀 Memulai Stage 2: Joint LoRA SFT ({remaining_stage2_steps} steps)...",
+                flush=True,
+            )
             opt2 = self.configure_stage2()
+            log_step2 = max(1, min(self.cfg.log_interval, max(1, remaining_stage2_steps // 20)))
 
             while global_step < stage2_target:
                 self.model.train()
@@ -744,7 +770,7 @@ class FastTrainingPipeline:
                 opt2.step()
                 global_step += 1
 
-                if global_step % 50 == 0 or global_step == stage2_target:
+                if global_step % log_step2 == 0 or global_step == stage2_target:
                     val_loss = (
                         self.evaluate() if global_step % self.cfg.eval_interval == 0 else None
                     )
@@ -756,6 +782,11 @@ class FastTrainingPipeline:
                         "elapsed_sec": time.time() - start_time,
                     }
                     self.history.append(record)
+                    val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                    print(
+                        f"[{time.strftime('%X')}] Step {global_step}/{stage2_target} [stage2] - loss={record['loss']:.4f}{val_str}",
+                        flush=True,
+                    )
                     if self.callback:
                         self.callback(record)
 
@@ -765,6 +796,10 @@ class FastTrainingPipeline:
         final_val_loss = self.evaluate()
         export_dir = self.out_path / "final_pretrained_model"
         logger.info("Training complete. Exporting standalone Hugging Face model to %s", export_dir)
+        print(
+            f"[{time.strftime('%X')}] 💾 Training complete. Exporting standalone Hugging Face model to {export_dir}...",
+            flush=True,
+        )
 
         self.export_pretrained(export_dir)
 
@@ -777,6 +812,7 @@ class FastTrainingPipeline:
             "config": asdict(self.cfg),
             "history": self.history[-10:],
             "completed_at": time.time(),
+            "elapsed_time_sec": time.time() - start_time,
         }
         (self.out_path / "training_summary.json").write_text(
             json.dumps(summary, indent=2), encoding="utf-8"
