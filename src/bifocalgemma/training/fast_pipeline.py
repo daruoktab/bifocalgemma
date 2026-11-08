@@ -286,6 +286,15 @@ class FastTrainingPipeline:
         self.callback = callback
         torch.manual_seed(self.cfg.seed)
 
+        if self.cfg.hf_token:
+            import os
+            os.environ["HF_TOKEN"] = self.cfg.hf_token
+            try:
+                from huggingface_hub import login
+                login(token=self.cfg.hf_token, add_to_git_credential=False)
+            except Exception as _login_exc:
+                logger.debug("HF login skipped: %s", _login_exc)
+
         # 1. Instantiate BifocalGemma PreTrainedModel
         is_baseline = self.cfg.model_choice == "baseline-2b"
         self.model_config = BifocalGemmaConfig(
@@ -317,21 +326,27 @@ class FastTrainingPipeline:
                 pretrained_backbone_dir=self.cfg.pretrained_backbone_dir,
                 torch_dtype=backbone_dtype,
                 device=self.cfg.device,
+                token=self.cfg.hf_token,
             )
 
         self.model.enable_memory_efficient_training(gradient_checkpointing=not self.cfg.tiny)
 
         # 2. Setup tokenizer if available (only for full-scale models; tiny uses synthetic vocab_size)
         self.tokenizer = None
-        if not self.cfg.tiny and self.cfg.tokenizer_path and Path(self.cfg.tokenizer_path).is_dir():
+        if not self.cfg.tiny:
+            tok_src = (
+                self.cfg.tokenizer_path
+                if self.cfg.tokenizer_path and Path(self.cfg.tokenizer_path).is_dir()
+                else self.cfg.decoder_backbone
+            )
             try:
                 from transformers import AutoTokenizer
 
                 self.tokenizer = AutoTokenizer.from_pretrained(
-                    self.cfg.tokenizer_path, local_files_only=True
+                    tok_src, token=self.cfg.hf_token
                 )
             except Exception as _exc:
-                logger.debug("Local tokenizer load skipped: %s", _exc)
+                logger.debug("Tokenizer load skipped: %s", _exc)
 
         # 3. Setup dataloaders
         vocab = self.model_config.vocab_size
@@ -355,6 +370,17 @@ class FastTrainingPipeline:
                         data_path = pool_dir
                 except Exception as _exc:
                     logger.warning("Curated collection fetch skipped: %s", _exc)
+                    if not self.cfg.hf_token:
+                        raise RuntimeError(
+                            f"No dataset available for non-tiny fast training: gagal mengunduh dataset privat '{self.cfg.dataset_repo}'. "
+                            "HF_TOKEN belum diisi atau bernilai kosong. "
+                            "Masukkan Hugging Face Token Anda (dengan hak akses Read) untuk mengunduh dataset privat ini."
+                        ) from _exc
+                    else:
+                        raise RuntimeError(
+                            f"No dataset available for non-tiny fast training: gagal mengunduh dataset '{self.cfg.dataset_repo}'. "
+                            f"Pastikan token Hugging Face Anda memiliki hak akses Read ke repositori privat ini. (Detail: {_exc})"
+                        ) from _exc
 
             if data_path is not None and data_path.exists():
                 train_file = (

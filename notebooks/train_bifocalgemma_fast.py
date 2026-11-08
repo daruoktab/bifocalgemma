@@ -106,10 +106,10 @@ def _(FastTrainingConfig, mo, os):
     hf_token = mo.ui.text(
         kind="password",
         value=os.environ.get("HF_TOKEN", ""),
-        label="Hugging Face Token (opsional bila HF_TOKEN di environment)",
+        label="Hugging Face Token (Wajib diisi bila mode non-tiny dengan unduh dataset/backbone)",
     )
 
-    mo.vstack(
+    controls = mo.vstack(
         [
             model_choice,
             total_steps,
@@ -122,7 +122,9 @@ def _(FastTrainingConfig, mo, os):
             hf_token,
         ]
     )
+    controls
     return (
+        controls,
         data_dir,
         hf_token,
         hub_repo,
@@ -164,6 +166,25 @@ def _(
         mo.md("Tekan tombol **Mulai Training Dari Awal** di atas untuk menjalankan pelatihan."),
     )
 
+    token = hf_token.value.strip() or os.environ.get("HF_TOKEN", "").strip() or None
+    is_tiny = bool(tiny_mode.value)
+    has_local_data = bool(data_dir.value.strip())
+
+    if not is_tiny and not has_local_data and not token:
+        mo.stop(
+            True,
+            mo.md(
+                """
+                ### ⚠️ Hugging Face Token Wajib Diisi!
+                Anda menjalankan mode **Full Scale (2B)** dengan unduhan dataset otomatis.
+                Model backbone Gemma-4 dan dataset kurasi `daruokta/bifocalgemma-data` adalah repositori privat/gated yang **memerlukan HF_TOKEN**.
+
+                👉 **Silakan masukkan token Hugging Face Anda (Read access) pada kolom input 'Hugging Face Token' di atas, lalu tekan tombol 'Mulai Training Dari Awal' kembali.**
+                *(Atau centang 'Tiny Mode' jika Anda hanya ingin uji coba cepat tanpa unduhan 2B).*
+                """
+            ),
+        )
+
     steps = int(total_steps.value)
     if model_choice.value == "baseline-2b":
         stage1 = 0
@@ -171,7 +192,6 @@ def _(
     else:
         stage1 = steps // 2
         stage2 = steps - stage1
-    token = hf_token.value.strip() or os.environ.get("HF_TOKEN", "").strip() or None
     cfg = FastTrainingConfig(
         model_choice=model_choice.value,
         total_steps=steps,
