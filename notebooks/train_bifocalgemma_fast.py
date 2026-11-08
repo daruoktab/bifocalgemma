@@ -70,7 +70,44 @@ def _():
 
 
 @app.cell
-def _(FastTrainingConfig, mo, os):
+def _(mo, os):
+    hf_token_input = mo.ui.text(
+        value=os.environ.get("HF_TOKEN", ""),
+        kind="password",
+        label="Hugging Face Token",
+        placeholder="hf_...",
+        full_width=True,
+    )
+    mo.vstack(
+        [
+            mo.md(
+                """
+                ### 🔑 1. Autentikasi Hugging Face
+                Masukkan token Hugging Face Anda (izin *Read* untuk unduh dataset privat `daruokta/bifocalgemma-data` & model backbone Gemma-4, atau izin *Write* untuk push model ke Hub).
+                """
+            ),
+            hf_token_input,
+        ]
+    )
+    return (hf_token_input,)
+
+
+@app.cell
+def _(hf_token_input, mo, os):
+    hf_token = hf_token_input.value.strip() or os.environ.get("HF_TOKEN", "").strip() or None
+    if hf_token:
+        os.environ["HF_TOKEN"] = hf_token
+        auth_banner = mo.md("✅ **Hugging Face Token aktif.** Kredensial siap digunakan.")
+    else:
+        auth_banner = mo.md(
+            "⚠️ **Token belum diisi.** Diperlukan untuk mode non-tiny dengan unduhan otomatis dataset/backbone."
+        )
+    auth_banner
+    return auth_banner, hf_token
+
+
+@app.cell
+def _(mo):
     import torch
 
     cuda_available = torch.cuda.is_available()
@@ -103,30 +140,23 @@ def _(FastTrainingConfig, mo, os):
     )
     push_hub = mo.ui.checkbox(value=False, label="Push model utuh ke Hugging Face Hub")
     hub_repo = mo.ui.text(value="daruokta/bifocalgemma-fast", label="Hub Repository ID")
-    hf_token = mo.ui.text(
-        kind="password",
-        value=os.environ.get("HF_TOKEN", ""),
-        label="Hugging Face Token (Wajib diisi bila mode non-tiny dengan unduh dataset/backbone)",
-    )
 
-    controls = mo.vstack(
+    training_settings = mo.vstack(
         [
+            mo.md("### ⚙️ 2. Pengaturan Pelatihan"),
             model_choice,
             total_steps,
-            output_dir,
-            pretrained_backbone_dir,
-            data_dir,
             tiny_mode,
+            output_dir,
             push_hub,
             hub_repo,
-            hf_token,
+            pretrained_backbone_dir,
+            data_dir,
         ]
     )
-    controls
+    training_settings
     return (
-        controls,
         data_dir,
-        hf_token,
         hub_repo,
         model_choice,
         output_dir,
@@ -134,6 +164,7 @@ def _(FastTrainingConfig, mo, os):
         push_hub,
         tiny_mode,
         total_steps,
+        training_settings,
     )
 
 
@@ -153,7 +184,6 @@ def _(
     hub_repo,
     mo,
     model_choice,
-    os,
     output_dir,
     pretrained_backbone_dir,
     push_hub,
@@ -166,20 +196,19 @@ def _(
         mo.md("Tekan tombol **Mulai Training Dari Awal** di atas untuk menjalankan pelatihan."),
     )
 
-    token = hf_token.value.strip() or os.environ.get("HF_TOKEN", "").strip() or None
     is_tiny = bool(tiny_mode.value)
     has_local_data = bool(data_dir.value.strip())
 
-    if not is_tiny and not has_local_data and not token:
+    if not is_tiny and not has_local_data and not hf_token:
         mo.stop(
             True,
             mo.md(
                 """
-                ### ⚠️ Hugging Face Token Wajib Diisi!
+                ### ⚠️ Hugging Face Token Diperlukan!
                 Anda menjalankan mode **Full Scale (2B)** dengan unduhan dataset otomatis.
-                Model backbone Gemma-4 dan dataset kurasi `daruokta/bifocalgemma-data` adalah repositori privat/gated yang **memerlukan HF_TOKEN**.
+                Dataset kurasi `daruokta/bifocalgemma-data` dan model backbone Gemma adalah repositori privat/gated yang **memerlukan HF_TOKEN**.
 
-                👉 **Silakan masukkan token Hugging Face Anda (Read access) pada kolom input 'Hugging Face Token' di atas, lalu tekan tombol 'Mulai Training Dari Awal' kembali.**
+                👉 **Silakan masukkan token Hugging Face Anda pada Langkah 1 di atas, lalu tekan tombol 'Mulai Training Dari Awal' kembali.**
                 *(Atau centang 'Tiny Mode' jika Anda hanya ingin uji coba cepat tanpa unduhan 2B).*
                 """
             ),
@@ -200,10 +229,10 @@ def _(
         output_dir=output_dir.value.strip() or "outputs/fast_bifocalgemma",
         data_dir=data_dir.value.strip() or None,
         pretrained_backbone_dir=pretrained_backbone_dir.value.strip() or None,
-        tiny=bool(tiny_mode.value),
+        tiny=is_tiny,
         push_to_hub=push_hub.value,
         hub_repo=hub_repo.value.strip() if push_hub.value else None,
-        hf_token=token,
+        hf_token=hf_token,
         auto_download_curated=True,
     )
 

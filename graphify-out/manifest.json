@@ -2571,9 +2571,9 @@
     "semantic_hash": ""
   },
   "notebooks/train_bifocalgemma_fast.py": {
-    "mtime": 1794144868.7222424,
-    "seen": 1794145001.417923,
-    "ast_hash": "f2617b3b3bfbda45a46fe58d2cca78d4",
+    "mtime": 1794145280.0047362,
+    "seen": 1794145384.824826,
+    "ast_hash": "09bfb6f483ca6439e1b5ef33da028c75",
     "semantic_hash": ""
   },
   "src/bifocalgemma/configuration_bifocalgemma.py": {
