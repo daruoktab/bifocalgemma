@@ -76,8 +76,8 @@ Every decoder layer wraps the native Gemma 4 attention module inside `BifocalAtt
 
 | Model ID | Topology | Encoder Backbone | Decoder Backbone | Context ($N_{\text{enc}} / N_{\text{dec}}$) | Curriculum |
 | :--- | :--- | :--- | :--- | :---: | :--- |
-| `Baseline-E2B-IT` | Causal Only | None | `Gemma 4 E2B-IT` ($d=1536$, 35L) | $0 / 8{,}192$ | 1-Stage SFT |
-| `Baseline-E4B-IT` | Causal Only | None | `Gemma 4 E4B-IT` ($d=2560$, 42L) | $0 / 8{,}192$ | 1-Stage SFT |
+| `Baseline-E2B-IT` | Causal Only | None | `Gemma 4 E2B-IT` ($d=1536$, 35L) | $0 / 40{,}960$ (32K+8K) | 1-Stage SFT |
+| `Baseline-E4B-IT` | Causal Only | None | `Gemma 4 E4B-IT` ($d=2560$, 42L) | $0 / 40{,}960$ (32K+8K) | 1-Stage SFT |
 | `Bifocal-2B` | Symmetric | `Gemma 4 E2B` ($d=1536$, 35L) | `Gemma 4 E2B-IT` ($d=1536$, 35L) | $32{,}768 / 8{,}192$ | 2-Stage Paired |
 | `Bifocal-4B-E2B` | Dec-Heavy | `Gemma 4 E2B` ($d=1536$, 35L) | `Gemma 4 E4B-IT` ($d=2560$, 42L) | $32{,}768 / 8{,}192$ | 2-Stage Paired |
 | `Bifocal-2B-E4B` | Enc-Heavy | `Gemma 4 E4B` ($d=2560$, 42L) | `Gemma 4 E2B-IT` ($d=1536$, 35L) | $32{,}768 / 8{,}192$ | 2-Stage Paired |

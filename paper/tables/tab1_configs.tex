@@ -7,8 +7,8 @@
 \toprule
 \textbf{Model ID} & \textbf{Topology} & \textbf{Encoder Backbone} & \textbf{Decoder Backbone} & \textbf{Bridge ($d_{\text{enc}} \rightarrow d_{\text{mid}} \rightarrow d_{\text{dec}}$)} & \textbf{Context ($N_{\text{enc}} / N_{\text{dec}}$)} & \textbf{Curriculum} \\
 \midrule
-\texttt{Baseline-E2B-IT} & Causal Only & None & \texttt{Gemma-4-E2B-IT} (35L) & --- & $0 \;/\; 8{,}192$ & 1-Stage SFT \\
-\texttt{Baseline-E4B-IT} & Causal Only & None & \texttt{Gemma-4-E4B-IT} (42L) & --- & $0 \;/\; 8{,}192$ & 1-Stage SFT \\
+\texttt{Baseline-E2B-IT} & Causal Only & None & \texttt{Gemma-4-E2B-IT} (35L) & --- & $0 \;/\; 40{,}960$ (32K+8K) & 1-Stage SFT \\
+\texttt{Baseline-E4B-IT} & Causal Only & None & \texttt{Gemma-4-E4B-IT} (42L) & --- & $0 \;/\; 40{,}960$ (32K+8K) & 1-Stage SFT \\
 \midrule
 \texttt{Bifocal-2B} & Symmetric & \texttt{Gemma-4-E2B} (35L) & \texttt{Gemma-4-E2B-IT} (35L) & $1536 \rightarrow 1536 \rightarrow 1536$ (Identity $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
 \texttt{Bifocal-4B-E2B} & Dec-Heavy & \texttt{Gemma-4-E2B} (35L) & \texttt{Gemma-4-E4B-IT} (42L) & $1536 \rightarrow 2560 \rightarrow 2560$ (Ortho $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\

@@ -3,8 +3,8 @@
   "reason": "Structural V2/V3 split, 256-token MCQ budget floor, PreTrainedModel Hub export with subfolder support, clean recipe versioning, and standalone Molab runtime embedding. Model math, data, optimizer, schedules and checkpoint semantics are unchanged.",
   "baseline_runtime_sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
   "baseline_training_semantics_sha256": "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
-  "approved_source_semantics_sha256": "eddd41a8a4d4eb045ecfd720e22b1c4be8ba66021d42e2dd4dae0e10e74e2930",
-  "source_semantics_sha256": "eddd41a8a4d4eb045ecfd720e22b1c4be8ba66021d42e2dd4dae0e10e74e2930",
+  "approved_source_semantics_sha256": "8e70d6b49e3cb30d0e894544765f1c8872da754e86b265e5c02178c0d57eebdd",
+  "source_semantics_sha256": "8e70d6b49e3cb30d0e894544765f1c8872da754e86b265e5c02178c0d57eebdd",
   "reviewed_changed_files": {
     "evaluation/context.py": {
       "after": "5ee2891e40a61a92e763d37e76cfc1d11a5f7465bec0ade7707472c5ae423018"

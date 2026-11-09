@@ -207,8 +207,9 @@ class JSONLRepairDataset(Dataset):
                 )
                 target = tuple(tokenizer.encode(target_patch, add_special_tokens=False)) + (106,)
 
-            if is_baseline and len(prefix_ids) + len(target) > 8192:
-                max_prefix = max(64, 8192 - len(target))
+            max_baseline_tokens = 32768 + 8192 + 512
+            if is_baseline and len(prefix_ids) + len(target) > max_baseline_tokens:
+                max_prefix = max(64, max_baseline_tokens - len(target))
                 if len(prefix_ids) > max_prefix:
                     prefix_ids = prefix_ids[:32] + prefix_ids[-(max_prefix - 32) :]
             elif not is_baseline and len(enc_ids) > 32768:

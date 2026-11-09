@@ -155,7 +155,7 @@ Table~\ref{tab:configs} details our controlled 6-model experimental matrix spann
 \end{enumerate}
 
 \subsection{Evaluation Integrity Safeguards}
-Our benchmark harness enforces two strict invariants: (1) a \textbf{Neutral Prompt Contract} providing identical task instructions to both causal baselines and BifocalGemma without architecture-specific prompt hints, and (2) a \textbf{256-Token Comprehension Generation Floor} (\texttt{max\_new\_tokens} $\ge 256$) on all MCQ, QA, and retrieval tasks so analytical reasoning preambles are never truncated before emitting the final answer.
+Our benchmark harness enforces two strict invariants: (1) a \textbf{Neutral Prompt Contract} providing identical task instructions and the full $32\text{K}$ repository context to both causal baselines (concatenated into the causal prefix up to $40{,}960$ tokens) and BifocalGemma (routed to the $32\text{K}$ bidirectional encoder), without architecture-specific prompt hints, and (2) a \textbf{256-Token Comprehension Generation Floor} (\texttt{max\_new\_tokens} $\ge 256$) on all MCQ, QA, and retrieval tasks so analytical reasoning preambles are never truncated before emitting the final answer.
 
 \input{tables/tab2_sweqa}
 \input{tables/tab3_repair}
