@@ -1,18 +1,19 @@
 \begin{table*}[t]
 \centering
+\caption{Controlled 6-Model Ablation Matrix for \textsc{BifocalGemma}. All models use native Gemma~4 backbones with stream-isolated Per-Layer Embeddings ($d_{\text{ple}}=256$) and preserve cross-layer KV-sharing (15/35 KV-owner layers in \texttt{E2B}; 24/42 KV-owner layers in \texttt{E4B}). Causal baselines use a single-stage full SFT curriculum, whereas \textsc{BifocalGemma} variants use the two-stage paired curriculum (Frozen Decoder Bridge Alignment $\rightarrow$ Joint LoRA SFT).}
+\label{tab:configs}
 \small
-\caption{\textbf{Model Topology, Parameter Budget, and Computational Resource Footprint.} Memory and throughput measured during backward pass over 32,768 encoder context and 8,192 decoder context tokens on NVIDIA A100-SXM4-80GB GPUs with BF16 precision and gradient checkpointing.}
-\label{tab:model_configurations}
-\begin{tabular}{lcccccc}
+\begin{tabular}{@{}llllccc@{}}
 \toprule
-\textbf{Model Identifier} & \textbf{Encoder Backbone} & \textbf{Decoder Backbone} & \textbf{Total Params} & \textbf{Trainable Params} & \textbf{Peak VRAM (32k/8k)} & \textbf{Step Throughput} \\
+\textbf{Model ID} & \textbf{Topology} & \textbf{Encoder Backbone} & \textbf{Decoder Backbone} & \textbf{Bridge ($d_{\text{enc}} \rightarrow d_{\text{mid}} \rightarrow d_{\text{dec}}$)} & \textbf{Context ($N_{\text{enc}} / N_{\text{dec}}$)} & \textbf{Curriculum} \\
 \midrule
-\texttt{Baseline-E2B-IT} & None (Causal Only) & Gemma 4 2B IT & 2.15 B & 2.15 B (Full SFT) & 34.81 GiB & 3.85 s / update \\
-\texttt{Baseline-E4B-IT} & None (Causal Only) & Gemma 4 4B IT & 4.22 B & 4.22 B (Full SFT) & 45.23 GiB & 5.20 s / update \\
+\texttt{Baseline-E2B-IT} & Causal Only & None & \texttt{Gemma-4-E2B-IT} (35L) & --- & $0 \;/\; 8{,}192$ & 1-Stage SFT \\
+\texttt{Baseline-E4B-IT} & Causal Only & None & \texttt{Gemma-4-E4B-IT} (42L) & --- & $0 \;/\; 8{,}192$ & 1-Stage SFT \\
 \midrule
-\texttt{Bifocal-2base-2it} & Gemma 4 2B Base & Gemma 4 2B IT & 4.30 B & 85.4 M (LoRA+Bridge) & 43.83 GiB & 4.22 s / update \\
-\texttt{Bifocal-2it-2it} & Gemma 4 2B IT & Gemma 4 2B IT & 4.30 B & 85.4 M (LoRA+Bridge) & 43.83 GiB & 4.18 s / update \\
-\texttt{Bifocal-E2B-E4B} & Gemma 4 2B Base & Gemma 4 4B IT & 6.37 B & 112.1 M (LoRA+Bridge) & 51.79 GiB & 5.63 s / update \\
+\texttt{Bifocal-2B} & Symmetric & \texttt{Gemma-4-E2B} (35L) & \texttt{Gemma-4-E2B-IT} (35L) & $1536 \rightarrow 1536 \rightarrow 1536$ (Identity $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
+\texttt{Bifocal-4B-E2B} & Dec-Heavy & \texttt{Gemma-4-E2B} (35L) & \texttt{Gemma-4-E4B-IT} (42L) & $1536 \rightarrow 2560 \rightarrow 2560$ (Ortho $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
+\texttt{Bifocal-2B-E4B} & Enc-Heavy & \texttt{Gemma-4-E4B} (42L) & \texttt{Gemma-4-E2B-IT} (35L) & $2560 \rightarrow 2560 \rightarrow 1536$ (Ortho $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
+\texttt{Bifocal-4B} & Symmetric & \texttt{Gemma-4-E4B} (42L) & \texttt{Gemma-4-E4B-IT} (42L) & $2560 \rightarrow 2560 \rightarrow 2560$ (Identity $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
 \bottomrule
 \end{tabular}
 \end{table*}

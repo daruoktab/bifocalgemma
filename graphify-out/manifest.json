@@ -2535,9 +2535,9 @@
     "semantic_hash": ""
   },
   "paper/PAPER_DRAFT.md": {
-    "mtime": 1794038905.3131537,
-    "seen": 1794039299.4250717,
-    "ast_hash": "2eb474528f86e322f2aa9893f14a608d",
+    "mtime": 1794200578.6554074,
+    "seen": 1794216672.6122048,
+    "ast_hash": "6edb11932434be72f1cf95c851da75c8",
     "semantic_hash": ""
   },
   "paper/figures/fig1_architecture.svg": {
@@ -2583,15 +2583,15 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/modeling_bifocalgemma.py": {
-    "mtime": 1794045957.9533167,
-    "seen": 1794048109.94146,
-    "ast_hash": "65780e64b66eb540ae60658472c53bde",
+    "mtime": 1794216528.1682827,
+    "seen": 1794216672.6122048,
+    "ast_hash": "f460721acf9c50e7e5e04e6777a3b820",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/fast_pipeline.py": {
-    "mtime": 1794195189.0729718,
-    "seen": 1794195565.8481033,
-    "ast_hash": "6995ea4067b713fc4af0c64297ac77a7",
+    "mtime": 1794216650.7639365,
+    "seen": 1794216672.6122048,
+    "ast_hash": "353694b24754ff6634ddd57b68d2d3f3",
     "semantic_hash": ""
   },
   "tests/test_pretrained_hf_model.py": {
@@ -2604,6 +2604,18 @@
     "mtime": 1794063142.3136587,
     "seen": 1794063240.9279382,
     "ast_hash": "bb3442c10507d9be27e64d2e098d40c8",
+    "semantic_hash": ""
+  },
+  "paper/BifocalGemma_Paper.pdf": {
+    "mtime": 1794200600.78119,
+    "seen": 1794216672.6122048,
+    "ast_hash": "291d044b42fc5370e15578153866dc9b",
+    "semantic_hash": ""
+  },
+  "paper/main.pdf": {
+    "mtime": 1794200600.78119,
+    "seen": 1794216672.6122048,
+    "ast_hash": "291d044b42fc5370e15578153866dc9b",
     "semantic_hash": ""
   }
 }

@@ -1,17 +1,16 @@
-\documentclass{article}
+\documentclass[10pt,twocolumn]{article}
 
-% Standard high-caliber conference formatting packages
 \usepackage[utf8]{inputenc}
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage[T1]{fontenc}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
 \usepackage{booktabs}
 \usepackage{graphicx}
-\usepackage{subcaption}
-\usepackage{url}
 \usepackage{hyperref}
-\usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{listings}
+\usepackage[expansion=false]{microtype}
+\usepackage{caption}
 
 \hypersetup{
     colorlinks=true,
@@ -21,19 +20,24 @@
 }
 
 \lstset{
-  basicstyle=\ttfamily\footnotesize,
-  breaklines=true,
-  frame=single,
-  backgroundcolor=\color{gray!5}
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true,
+    frame=single,
+    numbers=none,
+    keywordstyle=\color{blue!70!black},
+    commentstyle=\color{gray!80!black},
+    stringstyle=\color{red!60!black}
 }
 
-\title{\textbf{BifocalGemma: Resilient Repository-Level Code Intelligence via Non-Linear Manifold Warping and Decoupled Cross-Attention}}
+\title{\textbf{BifocalGemma: Asymmetric Bidirectional Repository Encoding and Stationary Cross-Attention for Gemma~4 Developer Agents}}
 
 \author{
-  \textbf{BifocalGemma Research Team} \\
-  Laboratory for Scalable Code Intelligence \\
-  \texttt{contact@bifocalgemma.research}
+  \textbf{Buana Daru Okta} \\
+  Google --- The Gemma~4 Developer Agent Paper Track \\
+  \texttt{https://github.com/daruokta/bifocalgemma} \\
+  \texttt{https://huggingface.co/daruokta/bifocalgemma-2026-11-02}
 }
+
 \date{November 2026}
 
 \begin{document}
@@ -41,225 +45,160 @@
 \maketitle
 
 \begin{abstract}
-Causal decoder-only language models have established an architectural monoculture in automated programming. While highly capable in single-file generation, autoregressive attention exhibits acute vulnerability in repository-scale software engineering, where thousands of lines of irrelevant utility functions, boilerplate, and distractor context can hijack attention distributions. We introduce \textbf{BifocalGemma}, an asymmetric dual-stream code architecture coupling a 32,768-token bidirectional encoder with an 8,192-token causal decoder via non-linear \texttt{SwiGLUDualGateBridge} manifold warping and stationary decoupled cross-attention. On 9,072 repository comprehension tasks under semantic distractor noise (\texttt{SWEQA Noisy Oracle}), BifocalGemma achieves \textbf{73.69\%} accuracy, decisively outperforming the matched 2B causal autoregressive baseline at \textbf{71.87\%} ($+1.82$ percentage points, $p < 0.001$, $\sim 3.9$ standard errors). While the causal baseline drops $-2.17$ percentage points under distractor injection, BifocalGemma degrades by merely $-0.19$ percentage points, demonstrating \textbf{11.4$\times$ higher resilience to semantic context noise}. 
-
-In the spirit of rigorous empirical science, we conduct an exhaustive methodological autopsy of the architecture's inherent trade-offs: (1) we identify an \textbf{Attention Dilution Penalty} on clean, pinpoint code retrieval (\texttt{LongCodeQA}: $55.14\%$ vs $65.42\%$, $-10.28$ pp), showing that broad cross-attention entropy sacrifices localized single-line lookup precision in exchange for global noise resilience; (2) we dissect a dual-layer pathology in single-function program repair (\texttt{HumanEvalFix}), demonstrating that prompt syntax leakage accounted for $112/164$ patch rejections, while streaming pointer loss ($\lambda_{\text{ptr}}=0.05$) imposed a verbatim copying bias that curtailed creative logic repair ($1.92\%$ vs $33.78\%$ conditional pass rate); and (3) we trace evaluation anomalies including 32-token multiple-choice question truncation on larger models. Our findings demonstrate that decoupled bidirectional encoding provides an empirically proven defense against context noise in repository software engineering.
+Autoregressive decoder-only language models process software repositories under a fundamental structural bottleneck: causal attention masks prevent earlier repository tokens from attending to symbols, type definitions, or call sites that appear later in the linearized file stream, while prefix-concatenated prompts force the decoder to maintain massive key-value (KV) caches across tens of thousands of tokens during patch generation. We introduce \textbf{BifocalGemma}, an asymmetric encoder-decoder developer agent architecture built natively on the \textbf{Gemma~4} model family (\texttt{Gemma~4 E2B} and \texttt{Gemma~4 E4B})~\cite{gemma4_2026}. BifocalGemma decouples repository comprehension from autoregressive patch synthesis by pairing a bidirectional Gemma~4 repository encoder ($N_{\text{enc}} \le 32{,}768$ tokens) with a causal Gemma~4 patch decoder ($N_{\text{dec}} \le 8{,}192$ tokens). To bridge these streams without destabilizing pretrained causal representations or breaking Gemma~4's native cross-layer KV-sharing topology, we introduce three architectural innovations: (1) a \textbf{SwiGLU Dual-Gate Coordinate Bridge} (\texttt{SwiGLUDualGateBridge}) with orthogonal/identity residual pathways, zero-initialized residual entry, and per-channel post-normalization calibration; (2) \textbf{Decoupled Stationary Full-Rank Cross-Attention} (\texttt{BifocalAttentionBlock}) that enforces rotational position invariance ($\Theta_{\text{cross}} = 0$), logarithmic \textbf{Critical Attention Length Scaling} $\beta(N_{\text{enc}})$, learnable per-head sharpness scaling $\sigma_{\text{cross}}$, and dual-gated head- and token-level fusion; and (3) a \textbf{Two-Stage Paired Training Curriculum} driven by \textbf{Chunked Differential Diff Cross-Entropy} ($\mathcal{L}_{\text{diff}}$). Across the 6-model controlled ablation matrix evaluated on \texttt{LongCodeArena} (\texttt{SWE-QA})~\cite{longcodearena_2024}, \texttt{RepoBench-C-8k}~\cite{repobench_2024}, and \texttt{SWE-bench Lite}~\cite{swebench_2024} under a strict Neutral Prompt Contract, \textbf{[PLACEHOLDER: Quantitative summary of primary benchmark outcomes across SWE-QA, RepoBench-C-8k, and SWE-bench Lite, alongside 32K memory and decoding throughput gains, to be populated upon completion of the active runs]}. All models are exported as standalone Hugging Face \texttt{PreTrainedModel} artifacts (\texttt{BifocalGemmaForCausalLM}) supporting native \texttt{AutoModelForCausalLM.from\_pretrained(..., trust\_remote\_code=True)}.
 \end{abstract}
 
 \section{Introduction}
-\label{sec:introduction}
 
-The deployment of Large Language Models (LLMs) for real-world software engineering has rapidly shifted from single-function autocompletion to whole-repository reasoning, automated issue resolution, and complex code generation~\cite{jimenez2024swebench,ding2023crosscodeeval}. State-of-the-art code assistants rely almost exclusively on causal decoder-only transformer architectures~\cite{gemma2024gemma,guo2024deepseekcoder,lozhkov2024starcoder2}. Under causal self-attention, tokens attend strictly to preceding tokens, enforcing an autoregressive factorization over the combined context and generation sequence.
+Repository-level software engineering requires two distinct computational modes: \emph{global bidirectional comprehension} over multi-file dependency graphs and \emph{precise local autoregressive synthesis} of unified diffs. Standard causal language models conflate both modes into a single left-to-right token stream. When a multi-file repository snapshot is linearized into a causal prefix $x_1, \dots, x_N$, a declaration at token $x_i$ cannot attend to downstream callers or interface implementations at token $x_j$ ($j > i$). Furthermore, during iterative reasoning and patch generation, every generated decoder token must attend over the entire $N$-token causal KV cache, incurring $\mathcal{O}(N_{\text{enc}} + N_{\text{dec}})$ memory bandwidth overhead at every decoding step.
 
-While causal masking is mathematically natural for autoregressive token synthesis, it imposes severe structural limitations when applied to large-scale code repositories:
+Recent efforts to adapt causal backbones into bidirectional encoders~\cite{llm2vec_2024,t5gemma_2025} demonstrate that unmasking self-attention unlocks strong bidirectional representations. However, grafting a bidirectional repository encoder onto a modern \textbf{Gemma~4}~\cite{gemma4_2026} decoder presents three acute architectural challenges:
 \begin{enumerate}
-    \item \textbf{Directional Asymmetry in Graph-Structured Code}: In real software projects, semantic dependencies are fundamentally non-causal. A function implementation in module $A$ routinely references class definitions, interface contracts, and utility functions defined later in the file or across arbitrary files in the repository directory tree. Causal self-attention compels early context tokens to encode representations in total ignorance of downstream declarations, requiring deep multilayer propagation to resolve cyclical references.
-    \item \textbf{Attention Hijacking by Semantic Distractors}: Context windows exceeding 32,000 tokens inevitably contain noisy distractors: irrelevant mock tests, legacy helper routines, and third-party dependencies. When a causal model computes self-attention over a monolithic 32k sequence, high-salience distractor tokens frequently attract softmax probability mass away from the true target implementation, destabilizing downstream generation.
-    \item \textbf{Quadratic Attention Churn During Generation}: Recalculating or caching quadratic causal key-value states across massive prompt contexts consumes substantial GPU memory bandwidth, creating latency bottlenecks for interactive code intelligence agents.
+    \item \textbf{Subspace and Norm Mismatch Under Unmasked Self-Attention}: Removing the causal mask from a pretrained Gemma~4 backbone alters the spectral distribution and activation norms of the final hidden states, causing variance explosion if injected directly into a causal decoder.
+    \item \textbf{RoPE Coordinate Collision and Long-Context Entropy Dilution}: Standard Rotary Position Embeddings (RoPE)~\cite{roformer_2024} assign sequential positions $t \in [0, N-1]$. Applying RoPE across decoupled encoder and decoder streams creates artificial distance decay between a decoder token at step $t_{\text{dec}}$ and relevant repository definitions at arbitrary file offsets $t_{\text{enc}} \gg t_{\text{dec}}$. Meanwhile, attending over $N_{\text{enc}} \in [8\text{K}, 32\text{K}]$ encoder tokens increases softmax entropy as $\mathcal{O}(\ln N_{\text{enc}})$, washing out sharp symbol lookups.
+    \item \textbf{Catastrophic Forgetting During Adapter Warmup}: Jointly updating decoder weights alongside randomly initialized cross-attention projections corrupts the decoder's fluent code generation capabilities before the cross-attention bridge has aligned its coordinate system.
 \end{enumerate}
 
-To overcome these structural failure modes, we present \textbf{BifocalGemma}, a hybrid asymmetric architecture combining a 32,768-token bidirectional encoder with an 8,192-token causal decoder. By decoupling context ingestion from autoregressive generation, BifocalGemma enables the encoder to construct globally contextualized representations where every token simultaneously attends across all file boundaries. These representations are projected into the decoder through a non-linear \texttt{SwiGLUDualGateBridge} and attended to via decoupled, stationary cross-attention with zero Rotary Position Embedding (RoPE) interference.
+\paragraph{Contributions.} We present \textbf{BifocalGemma}, a modular encoder-decoder architecture engineered specifically for Gemma~4 developer agents:
+\begin{itemize}
+    \item \textbf{Asymmetric Bidirectional-to-Causal Gemma~4 Topology}: We pair unmasked bidirectional Gemma~4 encoders (\texttt{E2B} at $d=1536$, 35 layers; \texttt{E4B} at $d=2560$, 42 layers) with causal Gemma~4 decoders while strictly isolating Per-Layer Embeddings (PLE, $d_{\text{ple}}=256$) per stream and preserving Gemma~4's native cross-layer KV-sharing hierarchy (15 KV-owner + 20 KV-shared layers in \texttt{E2B}; 24 KV-owner + 18 KV-shared layers in \texttt{E4B}).
+    \item \textbf{SwiGLU Dual-Gate Coordinate Bridge}: We design a residual manifold projector with width $d_{\text{mid}} = \max(d_{\text{enc}}, d_{\text{dec}})$, identity/orthogonal shortcut connections, zero-initialized down-projection, and learnable per-channel calibration $\gamma_{\text{calib}}$ that seamlessly supports both symmetric (\texttt{E2B}$\rightarrow$\texttt{E2B}, \texttt{E4B}$\rightarrow$\texttt{E4B}) and heterogeneous (\texttt{E2B}$\rightarrow$\texttt{E4B}, \texttt{E4B}$\rightarrow$\texttt{E2B}) pairings.
+    \item \textbf{Stationary Full-Rank Cross-Attention with Critical Length Scaling}: We formulate a RoPE-free ($\Theta_{\text{cross}}=0$) cross-attention mechanism equipped with logarithmic length scaling $\beta(N_{\text{enc}})$, learnable per-head sharpness $\sigma_{\text{cross}} \in [0.1, 5.0]$, and a dual-gated injection mechanism initialized at $5\%$ amplitude ($\tanh(g_{\text{head}}^{(0)}) = 0.05$).
+    \item \textbf{Two-Stage Paired Curriculum \& Differential Diff Objective}: We combine a frozen-decoder bridge alignment stage (Stage~1) and a conservative joint LoRA~\cite{lora_2022} SFT stage with $20\%$ comprehension replay (Stage~2) under a memory-efficient Chunked Differential Diff Cross-Entropy loss ($\mathcal{L}_{\text{diff}}$).
+    \item \textbf{Standalone Hugging Face Ecosystem Integration}: We package BifocalGemma as a self-contained Hugging Face \texttt{PreTrainedModel} (\texttt{BifocalGemmaForCausalLM}) with bundled architecture code and self-healing configuration assets.
+\end{itemize}
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{figures/fig1_architecture.svg}
-\caption{\textbf{BifocalGemma Dual-Stream Architecture.} (Top) 32,768-token repository context ingested via a bidirectional Gemma~4 Base encoder. (Middle) \texttt{SwiGLUDualGateBridge} non-linearly warps the bidirectional representation manifold into the decoder space with Pre/Post-RMSNorm and learned scale calibration ($\gamma_{\text{calib}}$). (Bottom) 8,192-token causal decoder executes autoregressive generation with decoupled stationary cross-attention and static Cross-KV caching.}
-\label{fig:architecture}
-\end{figure*}
+\section{Architecture and Methodology}
 
-Our contributions are threefold:
+\subsection{Asymmetric Gemma~4 Backbone and Bidirectional Repository Encoder}
+
+Given a repository context $X_{\text{enc}}$ of length $N_{\text{enc}} \le 32{,}768$ and a task instruction $q$, we prepend a lightweight query prefix (\texttt{[QUERY] <instruction>\textbackslash n}) to $X_{\text{enc}}$ so that encoder self-attention layers condition repository representations on the target issue from layer~0. The encoder backbone is initialized from \texttt{Gemma~4} (\texttt{E2B} with $d_{\text{enc}}=1536$, $L=35$ layers, $H_Q=8$, $H_{KV}=1$; or \texttt{E4B} with $d_{\text{enc}}=2560$, $L=42$ layers, $H_Q=8$, $H_{KV}=2$).
+
+To convert the causal Gemma~4 backbone into a true bidirectional repository encoder:
 \begin{enumerate}
-    \item \textbf{Architecture Design}: We formalize the mathematical framework of BifocalGemma, solving the representational collapse of linear adapters through SwiGLU gating and resolving positional coordinate drifting by eliminating RoPE rotations on cross-attention queries ($\langle Q_{\text{stat}}, K_{\text{stat}} \rangle$).
-    \item \textbf{Empirical Hero Result}: On 9,072 repository comprehension tasks under semantic distractor injection (\texttt{SWEQA Noisy Oracle}), BifocalGemma achieves \textbf{73.69\%} accuracy compared to \textbf{71.87\%} for the matched 2B causal baseline ($+1.82$ pp win, $p < 0.001$). Crucially, BifocalGemma exhibits \textbf{11.4$\times$ higher resistance to context noise degradation} ($-0.19$ pp drop vs $-2.17$ pp drop) while preserving parity on clean code ($73.88\%$ vs $74.04\%$).
-    \item \textbf{Methodological Autopsy & Integrity}: We present a candid analysis of architectural trade-offs, formalizing the \textbf{Attention Dilution Penalty} ($-10.28$ pp on LongCodeQA) as an information-theoretic consequence of broad cross-attention entropy, and diagnosing the dual pathology of syntax leakage and pointer copy bias on single-function program repair (HumanEvalFix).
+    \item \textbf{Unmasked Bidirectional Attention}: We override the causal attention mask across all sliding-window and global full-attention layers (\texttt{use\_bidirectional\_attention="all"}), constructing a non-causal 4D padding mask $M_{\text{enc}} \in \{0, -\infty\}^{B \times 1 \times 1 \times N_{\text{enc}}}$ that permits every valid repository token $i$ to attend to both preceding ($j < i$) and succeeding ($j > i$) tokens while strictly masking padding positions.
+    \item \textbf{Strict Stream-Isolated PLE}: Gemma~4 utilizes Per-Layer Embeddings (\texttt{hidden\_size\_per\_layer\_input} $= 256$) tied to surface token identities. We compute $E_{\text{ple}}^{\text{enc}}$ strictly from $X_{\text{enc}}$ and $E_{\text{ple}}^{\text{dec}}$ strictly from $X_{\text{dec}}$, preventing cross-stream token identity leakage.
+    \item \textbf{Post-Encoding Padding Zeroing}: Output hidden states at padded positions are explicitly zeroed ($H_{\text{enc}} \leftarrow H_{\text{enc}} \odot \mathbb{I}[\text{mask}_{\text{enc}} = 1]$) before entering the coordinate bridge.
 \end{enumerate}
 
-\section{Background \& Related Work}
-\label{sec:related_work}
+\subsection{SwiGLU Dual-Gate Coordinate Bridge}
 
-\paragraph{Long-Context Code Intelligence.} Modern foundation models for code, including Gemma~2/4~\cite{gemma2024gemma}, StarCoder2~\cite{lozhkov2024starcoder2}, and DeepSeek-Coder~\cite{guo2024deepseekcoder}, scale context windows up to 16k--128k tokens using modified RoPE base frequencies~\cite{su2024roformer}. However, empirical investigations demonstrate that causal models suffer from the ``lost-in-the-middle'' phenomenon and attention sink saturation~\cite{xiao2024efficient}, wherein irrelevant middle context degrades generation fidelity.
-
-\paragraph{Encoder-Decoder Paradigms.} Encoder-decoder architectures like T5~\cite{raffel2020exploring} and modern hybrids provide natural bidirectional context encoding. However, directly applying linear projection layers to bridge disparate pretrained models frequently triggers representational mismatch and gradient instability during fine-tuning. BifocalGemma addresses this via non-linear SwiGLU projection and stationary decoupled cross-attention coordinates.
-
-\paragraph{Repository-Level Benchmarks.} The evaluation of code models has evolved from isolated function synthesis (HumanEval~\cite{chen2021evaluating}) to repository-level issue resolution (SWE-bench~\cite{jimenez2024swebench}) and cross-file completion (CrossCodeEval~\cite{ding2023crosscodeeval}). In realistic software environments, benchmark contexts are dominated by distractor files, rendering noise resilience a critical metric.
-
-\section{BifocalGemma Architecture}
-\label{sec:architecture}
-
-The BifocalGemma architecture decouples repository-scale comprehension from autoregressive synthesis into two distinct streams connected via a non-linear bridge.
-
-\subsection{Bidirectional Repository Encoder}
-The encoder processes an extended context sequence of up to $N_{\text{enc}} = 32{,}768$ tokens comprising file trees, dependency manifests, and source modules:
-\begin{equation}
-    H_{\text{enc}} = \text{Encoder}_{\text{bidir}}(X_{\text{enc}}) \in \mathbb{R}^{N_{\text{enc}} \times d_{\text{enc}}},
-\end{equation}
-where $\text{Encoder}_{\text{bidir}}$ utilizes unmasked bidirectional self-attention initialized from Gemma~4 2B Base ($d_{\text{enc}} = 2048$). Unlike causal attention, every token $x_i$ attends to all $x_j$ for $1 \le j \le N_{\text{enc}}$, enabling non-causal resolution of cross-file imports and cyclic class references.
-
-\subsection{Non-Linear Manifold Warping Bridge (\texttt{SwiGLUDualGateBridge})}
-Prior hybrid architectures (such as naive linear projection baselines) employed a simple linear projection $W_{\text{proj}} \in \mathbb{R}^{d_{\text{enc}} \times d_{\text{dec}}}$. This resulted in severe gradient drift and representation collapse, because the decoder's linear cross-attention keys and values could not isolate syntactic code boundaries from dense contextual embeddings. 
-
-We formalize the \texttt{SwiGLUDualGateBridge}, which warps the bidirectional representation manifold into the decoder space via a SwiGLU non-linear gating mechanism~\cite{shazeer2020glu} stabilized by Pre- and Post-RMSNorm:
+To project bidirectional encoder representations $H_{\text{enc}} \in \mathbb{R}^{B \times N_{\text{enc}} \times d_{\text{enc}}}$ into the causal decoder's target manifold $Z_{\text{enc}} \in \mathbb{R}^{B \times N_{\text{enc}} \times d_{\text{dec}}}$ across arbitrary encoder-decoder width pairings, \texttt{SwiGLUDualGateBridge} applies a pre-normalized gated residual transformation~\cite{rmsnorm_2019,swiglu_2020} with intermediate dimension $d_{\text{mid}} = \max(d_{\text{enc}}, d_{\text{dec}})$:
 \begin{align}
-    \tilde{H} &= \text{RMSNorm}_{\text{pre}}(H_{\text{enc}}), \\
-    G &= \text{SiLU}(\tilde{H} W_{\text{gate}}) \odot (\tilde{H} W_{\text{up}}), \\
-    H_{\text{proj}} &= G W_{\text{down}}, \\
-    H_{\text{warped}} &= \gamma_{\text{calib}} \cdot \text{RMSNorm}_{\text{post}}(H_{\text{proj}}),
+\tilde{H} &= \text{RMSNorm}_{\text{pre}}(H_{\text{enc}}), \\
+G &= \text{SiLU}(\tilde{H} W_{\text{gate}}) \odot (\tilde{H} W_{\text{up}}), \quad W_{\text{gate}}, W_{\text{up}} \in \mathbb{R}^{d_{\text{enc}} \times d_{\text{mid}}}, \\
+Z &= W_{\text{res}}(\tilde{H}) + G W_{\text{down}}, \quad W_{\text{down}} \in \mathbb{R}^{d_{\text{mid}} \times d_{\text{dec}}}, \\
+Z_{\text{enc}} &= \left(\gamma_{\text{calib}} \odot \text{RMSNorm}_{\text{post}}(Z)\right) \odot \mathbb{I}[\text{mask}_{\text{enc}} = 1].
 \end{align}
-where $W_{\text{gate}}, W_{\text{up}} \in \mathbb{R}^{d_{\text{enc}} \times d_{\text{inter}}}$, $W_{\text{down}} \in \mathbb{R}^{d_{\text{inter}} \times d_{\text{dec}}}$, $d_{\text{inter}} = 4096$, and $\gamma_{\text{calib}} \in \mathbb{R}$ is an initialized scalar calibration parameter ($\gamma_{\text{calib}}^{(0)} = 1.0$) that dynamically balances the cross-attention magnitude against the decoder's internal self-attention activations.
+Here, $W_{\text{res}}$ is an identity mapping when $d_{\text{enc}} = d_{\text{dec}}$ (\texttt{E2B}$\rightarrow$\texttt{E2B}, \texttt{E4B}$\rightarrow$\texttt{E4B}) and an orthogonally initialized linear projection when $d_{\text{enc}} \neq d_{\text{dec}}$ (\texttt{E2B}$\rightarrow$\texttt{E4B}, \texttt{E4B}$\rightarrow$\texttt{E2B}). The down-projection $W_{\text{down}}$ is initialized near zero ($\mathcal{N}(0, (0.01 / \sqrt{d_{\text{mid}}})^2)$) so the bridge begins as a clean linear/identity manifold transport, while $\gamma_{\text{calib}} \in \mathbb{R}^{d_{\text{dec}}}$ (initialized to $\mathbf{1}$) provides learnable per-channel scale calibration prior to cross-attention key/value projection.
 
-\subsection{Decoupled Stationary Cross-Attention}
-The decoder generates tokens autoregressively conditioned on instruction tokens and preceding generated tokens $Y_{<t}$:
-\begin{equation}
-    H_{\text{dec}}^{(l)} = \text{DecoderLayer}^{(l)}\left(H_{\text{dec}}^{(l-1)}, H_{\text{warped}}\right).
-\end{equation}
-Within each decoder layer $l$, self-attention applies RoPE rotations $\mathcal{R}_{\Theta, t}$ to queries and keys to track local sequence order across the 8,192-token generation window:
-\begin{equation}
-    \text{SelfAttn}(Q_{\text{rot}}, K_{\text{rot}}, V) = \text{Softmax}\left(\frac{Q_{\text{rot}} K_{\text{rot}}^T}{\sqrt{d_k}} + M_{\text{causal}}\right) V.
-\end{equation}
+\subsection{Decoupled Stationary Full-Rank Cross-Attention}
 
-Crucially, in the cross-attention sublayer, we enforce \textbf{Stationary Coordinate Invariance}:
-\begin{equation}
-    Q_{\text{stat}} = H_{\text{dec}} W_Q^{\text{cross}}, \quad K_{\text{stat}} = H_{\text{warped}} W_K^{\text{cross}}, \quad V_{\text{stat}} = H_{\text{warped}} W_V^{\text{cross}}.
-\end{equation}
-No RoPE rotation is applied to $Q_{\text{stat}}$ or $K_{\text{stat}}$ ($\Theta_{\text{cross}} = 0$). Because the 32k repository representation $H_{\text{warped}}$ is stationary, rotating cross-attention queries with generation step $t$ causes high-frequency artificial phase drift against fixed context positions. Enforcing stationary cross-attention ensures that semantic pointer references remain perfectly constant across all 8k generation steps. Furthermore, $K_{\text{stat}}$ and $V_{\text{stat}}$ are computed exactly once per forward pass and cached as a static Cross-KV cache.
+Every decoder layer wraps the native Gemma~4 attention module inside a \texttt{BifocalAttentionBlock} that executes causal self-attention and encoder-decoder cross-attention in parallel before merging their outputs through the shared output projection $W_O$.
 
-\subsection{Dual Optimization Objectives}
-BifocalGemma is trained with a composite objective combining weighted causal language modeling with an explicit streaming pointer loss:
-\begin{equation}
-    \mathcal{L}_{\text{total}} = \mathcal{L}_{\text{diff}} + \lambda_{\text{ptr}} \mathcal{L}_{\text{ptr}}.
-\end{equation}
-\paragraph{Differential Diff Token Weighting ($\mathcal{L}_{\text{diff}}$).} In code editing tasks, prefix instructions and boilerplate context dominate the sequence length, while the critical bug-fixing diff tokens occupy a small fraction of the loss mask. We apply normalized differential weighting:
-\begin{equation}
-    \mathcal{L}_{\text{diff}} = - \frac{1}{\sum_t w_t} \sum_{t=1}^{T_{\text{dec}}} w_t \log P(y_t \mid y_{<t}, H_{\text{warped}}),
-\end{equation}
-where $w_t = 2.5$ for modified diff tokens and $w_t = 1.0$ for structural prefix tokens.
+\paragraph{Preservation of Gemma~4 Cross-Layer KV-Sharing.}
+Gemma~4 employs a hybrid KV-sharing architecture in which only the first 15 of 35 layers in \texttt{E2B} (and 24 of 42 layers in \texttt{E4B}) compute independent KV projections (\texttt{is\_kv\_shared\_layer = False}), while downstream shared layers reuse the KV states of their designated owner layer. BifocalGemma mirrors this exact invariant for cross-attention: only KV-owner layers instantiate dedicated BF16 full-rank projections $W_{K,\text{cross}}, W_{V,\text{cross}} \in \mathbb{R}^{d_{\text{dec}} \times (H_{KV} \cdot d_h)}$ and RMSNorms ($\text{RMSNorm}_{K,\text{cross}}, \text{RMSNorm}_{V,\text{cross}}$), warm-started from the pretrained self-attention $W_K, W_V$ weights. During autoregressive generation, $(K_{\text{cross}}, V_{\text{cross}})$ are computed once during prefill, cached inside \texttt{BifocalDynamicCache}, and reused across both KV-shared layers and subsequent decoding tokens with $\mathcal{O}(1)$ recomputation cost.
 
-\paragraph{Streaming LogSumExp Pointer Loss ($\mathcal{L}_{\text{ptr}}$).} To guide cross-attention alignment toward exact token matches in the repository context, we compute a streaming pointer alignment loss across cross-attention logits $s_{t, i} = \frac{q_t k_i^T}{\sqrt{d_k}}$:
+\paragraph{Stationary Coordinate Invariance ($\Theta_{\text{cross}} = 0$).}
+While causal self-attention applies standard RoPE rotations $\mathcal{R}_{\Theta, t}$ to $Q_{\text{self}}$ and $K_{\text{self}}$, applying RoPE to cross-attention introduces spurious positional interference between the decoder's generation index and the encoder's file offset. Because $Z_{\text{enc}}$ already encodes intra-file and inter-file structural topology from 35--42 layers of RoPE-equipped bidirectional self-attention, we enforce \emph{Stationary Coordinate Invariance} ($\Theta_{\text{cross}} = 0$) on the cross-attention branch:
+\begin{align}
+Q_{\text{cross}} &= \text{RMSNorm}_{Q,\text{cross}}(H_{\text{dec}} W_Q), \\
+K_{\text{cross}} &= \text{RMSNorm}_{K,\text{cross}}(Z_{\text{enc}} W_{K,\text{cross}}), \\
+V_{\text{cross}} &= \text{RMSNorm}_{V,\text{cross}}(Z_{\text{enc}} W_{V,\text{cross}}).
+\end{align}
+
+\paragraph{Critical Attention Length Scaling and Learnable Sharpness.}
+To prevent attention entropy explosion when querying up to $N_{\text{enc}} = 32{,}768$ repository tokens, we modulate $Q_{\text{cross}}$ with both a deterministic logarithmic length normalizer $\beta(N_{\text{enc}})$ and a learnable per-head sharpness parameter $\sigma_{\text{cross}} \in \mathbb{R}^{H_Q \times 1 \times 1}$ (initialized to $1.0$ and clamped to $[0.1, 5.0]$):
+\begin{align}
+\beta(N_{\text{enc}}) &= \max\left(1.0,\; 1.0 + 0.1 \ln\!\left(\frac{\max(N_{\text{enc}}, 1)}{2048}\right)\right), \\
+\hat{Q}_{\text{cross}} &= \frac{\text{clamp}(\sigma_{\text{cross}}, 0.1, 5.0)}{\beta(N_{\text{enc}})} Q_{\text{cross}}, \\
+O_{\text{cross}} &= \text{SDPA}\!\left(\hat{Q}_{\text{cross}}, K_{\text{cross}}, V_{\text{cross}}, M_{\text{enc}}\right).
+\end{align}
+
+\paragraph{Dual-Gated Head and Token Fusion.}
+Rather than summing $O_{\text{self}}$ and $O_{\text{cross}}$ unconditionally, we combine a global per-head gate $g_{\text{head}} \in \mathbb{R}^{1 \times H_Q \times 1 \times 1}$ (initialized to $\operatorname{atanh}(0.05)$ so $\tanh(g_{\text{head}}^{(0)}) = 0.05$) with a fine-grained token-conditional query gate parameterized by $w_{\text{gate}} \in \mathbb{R}^{1 \times H_Q \times 1 \times d_h}$ (initialized to $\mathbf{0}$ so $g_{\text{query}}^{(0)} = 1.0$):
+\begin{align}
+g_{\text{query}} &= 2\,\sigma\!\left(\frac{4}{\sqrt{d_h}} \langle Q_{\text{cross}}, w_{\text{gate}} \rangle\right) \in (0, 2), \\
+g_{\text{eff}} &= \tanh(g_{\text{head}}) \cdot g_{\text{query}}, \\
+O_{\text{total}} &= W_O\left(O_{\text{self}} + g_{\text{eff}} \odot O_{\text{cross}}\right).
+\end{align}
+At step~0 of training, cross-attention contributes a bounded $5\%$ perturbation to the pre-projection attention representation, protecting the decoder's causal prior while preserving non-zero gradients into both the bridge and cross-attention projections.
+
+\subsection{Chunked Differential Diff Objective and Two-Stage Curriculum}
+
+\paragraph{Chunked Differential Diff Cross-Entropy ($\mathcal{L}_{\text{diff}}$).}
+Standard uniform token-level cross-entropy under-weights critical edit operations (\texttt{+} additions and \texttt{-} deletions) relative to boilerplate context lines inside unified diffs. We optimize \emph{Chunked Differential Diff Cross-Entropy} ($\mathcal{L}_{\text{diff}}$), which parses target patches into line-level syntactic categories and assigns differential token weights: $w_{\text{add}} = 1.4$ for added lines (\texttt{+}), $w_{\text{del}} = 1.2$ for deleted lines (\texttt{-}), $w_{\text{hdr}} = 1.1$ for hunk headers (\texttt{@@ ... @@}, \texttt{---}, \texttt{+++}), and $w_{\text{ctx}} = 0.8$ for unchanged context lines. Weights are normalized per sequence to maintain unit mean ($\frac{1}{|S|} \sum_{t \in S} \tilde{w}_t = 1.0$). To minimize peak VRAM on $d_{\text{vocab}} = 262{,}144$, logits are computed in chunks of $128$ tokens with Gemma~4 final logit softcapping ($30.0$):
 \begin{equation}
-    \mathcal{L}_{\text{ptr}} = - \sum_{t \in \mathcal{T}_{\text{code}}} \log \left( \frac{\sum_{i \in \mathcal{M}(y_t)} \exp(s_{t, i})}{\sum_{k=1}^{N_{\text{enc}}} \exp(s_{t, k})} \right),
+\mathcal{L}_{\text{diff}} = \frac{1}{|S|} \sum_{t \in S} \tilde{w}_t \, \text{CE}\!\left(30.0 \tanh\!\left(\frac{h_t W_{\text{lm}}^\top}{30.0}\right),\, y_t\right).
 \end{equation}
-where $\mathcal{M}(y_t) = \{i \mid X_{\text{enc}, i} = y_t\}$ denotes the set of context positions matching target token $y_t$. While initial diagnostic runs evaluated $\lambda_{\text{ptr}} = 0.05$, our empirical ablation and default production recipe set $\lambda_{\text{ptr}} = 0.0$ alongside learnable cross-attention sharpness scaling (\texttt{cross\_scale}) to eliminate verbatim copy bias during code repair.
+Streaming pointer-generator copy loss is explicitly disabled ($\lambda_{\text{ptr}} = 0.0$) to prevent verbatim copy bias when synthesizing novel bug-fix tokens.
 
-\section{Experimental Setup \& Methodology}
-\label{sec:setup}
-
-\subsection{Training Curriculum \& Data Composition}
-Models were trained across an 11,102-step curriculum structured into two distinct stages:
+\paragraph{Two-Stage Paired Curriculum vs.\ Fair Baseline Curriculum.}
 \begin{itemize}
-    \item \textbf{Stage 1: Frozen Decoder Context Warmup (Steps 1--2,000)}: The decoder backbone is frozen. Only the \texttt{SwiGLUDualGateBridge} and cross-attention projection layers are trained on a high-fidelity source mixture (EditPackFT and CommitPackFT~\cite{muennighoff2023octopack}). This aligns the bidirectional manifold to the causal decoder's embedding space without catastrophic forgetting of instruction-following skills.
-    \item \textbf{Stage 2: Joint LoRA Fine-Tuning (Steps 2,001--11,102)}: LoRA adapters ($r=16, \alpha=32$) are unfreezed across both encoder and decoder attention projections, jointly optimizing unified diff generation on SWE-rebench-V2 and NextCoderDataset while interleaving synthetic replay buffers to maintain numerical stability.
+    \item \textbf{Stage~1 (Frozen Decoder Bridge Alignment --- First $50\%$ of Steps)}: Both the encoder and decoder backbones are strictly frozen. Only \texttt{SwiGLUDualGateBridge} and the KV-owner \texttt{BifocalAttentionBlock} parameters are trained at $\text{LR}_{\text{bridge}} = \text{LR}_{\text{cross}} = 10^{-4}$ using comprehension and localization tasks.
+    \item \textbf{Stage~2 (Joint LoRA SFT with Anti-Forgetting Replay --- Final $50\%$ of Steps)}: LoRA adapters ($r=16, \alpha=32$) are activated on both encoder and decoder with a conservative decoder learning rate $\text{LR}_{\text{lora}} = 2 \times 10^{-5}$, while bridge and cross-attention learning rates are halved to $5 \times 10^{-5}$. Stage~2 interleaves $80\%$ unified diff synthesis (\texttt{SWE-smith}) with a $20\%$ comprehension replay buffer (\texttt{SWE-QA} / \texttt{RepoBench}) to preserve long-context retrieval alignment.
+    \item \textbf{Causal Baseline Curriculum}: Because causal baselines (\texttt{Baseline-E2B-IT}, \texttt{Baseline-E4B-IT}) have no randomly initialized bridge or cross-attention modules to warm up, they are trained under a continuous \textbf{Single-Stage Full Decoder LoRA SFT} across $100\%$ of training steps on the exact same tokenized dataset and step budget.
+    \item \textbf{Partitioned Weight Decay}: Weight decay ($\lambda_{\text{wd}} = 10^{-4}$) is applied strictly to 2D linear bridge matrices ($W_{\text{gate}}, W_{\text{up}}, W_{\text{down}}, W_{\text{res}}$) and set to $0.0$ on all RMSNorm weights, calibration vectors $\gamma_{\text{calib}}$, cross-attention gates/scales, and LoRA adapters.
 \end{itemize}
 
-\subsection{Evaluated Models}
-We benchmark four core model configurations (detailed in Table~\ref{tab:model_configurations}):
+\input{tables/tab1_configs}
+
+\section{Experimental Setup}
+
+\subsection{Controlled 6-Model Ablation Matrix and Benchmarks}
+Table~\ref{tab:configs} details our controlled 6-model experimental matrix spanning symmetric and asymmetric pairings of \texttt{Gemma~4 E2B} and \texttt{Gemma~4 E4B}. Models are trained on a deterministic multi-file repository corpus combining \texttt{SWE-smith} (unified diff bug repair), \texttt{LongCodeArena} (\texttt{SWE-QA} repository comprehension)~\cite{longcodearena_2024}, and \texttt{RepoBench-C-8k}~\cite{repobench_2024}. We evaluate all models across four complementary dimensions:
 \begin{enumerate}
-    \item \texttt{Baseline-E2B-IT}: Native causal autoregressive Gemma~4 2B IT model. Serves as the primary parameter-matched baseline.
-    \item \texttt{Baseline-E4B-IT}: Native causal autoregressive Gemma~4 4B IT model.
-    \item \texttt{Bifocal-2base-2it}: Symmetric hybrid pairing a Gemma~4 2B Base encoder with a Gemma~4 2B IT decoder.
-    \item \texttt{Bifocal-2it-2it}: Paired Gemma~4 2B IT encoder and Gemma~4 2B IT decoder with \texttt{SwiGLUDualGateBridge}.
+    \item \textbf{Long-Context Repository Comprehension (\texttt{SWE-QA})}: Multi-hop architectural reasoning across contexts bucketed at $8\text{K}$, $16\text{K}$, and $32\text{K}$ tokens.
+    \item \textbf{Cross-File Code Retrieval (\texttt{RepoBench-C-8k})}: Exact cross-file dependency resolution and completion accuracy.
+    \item \textbf{Automated Bug Localization \& Patch Synthesis (\texttt{SWE-bench Lite})}: Unified Diff Validity Rate, File/Hunk Localization Accuracy, and Exact Patch Resolution Rate~\cite{swebench_2024}.
+    \item \textbf{Hardware Efficiency Telemetry}: Peak inference VRAM (GB), prefill latency (ms), and decoding throughput (tokens/sec).
 \end{enumerate}
 
-\input{tables/tab1_configs.tex}
+\subsection{Evaluation Integrity Safeguards}
+Our benchmark harness enforces two strict invariants: (1) a \textbf{Neutral Prompt Contract} providing identical task instructions to both causal baselines and BifocalGemma without architecture-specific prompt hints, and (2) a \textbf{256-Token Comprehension Generation Floor} (\texttt{max\_new\_tokens} $\ge 256$) on all MCQ, QA, and retrieval tasks so analytical reasoning preambles are never truncated before emitting the final answer.
 
-\subsection{Compute Infrastructure \& Hardware Safeguards}
-All models were trained on NVIDIA A100-SXM4-80GB GPUs. When processing 32k encoder and 8k decoder sequences in BF16 precision, naive attention computation exceeds 160 GiB VRAM. As documented in Table~\ref{tab:hardware_efficiency}, we evaluated three attention backends: Tiled Attention, FlexAttention, and Hybrid Attention. While FlexAttention and Hybrid Attention exhibited severe gradient drift ($>74\%$ relative L2 error), Tiled Attention delivered exact numerical gradients with zero drift. Coupled with chunked cross-entropy (chunk size 128) and gradient checkpointing, peak VRAM was capped at 43.83 GiB.
+\input{tables/tab2_sweqa}
+\input{tables/tab3_repair}
+\input{tables/tab4_hardware}
 
-\input{tables/tab4_hardware.tex}
+\section{Empirical Results}
 
-\subsection{Evaluation Benchmarks}
+\noindent\textbf{[PLACEHOLDER --- ACTIVE EXPERIMENTAL RUNS]}: \textit{All empirical metrics from earlier exploratory runs have been omitted. This section and Tables~\ref{tab:sweqa}, \ref{tab:repair}, and \ref{tab:hardware} will be populated with final verified metrics upon completion of the active training and benchmark evaluation runs.}
+
+\subsection{Long-Context Repository Comprehension}
+Table~\ref{tab:sweqa} reports accuracy across \texttt{SWE-QA} ($8\text{K}$, $16\text{K}$, $32\text{K}$) and \texttt{RepoBench-C-8k}.
 \begin{itemize}
-    \item \textbf{SWEQA Clean Oracle (9,072 cases)}: Multiple-choice code comprehension questions extracted from SWE-bench instances where context contains only oracle files required to solve the task.
-    \item \textbf{SWEQA Noisy Oracle (9,072 cases)}: Identical SWEQA questions where the context is contaminated with distractor functions and non-relevant repository source files.
-    \item \textbf{LongCodeQA (107 instances)}: Pinpoint single-line fact and variable retrieval over long repository documents.
-    \item \textbf{HumanEvalFix (164 instances)}: Single-function unit-test bug repair evaluated via automated patch execution.
-    \item \textbf{CrossCodeLong (100 instances)}: Multi-token cross-file code completion across chunk-level and function-level contexts.
-    \item \textbf{GSM8K 8-Shot (1,319 instances)}: Few-shot multi-step mathematical reasoning anchor.
+    \item \textbf{[PLACEHOLDER]}: Comparative analysis of repository comprehension accuracy (\texttt{SWE-QA} and \texttt{RepoBench-C-8k}) between Causal Baselines and BifocalGemma across $8\text{K}$, $16\text{K}$, and $32\text{K}$ token context buckets.
+    \item \textbf{[PLACEHOLDER]}: Analysis of encoder-to-decoder scaling trade-offs (asymmetric \texttt{E2B}$\rightarrow$\texttt{E4B} vs.\ \texttt{E4B}$\rightarrow$\texttt{E2B}) on cross-file dependency retention.
 \end{itemize}
 
-\section{Empirical Results \& Comparative Analysis}
-\label{sec:results}
-
-\input{tables/tab2_sweqa.tex}
-
-\subsection{Main Result: Repository Comprehension Under Distractor Noise}
-Table~\ref{tab:sweqa_results} and Figure~\ref{fig:noise_resilience} summarize our primary empirical findings across 9,072 evaluation cases:
-\begin{enumerate}
-    \item \textbf{Hero Victory on Noisy Context}: On \texttt{SWEQA Noisy Oracle}, \texttt{Bifocal-2it-2it} achieves \textbf{73.69\%} accuracy (6,685/9,072), outperforming \texttt{Baseline-E2B-IT} at \textbf{71.87\%} (6,520/9,072) by \textbf{+1.82 percentage points}. Two-tailed paired bootstrap hypothesis testing confirms high statistical significance ($p < 0.001$, approximately $3.9$ standard errors ahead).
-    \item \textbf{Parity on Clean Context}: When presented with clean oracle context (\texttt{SWEQA Clean Oracle}), BifocalGemma and the causal baseline perform at statistical parity (\textbf{73.88\% vs 74.04\%}, $\Delta = -0.16$ pp, $p = 0.81$). This confirms that BifocalGemma's decoupled cross-attention does not degrade baseline code comprehension capabilities.
-    \item \textbf{11.4$\times$ Higher Noise Resilience}: When distractor context is injected, the causal baseline suffers a sharp degradation of \textbf{$-2.17$ pp} ($74.04\% \to 71.87\%$). In contrast, BifocalGemma degrades by merely \textbf{$-0.19$ pp} ($73.88\% \to 73.69\%$). BifocalGemma demonstrates an \textbf{11.4$\times$ higher resilience ratio} ($0.19$ pp degradation vs $2.17$ pp degradation), confirming our core thesis: bidirectional global encoding shields representations from semantic distractor hijacking.
-\end{enumerate}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.85\linewidth]{figures/fig2_noise_resilience.svg}
-\caption{\textbf{Context Noise Resilience on SWEQA ($N = 9,072$).} Comparison of accuracy degradation from Clean Oracle to Distractor-Noisy Oracle context. The causal baseline drops $-2.17$ pp, whereas BifocalGemma remains virtually horizontal ($-0.19$ pp), outperforming the baseline by $+1.82$ pp ($p < 0.001$).}
-\label{fig:noise_resilience}
-\end{figure}
-
-\subsection{Training Dynamics \& Convergence}
-Figure~\ref{fig:loss_curves} illustrates training loss trajectories across 11,102 steps. In Stage~1, the frozen-decoder \texttt{SwiGLUDualGateBridge} rapidly reduced cross-attention alignment loss from $2.9$ to $0.65$ within 2,000 steps. In Stage~2, joint LoRA optimization converged smoothly to a final held-out loss of $0.1870$, closely matching the causal baseline's $0.1721$ without loss spikes or gradient explosion.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.85\linewidth]{figures/fig3_loss_curves.svg}
-\caption{\textbf{Empirical Training Loss Trajectories.} Telemetry curves from \texttt{outputs/loss\_curves/} across 11,102 steps, showing Stage~1 frozen warmup ($2.9 \to 0.65$) and Stage~2 joint LoRA convergence ($0.1870$).}
-\label{fig:loss_curves}
-\end{figure}
-
-\section{Methodological Autopsy \& Limitations}
-\label{sec:limitations}
-
-Genuine scientific progress requires transparently reporting and dissecting negative results and architectural trade-offs. We present a formal autopsy of four specific phenomena observed during empirical evaluation.
-
-\input{tables/tab3_repair.tex}
-
-\subsection{Autopsy 1: The Attention Dilution Penalty (LongCodeQA)}
-On \texttt{LongCodeQA} (107 instances), \texttt{Bifocal-2it-2it} scored \textbf{55.14\%}, trailing \texttt{Baseline-E2B-IT} at \textbf{65.42\%} by \textbf{$-10.28$ percentage points} (Table~\ref{tab:sweqa_results}).
-\paragraph{Mechanistic Analysis.} LongCodeQA evaluates shallow pinpoint lookup over uncorrupted code files (e.g., retrieving an exact constant declaration: \texttt{MAX\_WORKERS = 64}). In causal autoregressive attention, the query position concentrates softmax probability mass narrowly onto the single target line, resulting in near-zero attention entropy. In BifocalGemma, the SwiGLU bridge and stationary cross-attention project representations across the entire 32k bidirectional manifold, distributing attention mass globally. 
-
-This high attention entropy is precisely what confers resilience against distractor tokens in SWEQA Noisy; however, in clean documents requiring localized fact retrieval, it manifests as an \textbf{Attention Dilution Penalty}. We formalize this as a fundamental information-theoretic trade-off: \textit{architectures optimized for global context noise resilience exhibit reduced precision on narrow, localized line lookup}.
-
-\subsection{Autopsy 2: The HumanEvalFix Dual Pathology}
-Initial benchmark runs on HumanEvalFix suggested a catastrophic failure: BifocalGemma achieved a raw pass@1 of only \textbf{0.61\%} (1/164) compared to the baseline's \textbf{15.24\%} (25/164). A rigorous forensic analysis revealed a dual-layer pathology:
-\begin{enumerate}
-    \item \textbf{Layer 1: Prompt Syntax Leakage (112 Failures)}: In the evaluation task formatter (\texttt{context\_tasks.py:125}), the prompt template included the instruction:
-    \begin{quote}
-    \texttt{"Return only a unified diff ... using the encoder context."}
-    \end{quote}
-    The instruction-tuned decoder literally interpreted \texttt{"encoder context"} as a function signature parameter, systematically emitting:
-    \begin{lstlisting}[language=Python]
--def has_close_elements(numbers: List[float], threshold: float) -> bool:
-+def has_close_elements(numbers: List[float], threshold: float, encoder: object) -> bool:
-    \end{lstlisting}
-    This prompt hallucination caused \texttt{git apply} to fail on 112 out of 164 evaluation instances ($68.3\%$ rejection rate), reducing the raw patch apply rate to $31.71\%$.
-    \item \textbf{Layer 2: Pointer Loss Verbatim Copy Bias (Logic Deficit)}: When we condition solely on the 52 instances where patches applied cleanly:
-    \begin{itemize}
-        \item \texttt{Baseline-E2B-IT} achieved a \textbf{33.78\% conditional pass rate} (25/74 applied patches passed unit tests).
-        \item \texttt{Bifocal-2it-2it} achieved only a \textbf{1.92\% conditional pass rate} (1/52 applied patches passed unit tests).
-    \end{itemize}
-    The root cause lies in the streaming pointer loss ($\lambda_{\text{ptr}} = 0.05$). The pointer objective heavily penalized token emissions that deviated from input context tokens, biasing the decoder toward verbatim copying of buggy context rather than synthesizing new bug-fixing operators or boundary conditions.
-\end{enumerate}
-
-\subsection{Autopsy 3: MCQ Generation Cap on Verbose Models (E4B)}
-As reported in Table~\ref{tab:sweqa_results}, \texttt{Baseline-E4B-IT} scored poorly on SWEQA ($61.94\%$ Clean, $56.90\%$ Noisy). Investigation of the evaluation traces revealed an operational artifact: the legacy harness capped generation at \texttt{max\_new\_tokens = 32}. Because the 4B instruction-tuned model emitted conversational chain-of-thought preambles (e.g., \textit{``Based on the repository context, the appropriate handler is...''}) before outputting the letter choice, it hit the length limit before outputting the answer token, generating 1,696 \texttt{INVALID\_OUTPUT} errors. This confirms that \texttt{Baseline-E2B-IT} is the proper, uncorrupted baseline anchor.
-
-\subsection{Autopsy 4: CrossCodeLong Metric Floor Effect}
-On CrossCodeLong (Table~\ref{tab:repair_and_completion}), both models registered 0.0\% exact match on multi-token chunk completion. Because chunk completion evaluated sequences up to 8,159 tokens, exact string matching creates an artificial floor effect where single-whitespace or variable naming variances produce zero credit. Reporting continuous token similarity (Sequence Similarity $\approx 0.32$, Regex Identifier F1 $\approx 0.37$) confirms that both models generate semantically valid code structures.
-
-\section{Discussion \& Practical Guidance}
-\label{sec:discussion}
-
-Our empirical findings provide actionable architectural guidance for production code intelligence systems:
+\subsection{Repository-Level Code Repair}
+Table~\ref{tab:repair} reports unified diff validity, localization accuracy, and patch resolution on \texttt{SWE-bench Lite}.
 \begin{itemize}
-    \item \textbf{When to Choose Bifocal Architectures}: For whole-repository comprehension, multi-file dependency navigation, and issue analysis in real-world codebases with high distractor density, BifocalGemma provides superior noise immunity and stable context representations ($+1.82$ pp win, 11.4$\times$ noise protection).
-    \item \textbf{When to Retain Decoder-Only Models}: For single-function autocompletion, isolated unit test generation, and pinpoint line lookup in clean documents, causal decoder-only architectures remain preferred due to lower attention entropy and absence of verbatim copy bias.
-    \item \textbf{Mitigation Strategies}: Future iterations of hybrid architectures should employ adaptive pointer gating ($\lambda_{\text{ptr}} \to 0$ during diff editing regions) and learned attention temperature sharpening to mitigate the attention dilution penalty.
+    \item \textbf{[PLACEHOLDER]}: Evaluation of unified diff synthesis quality, git patch syntactic validity, and file/hunk localization accuracy under the Two-Stage Paired Curriculum and Chunked Differential Diff Cross-Entropy ($\lambda_{\text{ptr}} = 0.0$).
 \end{itemize}
+
+\subsection{Hardware Telemetry and Training Dynamics}
+Table~\ref{tab:hardware} summarizes peak VRAM, prefill latency, and decoding throughput at $32\text{K}$ context length.
+\begin{itemize}
+    \item \textbf{[PLACEHOLDER]}: Analysis of KV-cache memory efficiency from reusing Cross-KV states across Gemma~4 KV-shared layers and decoding throughput (tok/s) relative to causal baselines.
+    \item \textbf{[PLACEHOLDER]}: Summary of Stage~1 (Bridge Alignment) and Stage~2 (Joint LoRA SFT) training and validation loss trajectories, alongside final learned distributions of $\tanh(g_{\text{head}})$ and sharpness $\sigma_{\text{cross}}$.
+\end{itemize}
+
+\section{Limitations and Negative Findings}
+
+\begin{enumerate}
+    \item \textbf{Dual-Backbone Static Parameter Footprint}: Because BifocalGemma instantiates both a bidirectional encoder and a causal decoder, its static weight footprint in VRAM is roughly $2\times$ that of a single-stream causal model of identical layer width (\texttt{Bifocal-2B} holds $\sim 4\text{B}$ total parameters across encoder and decoder), even though autoregressive decoding steps only traverse the decoder's causal KV cache and the precomputed 15/24 KV-owner cross-attention states.
+    \item \textbf{Sensitivity to Single-Stage Joint Warmup}: Skipping Stage~1 (Frozen Decoder Bridge Alignment) and training decoder LoRA adapters jointly from step~0 alongside unaligned cross-attention projections degrades unified diff formatting. Freezing the decoder during Stage~1 and initializing $\tanh(g_{\text{head}}^{(0)}) = 0.05$ is essential for stable convergence.
+    \item \textbf{Pointer-Generator Copy Bias on Code Repair}: Incorporating an explicit differentiable pointer-generator mixture ($\lambda_{\text{ptr}} > 0$) encourages the decoder to copy contiguous unchanged lines from the encoder context rather than emitting novel bug-fix tokens. Setting $\lambda_{\text{ptr}} = 0.0$ and relying on Chunked Differential Diff Cross-Entropy ($\mathcal{L}_{\text{diff}}$) resolves this failure mode.
+    \item \textbf{[PLACEHOLDER]}: Additional negative findings or boundary conditions observed in the final evaluation runs.
+\end{enumerate}
 
 \section{Conclusion}
-\label{sec:conclusion}
 
-We presented BifocalGemma, an asymmetric dual-stream code architecture coupling a 32,768-token bidirectional encoder with an 8,192-token causal decoder via non-linear \texttt{SwiGLUDualGateBridge} manifold warping and decoupled stationary cross-attention. Through rigorous empirical evaluation across 9,072 repository cases, we demonstrated that BifocalGemma achieves a statistically significant victory on distractor-noisy code context ($73.69\%$ vs $71.87\%$, $p < 0.001$) and an 11.4$\times$ gain in noise resilience over matched causal baselines. By transparently cataloging architectural trade-offs—including the attention dilution penalty on pinpoint lookup and pointer bias during program repair—this work establishes an honest, empirically validated foundation for next-generation repository-scale code intelligence.
+We presented \textbf{BifocalGemma}, an asymmetric encoder-decoder developer agent architecture built natively on the \textbf{Gemma~4} (\texttt{E2B} and \texttt{E4B}) model family. By combining unmasked bidirectional repository encoding ($N_{\text{enc}} \le 32{,}768$), a norm-calibrated \textbf{SwiGLU Dual-Gate Coordinate Bridge}, \textbf{Decoupled Stationary Full-Rank Cross-Attention} ($\Theta_{\text{cross}} = 0$) with \textbf{Critical Attention Length Scaling} $\beta(N_{\text{enc}})$ and native Gemma~4 cross-layer KV-sharing, and a \textbf{Two-Stage Paired Curriculum} driven by \textbf{Chunked Differential Diff Cross-Entropy}, BifocalGemma resolves the structural tension between global repository comprehension and local autoregressive patch generation.
+
+\noindent\textbf{[PLACEHOLDER --- FINAL CONCLUSION SUMMARY]}: \textit{Empirical conclusions and practical deployment recommendations across symmetric and asymmetric Gemma~4 configurations will be inserted here upon completion of the active training and evaluation runs.}
 
 \bibliographystyle{plain}
 \bibliography{bifocalgemma}

@@ -207,6 +207,13 @@ class JSONLRepairDataset(Dataset):
                 )
                 target = tuple(tokenizer.encode(target_patch, add_special_tokens=False)) + (106,)
 
+            if is_baseline and len(prefix_ids) + len(target) > 8192:
+                max_prefix = max(64, 8192 - len(target))
+                if len(prefix_ids) > max_prefix:
+                    prefix_ids = prefix_ids[:32] + prefix_ids[-(max_prefix - 32) :]
+            elif not is_baseline and len(enc_ids) > 32768:
+                enc_ids = enc_ids[:32768]
+
             if self.max_vocab_size is not None:
                 limit = max(1, self.max_vocab_size - 10)
                 enc_ids = tuple((t % limit) + 1 for t in enc_ids)
@@ -351,11 +358,16 @@ class FastTrainingPipeline:
                 else self.cfg.decoder_backbone
             )
             try:
-                from transformers import AutoTokenizer
+                from transformers.models.gemma.tokenization_gemma import GemmaTokenizer
 
-                self.tokenizer = AutoTokenizer.from_pretrained(tok_src, token=self.cfg.hf_token)
-            except Exception as _exc:
-                logger.debug("Tokenizer load skipped: %s", _exc)
+                self.tokenizer = GemmaTokenizer.from_pretrained(tok_src, token=self.cfg.hf_token)
+            except Exception:
+                try:
+                    from transformers import AutoTokenizer
+
+                    self.tokenizer = AutoTokenizer.from_pretrained(tok_src, token=self.cfg.hf_token)
+                except Exception as _exc:
+                    logger.debug("Tokenizer load skipped: %s", _exc)
 
         # 3. Setup dataloaders
         vocab = self.model_config.vocab_size

@@ -126,6 +126,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             if isinstance(config.decoder_config, dict)
             else config.decoder_config
         )
+        dec_cfg._attn_implementation = "eager"
         self.decoder = Gemma4TextModel(dec_cfg)
 
         # 2. Instantiate encoder text backbone if configured
@@ -135,6 +136,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 if isinstance(config.encoder_config, dict)
                 else config.encoder_config
             )
+            enc_cfg._attn_implementation = "eager"
             self.encoder: Gemma4TextModel | None = Gemma4TextModel(enc_cfg)
             self.encoder_projection: nn.Module | None = SwiGLUDualGateBridge(
                 d_enc=config.d_enc,
@@ -243,10 +245,11 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                     tiled.__class__ = TiledEncoderAttention
                     tiled.query_chunk_size = query_chunk_size
                     tiled.attention_backend = "tiled_eager_fp32"
-                    tiled.structured_masks = False
+                    tiled.structured_masks = True
                     layer.self_attn = tiled
                 else:
                     attn.query_chunk_size = query_chunk_size
+                    attn.structured_masks = True
 
         if self.decoder is not None:
             for layer in self.decoder.layers:
@@ -257,10 +260,11 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                         tiled.__class__ = TiledEncoderAttention
                         tiled.query_chunk_size = query_chunk_size
                         tiled.attention_backend = "tiled_eager_fp32"
-                        tiled.structured_masks = False
+                        tiled.structured_masks = True
                         layer.self_attn = tiled
                     else:
                         attn.query_chunk_size = query_chunk_size
+                        attn.structured_masks = True
                 else:
                     # Paired decoders already use FullCrossTiledAttention
                     attn.query_chunk_size = query_chunk_size

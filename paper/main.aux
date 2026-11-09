@@ -1,0 +1,62 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{gemma4_2026}
+\citation{longcodearena_2024}
+\citation{repobench_2024}
+\citation{swebench_2024}
+\citation{llm2vec_2024}
+\citation{t5gemma_2025}
+\citation{gemma4_2026}
+\citation{roformer_2024}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{1}{section.1}\protected@file@percent }
+\citation{lora_2022}
+\citation{rmsnorm_2019}
+\citation{swiglu_2020}
+\@writefile{toc}{\contentsline {paragraph}{Contributions.}{2}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Architecture and Methodology}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Asymmetric Gemma~4 Backbone and Bidirectional Repository Encoder}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}SwiGLU Dual-Gate Coordinate Bridge}{2}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Decoupled Stationary Full-Rank Cross-Attention}{3}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Preservation of Gemma~4 Cross-Layer KV-Sharing.}{3}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Stationary Coordinate Invariance ($\Theta _{\text  {cross}} = 0$).}{3}{section*.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Critical Attention Length Scaling and Learnable Sharpness.}{3}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Dual-Gated Head and Token Fusion.}{3}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Chunked Differential Diff Objective and Two-Stage Curriculum}{3}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Chunked Differential Diff Cross-Entropy ($\mathcal  {L}_{\text  {diff}}$).}{3}{section*.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Two-Stage Paired Curriculum vs.\ Fair Baseline Curriculum.}{3}{section*.8}\protected@file@percent }
+\citation{longcodearena_2024}
+\citation{repobench_2024}
+\citation{swebench_2024}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Experimental Setup}{4}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Controlled 6-Model Ablation Matrix and Benchmarks}{4}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Evaluation Integrity Safeguards}{4}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Empirical Results}{4}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Long-Context Repository Comprehension}{4}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Repository-Level Code Repair}{4}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Hardware Telemetry and Training Dynamics}{4}{subsection.4.3}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Controlled 6-Model Ablation Matrix for \textsc  {BifocalGemma}. All models use native Gemma~4 backbones with stream-isolated Per-Layer Embeddings ($d_{\text  {ple}}=256$) and preserve cross-layer KV-sharing (15/35 KV-owner layers in \texttt  {E2B}; 24/42 KV-owner layers in \texttt  {E4B}). Causal baselines use a single-stage full SFT curriculum, whereas \textsc  {BifocalGemma} variants use the two-stage paired curriculum (Frozen Decoder Bridge Alignment $\rightarrow $ Joint LoRA SFT).}}{5}{table.caption.9}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:configs}{{1}{5}{Controlled 6-Model Ablation Matrix for \textsc {BifocalGemma}. All models use native Gemma~4 backbones with stream-isolated Per-Layer Embeddings ($d_{\text {ple}}=256$) and preserve cross-layer KV-sharing (15/35 KV-owner layers in \texttt {E2B}; 24/42 KV-owner layers in \texttt {E4B}). Causal baselines use a single-stage full SFT curriculum, whereas \textsc {BifocalGemma} variants use the two-stage paired curriculum (Frozen Decoder Bridge Alignment $\rightarrow $ Joint LoRA SFT)}{table.caption.9}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Long-Context Repository Comprehension and Cross-File Retrieval Results on \texttt  {LongCodeArena} (\texttt  {SWE-QA}) across context length buckets ($8\text  {K}$, $16\text  {K}$, $32\text  {K}$) and \texttt  {RepoBench-C-8k} under the Neutral Prompt Contract and $256$-token generation floor. \textit  {Note: Placeholder cells (\texttt  {[TBD]}) will be populated upon completion of the active training and evaluation runs.}}}{5}{table.caption.10}\protected@file@percent }
+\newlabel{tab:sweqa}{{2}{5}{Long-Context Repository Comprehension and Cross-File Retrieval Results on \texttt {LongCodeArena} (\texttt {SWE-QA}) across context length buckets ($8\text {K}$, $16\text {K}$, $32\text {K}$) and \texttt {RepoBench-C-8k} under the Neutral Prompt Contract and $256$-token generation floor. \textit {Note: Placeholder cells (\texttt {[TBD]}) will be populated upon completion of the active training and evaluation runs.}}{table.caption.10}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Limitations and Negative Findings}{5}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Conclusion}{5}{section.6}\protected@file@percent }
+\bibstyle{plain}
+\bibdata{bifocalgemma}
+\bibcite{llm2vec_2024}{1}
+\bibcite{longcodearena_2024}{2}
+\bibcite{t5gemma_2025}{3}
+\bibcite{gemma4_2026}{4}
+\bibcite{lora_2022}{5}
+\bibcite{swebench_2024}{6}
+\bibcite{repobench_2024}{7}
+\bibcite{swiglu_2020}{8}
+\bibcite{roformer_2024}{9}
+\bibcite{rmsnorm_2019}{10}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Automated Bug Localization and Unified Diff Patch Synthesis on \texttt  {SWE-bench Lite}. \textsc  {BifocalGemma} variants are trained with Chunked Differential Diff Cross-Entropy ($\mathcal  {L}_{\text  {diff}}$, $\lambda _{\text  {ptr}} = 0.0$) and a Two-Stage Paired Curriculum with $20\%$ comprehension replay. \textit  {Note: Placeholder cells (\texttt  {[TBD]}) will be populated upon completion of the active runs.}}}{6}{table.caption.11}\protected@file@percent }
+\newlabel{tab:repair}{{3}{6}{Automated Bug Localization and Unified Diff Patch Synthesis on \texttt {SWE-bench Lite}. \textsc {BifocalGemma} variants are trained with Chunked Differential Diff Cross-Entropy ($\mathcal {L}_{\text {diff}}$, $\lambda _{\text {ptr}} = 0.0$) and a Two-Stage Paired Curriculum with $20\%$ comprehension replay. \textit {Note: Placeholder cells (\texttt {[TBD]}) will be populated upon completion of the active runs.}}{table.caption.11}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Hardware Telemetry and Inference Efficiency at $32\text  {K}$ Repository Context. Only KV-owner layers instantiate dedicated Cross-KV projections, reusing cached $(K_{\text  {cross}}, V_{\text  {cross}})$ across KV-shared layers during autoregressive generation. \textit  {Note: Placeholder cells (\texttt  {[TBD]}) will be populated upon completion of the active runs.}}}{6}{table.caption.12}\protected@file@percent }
+\newlabel{tab:hardware}{{4}{6}{Hardware Telemetry and Inference Efficiency at $32\text {K}$ Repository Context. Only KV-owner layers instantiate dedicated Cross-KV projections, reusing cached $(K_{\text {cross}}, V_{\text {cross}})$ across KV-shared layers during autoregressive generation. \textit {Note: Placeholder cells (\texttt {[TBD]}) will be populated upon completion of the active runs.}}{table.caption.12}{}}
+\gdef \@abspage@last{7}

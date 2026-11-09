@@ -1,15 +1,19 @@
 \begin{table*}[t]
 \centering
+\caption{Hardware Telemetry and Inference Efficiency at $32\text{K}$ Repository Context. Only KV-owner layers instantiate dedicated Cross-KV projections, reusing cached $(K_{\text{cross}}, V_{\text{cross}})$ across KV-shared layers during autoregressive generation. \textit{Note: Placeholder cells (\texttt{[TBD]}) will be populated upon completion of the active runs.}}
+\label{tab:hardware}
 \small
-\caption{\textbf{Attention Backend Numerical Stability and Gradient Divergence.} Comparative assessment of memory efficiency and numerical gradient error across 32,768 encoder and 8,192 decoder context tokens in BF16 precision. Evaluated on diagnostic training runs.}
-\label{tab:hardware_efficiency}
-\begin{tabular}{lccccc}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-\textbf{Attention Backend} & \textbf{Relative L2 Gradient Error} & \textbf{Max Tensor Error} & \textbf{Cohort Loss} & \textbf{OOM (32k/8k)} & \textbf{Production Choice} \\
+\textbf{Model} & \textbf{Active Params (Enc + Dec)} & \textbf{KV-Owner Cross-Attn Layers} & \textbf{Peak VRAM @ 32K (GB)} & \textbf{Prefill Latency @ 32K (ms)} & \textbf{Decode Throughput (tok/s)} \\
 \midrule
-\textbf{Tiled Attention} & \textbf{0.00\% (Reference)} & \textbf{0.00\%} & \textbf{1.7272} & \textbf{No (43.83 GiB Peak)} & \textbf{Selected (Production)} \\
-FlexAttention & 94.51\% & 145.00\% & 1.7380 & No & Rejected (Gradient Drift) \\
-Hybrid Attention & 74.75\% & 144.83\% & 1.7377 & No & Rejected (Gradient Drift) \\
+\texttt{Baseline-E2B-IT} & $2.0\text{B}$ & $0$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Baseline-E4B-IT} & $4.0\text{B}$ & $0$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\midrule
+\texttt{Bifocal-2B} & $2.0\text{B} + 2.0\text{B}$ & $15 / 35$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Bifocal-4B-E2B} & $2.0\text{B} + 4.0\text{B}$ & $24 / 42$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Bifocal-2B-E4B} & $4.0\text{B} + 2.0\text{B}$ & $15 / 35$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Bifocal-4B} & $4.0\text{B} + 4.0\text{B}$ & $24 / 42$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
 \bottomrule
 \end{tabular}
 \end{table*}

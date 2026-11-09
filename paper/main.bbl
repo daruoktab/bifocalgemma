@@ -1,0 +1,63 @@
+\begin{thebibliography}{10}
+
+\bibitem{llm2vec_2024}
+Parishad BehnamGhader, Vaibhav Adlakha, Marius Mosbach, Dzmitry Bahdanau,
+  Nicolas Chapados, and Siva Reddy.
+\newblock {LLM2Vec: Large Language Models Are Secretly Powerful Text Encoders}.
+\newblock In {\em Conference on Language Modeling (COLM)}, 2024.
+
+\bibitem{longcodearena_2024}
+Egor Bogomolov, Aleksandra Eliseeva, Timur Galimzyanov, Evgeniy Glukhov, Anton
+  Shapkin, Maria Tigina, Yaroslav Golubev, Alexander Kovrigin, Arie van
+  Deursen, Maliheh Izadi, and Timofey Bryksin.
+\newblock {LongCodeArena: A Set of Benchmarks for Long-Context Code Models}.
+\newblock {\em arXiv preprint arXiv:2406.11612}, 2024.
+
+\bibitem{t5gemma_2025}
+{Gemma Team, Google DeepMind}.
+\newblock {T5Gemma: Encoder-Decoder Adaptation of Gemma Language Models}.
+\newblock {\em arXiv preprint}, 2025.
+
+\bibitem{gemma4_2026}
+{Gemma Team, Google DeepMind}.
+\newblock {Gemma 4 Technical Report}.
+\newblock Technical report, Google DeepMind, 2026.
+
+\bibitem{lora_2022}
+Edward~J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean
+  Wang, Lu~Wang, and Weizhu Chen.
+\newblock {LoRA: Low-Rank Adaptation of Large Language Models}.
+\newblock In {\em International Conference on Learning Representations (ICLR)},
+  2022.
+
+\bibitem{swebench_2024}
+Carlos~E Jimenez, John Yang, Alexander Wettig, Shunyu Yao, Kexin Pei, Ofir
+  Press, and Karthik Narasimhan.
+\newblock {SWE-bench: Can Language Models Resolve Real-World GitHub Issues?}
+\newblock In {\em International Conference on Learning Representations (ICLR)},
+  2024.
+
+\bibitem{repobench_2024}
+Tianyang Liu, Canwen Xu, and Julian McAuley.
+\newblock {RepoBench: Benchmarking Repository-Level Code Auto-Completion
+  Systems}.
+\newblock In {\em International Conference on Learning Representations (ICLR)},
+  2024.
+
+\bibitem{swiglu_2020}
+Noam Shazeer.
+\newblock {GLU Variants Improve Transformer}.
+\newblock {\em arXiv preprint arXiv:2002.05202}, 2020.
+
+\bibitem{roformer_2024}
+Jianlin Su, Murtadha Ahmed, Yu~Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu.
+\newblock {RoFormer: Enhanced Transformer with Rotary Position Embedding}.
+\newblock {\em Neurocomputing}, 568:127063, 2024.
+
+\bibitem{rmsnorm_2019}
+Biao Zhang and Rico Sennrich.
+\newblock {Root Mean Square Layer Normalization}.
+\newblock In {\em Advances in Neural Information Processing Systems (NeurIPS)},
+  volume~32, 2019.
+
+\end{thebibliography}
