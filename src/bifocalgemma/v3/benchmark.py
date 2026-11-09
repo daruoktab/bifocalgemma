@@ -312,7 +312,14 @@ def batched_greedy_decode(
                 getattr(inference_cache_mod.CachedAttention, "__name__", "")
                 != "FullCrossCachedAttention"
             ):
-                configure_full_rank_cross_attention(model)
+                from bifocalgemma.v3.attention import FullCrossCachedAttention
+
+                if getattr(model, "encoder", None) is None or hasattr(
+                    model.decoder.layers[0].self_attn, "cross_q_norm"
+                ):
+                    setattr(inference_cache_mod, "CachedAttention", FullCrossCachedAttention)
+                else:
+                    configure_full_rank_cross_attention(model)
             cache = inference_cache_mod.InferenceCache()
             original_cls = [layer.self_attn.__class__ for layer in model.decoder.layers]
             try:

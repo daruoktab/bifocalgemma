@@ -72,6 +72,7 @@ class FastTrainingConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 42
     tiny: bool = False  # Set True for instant CI/smoke validation
+    run_benchmarks: bool = True  # Automatically run the 8-benchmark suite after training
 
     def __post_init__(self) -> None:
         if self.hub_subfolder is None:
@@ -622,33 +623,78 @@ class FastTrainingPipeline:
             except Exception:
                 pass
 
-        if not ckpt_file.is_file():
-            return 0
+        if ckpt_file.is_file():
+            try:
+                payload = torch.load(str(ckpt_file), map_location="cpu", weights_only=False)
+                if payload.get("model_choice") == self.cfg.model_choice:
+                    saved_step = int(payload.get("global_step", 0))
+                    if saved_step > 0:
+                        if payload.get("has_lora") and not any(
+                            isinstance(m, ProbeLoRALinear) for m in self.model.modules()
+                        ):
+                            configure_probe_training(self.model, policy="lora", rank=16)
+                        tensors = payload.get("tensors", {})
+                        if tensors:
+                            self.model.load_state_dict(tensors, strict=False)
+                            self.model.to(self.cfg.device)
+                        self.history = list(payload.get("history", []))
+                        print(
+                            f"[{time.strftime('%X')}] 🔄 Melanjutkan otomatis dari checkpoint step {saved_step}/{self.cfg.total_steps} ({self.cfg.model_choice})...",
+                            flush=True,
+                        )
+                        return saved_step
+            except Exception as _exc:
+                logger.warning("Could not resume from %s: %s", ckpt_file, _exc)
 
-        try:
-            payload = torch.load(str(ckpt_file), map_location="cpu", weights_only=False)
-            if payload.get("model_choice") != self.cfg.model_choice:
-                return 0
-            saved_step = int(payload.get("global_step", 0))
-            if saved_step <= 0:
-                return 0
-            if payload.get("has_lora") and not any(
-                isinstance(m, ProbeLoRALinear) for m in self.model.modules()
-            ):
-                configure_probe_training(self.model, policy="lora", rank=16)
-            tensors = payload.get("tensors", {})
-            if tensors:
-                self.model.load_state_dict(tensors, strict=False)
+        # Fallback: check if a completed final_pretrained_model already exists locally or on HF Hub
+        local_final = self.out_path / "final_pretrained_model" / "model.safetensors"
+        if not local_final.is_file() and self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
+            try:
+                from huggingface_hub import hf_hub_download
+
+                sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+                remote_summary_path = hf_hub_download(
+                    repo_id=self.cfg.hub_repo,
+                    filename=f"{sub}/training_summary.json",
+                    repo_type="model",
+                    token=self.cfg.hf_token,
+                )
+                remote_summary = json.loads(Path(remote_summary_path).read_text(encoding="utf-8"))
+                if (
+                    remote_summary.get("status") == "COMPLETED"
+                    and int(remote_summary.get("total_steps", 0)) >= self.cfg.total_steps
+                ):
+                    downloaded_model = hf_hub_download(
+                        repo_id=self.cfg.hub_repo,
+                        filename=f"{sub}/pretrained_model/model.safetensors",
+                        repo_type="model",
+                        token=self.cfg.hf_token,
+                    )
+                    local_final.parent.mkdir(parents=True, exist_ok=True)
+                    import shutil
+
+                    shutil.copy2(downloaded_model, local_final)
+                    self.history = list(remote_summary.get("history", []))
+            except Exception:
+                pass
+
+        if local_final.is_file():
+            try:
+                from safetensors.torch import load_file
+
+                self.model.merge_and_unload()
+                state = load_file(str(local_final), device="cpu")
+                self.model.load_state_dict(state, strict=False)
                 self.model.to(self.cfg.device)
-            self.history = list(payload.get("history", []))
-            print(
-                f"[{time.strftime('%X')}] 🔄 Melanjutkan otomatis dari checkpoint step {saved_step}/{self.cfg.total_steps} ({self.cfg.model_choice})...",
-                flush=True,
-            )
-            return saved_step
-        except Exception as _exc:
-            logger.warning("Could not resume from %s: %s", ckpt_file, _exc)
-            return 0
+                print(
+                    f"[{time.strftime('%X')}] ✅ Memuat model selesai ({self.cfg.total_steps}/{self.cfg.total_steps} steps) dari {local_final}...",
+                    flush=True,
+                )
+                return self.cfg.total_steps
+            except Exception as _exc:
+                logger.warning("Could not load completed pretrained model %s: %s", local_final, _exc)
+
+        return 0
 
     def _sync_existing_legacy_export_if_present(self) -> None:
         """If a completed 2000-step model exists at outputs/fast_bifocalgemma/final_pretrained_model, upload it to Hub."""
@@ -791,20 +837,371 @@ class FastTrainingPipeline:
         )
         return target_dir
 
+    def _is_remote_pretrained_uploaded(self) -> bool:
+        """Check whether the standalone pretrained model already exists on Hugging Face Hub."""
+        if not (self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token):
+            return False
+        try:
+            from huggingface_hub import HfApi
+
+            api = HfApi(token=self.cfg.hf_token)
+            sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+            return bool(
+                api.file_exists(
+                    repo_id=self.cfg.hub_repo,
+                    filename=f"{sub}/pretrained_model/model.safetensors",
+                    repo_type="model",
+                )
+            )
+        except Exception:
+            return False
+
+    def _ensure_verified_tokenizers(self, spec: Any, tokenizer_cache: Path) -> None:
+        """Ensure audited tokenizer assets exist in tokenizer_cache/raw/... for benchmark evaluation."""
+        import hashlib
+        import shutil
+
+        from huggingface_hub import hf_hub_download
+
+        from bifocalgemma.assets import load_asset_json
+        from bifocalgemma.data.tokenization import load_verified_tokenizer
+
+        manifest = load_asset_json("tokenizer_manifest.json")
+        refs = [spec.decoder] + ([spec.encoder] if spec.encoder else [])
+        for ref in refs:
+            assets = manifest[ref.model_id]
+            raw = tokenizer_cache / "raw" / ref.model_id.replace("/", "__")
+            raw.mkdir(parents=True, exist_ok=True)
+            all_present = True
+            for name, digest in assets["files"].items():
+                target_file = raw / name
+                if (
+                    not target_file.is_file()
+                    or hashlib.sha256(target_file.read_bytes()).hexdigest() != digest
+                ):
+                    all_present = False
+                    break
+            if not all_present:
+                for name, digest in assets["files"].items():
+                    downloaded = Path(
+                        hf_hub_download(
+                            ref.model_id,
+                            name,
+                            revision=ref.revision,
+                            token=self.cfg.hf_token,
+                        )
+                    )
+                    if hashlib.sha256(downloaded.read_bytes()).hexdigest() != digest:
+                        raise ValueError(f"Pinned tokenizer asset hash mismatch: {name}")
+                    shutil.copyfile(downloaded, raw / name)
+            load_verified_tokenizer(ref, tokenizer_cache)
+
+    def run_benchmark_suite(self, summary_base: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Execute the 8-benchmark evaluation suite with automatic per-benchmark & intra-benchmark resume and Hub sync."""
+        if self.cfg.tiny:
+            return []
+
+        import shutil
+
+        from bifocalgemma.data.releases import fetch_collection
+        from bifocalgemma.models import inference_cache as inference_cache_mod
+        from bifocalgemma.v3.attention import FullCrossCachedAttention
+        from bifocalgemma.v3.benchmark import run_batched_context_benchmark
+        from bifocalgemma.v3.constants import BENCHMARKS
+        from bifocalgemma.v3.matrix import make_experiment_spec
+
+        # 1. Consolidate LoRA adapters and configure model for fast inference
+        self.model.merge_and_unload()
+        for stack in (self.model.encoder, self.model.decoder):
+            if stack is not None:
+                stack.gradient_checkpointing_disable()
+        self.model.eval()
+        setattr(inference_cache_mod, "CachedAttention", FullCrossCachedAttention)
+
+        model_key = "e2b-it" if self.cfg.model_choice == "baseline-2b" else "2base-2it"
+        spec = make_experiment_spec(model_key)
+        tokenizer_cache = Path("outputs/v2_cache/tokenizers")
+        self._ensure_verified_tokenizers(spec, tokenizer_cache)
+
+        sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+        bench_root = self.out_path / "benchmarks"
+        bench_root.mkdir(parents=True, exist_ok=True)
+        checkpoint_identity = {
+            "model_choice": self.cfg.model_choice,
+            "total_steps": self.cfg.total_steps,
+        }
+
+        total_bench = len(BENCHMARKS)
+        print(
+            f"[{time.strftime('%X')}] 📊 Memulai Benchmark Suite ({total_bench} benchmarks) untuk {self.cfg.model_choice}...",
+            flush=True,
+        )
+
+        reports: list[dict[str, Any]] = []
+        for idx, item in enumerate(BENCHMARKS, start=1):
+            collection_name = str(item["collection"])
+            bench_out_dir = bench_root / collection_name
+            bench_out_dir.mkdir(parents=True, exist_ok=True)
+            report_file = bench_out_dir / "benchmark_report.json"
+            remote_bench_prefix = f"{sub}/benchmarks/{collection_name}"
+
+            # Try restoring completed or partial benchmark state from Hugging Face Hub
+            if (
+                not report_file.is_file()
+                and self.cfg.push_to_hub
+                and self.cfg.hub_repo
+                and self.cfg.hf_token
+            ):
+                try:
+                    from huggingface_hub import hf_hub_download
+
+                    dl_report = hf_hub_download(
+                        repo_id=self.cfg.hub_repo,
+                        filename=f"{remote_bench_prefix}/benchmark_report.json",
+                        repo_type="model",
+                        token=self.cfg.hf_token,
+                    )
+                    shutil.copy2(dl_report, report_file)
+                except Exception:
+                    for partial_name in ("evaluation_state.json", "predictions.jsonl", "timing.json"):
+                        target_partial = bench_out_dir / partial_name
+                        if not target_partial.is_file():
+                            try:
+                                from huggingface_hub import hf_hub_download
+
+                                dl_part = hf_hub_download(
+                                    repo_id=self.cfg.hub_repo,
+                                    filename=f"{remote_bench_prefix}/{partial_name}",
+                                    repo_type="model",
+                                    token=self.cfg.hf_token,
+                                )
+                                shutil.copy2(dl_part, target_partial)
+                            except Exception:
+                                pass
+
+            if report_file.is_file():
+                try:
+                    existing_report = json.loads(report_file.read_text(encoding="utf-8"))
+                    if existing_report.get("status") == "COMPLETED":
+                        acc = existing_report.get("accuracy")
+                        acc_str = f"{acc * 100:.2f}%" if isinstance(acc, (int, float)) else "N/A"
+                        print(
+                            f"[{time.strftime('%X')}] ✅ Benchmark [{idx}/{total_bench}] {collection_name} sudah selesai sebelumnya (accuracy={acc_str}). Melewati...",
+                            flush=True,
+                        )
+                        reports.append(existing_report)
+                        continue
+                except Exception:
+                    pass
+
+            print(
+                f"[{time.strftime('%X')}] 🔎 Menjalankan Benchmark [{idx}/{total_bench}]: {collection_name}...",
+                flush=True,
+            )
+            bench_data_dir = Path("outputs/v2_cache/benchmarks") / collection_name
+            fetch_collection(
+                self.cfg.dataset_repo,
+                self.cfg.dataset_revision,
+                collection_name,
+                bench_data_dir,
+                expected_role="benchmark",
+                token=self.cfg.hf_token,
+            )
+
+            last_log_done = {"count": -1, "ts": 0.0}
+
+            def on_bench_progress(
+                event: dict[str, Any],
+                _idx: int = idx,
+                _col: str = collection_name,
+                _tracker: dict[str, Any] = last_log_done,
+            ) -> None:
+                done = int(event.get("items_done", 0))
+                total = int(event.get("items_total", 0))
+                correct = int(event.get("benchmark_correct", 0))
+                now = time.time()
+                if (
+                    event.get("stage") == "benchmark_progress"
+                    and done > _tracker["count"]
+                    and (done % 25 == 0 or done == total or now - _tracker["ts"] >= 60.0)
+                ):
+                    _tracker["count"] = done
+                    _tracker["ts"] = now
+                    live_acc = (correct / max(1, done)) * 100.0
+                    print(
+                        f"[{time.strftime('%X')}]   ↳ [{_idx}/{total_bench}] {_col}: {done}/{total} selesai (live acc={live_acc:.2f}%)",
+                        flush=True,
+                    )
+                if self.callback and total > 0:
+                    self.callback(
+                        {
+                            "stage": f"bench {_idx}/{total_bench}: {_col}",
+                            "step": self.cfg.total_steps,
+                            "loss": 0.0,
+                            "val_loss": None,
+                            "bench_done": done,
+                            "bench_total": total,
+                            "bench_acc": (correct / max(1, done)) if done > 0 else 0.0,
+                        }
+                    )
+
+            def sync_partial_benchmark(
+                _dir: Path = bench_out_dir,
+                _prefix: str = remote_bench_prefix,
+                _col: str = collection_name,
+            ) -> None:
+                if not (self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token):
+                    return
+                try:
+                    from huggingface_hub import HfApi
+
+                    api = HfApi(token=self.cfg.hf_token)
+                    for fname in ("evaluation_state.json", "predictions.jsonl", "timing.json"):
+                        fpath = _dir / fname
+                        if fpath.is_file():
+                            api.upload_file(
+                                path_or_fileobj=str(fpath),
+                                path_in_repo=f"{_prefix}/{fname}",
+                                repo_id=self.cfg.hub_repo,
+                                repo_type="model",
+                                commit_message=f"[{self.cfg.model_choice}] Sync benchmark progress ({_col})",
+                            )
+                except Exception as _exc:
+                    logger.debug("Partial benchmark upload skipped: %s", _exc)
+
+            try:
+                report = run_batched_context_benchmark(
+                    self.model,
+                    spec,
+                    bench_data_dir,
+                    bench_out_dir,
+                    tokenizer_cache,
+                    checkpoint_identity=checkpoint_identity,
+                    model_key=model_key,
+                    benchmark_item=item,
+                    encoder_limit=int(item["encoder_limit"]),
+                    decoder_limit=int(item["decoder_limit"]),
+                    max_new_tokens=int(item.get("max_new_tokens", 2048)),
+                    allow_execution=True,
+                    progress=on_bench_progress,
+                    prediction_callback=sync_partial_benchmark,
+                    upload_every=50,
+                    use_cache=True,
+                )
+            except ValueError as _val_exc:
+                if "Benchmark/checkpoint/protocol changed" in str(_val_exc):
+                    shutil.rmtree(bench_out_dir, ignore_errors=True)
+                    bench_out_dir.mkdir(parents=True, exist_ok=True)
+                    report = run_batched_context_benchmark(
+                        self.model,
+                        spec,
+                        bench_data_dir,
+                        bench_out_dir,
+                        tokenizer_cache,
+                        checkpoint_identity=checkpoint_identity,
+                        model_key=model_key,
+                        benchmark_item=item,
+                        encoder_limit=int(item["encoder_limit"]),
+                        decoder_limit=int(item["decoder_limit"]),
+                        max_new_tokens=int(item.get("max_new_tokens", 2048)),
+                        allow_execution=True,
+                        progress=on_bench_progress,
+                        prediction_callback=sync_partial_benchmark,
+                        upload_every=50,
+                        use_cache=True,
+                    )
+                else:
+                    raise
+
+            reports.append(report)
+            acc = report.get("accuracy")
+            acc_str = f"{acc * 100:.2f}%" if isinstance(acc, (int, float)) else "N/A"
+            print(
+                f"[{time.strftime('%X')}] 📊 Benchmark [{idx}/{total_bench}] {collection_name} selesai -> accuracy={acc_str} ({report.get('correct')}/{report.get('total')})",
+                flush=True,
+            )
+
+            # Save and upload incremental benchmark summary + benchmark folder
+            bench_summary_payload = {
+                "model_choice": self.cfg.model_choice,
+                "completed_benchmarks": len(reports),
+                "total_benchmarks": total_bench,
+                "benchmarks": reports,
+                "updated_at": time.time(),
+            }
+            bench_summary_file = self.out_path / "benchmark_summary.json"
+            bench_summary_file.write_text(
+                json.dumps(bench_summary_payload, indent=2), encoding="utf-8"
+            )
+            if summary_base is not None:
+                summary_base["benchmarks"] = reports
+                (self.out_path / "training_summary.json").write_text(
+                    json.dumps(summary_base, indent=2), encoding="utf-8"
+                )
+
+            if self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
+                try:
+                    from huggingface_hub import HfApi
+
+                    api = HfApi(token=self.cfg.hf_token)
+                    api.upload_folder(
+                        folder_path=str(bench_out_dir),
+                        repo_id=self.cfg.hub_repo,
+                        repo_type="model",
+                        path_in_repo=remote_bench_prefix,
+                        commit_message=f"[{self.cfg.model_choice}] Benchmark {collection_name} completed (acc={acc_str})",
+                    )
+                    api.upload_file(
+                        path_or_fileobj=str(bench_summary_file),
+                        path_in_repo=f"{sub}/benchmark_summary.json",
+                        repo_id=self.cfg.hub_repo,
+                        repo_type="model",
+                        commit_message=f"[{self.cfg.model_choice}] Update benchmark_summary.json ({len(reports)}/{total_bench})",
+                    )
+                except Exception as _exc:
+                    logger.warning("Benchmark upload skipped for %s: %s", collection_name, _exc)
+
+        return reports
+
     def run(self) -> dict[str, Any]:
-        """Execute complete fast two-stage training and export standalone model."""
+        """Execute complete fast two-stage training, export standalone model, and run benchmark suite."""
         start_time = time.time()
         self._sync_existing_legacy_export_if_present()
         global_step = self.try_resume_checkpoint()
+        already_completed = global_step >= self.cfg.total_steps
         data_iter = iter(self.train_loader)
-        current_stage = "starting"
+        current_stage = "completed" if already_completed else "starting"
         save_every = max(1, self.cfg.save_interval)
 
         try:
+            if already_completed:
+                last_loss = float(self.history[-1].get("loss", 0.0)) if self.history else 0.0
+                last_val = next(
+                    (
+                        h["val_loss"]
+                        for h in reversed(self.history)
+                        if h.get("val_loss") is not None
+                    ),
+                    None,
+                )
+                print(
+                    f"[{time.strftime('%X')}] ✅ Pelatihan {self.cfg.model_choice} terdeteksi sudah selesai ({global_step}/{self.cfg.total_steps} steps). Melewati tahap training...",
+                    flush=True,
+                )
+                if self.callback:
+                    self.callback(
+                        {
+                            "stage": "completed",
+                            "step": global_step,
+                            "loss": last_loss,
+                            "val_loss": last_val,
+                            "elapsed_sec": 0.0,
+                        }
+                    )
             # -------------------------------------------------------------
             # Training Execution (Single-Stage Baseline or Two-Stage Paired)
             # -------------------------------------------------------------
-            if self.model.encoder is None:
+            elif self.model.encoder is None:
                 # Baseline decoder-only model: single continuous full Decoder SFT pass
                 full_steps = self.cfg.total_steps
                 current_stage = "full_decoder_sft"
@@ -1016,10 +1413,11 @@ class FastTrainingPipeline:
                             self.callback(record)
         except KeyboardInterrupt:
             print(
-                f"\n[{time.strftime('%X')}] ⏸️ Pelatihan dihentikan pada step {global_step}. Menyimpan checkpoint otomatis...",
+                f"\n[{time.strftime('%X')}] ⏸️ Pelatihan/Evaluasi dihentikan pada step {global_step}. Menyimpan checkpoint otomatis...",
                 flush=True,
             )
-            self.save_checkpoint(global_step, current_stage)
+            if not already_completed:
+                self.save_checkpoint(global_step, current_stage)
             last_val = next(
                 (h["val_loss"] for h in reversed(self.history) if h.get("val_loss") is not None),
                 0.0,
@@ -1045,18 +1443,36 @@ class FastTrainingPipeline:
         # -------------------------------------------------------------
         # Automatic Standalone PreTrainedModel Export
         # -------------------------------------------------------------
-        final_val_loss = self.evaluate()
-        export_dir = self.out_path / "final_pretrained_model"
-        logger.info("Training complete. Exporting standalone Hugging Face model to %s", export_dir)
-        print(
-            f"[{time.strftime('%X')}] 💾 Training complete. Exporting standalone Hugging Face model to {export_dir}...",
-            flush=True,
+        cached_val = next(
+            (h["val_loss"] for h in reversed(self.history) if h.get("val_loss") is not None),
+            None,
         )
-
-        self.export_pretrained(export_dir)
+        final_val_loss = (
+            float(cached_val)
+            if (already_completed and cached_val is not None)
+            else self.evaluate()
+        )
+        export_dir = self.out_path / "final_pretrained_model"
+        if already_completed and (
+            (export_dir / "model.safetensors").is_file() or self._is_remote_pretrained_uploaded()
+        ):
+            self.model.merge_and_unload()
+            print(
+                f"[{time.strftime('%X')}] ✅ Standalone model {self.cfg.model_choice} sudah tersimpan di Hugging Face Hub. Lanjut ke Benchmark Suite...",
+                flush=True,
+            )
+        else:
+            logger.info(
+                "Training complete. Exporting standalone Hugging Face model to %s", export_dir
+            )
+            print(
+                f"[{time.strftime('%X')}] 💾 Training complete. Exporting standalone Hugging Face model to {export_dir}...",
+                flush=True,
+            )
+            self.export_pretrained(export_dir)
 
         # Save training summary
-        summary = {
+        summary: dict[str, Any] = {
             "status": "COMPLETED",
             "model_choice": self.cfg.model_choice,
             "total_steps": global_step,
@@ -1066,11 +1482,30 @@ class FastTrainingPipeline:
             "hub_subfolder": self.cfg.hub_subfolder,
             "config": asdict(self.cfg),
             "history": self.history[-10:],
+            "benchmarks": [],
             "completed_at": time.time(),
             "elapsed_time_sec": time.time() - start_time,
         }
         summary_file = self.out_path / "training_summary.json"
         summary_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+        # -------------------------------------------------------------
+        # Automatic Benchmark Suite Execution
+        # -------------------------------------------------------------
+        if self.cfg.run_benchmarks and not self.cfg.tiny:
+            try:
+                benchmarks = self.run_benchmark_suite(summary_base=summary)
+                summary["benchmarks"] = benchmarks
+                summary["elapsed_time_sec"] = time.time() - start_time
+                summary_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+            except KeyboardInterrupt:
+                print(
+                    f"\n[{time.strftime('%X')}] ⏸️ Benchmark dijeda. Semua benchmark yang sudah selesai tetap tersimpan dan otomatis dilanjutkan saat dijalankan ulang.",
+                    flush=True,
+                )
+                summary["status"] = "BENCHMARK_PAUSED"
+                summary["elapsed_time_sec"] = time.time() - start_time
+                summary_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
         if self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
             try:
@@ -1083,7 +1518,7 @@ class FastTrainingPipeline:
                     path_in_repo=f"{sub}/training_summary.json",
                     repo_id=self.cfg.hub_repo,
                     repo_type="model",
-                    commit_message=f"[{self.cfg.model_choice}] Upload training summary (val_loss={final_val_loss:.4f})",
+                    commit_message=f"[{self.cfg.model_choice}] Upload training & benchmark summary (val_loss={final_val_loss:.4f})",
                 )
             except Exception as _exc:
                 logger.warning("Training summary upload skipped: %s", _exc)
@@ -1132,6 +1567,11 @@ def run_fast_training(argv: list[str] | None = None) -> int:
     parser.add_argument("--push-to-hub", action="store_true")
     parser.add_argument("--hub-repo", type=str, default=DEFAULT_FAST_HF_REPO)
     parser.add_argument("--tiny", action="store_true", help="Run tiny smoke training for CI")
+    parser.add_argument(
+        "--no-benchmarks",
+        action="store_true",
+        help="Skip automatic benchmark suite execution after training",
+    )
 
     args = parser.parse_args(argv)
     stage1 = 0 if args.model == "baseline-2b" else args.steps // 2
@@ -1150,6 +1590,7 @@ def run_fast_training(argv: list[str] | None = None) -> int:
         push_to_hub=args.push_to_hub,
         hub_repo=args.hub_repo,
         tiny=args.tiny,
+        run_benchmarks=not args.no_benchmarks,
     )
     pipeline = FastTrainingPipeline(cfg)
     summary = pipeline.run()

@@ -633,3 +633,37 @@ def test_fast_training_config_step_reconciliation():
     # 3. Explicit stage1 and stage2 steps update total_steps
     cfg_explicit = FastTrainingConfig(stage1_steps=150, stage2_steps=350)
     assert cfg_explicit.total_steps == 500
+
+
+def test_fast_pipeline_skips_training_when_already_completed(tmp_path, monkeypatch):
+    from bifocalgemma.training.fast_pipeline import (
+        FastTrainingConfig,
+        FastTrainingPipeline,
+    )
+
+    for model_choice in ("bifocalgemma-2b", "baseline-2b"):
+        out_dir = tmp_path / f"completed_{model_choice}"
+        cfg = FastTrainingConfig(
+            model_choice=model_choice,
+            total_steps=4,
+            output_dir=str(out_dir),
+            tiny=True,
+        )
+        p1 = FastTrainingPipeline(cfg)
+        p1.save_checkpoint(4, "completed")
+
+        p2 = FastTrainingPipeline(cfg)
+        monkeypatch.setattr(p2, "try_resume_checkpoint", lambda: 4)
+        called_steps = []
+        monkeypatch.setattr(
+            p2,
+            "train_step",
+            lambda batch, stage_name: called_steps.append(stage_name)
+            or torch.tensor(0.5, requires_grad=True),
+        )
+        summary = p2.run()
+        assert summary["status"] == "COMPLETED"
+        assert summary["total_steps"] == 4
+        assert "stage1" not in called_steps
+        assert "stage2" not in called_steps
+        assert "full_decoder_sft" not in called_steps
