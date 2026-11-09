@@ -1,17 +1,17 @@
 # Graph Report - bifocalgemma  (2026-11-10)
 
 ## Corpus Check
-- 290 files · ~365,372 words
+- 290 files · ~365,393 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 18 file(s) not represented in the graph (top: .tex 5, .ipynb 3, (none) 2)
 
 ## Summary
-- 2378 nodes · 6969 edges · 127 communities (82 shown, 45 thin omitted)
+- 2378 nodes · 6970 edges · 127 communities (82 shown, 45 thin omitted)
 - Extraction: 90% EXTRACTED · 10% INFERRED · 0% AMBIGUOUS · INFERRED: 707 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `88fa919c`
+- Built from commit: `5f9230ce`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -144,12 +144,12 @@
   tests/test_molab_matrix_notebooks.py → src/bifocalgemma/training/telemetry.py
 - `test_widgets_update_in_place_and_restore_history_without_duplicate_points()` --uses--> `WigglyDashboard`  [INFERRED]
   tests/test_training_telemetry_v2.py → src/bifocalgemma/training/wiggly_dashboard.py
-- `benchmark()` --calls--> `atomic_json()`  [INFERRED]
-  tests/test_training_recipes.py → src/bifocalgemma/training/stages.py
-- `publish()` --indirect_call--> `profile()`  [INFERRED]
-  tests/test_shared_execution.py → tools/profile_repository_lengths.py
 - `test_semantic_identity_allows_comments_and_ui_but_rejects_model_changes()` --calls--> `source_fingerprints()`  [INFERRED]
   tests/test_training_telemetry_v2.py → src/bifocalgemma/training/source_identity.py
+- `publish()` --indirect_call--> `profile()`  [INFERRED]
+  tests/test_shared_execution.py → tools/profile_repository_lengths.py
+- `benchmark()` --calls--> `atomic_json()`  [INFERRED]
+  tests/test_training_recipes.py → src/bifocalgemma/training/stages.py
 
 ## Import Cycles
 - None detected.
@@ -493,16 +493,16 @@ Nodes (11): get_v2_experiment(), cached_logits(), _DummyTokenizer, test_span_den
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `atomic_json()` connect `evaluation/context.py` to `run_sequential_pipeline`, `prepare_colab_pilot.py`, `test_training_recipes.py`, `test_shared_execution.py`, `save_matrix_checkpoint`, `os`, `shared_execution.py`, `calibrate_shared_profile`, `json`, `test_v2_lifecycle.py`, `test_preflight_upload_verifies_exact_evidence_without_checkpoint`, `matrix.py`, `typing`, `v2_preflight.py`, `test_v2_fixed_execution.py`, `fit_offline_sft`, `examples`, `stages.py`, `v2.py`, `matrix.py`, `config.py`, `workflow`, `test_v2_workflow.py`?**
-  _High betweenness centrality (0.030) - this node is a cross-community bridge._
+  _High betweenness centrality (0.039) - this node is a cross-community bridge._
 - **Are the 14 inferred relationships involving `atomic_json()` (e.g. with `test_completed_benchmark_with_pending_upload_resumes_without_model_load()` and `benchmark()`) actually correct?**
   _`atomic_json()` has 14 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `bifocalgemma` to the rest of the system?**
   _1 weakly-connected nodes found - possible missing edges._
 - **Should `test_notebook_dependencies.py` be split into smaller, more focused modules?**
   _Cohesion score 0.09206349206349207 - nodes in this community are weakly interconnected._
-- **Why does `TestBifocalGemmaArchitecture` connect `TestBifocalGemmaArchitecture` to `v2/bridge.py`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `BifocalGemmaForCausalLM` connect `BifocalGemmaForCausalLM` to `.from_pretrained_backbones`, `BifocalGemmaConfig`, `test_export_matrix_pretrained_model_with_subfolder_and_tokenizer`, `configuration_bifocalgemma.py`, `typing`, `BifocalGemmaConfig`?**
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._
 - **Should `remediation.py` be split into smaller, more focused modules?**
   _Cohesion score 0.10793650793650794 - nodes in this community are weakly interconnected._
-- **Why does `TestGemma4EdgeTopology` connect `TestGemma4EdgeTopology` to `native.py`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `load_verified_tokenizer()` connect `json` to `remediation.py`, `curation.py`, `prepare_colab_pilot.py`, `test_gsm8k.py`, `CodeOverlapIndex`, `FastTrainingPipeline`, `hashlib`, `TokenizedRepairExample`, `repository_corpus.py`, `data/offline_sft.py`, `matrix.py`, `profile_repository_lengths.py`, `repository_study.py`, `gsm8k.py`, `typing`, `tokenization.py`, `examples`, `v2.py`, `matrix.py`, `evaluation/context.py`, `tokenize_repair_example`, `audit_dataset_release.py`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._

@@ -648,33 +648,27 @@ class FastTrainingPipeline:
 
         # Fallback: check if a completed final_pretrained_model already exists locally or on HF Hub
         local_final = self.out_path / "final_pretrained_model" / "model.safetensors"
-        if not local_final.is_file() and self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
+        if (
+            not local_final.is_file()
+            and self.cfg.push_to_hub
+            and self.cfg.hub_repo
+            and self.cfg.hf_token
+            and self._is_remote_pretrained_uploaded()
+        ):
             try:
+                import shutil
+
                 from huggingface_hub import hf_hub_download
 
                 sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
-                remote_summary_path = hf_hub_download(
+                downloaded_model = hf_hub_download(
                     repo_id=self.cfg.hub_repo,
-                    filename=f"{sub}/training_summary.json",
+                    filename=f"{sub}/pretrained_model/model.safetensors",
                     repo_type="model",
                     token=self.cfg.hf_token,
                 )
-                remote_summary = json.loads(Path(remote_summary_path).read_text(encoding="utf-8"))
-                if (
-                    remote_summary.get("status") == "COMPLETED"
-                    and int(remote_summary.get("total_steps", 0)) >= self.cfg.total_steps
-                ):
-                    downloaded_model = hf_hub_download(
-                        repo_id=self.cfg.hub_repo,
-                        filename=f"{sub}/pretrained_model/model.safetensors",
-                        repo_type="model",
-                        token=self.cfg.hf_token,
-                    )
-                    local_final.parent.mkdir(parents=True, exist_ok=True)
-                    import shutil
-
-                    shutil.copy2(downloaded_model, local_final)
-                    self.history = list(remote_summary.get("history", []))
+                local_final.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(downloaded_model, local_final)
             except Exception:
                 pass
 
@@ -1423,6 +1417,7 @@ class FastTrainingPipeline:
                 (h["val_loss"] for h in reversed(self.history) if h.get("val_loss") is not None),
                 0.0,
             )
+            safe_cfg_int = {k: ("***REDACTED***" if k == "hf_token" and v else v) for k, v in asdict(self.cfg).items()}
             interrupted_summary = {
                 "status": "INTERRUPTED_SAVED",
                 "model_choice": self.cfg.model_choice,
@@ -1431,7 +1426,7 @@ class FastTrainingPipeline:
                 "export_dir": str(self.out_path / "checkpoint_latest"),
                 "hub_repo": self.cfg.hub_repo,
                 "hub_subfolder": self.cfg.hub_subfolder,
-                "config": asdict(self.cfg),
+                "config": safe_cfg_int,
                 "history": self.history[-10:],
                 "completed_at": time.time(),
                 "elapsed_time_sec": time.time() - start_time,
@@ -1472,7 +1467,8 @@ class FastTrainingPipeline:
             )
             self.export_pretrained(export_dir)
 
-        # Save training summary
+        # Save training summary (redact hf_token so Hugging Face secret scanner allows upload)
+        safe_cfg = {k: ("***REDACTED***" if k == "hf_token" and v else v) for k, v in asdict(self.cfg).items()}
         summary: dict[str, Any] = {
             "status": "COMPLETED",
             "model_choice": self.cfg.model_choice,
@@ -1481,7 +1477,7 @@ class FastTrainingPipeline:
             "export_dir": str(export_dir),
             "hub_repo": self.cfg.hub_repo,
             "hub_subfolder": self.cfg.hub_subfolder,
-            "config": asdict(self.cfg),
+            "config": safe_cfg,
             "history": self.history[-10:],
             "benchmarks": [],
             "completed_at": time.time(),
