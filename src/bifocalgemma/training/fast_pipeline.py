@@ -18,11 +18,12 @@ from typing import Any, Callable
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from bifocalgemma.assets import ensure_assets_on_disk
 from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
 from bifocalgemma.contracts import Seq2SeqBatch, TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
 from bifocalgemma.modeling_bifocalgemma import BifocalGemmaForCausalLM
-from bifocalgemma.training.memory_probe import configure_probe_training
+from bifocalgemma.training.memory_probe import ProbeLoRALinear, configure_probe_training
 from bifocalgemma.v3.objectives import (
     build_bifocalgemma_v3_optimizer,
     compute_bifocalgemma_v3_loss,
@@ -30,6 +31,8 @@ from bifocalgemma.v3.objectives import (
 )
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_FAST_HF_REPO = "daruokta/bifocalgemma-2026-11-02"
 
 
 @dataclass
@@ -49,7 +52,7 @@ class FastTrainingConfig:
     warmup_steps: int = 100
     weight_decay_bridge: float = 1e-4
     eval_interval: int = 200
-    save_interval: int = 500
+    save_interval: int = 250
     log_interval: int = 25
     output_dir: str = "outputs/bifocalgemma_2b"
     data_dir: str | None = None  # Path to real repair dataset (jsonl or directory)
@@ -58,9 +61,11 @@ class FastTrainingConfig:
     encoder_backbone: str = "google/gemma-4-E2B"
     tokenizer_path: str = "outputs/context_tokenizers/raw/google__gemma-4-E2B-it"
     push_to_hub: bool = False
-    hub_repo: str | None = None
+    hub_repo: str | None = DEFAULT_FAST_HF_REPO
+    hub_subfolder: str | None = None
     hf_token: str | None = None
     auto_download_curated: bool = True
+    resume_if_available: bool = True
     collection: str = "mixed_context_enc32k_dec8k_v3"
     dataset_repo: str = "daruokta/bifocalgemma-data"
     dataset_revision: str = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"
@@ -69,6 +74,8 @@ class FastTrainingConfig:
     tiny: bool = False  # Set True for instant CI/smoke validation
 
     def __post_init__(self) -> None:
+        if self.hub_subfolder is None:
+            self.hub_subfolder = f"fast-{self.model_choice}"
         if self.model_choice == "baseline-2b":
             self.stage1_steps = 0
             self.stage2_steps = self.total_steps
@@ -283,15 +290,18 @@ class FastTrainingPipeline:
         val_dataloader: DataLoader | None = None,
         callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
+        ensure_assets_on_disk()
         self.cfg = config
         self.callback = callback
         torch.manual_seed(self.cfg.seed)
 
         if self.cfg.hf_token:
             import os
+
             os.environ["HF_TOKEN"] = self.cfg.hf_token
             try:
                 from huggingface_hub import login
+
                 login(token=self.cfg.hf_token, add_to_git_credential=False)
             except Exception as _login_exc:
                 logger.debug("HF login skipped: %s", _login_exc)
@@ -343,9 +353,7 @@ class FastTrainingPipeline:
             try:
                 from transformers import AutoTokenizer
 
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    tok_src, token=self.cfg.hf_token
-                )
+                self.tokenizer = AutoTokenizer.from_pretrained(tok_src, token=self.cfg.hf_token)
             except Exception as _exc:
                 logger.debug("Tokenizer load skipped: %s", _exc)
 
@@ -399,7 +407,9 @@ class FastTrainingPipeline:
                 val_file = (
                     data_path / "val.jsonl"
                     if (data_path / "val.jsonl").is_file()
-                    else (data_path / "dev.jsonl" if (data_path / "dev.jsonl").is_file() else None)
+                    else (
+                        data_path / "dev.jsonl" if (data_path / "dev.jsonl").is_file() else None
+                    )
                 )
                 if val_file is not None:
                     val_ds: Dataset = JSONLRepairDataset(
@@ -495,8 +505,13 @@ class FastTrainingPipeline:
 
     def configure_stage2(self) -> torch.optim.Optimizer:
         """Stage 2: Unfreeze LoRA on encoder and decoder with conservative learning rate."""
-        # Attach probe LoRA to attention projections
-        configure_probe_training(self.model, policy="lora", rank=16)
+        # Attach probe LoRA to attention projections if not already attached (e.g. from checkpoint resume)
+        if not any(isinstance(m, ProbeLoRALinear) for m in self.model.modules()):
+            configure_probe_training(self.model, policy="lora", rank=16)
+        else:
+            for name, param in self.model.named_parameters():
+                if ".lora_A" in name or ".lora_B" in name:
+                    param.requires_grad = True
 
         # Ensure cross bridge and projection remain trainable
         if self.model.encoder_projection is not None:
@@ -514,6 +529,148 @@ class FastTrainingPipeline:
             lr_lora=self.cfg.lr_lora,
             weight_decay_bridge=self.cfg.weight_decay_bridge,
         )
+
+    def save_checkpoint(self, global_step: int, stage_name: str) -> Path:
+        """Save lightweight trainable state locally and sync to Hugging Face Hub if enabled."""
+        ckpt_dir = self.out_path / "checkpoint_latest"
+        ckpt_dir.mkdir(parents=True, exist_ok=True)
+        ckpt_file = ckpt_dir / "checkpoint_state.pt"
+        trainable_names = {n for n, p in self.model.named_parameters() if p.requires_grad}
+        saved_tensors = {
+            k: v.detach().cpu()
+            for k, v in self.model.state_dict().items()
+            if (
+                k in trainable_names
+                or "lora_" in k
+                or "encoder_projection" in k
+                or is_cross_bridge_parameter(k)
+            )
+        }
+        has_lora = any(isinstance(m, ProbeLoRALinear) for m in self.model.modules())
+        payload = {
+            "model_choice": self.cfg.model_choice,
+            "global_step": global_step,
+            "stage": stage_name,
+            "has_lora": has_lora,
+            "history": self.history[-200:],
+            "tensors": saved_tensors,
+            "saved_at": time.time(),
+        }
+        tmp_file = ckpt_dir / "checkpoint_state.pt.tmp"
+        torch.save(payload, str(tmp_file))
+        tmp_file.replace(ckpt_file)
+
+        if self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
+            try:
+                from huggingface_hub import HfApi
+
+                api = HfApi(token=self.cfg.hf_token)
+                api.create_repo(repo_id=self.cfg.hub_repo, repo_type="model", exist_ok=True)
+                sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+                api.upload_file(
+                    path_or_fileobj=str(ckpt_file),
+                    path_in_repo=f"{sub}/checkpoint_latest/checkpoint_state.pt",
+                    repo_id=self.cfg.hub_repo,
+                    repo_type="model",
+                    commit_message=f"[{self.cfg.model_choice}] Save checkpoint at step {global_step}",
+                )
+            except Exception as _exc:
+                logger.warning("Remote checkpoint upload skipped at step %d: %s", global_step, _exc)
+        return ckpt_file
+
+    def try_resume_checkpoint(self) -> int:
+        """Resume from local or remote Hugging Face checkpoint if available and compatible."""
+        if not self.cfg.resume_if_available or self.cfg.tiny:
+            return 0
+
+        ckpt_dir = self.out_path / "checkpoint_latest"
+        ckpt_file = ckpt_dir / "checkpoint_state.pt"
+
+        if (
+            not ckpt_file.is_file()
+            and self.cfg.push_to_hub
+            and self.cfg.hub_repo
+            and self.cfg.hf_token
+        ):
+            try:
+                from huggingface_hub import hf_hub_download
+
+                sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+                downloaded = hf_hub_download(
+                    repo_id=self.cfg.hub_repo,
+                    filename=f"{sub}/checkpoint_latest/checkpoint_state.pt",
+                    repo_type="model",
+                    token=self.cfg.hf_token,
+                )
+                ckpt_dir.mkdir(parents=True, exist_ok=True)
+                import shutil
+
+                shutil.copy2(downloaded, ckpt_file)
+            except Exception:
+                pass
+
+        if not ckpt_file.is_file():
+            return 0
+
+        try:
+            payload = torch.load(str(ckpt_file), map_location="cpu", weights_only=False)
+            if payload.get("model_choice") != self.cfg.model_choice:
+                return 0
+            saved_step = int(payload.get("global_step", 0))
+            if saved_step <= 0:
+                return 0
+            if payload.get("has_lora") and not any(
+                isinstance(m, ProbeLoRALinear) for m in self.model.modules()
+            ):
+                configure_probe_training(self.model, policy="lora", rank=16)
+            tensors = payload.get("tensors", {})
+            if tensors:
+                self.model.load_state_dict(tensors, strict=False)
+                self.model.to(self.cfg.device)
+            self.history = list(payload.get("history", []))
+            print(
+                f"[{time.strftime('%X')}] 🔄 Melanjutkan otomatis dari checkpoint step {saved_step}/{self.cfg.total_steps} ({self.cfg.model_choice})...",
+                flush=True,
+            )
+            return saved_step
+        except Exception as _exc:
+            logger.warning("Could not resume from %s: %s", ckpt_file, _exc)
+            return 0
+
+    def _sync_existing_legacy_export_if_present(self) -> None:
+        """If a completed 2000-step model exists at outputs/fast_bifocalgemma/final_pretrained_model, upload it to Hub."""
+        if not (self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token):
+            return
+        legacy_dir = Path("outputs/fast_bifocalgemma/final_pretrained_model")
+        marker = legacy_dir / ".uploaded_to_hub"
+        if (
+            self.cfg.model_choice == "bifocalgemma-2b"
+            and (legacy_dir / "model.safetensors").is_file()
+            and not marker.is_file()
+        ):
+            try:
+                from huggingface_hub import HfApi
+
+                sub = (self.cfg.hub_subfolder or "fast-bifocalgemma-2b").strip("/")
+                print(
+                    f"[{time.strftime('%X')}] ☁️ Menemukan model selesai di {legacy_dir}, mengunggah otomatis ke {self.cfg.hub_repo} ({sub}/pretrained_model)...",
+                    flush=True,
+                )
+                api = HfApi(token=self.cfg.hf_token)
+                api.create_repo(repo_id=self.cfg.hub_repo, repo_type="model", exist_ok=True)
+                api.upload_folder(
+                    folder_path=str(legacy_dir),
+                    repo_id=self.cfg.hub_repo,
+                    repo_type="model",
+                    path_in_repo=f"{sub}/pretrained_model",
+                )
+                marker.write_text(self.cfg.hub_repo, encoding="utf-8")
+                print(
+                    f"[{time.strftime('%X')}] ✅ Berhasil mengunggah model selesai ke Hugging Face: {self.cfg.hub_repo}/{sub}/pretrained_model",
+                    flush=True,
+                )
+            except Exception as _exc:
+                logger.warning("Legacy model auto-upload skipped: %s", _exc)
 
     def train_step(
         self, batch: dict[str, torch.Tensor] | Seq2SeqBatch, stage_name: str
@@ -601,16 +758,21 @@ class FastTrainingPipeline:
     ) -> Path:
         """Export standalone PreTrainedModel, merging LoRA weights and optionally uploading to Hub."""
         target_dir = (
-            Path(export_dir) if export_dir is not None else self.out_path / "final_pretrained_model"
+            Path(export_dir)
+            if export_dir is not None
+            else self.out_path / "final_pretrained_model"
         )
         should_push = self.cfg.push_to_hub if push_to_hub is None else push_to_hub
         repo = self.cfg.hub_repo if hub_repo is None else hub_repo
         hf_token = self.cfg.hf_token if token is None else token
+        sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+        path_in_repo = f"{sub}/pretrained_model" if sub else None
 
         self.model.save_pretrained(
             target_dir,
             push_to_hub=should_push,
             repo_id=repo,
+            path_in_repo=path_in_repo,
             token=hf_token,
             tokenizer=self.tokenizer,
         )
@@ -619,185 +781,253 @@ class FastTrainingPipeline:
     def run(self) -> dict[str, Any]:
         """Execute complete fast two-stage training and export standalone model."""
         start_time = time.time()
-        global_step = 0
+        self._sync_existing_legacy_export_if_present()
+        global_step = self.try_resume_checkpoint()
         data_iter = iter(self.train_loader)
+        current_stage = "starting"
+        save_every = max(1, self.cfg.save_interval)
 
-        # -------------------------------------------------------------
-        # Training Execution (Single-Stage Baseline or Two-Stage Paired)
-        # -------------------------------------------------------------
-        if self.model.encoder is None:
-            # Baseline decoder-only model: single continuous full Decoder SFT pass
-            full_steps = self.cfg.total_steps
-            logger.info("Starting Full Decoder SFT (Baseline Decoder-Only, %d steps)", full_steps)
-            print(
-                f"[{time.strftime('%X')}] 🚀 Memulai Full Decoder SFT (Baseline-2B, {full_steps} steps)...",
-                flush=True,
-            )
-            opt = self.configure_stage2()
-            log_step = max(1, min(self.cfg.log_interval, full_steps // 20))
-
-            while global_step < full_steps:
-                self.model.train()
-                opt.zero_grad()
-                accum_loss = 0.0
-
-                for _ in range(self.cfg.gradient_accumulation_steps):
-                    try:
-                        batch = next(data_iter)
-                    except StopIteration:
-                        data_iter = iter(self.train_loader)
-                        batch = next(data_iter)
-
-                    loss = (
-                        self.train_step(batch, stage_name="full_decoder_sft")
-                        / self.cfg.gradient_accumulation_steps
-                    )
-                    loss.backward()
-                    accum_loss += float(loss.item())
-
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                opt.step()
-                global_step += 1
-
-                step_loss = accum_loss * self.cfg.gradient_accumulation_steps
-                val_loss = (
-                    self.evaluate()
-                    if (global_step % self.cfg.eval_interval == 0 or global_step == full_steps)
-                    else None
+        try:
+            # -------------------------------------------------------------
+            # Training Execution (Single-Stage Baseline or Two-Stage Paired)
+            # -------------------------------------------------------------
+            if self.model.encoder is None:
+                # Baseline decoder-only model: single continuous full Decoder SFT pass
+                full_steps = self.cfg.total_steps
+                current_stage = "full_decoder_sft"
+                logger.info(
+                    "Starting Full Decoder SFT (Baseline Decoder-Only, %d steps)", full_steps
                 )
-                record = {
-                    "stage": "full_decoder_sft",
-                    "step": global_step,
-                    "loss": step_loss,
-                    "val_loss": val_loss,
-                    "elapsed_sec": time.time() - start_time,
-                }
-                if global_step % log_step == 0 or global_step == full_steps:
-                    self.history.append(record)
-                    val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                print(
+                    f"[{time.strftime('%X')}] 🚀 Memulai Full Decoder SFT (Baseline-2B, {full_steps} steps)...",
+                    flush=True,
+                )
+                opt = self.configure_stage2()
+                log_step = max(1, min(self.cfg.log_interval, full_steps // 20))
+
+                while global_step < full_steps:
+                    self.model.train()
+                    opt.zero_grad()
+                    accum_loss = 0.0
+
+                    for _ in range(self.cfg.gradient_accumulation_steps):
+                        try:
+                            batch = next(data_iter)
+                        except StopIteration:
+                            data_iter = iter(self.train_loader)
+                            batch = next(data_iter)
+
+                        loss = (
+                            self.train_step(batch, stage_name="full_decoder_sft")
+                            / self.cfg.gradient_accumulation_steps
+                        )
+                        loss.backward()
+                        accum_loss += float(loss.item())
+
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                    opt.step()
+                    global_step += 1
+
+                    step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+                    val_loss = (
+                        self.evaluate()
+                        if (global_step % self.cfg.eval_interval == 0 or global_step == full_steps)
+                        else None
+                    )
+                    record = {
+                        "stage": "full_decoder_sft",
+                        "step": global_step,
+                        "loss": step_loss,
+                        "val_loss": val_loss,
+                        "elapsed_sec": time.time() - start_time,
+                    }
+                    if global_step % log_step == 0 or global_step == full_steps:
+                        self.history.append(record)
+                        val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                        print(
+                            f"[{time.strftime('%X')}] Step {global_step}/{full_steps} [full_decoder_sft] - loss={record['loss']:.4f}{val_str}",
+                            flush=True,
+                        )
+                    if not self.cfg.tiny and (
+                        global_step % save_every == 0 or global_step == full_steps
+                    ):
+                        self.save_checkpoint(global_step, "full_decoder_sft")
+                    if self.callback:
+                        self.callback(record)
+            else:
+                # Paired BifocalGemma model: Two-Stage Training (Stage 1 Bridge Alignment + Stage 2 Joint SFT)
+                # -------------------------------------------------------------
+                # STAGE 1: Bridge Manifold Alignment
+                # -------------------------------------------------------------
+                if global_step < self.cfg.stage1_steps:
+                    current_stage = "stage1_bridge_align"
+                    logger.info(
+                        "Starting Stage 1: Bridge Alignment (%d steps)", self.cfg.stage1_steps
+                    )
                     print(
-                        f"[{time.strftime('%X')}] Step {global_step}/{full_steps} [full_decoder_sft] - loss={record['loss']:.4f}{val_str}",
+                        f"[{time.strftime('%X')}] 🚀 Memulai Stage 1: Bridge Alignment ({self.cfg.stage1_steps} steps)...",
                         flush=True,
                     )
-                if self.callback:
-                    self.callback(record)
-        else:
-            # Paired BifocalGemma model: Two-Stage Training (Stage 1 Bridge Alignment + Stage 2 Joint SFT)
-            # -------------------------------------------------------------
-            # STAGE 1: Bridge Manifold Alignment
-            # -------------------------------------------------------------
-            logger.info("Starting Stage 1: Bridge Alignment (%d steps)", self.cfg.stage1_steps)
-            print(
-                f"[{time.strftime('%X')}] 🚀 Memulai Stage 1: Bridge Alignment ({self.cfg.stage1_steps} steps)...",
-                flush=True,
-            )
-            opt1 = self.configure_stage1()
-            log_step1 = max(1, min(self.cfg.log_interval, max(1, self.cfg.stage1_steps // 20)))
-
-            while global_step < self.cfg.stage1_steps:
-                self.model.train()
-                opt1.zero_grad()
-                accum_loss = 0.0
-
-                for _ in range(self.cfg.gradient_accumulation_steps):
-                    try:
-                        batch = next(data_iter)
-                    except StopIteration:
-                        data_iter = iter(self.train_loader)
-                        batch = next(data_iter)
-
-                    loss = (
-                        self.train_step(batch, stage_name="stage1")
-                        / self.cfg.gradient_accumulation_steps
+                    opt1 = self.configure_stage1()
+                    log_step1 = max(
+                        1, min(self.cfg.log_interval, max(1, self.cfg.stage1_steps // 20))
                     )
-                    loss.backward()
-                    accum_loss += float(loss.item())
 
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                opt1.step()
-                global_step += 1
+                    while global_step < self.cfg.stage1_steps:
+                        self.model.train()
+                        opt1.zero_grad()
+                        accum_loss = 0.0
 
-                step_loss = accum_loss * self.cfg.gradient_accumulation_steps
-                val_loss = (
-                    self.evaluate()
-                    if (global_step % self.cfg.eval_interval == 0 or global_step == self.cfg.stage1_steps)
-                    else None
-                )
-                record = {
-                    "stage": "stage1_bridge_align",
-                    "step": global_step,
-                    "loss": step_loss,
-                    "val_loss": val_loss,
-                    "elapsed_sec": time.time() - start_time,
-                }
-                if global_step % log_step1 == 0 or global_step == self.cfg.stage1_steps:
-                    self.history.append(record)
-                    val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                        for _ in range(self.cfg.gradient_accumulation_steps):
+                            try:
+                                batch = next(data_iter)
+                            except StopIteration:
+                                data_iter = iter(self.train_loader)
+                                batch = next(data_iter)
+
+                            loss = (
+                                self.train_step(batch, stage_name="stage1")
+                                / self.cfg.gradient_accumulation_steps
+                            )
+                            loss.backward()
+                            accum_loss += float(loss.item())
+
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                        opt1.step()
+                        global_step += 1
+
+                        step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+                        val_loss = (
+                            self.evaluate()
+                            if (
+                                global_step % self.cfg.eval_interval == 0
+                                or global_step == self.cfg.stage1_steps
+                            )
+                            else None
+                        )
+                        record = {
+                            "stage": "stage1_bridge_align",
+                            "step": global_step,
+                            "loss": step_loss,
+                            "val_loss": val_loss,
+                            "elapsed_sec": time.time() - start_time,
+                        }
+                        if (
+                            global_step % log_step1 == 0
+                            or global_step == self.cfg.stage1_steps
+                        ):
+                            self.history.append(record)
+                            val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                            print(
+                                f"[{time.strftime('%X')}] Step {global_step}/{self.cfg.stage1_steps} [stage1] - loss={record['loss']:.4f}{val_str}",
+                                flush=True,
+                            )
+                        if not self.cfg.tiny and (
+                            global_step % save_every == 0
+                            or global_step == self.cfg.stage1_steps
+                        ):
+                            self.save_checkpoint(global_step, "stage1_bridge_align")
+                        if self.callback:
+                            self.callback(record)
+
+                # -------------------------------------------------------------
+                # STAGE 2: Joint LoRA Fine-Tuning
+                # -------------------------------------------------------------
+                stage2_target = self.cfg.stage1_steps + self.cfg.stage2_steps
+                if global_step < stage2_target:
+                    current_stage = "stage2_joint_sft"
+                    remaining_stage2_steps = stage2_target - global_step
+                    logger.info(
+                        "Starting Stage 2: Joint LoRA SFT (%d steps)", remaining_stage2_steps
+                    )
                     print(
-                        f"[{time.strftime('%X')}] Step {global_step}/{self.cfg.stage1_steps} [stage1] - loss={record['loss']:.4f}{val_str}",
+                        f"[{time.strftime('%X')}] 🚀 Memulai Stage 2: Joint LoRA SFT ({remaining_stage2_steps} steps)...",
                         flush=True,
                     )
-                if self.callback:
-                    self.callback(record)
+                    opt2 = self.configure_stage2()
+                    log_step2 = max(
+                        1, min(self.cfg.log_interval, max(1, remaining_stage2_steps // 20))
+                    )
 
-            # -------------------------------------------------------------
-            # STAGE 2: Joint LoRA Fine-Tuning
-            # -------------------------------------------------------------
-            stage2_target = self.cfg.stage1_steps + self.cfg.stage2_steps
-            remaining_stage2_steps = stage2_target - global_step
-            logger.info("Starting Stage 2: Joint LoRA SFT (%d steps)", remaining_stage2_steps)
+                    while global_step < stage2_target:
+                        self.model.train()
+                        opt2.zero_grad()
+                        accum_loss = 0.0
+
+                        for _ in range(self.cfg.gradient_accumulation_steps):
+                            try:
+                                batch = next(data_iter)
+                            except StopIteration:
+                                data_iter = iter(self.train_loader)
+                                batch = next(data_iter)
+
+                            loss = (
+                                self.train_step(batch, stage_name="stage2")
+                                / self.cfg.gradient_accumulation_steps
+                            )
+                            loss.backward()
+                            accum_loss += float(loss.item())
+
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+                        opt2.step()
+                        global_step += 1
+
+                        step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+                        val_loss = (
+                            self.evaluate()
+                            if (
+                                global_step % self.cfg.eval_interval == 0
+                                or global_step == stage2_target
+                            )
+                            else None
+                        )
+                        record = {
+                            "stage": "stage2_joint_sft",
+                            "step": global_step,
+                            "loss": step_loss,
+                            "val_loss": val_loss,
+                            "elapsed_sec": time.time() - start_time,
+                        }
+                        if global_step % log_step2 == 0 or global_step == stage2_target:
+                            self.history.append(record)
+                            val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                            print(
+                                f"[{time.strftime('%X')}] Step {global_step}/{stage2_target} [stage2] - loss={record['loss']:.4f}{val_str}",
+                                flush=True,
+                            )
+                        if not self.cfg.tiny and (
+                            global_step % save_every == 0 or global_step == stage2_target
+                        ):
+                            self.save_checkpoint(global_step, "stage2_joint_sft")
+                        if self.callback:
+                            self.callback(record)
+        except KeyboardInterrupt:
             print(
-                f"[{time.strftime('%X')}] 🚀 Memulai Stage 2: Joint LoRA SFT ({remaining_stage2_steps} steps)...",
+                f"\n[{time.strftime('%X')}] ⏸️ Pelatihan dihentikan pada step {global_step}. Menyimpan checkpoint otomatis...",
                 flush=True,
             )
-            opt2 = self.configure_stage2()
-            log_step2 = max(1, min(self.cfg.log_interval, max(1, remaining_stage2_steps // 20)))
-
-            while global_step < stage2_target:
-                self.model.train()
-                opt2.zero_grad()
-                accum_loss = 0.0
-
-                for _ in range(self.cfg.gradient_accumulation_steps):
-                    try:
-                        batch = next(data_iter)
-                    except StopIteration:
-                        data_iter = iter(self.train_loader)
-                        batch = next(data_iter)
-
-                    loss = (
-                        self.train_step(batch, stage_name="stage2")
-                        / self.cfg.gradient_accumulation_steps
-                    )
-                    loss.backward()
-                    accum_loss += float(loss.item())
-
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                opt2.step()
-                global_step += 1
-
-                step_loss = accum_loss * self.cfg.gradient_accumulation_steps
-                val_loss = (
-                    self.evaluate()
-                    if (global_step % self.cfg.eval_interval == 0 or global_step == stage2_target)
-                    else None
-                )
-                record = {
-                    "stage": "stage2_joint_sft",
-                    "step": global_step,
-                    "loss": step_loss,
-                    "val_loss": val_loss,
-                    "elapsed_sec": time.time() - start_time,
-                }
-                if global_step % log_step2 == 0 or global_step == stage2_target:
-                    self.history.append(record)
-                    val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
-                    print(
-                        f"[{time.strftime('%X')}] Step {global_step}/{stage2_target} [stage2] - loss={record['loss']:.4f}{val_str}",
-                        flush=True,
-                    )
-                if self.callback:
-                    self.callback(record)
+            self.save_checkpoint(global_step, current_stage)
+            last_val = next(
+                (h["val_loss"] for h in reversed(self.history) if h.get("val_loss") is not None),
+                0.0,
+            )
+            interrupted_summary = {
+                "status": "INTERRUPTED_SAVED",
+                "model_choice": self.cfg.model_choice,
+                "total_steps": global_step,
+                "final_val_loss": float(last_val or 0.0),
+                "export_dir": str(self.out_path / "checkpoint_latest"),
+                "hub_repo": self.cfg.hub_repo,
+                "hub_subfolder": self.cfg.hub_subfolder,
+                "config": asdict(self.cfg),
+                "history": self.history[-10:],
+                "completed_at": time.time(),
+                "elapsed_time_sec": time.time() - start_time,
+            }
+            (self.out_path / "training_summary.json").write_text(
+                json.dumps(interrupted_summary, indent=2), encoding="utf-8"
+            )
+            return interrupted_summary
 
         # -------------------------------------------------------------
         # Automatic Standalone PreTrainedModel Export
@@ -814,18 +1044,37 @@ class FastTrainingPipeline:
 
         # Save training summary
         summary = {
+            "status": "COMPLETED",
             "model_choice": self.cfg.model_choice,
             "total_steps": global_step,
             "final_val_loss": final_val_loss,
             "export_dir": str(export_dir),
+            "hub_repo": self.cfg.hub_repo,
+            "hub_subfolder": self.cfg.hub_subfolder,
             "config": asdict(self.cfg),
             "history": self.history[-10:],
             "completed_at": time.time(),
             "elapsed_time_sec": time.time() - start_time,
         }
-        (self.out_path / "training_summary.json").write_text(
-            json.dumps(summary, indent=2), encoding="utf-8"
-        )
+        summary_file = self.out_path / "training_summary.json"
+        summary_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+        if self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
+            try:
+                from huggingface_hub import HfApi
+
+                api = HfApi(token=self.cfg.hf_token)
+                sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
+                api.upload_file(
+                    path_or_fileobj=str(summary_file),
+                    path_in_repo=f"{sub}/training_summary.json",
+                    repo_id=self.cfg.hub_repo,
+                    repo_type="model",
+                    commit_message=f"[{self.cfg.model_choice}] Upload training summary (val_loss={final_val_loss:.4f})",
+                )
+            except Exception as _exc:
+                logger.warning("Training summary upload skipped: %s", _exc)
+
         return summary
 
 
@@ -868,7 +1117,7 @@ def run_fast_training(argv: list[str] | None = None) -> int:
         help="Path to verified local tokenizer assets",
     )
     parser.add_argument("--push-to-hub", action="store_true")
-    parser.add_argument("--hub-repo", type=str, default=None)
+    parser.add_argument("--hub-repo", type=str, default=DEFAULT_FAST_HF_REPO)
     parser.add_argument("--tiny", action="store_true", help="Run tiny smoke training for CI")
 
     args = parser.parse_args(argv)

@@ -327,17 +327,13 @@ def _(dependency_runtime, mo, runtime_root):
     token_form = mo.ui.dictionary(
         {{
             "token": mo.ui.text(kind="password", label="HF write token (atau HF_TOKEN environment)"),
-            "repo_id": mo.ui.text(value="daruokta/bifocalgemma-clean", label="Target HF Repo"),
-            "standalone_repo_id": mo.ui.text(value="", label="Standalone HF Repo (opsional)"),
-            "total_steps": mo.ui.number(value=11102, start=10, stop=50000, step=100, label="Total Steps"),
-            "force_fresh": mo.ui.checkbox(value=False, label="Force Fresh (abaikan checkpoint lama)"),
         }}
     ).form(submit_button_label="Jalankan")
     mo.vstack(
         [
             mo.md(
-                f"**Model:** `{{MODEL_KEY}}` · **Default HF:** `{{HF_REPO_ID}}` (subfolder `{{HF_SUBFOLDER}}`)\\n"
-                f"Pelatihan {{MODEL_KEY}} dan 8 benchmark berjalan terpadu.\\n"
+                f"**Model:** `{{MODEL_KEY}}` · **HF Otomatis:** `{{HF_REPO_ID}}` (subfolder `{{HF_SUBFOLDER}}`)\\n"
+                f"Pelatihan {{MODEL_KEY}} dan 8 benchmark berjalan terpadu dengan auto-save & auto-resume.\\n"
                 "Token di bawah hanya diperlukan jika `HF_TOKEN` belum tersedia di environment."
             ),
             token_form,
@@ -358,21 +354,15 @@ def _(MODEL_KEY, dependency_runtime, mo):
 
 
 @app.cell
-def _(MODEL_KEY, live_monitor, mo, token_form):
+def _(HF_REPO_ID, MODEL_KEY, live_monitor, mo, token_form):
     import os
 
-    form = token_form.value or {{}}
-    token = form.get("token", "").strip() or os.environ.get("HF_TOKEN", "").strip()
-    repo_id = form.get("repo_id", "").strip() or "daruokta/bifocalgemma-clean"
-    standalone_repo_id = form.get("standalone_repo_id", "").strip() or None
-    total_steps = int(form.get("total_steps") or 11102)
-    force_fresh = bool(form.get("force_fresh", False))
-
+    token = (token_form.value or {{}}).get("token", "").strip() or os.environ.get("HF_TOKEN", "").strip()
     mo.stop(
         not token,
         mo.md(
             "Isi HF token di atas dan tekan **Jalankan**, atau sediakan `HF_TOKEN` lalu Run.\\n"
-            f"Training: {{total_steps:,}} steps dan dilanjutkan 8 benchmark."
+            "Training: 11,102 steps dan dilanjutkan 8 benchmark."
         ),
     )
     ms = __import__("importlib").import_module("tools.molab_matrix_support")
@@ -380,10 +370,7 @@ def _(MODEL_KEY, live_monitor, mo, token_form):
     result = ms.run_matrix_training_and_benchmark(
         MODEL_KEY,
         token=token,
-        repo_id=repo_id,
-        standalone_repo_id=standalone_repo_id,
-        total_steps=total_steps,
-        force_fresh=force_fresh,
+        repo_id=HF_REPO_ID,
         mo=mo,
         monitor=live_monitor,
     )

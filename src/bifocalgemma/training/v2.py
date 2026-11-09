@@ -118,9 +118,9 @@ def benchmark_directory_name(settings):
 def download_model(spec, cache, token, progress):
     from huggingface_hub import hf_hub_download
 
-    manifest = json.loads(
-        files("bifocalgemma.assets").joinpath("tokenizer_manifest.json").read_text()
-    )
+    from bifocalgemma.assets import load_asset_json
+
+    manifest = load_asset_json("tokenizer_manifest.json")
     weights = []
     provenance = []
     for ref in [spec.decoder] + ([spec.encoder] if spec.encoder else []):

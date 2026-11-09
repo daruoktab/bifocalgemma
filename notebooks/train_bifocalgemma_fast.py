@@ -28,20 +28,15 @@ def _():
         r"""
         # BifocalGemma · Fast From-Scratch Training Pipeline
 
-        Pipeline pelatihan terfokus dari awal (from-scratch) untuk **BifocalGemma-2B** (Encoder 32k → Causal Decoder 8k) dan **Baseline-2B**.
-
-        ### Keunggulan Arsitektur & Training:
-        1. **Eliminasi Copy Bias**: Menonaktifkan Streaming Pointer Loss ($\lambda_{\text{ptr}} = 0.0$) demi Cross-Entropy bersih selaras evaluasi.
-        2. **Learnable Sharpness Scaling**: Memperbaiki attention dilution pada cross-attention panjang.
-        3. **BifocalGemma-2B (2 Tahap)**: Stage 1 Bridge Manifold Alignment (decoder dibekukan) + Stage 2 Joint LoRA Fine-Tuning ($2 \times 10^{-5}$).
-        4. **Baseline-2B (1 Tahap Penuh)**: Full Decoder SFT langsung dari awal hingga akhir tanpa pembagian tahap.
-        5. **Ekspor Hugging Face Utuh Otomatis**: Penggabungan bobot LoRA (`merge_and_unload`) langsung ke satu artefak `model.safetensors` + `config.json` utuh.
+        Pipeline pelatihan otomatis untuk **BifocalGemma-2B** (Encoder 32k → Causal Decoder 8k) dan **Baseline-2B**.
+        - **Hugging Face Repo Otomatis:** [`daruokta/bifocalgemma-2026-11-02`](https://huggingface.co/daruokta/bifocalgemma-2026-11-02) (folder `fast-bifocalgemma-2b/` atau `fast-baseline-2b/`)
+        - **Auto-Save & Auto-Resume:** Checkpoint disimpan otomatis setiap 250 steps dan saat dihentikan di tengah jalan, serta otomatis dilanjutkan saat dijalankan ulang.
         """
     )
     return (mo,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _():
     import io
     import os
@@ -51,191 +46,146 @@ def _():
     import zipfile
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path.cwd()
-    src_dir = root / "src"
-    if not (src_dir / "bifocalgemma").is_dir():
-        runtime_dir = Path("outputs/runtime").resolve()
-        if not (runtime_dir / "src/bifocalgemma").is_dir():
-            url = "https://huggingface.co/daruokta/bifocalgemma-2026-11-02/resolve/main/runtime/latest.zip"
-            with urllib.request.urlopen(url, timeout=60) as resp:
-                with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:
-                    zf.extractall(runtime_dir)
-        src_dir = runtime_dir / "src"
+    def ensure_fast_runtime() -> Path:
+        root = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path.cwd()
+        src_dir = root / "src"
+        if not (src_dir / "bifocalgemma/assets/gemma4_e2b.json").is_file():
+            runtime_dir = Path("outputs/runtime").resolve()
+            if not (runtime_dir / "src/bifocalgemma/assets/gemma4_e2b.json").is_file():
+                runtime_dir.mkdir(parents=True, exist_ok=True)
+                url = "https://huggingface.co/daruokta/bifocalgemma-2026-11-02/resolve/main/runtime/latest.zip"
+                req = urllib.request.Request(url, headers={"User-Agent": "bifocalgemma-runtime"})
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:
+                        zf.extractall(runtime_dir)
+            src_dir = runtime_dir / "src"
+        if str(src_dir) not in sys.path:
+            sys.path.insert(0, str(src_dir))
+        try:
+            from bifocalgemma.assets import ensure_assets_on_disk
 
-    if str(src_dir) not in sys.path:
-        sys.path.insert(0, str(src_dir))
+            ensure_assets_on_disk()
+        except Exception:
+            pass
+        return src_dir
 
-    from bifocalgemma.training.fast_pipeline import FastTrainingConfig, FastTrainingPipeline
-
-    return FastTrainingConfig, FastTrainingPipeline, Path, os, root, src_dir, sys, time
-
-
-@app.cell
-def _(mo, os):
-    hf_token_input = mo.ui.text(
-        value=os.environ.get("HF_TOKEN", ""),
-        kind="password",
-        label="Hugging Face Token",
-        placeholder="hf_...",
-        full_width=True,
+    src_dir = ensure_fast_runtime()
+    from bifocalgemma.training.fast_pipeline import (
+        DEFAULT_FAST_HF_REPO,
+        FastTrainingConfig,
+        FastTrainingPipeline,
     )
-    mo.vstack(
-        [
-            mo.md(
-                """
-                ### 🔑 1. Autentikasi Hugging Face
-                Masukkan token Hugging Face Anda (izin *Read* untuk unduh dataset privat `daruokta/bifocalgemma-data` & model backbone Gemma-4, atau izin *Write* untuk push model ke Hub).
-                """
-            ),
-            hf_token_input,
-        ]
+
+    return (
+        DEFAULT_FAST_HF_REPO,
+        FastTrainingConfig,
+        FastTrainingPipeline,
+        Path,
+        ensure_fast_runtime,
+        os,
+        src_dir,
+        sys,
+        time,
     )
-    return (hf_token_input,)
 
 
 @app.cell
-def _(hf_token_input, mo, os):
-    hf_token = hf_token_input.value.strip() or os.environ.get("HF_TOKEN", "").strip() or None
-    if hf_token:
-        os.environ["HF_TOKEN"] = hf_token
-        auth_banner = mo.md("✅ **Hugging Face Token aktif.** Kredensial siap digunakan.")
-    else:
-        auth_banner = mo.md(
-            "⚠️ **Token belum diisi.** Diperlukan untuk mode non-tiny dengan unduhan otomatis dataset/backbone."
-        )
-    auth_banner
-    return auth_banner, hf_token
-
-
-@app.cell
-def _(mo):
+def _(DEFAULT_FAST_HF_REPO, mo, os):
     import torch
 
     cuda_available = torch.cuda.is_available()
+    hf_token_input = mo.ui.text(
+        value=os.environ.get("HF_TOKEN", ""),
+        kind="password",
+        label="Hugging Face Token (Read & Write)",
+        placeholder="hf_...",
+        full_width=True,
+    )
     model_choice = mo.ui.dropdown(
         options=["bifocalgemma-2b", "baseline-2b"],
         value="bifocalgemma-2b",
         label="Model Target",
     )
     total_steps = mo.ui.slider(
-        start=10,
+        start=100,
         stop=5000,
-        step=50,
+        step=100,
         value=2000 if cuda_available else 200,
         label="Total Steps",
     )
-    output_dir = mo.ui.text(value="outputs/fast_bifocalgemma", label="Output Directory")
-    pretrained_backbone_dir = mo.ui.text(
-        value="", label="Pretrained Backbone Dir (Opsional, direktori safetensors lokal)"
-    )
-    data_dir = mo.ui.text(
-        value="",
-        label=(
-            "Data Directory (JSONL / Curated Pool, kosongkan untuk auto-download "
-            "mixed_context_enc32k_dec8k_v3 di GPU atau synthetic di Tiny)"
-        ),
-    )
-    tiny_mode = mo.ui.checkbox(
-        value=not cuda_available,
-        label="Tiny Mode (CI / Verifikasi Cepat tanpa unduhan 2B)",
-    )
-    push_hub = mo.ui.checkbox(value=False, label="Push model utuh ke Hugging Face Hub")
-    hub_repo = mo.ui.text(value="daruokta/bifocalgemma-fast", label="Hub Repository ID")
+    train_button = mo.ui.run_button(label="🚀 Jalankan / Lanjutkan Training", kind="success")
 
-    training_settings = mo.vstack(
+    mo.vstack(
         [
-            mo.md("### ⚙️ 2. Pengaturan Pelatihan"),
-            model_choice,
-            total_steps,
-            tiny_mode,
-            output_dir,
-            push_hub,
-            hub_repo,
-            pretrained_backbone_dir,
-            data_dir,
+            mo.md(
+                f"""
+                ### 🔑 Konfigurasi Pelatihan & Hugging Face Otomatis
+                Masukkan `HF_TOKEN` Anda di bawah. Semua hasil dan checkpoint otomatis diunggah ke:
+                - **`{DEFAULT_FAST_HF_REPO}`** → subfolder **`fast-bifocalgemma-2b/`** atau **`fast-baseline-2b/`**
+                """
+            ),
+            hf_token_input,
+            mo.hstack([model_choice, total_steps], justify="start", gap=2),
+            train_button,
         ]
     )
-    training_settings
-    return (
-        data_dir,
-        hub_repo,
-        model_choice,
-        output_dir,
-        pretrained_backbone_dir,
-        push_hub,
-        tiny_mode,
-        total_steps,
-        training_settings,
-    )
-
-
-@app.cell
-def _(mo):
-    train_button = mo.ui.run_button(label="Mulai Training Dari Awal", kind="success")
-    train_button
-    return (train_button,)
+    return cuda_available, hf_token_input, model_choice, total_steps, train_button
 
 
 @app.cell
 def _(
+    DEFAULT_FAST_HF_REPO,
     FastTrainingConfig,
     FastTrainingPipeline,
-    data_dir,
-    hf_token,
-    hub_repo,
+    cuda_available,
+    ensure_fast_runtime,
+    hf_token_input,
     mo,
     model_choice,
-    output_dir,
-    pretrained_backbone_dir,
-    push_hub,
-    time,
-    tiny_mode,
+    os,
     total_steps,
     train_button,
 ):
+    hf_token = hf_token_input.value.strip() or os.environ.get("HF_TOKEN", "").strip() or None
+    if hf_token:
+        os.environ["HF_TOKEN"] = hf_token
+
     mo.stop(
         not train_button.value,
-        mo.md("Tekan tombol **Mulai Training Dari Awal** di atas untuk menjalankan pelatihan."),
+        mo.md(
+            f"Siap melatih **`{model_choice.value}`** ({int(total_steps.value)} steps) "
+            f"dengan auto-upload ke [`{DEFAULT_FAST_HF_REPO}/fast-{model_choice.value}`]"
+            f"(https://huggingface.co/{DEFAULT_FAST_HF_REPO}/tree/main/fast-{model_choice.value}). "
+            "Tekan tombol **🚀 Jalankan / Lanjutkan Training** di atas."
+        ),
     )
 
-    is_tiny = bool(tiny_mode.value)
-    has_local_data = bool(data_dir.value.strip())
-
-    if not is_tiny and not has_local_data and not hf_token:
+    is_tiny = not cuda_available
+    if not is_tiny and not hf_token:
         mo.stop(
             True,
             mo.md(
                 """
                 ### ⚠️ Hugging Face Token Diperlukan!
-                Anda menjalankan mode **Full Scale (2B)** dengan unduhan dataset otomatis.
-                Dataset kurasi `daruokta/bifocalgemma-data` dan model backbone Gemma adalah repositori privat/gated yang **memerlukan HF_TOKEN**.
-
-                👉 **Silakan masukkan token Hugging Face Anda pada Langkah 1 di atas, lalu tekan tombol 'Mulai Training Dari Awal' kembali.**
-                *(Atau centang 'Tiny Mode' jika Anda hanya ingin uji coba cepat tanpa unduhan 2B).*
+                Masukkan token Hugging Face Anda pada kolom di atas lalu klik **🚀 Jalankan / Lanjutkan Training**.
                 """
             ),
         )
 
+    ensure_fast_runtime()
     steps = int(total_steps.value)
-    if model_choice.value == "baseline-2b":
-        stage1 = 0
-        stage2 = steps
-    else:
-        stage1 = steps // 2
-        stage2 = steps - stage1
+    subfolder = f"fast-{model_choice.value}"
     cfg = FastTrainingConfig(
         model_choice=model_choice.value,
         total_steps=steps,
-        stage1_steps=stage1,
-        stage2_steps=stage2,
-        output_dir=output_dir.value.strip() or "outputs/fast_bifocalgemma",
-        data_dir=data_dir.value.strip() or None,
-        pretrained_backbone_dir=pretrained_backbone_dir.value.strip() or None,
+        output_dir=f"outputs/fast_bifocalgemma/{model_choice.value}",
         tiny=is_tiny,
-        push_to_hub=push_hub.value,
-        hub_repo=hub_repo.value.strip() if push_hub.value else None,
+        push_to_hub=bool(hf_token),
+        hub_repo=DEFAULT_FAST_HF_REPO,
+        hub_subfolder=subfolder,
         hf_token=hf_token,
         auto_download_curated=True,
+        resume_if_available=True,
     )
 
     progress_tracker = {"last_step": 0}
@@ -268,24 +218,25 @@ def _(
         for h in pipeline.history
     ]
 
-    hub_info = (
-        f"- **Hugging Face Hub:** [{cfg.hub_repo}](https://huggingface.co/{cfg.hub_repo})\n"
-        if cfg.push_to_hub and cfg.hub_repo
-        else ""
+    status_title = (
+        "⏸️ Pelatihan Dijeda & Checkpoint Tersimpan!"
+        if summary.get("status") == "INTERRUPTED_SAVED"
+        else "🎉 Pelatihan Selesai & Terunggah ke Hugging Face!"
     )
+    hub_url = f"https://huggingface.co/{DEFAULT_FAST_HF_REPO}/tree/main/{subfolder}"
 
     mo.output.replace(
         mo.vstack(
             [
                 mo.md(
                     f"""
-                    ### 🎉 Pelatihan Selesai!
+                    ### {status_title}
                     - **Model Target:** `{summary['model_choice']}`
-                    - **Total Langkah:** `{summary['total_steps']}`
-                    - **Final Validation Loss:** `{summary['final_val_loss']:.4f}`
+                    - **Langkah Tercapai:** `{summary['total_steps']} / {steps}`
+                    - **Validation Loss Terakhir:** `{summary['final_val_loss']:.4f}`
                     - **Total Waktu:** `{summary.get('elapsed_time_sec', 0):.1f} detik`
-                    - **Artefak Model Utuh Disimpan di:** `{summary['export_dir']}`
-                    {hub_info}
+                    - **Folder Hugging Face:** [`{DEFAULT_FAST_HF_REPO}/{subfolder}`]({hub_url})
+                    - **Folder Lokal:** `{summary['export_dir']}`
                     """
                 ),
                 mo.ui.table(history_rows, label="Riwayat Pelatihan (Milestones)")

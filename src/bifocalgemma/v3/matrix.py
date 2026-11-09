@@ -535,7 +535,21 @@ def run_matrix_training(
         wipe_stale_artifacts()
     else:
         if upload and token:
-            recover_remote_run(repo, root, prefix, token=token)
+            try:
+                recover_remote_run(repo, root, prefix, token=token)
+            except ValueError:
+                if latest_checkpoint(root / "training") is None:
+                    for item in list(root.iterdir()):
+                        if item.is_dir():
+                            shutil.rmtree(item, ignore_errors=True)
+                        else:
+                            item.unlink(missing_ok=True)
+                    try:
+                        recover_remote_run(repo, root, prefix, token=token)
+                    except Exception as _rec_exc:
+                        logger.warning("Remote recovery skipped: %s", _rec_exc)
+            except Exception as _rec_exc:
+                logger.warning("Remote recovery skipped: %s", _rec_exc)
         if check_legacy_artifacts():
             wipe_stale_artifacts()
             dashboard(
@@ -565,6 +579,19 @@ def run_matrix_training(
         "repo": repo,
         "subfolder": subfolder,
     }
+    ledger_file = root / "pipeline_state.json"
+    if ledger_file.is_file():
+        try:
+            from bifocalgemma.data.offline_sft import stable_fingerprint
+
+            existing_state = json.loads(ledger_file.read_text(encoding="utf-8"))
+            new_sig = stable_fingerprint(identity)
+            if existing_state.get("signature") != new_sig:
+                existing_state["identity"] = identity
+                existing_state["signature"] = new_sig
+                atomic_json(ledger_file, existing_state)
+        except Exception:
+            ledger_file.unlink(missing_ok=True)
     ledger = StageLedger(root, identity)
     if not ledger.path.exists():
         atomic_json(ledger.path, ledger.state)
@@ -957,7 +984,10 @@ def run_matrix_benchmark(
         if bench_dir.exists():
             shutil.rmtree(bench_dir, ignore_errors=True)
     elif upload and token:
-        recover_remote_run(repo, root, prefix, token=token)
+        try:
+            recover_remote_run(repo, root, prefix, token=token)
+        except Exception as _rec_exc:
+            logger.warning("Remote benchmark recovery skipped: %s", _rec_exc)
 
     identity = {
         "format": "bifocalgemma_pipeline_v1",
@@ -979,6 +1009,19 @@ def run_matrix_benchmark(
         "repo": repo,
         "subfolder": subfolder,
     }
+    ledger_file = root / "pipeline_state.json"
+    if ledger_file.is_file():
+        try:
+            from bifocalgemma.data.offline_sft import stable_fingerprint
+
+            existing_state = json.loads(ledger_file.read_text(encoding="utf-8"))
+            new_sig = stable_fingerprint(identity)
+            if existing_state.get("signature") != new_sig:
+                existing_state["identity"] = identity
+                existing_state["signature"] = new_sig
+                atomic_json(ledger_file, existing_state)
+        except Exception:
+            ledger_file.unlink(missing_ok=True)
     ledger = StageLedger(root, identity)
     if not ledger.path.exists():
         atomic_json(ledger.path, ledger.state)

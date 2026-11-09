@@ -2,11 +2,11 @@
 
 import hashlib
 import json
-from importlib.resources import files
 from pathlib import Path
 
 from transformers.models.gemma.tokenization_gemma import GemmaTokenizer
 
+from bifocalgemma.assets import load_asset_json
 from bifocalgemma.config import CheckpointRef, ExperimentSpec
 from bifocalgemma.contracts import RepairExample, TokenizedRepairExample
 
@@ -25,9 +25,7 @@ def load_verified_tokenizer(checkpoint: CheckpointRef, tokenizer_cache: Path):
     Revision is bound to checked-in asset hashes, not inferred from directory name.
     Network fetching and remote tokenizer code are never enabled.
     """
-    manifest = json.loads(
-        files("bifocalgemma.assets").joinpath("tokenizer_manifest.json").read_text(encoding="utf-8")
-    )
+    manifest = load_asset_json("tokenizer_manifest.json")
     expected = manifest[checkpoint.model_id]
     if expected["revision"] != checkpoint.revision:
         raise ValueError("Tokenizer revision is not present in the audited manifest.")

@@ -34,7 +34,8 @@ def native_config(size: ModelSize, *, tiny: bool = True, encoder: bool = False):
             "Native integration requires the validated transformers 5.19.0/5.20.2 interface."
         )
     asset = files("bifocalgemma.assets").joinpath(f"gemma4_{size.lower()}.json")
-    values = json.loads(asset.read_text(encoding="utf-8"))["text_config"]
+    from bifocalgemma.assets import load_asset_json
+    values = load_asset_json(f"gemma4_{size.lower()}.json")["text_config"]
     if tiny:
         width = 32 if size == "E2B" else 48
         values.update(
