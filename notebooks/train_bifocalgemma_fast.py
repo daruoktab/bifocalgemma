@@ -46,9 +46,9 @@ def _():
     import zipfile
     from pathlib import Path
 
-    RUNTIME_BUNDLE_VERSION = "2026-11-09-bench-v1"
+    RUNTIME_BUNDLE_VERSION = "2026-11-10-bench-v2"
 
-    def ensure_fast_runtime() -> Path:
+    def ensure_fast_runtime(force_refresh: bool = False) -> Path:
         root = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path.cwd()
         src_dir = root / "src"
         if not (src_dir / "bifocalgemma/assets/gemma4_e2b.json").is_file():
@@ -60,11 +60,12 @@ def _():
                 else ""
             )
             if (
-                not (runtime_dir / "src/bifocalgemma/assets/gemma4_e2b.json").is_file()
+                force_refresh
+                or not (runtime_dir / "src/bifocalgemma/assets/gemma4_e2b.json").is_file()
                 or current_ver != RUNTIME_BUNDLE_VERSION
             ):
                 runtime_dir.mkdir(parents=True, exist_ok=True)
-                url = f"https://huggingface.co/daruokta/bifocalgemma-2026-11-02/resolve/main/runtime/latest.zip?v={RUNTIME_BUNDLE_VERSION}"
+                url = f"https://huggingface.co/daruokta/bifocalgemma-2026-11-02/resolve/main/runtime/latest.zip?t={int(time.time())}"
                 req = urllib.request.Request(url, headers={"User-Agent": "bifocalgemma-runtime"})
                 with urllib.request.urlopen(req, timeout=60) as resp:
                     with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:
@@ -186,7 +187,7 @@ def _(
             ),
         )
 
-    ensure_fast_runtime()
+    ensure_fast_runtime(force_refresh=True)
     from bifocalgemma.training.fast_pipeline import (
         FastTrainingConfig as _LiveFastTrainingConfig,
         FastTrainingPipeline as _LiveFastTrainingPipeline,

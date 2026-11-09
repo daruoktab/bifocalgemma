@@ -1004,7 +1004,8 @@ class FastTrainingPipeline:
                 self.cfg.dataset_revision,
                 collection_name,
                 bench_data_dir,
-                expected_role="benchmark",
+                expected_role="eval",
+                include_gold=True,
                 token=self.cfg.hf_token,
             )
 
