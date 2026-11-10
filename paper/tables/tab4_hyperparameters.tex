@@ -1,0 +1,42 @@
+\begin{table}[t]
+\centering
+\caption{Operational Hyperparameters, Gating Initializations, and Optimization Schedule for \textsc{BifocalGemma}. All gating and scaling factors are formulated to preserve causal fluency at initialization while permitting stable cross-stream gradient flow.}
+\label{tab:hyperparameters}
+\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Component / Hyperparameter} & \textbf{Operational Setting / Formula} \\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Decoupled Cross-Attention Gating \& Scaling}} \\
+Cross-Attention RoPE Frequency & $\Theta_{\text{cross}} = 0$ (Stationary Coordinate Invariant) \\
+Global Head Gate $g_{\text{head}}$ Init & $\operatorname{atanh}(0.05) \implies \tanh(g_{\text{head}}^{(0)}) = 0.05$ \\
+Query Token Gate $w_{\text{gate}}$ Init & $\mathbf{0} \implies g_{\text{query}}^{(0)} = 1.0 \implies g_{\text{eff}}^{(0)} = 0.05$ \\
+Attention Length Scaling $\beta(N_{\text{enc}})$ & $\max\left(1.0,\; 1.0 + 0.1 \ln(\max(N_{\text{enc}}, 1) / 2048)\right)$ \\
+Per-Head Sharpness $\sigma_{\text{cross}}$ & $\sigma_{\text{cross}}^{(0)} = 1.0$, clamped to $[0.1, 5.0]$ \\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{SwiGLU Dual-Gate Coordinate Bridge}} \\
+Intermediate Width $d_{\text{mid}}$ & $\max(d_{\text{enc}}, d_{\text{dec}})$ ($1536$ or $2560$) \\
+Down-Projection $W_{\text{down}}$ Init & $\mathcal{N}(0, (0.01 / \sqrt{d_{\text{mid}}})^2)$ (Zero-Residual Entry) \\
+Residual Connection $W_{\text{res}}$ & Identity ($d_{\text{enc}}=d_{\text{dec}}$); Orthogonal Linear ($d_{\text{enc}} \neq d_{\text{dec}}$) \\
+Channel Calibration $\gamma_{\text{calib}}$ Init & $\mathbf{1} \in \mathbb{R}^{d_{\text{dec}}}$ (Unit Scale Prior) \\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Chunked Differential Diff Objective ($\mathcal{L}_{\text{diff}}$)}} \\
+Added Lines Token Weight ($w_{\text{add}}$) & $1.4$ (Diff Line Prefix \texttt{+}) \\
+Deleted Lines Token Weight ($w_{\text{del}}$) & $1.2$ (Diff Line Prefix \texttt{-}) \\
+Hunk Headers Token Weight ($w_{\text{hdr}}$) & $1.1$ (Diff Line Prefix \texttt{@@ ... @@}) \\
+Context Lines Token Weight ($w_{\text{ctx}}$) & $0.8$ (Unmodified Context Lines) \\
+Logit Softcapping Threshold & $30.0 \cdot \tanh(\text{logits} / 30.0)$ \\
+Vocabulary Logit Chunk Size & $128$ tokens ($d_{\text{vocab}} = 262{,}144$) \\
+Differentiable Pointer Weight $\lambda_{\text{ptr}}$ & $0.0$ (Disabled to prevent copy bias) \\
+\midrule
+\multicolumn{2}{@{}l}{\textbf{Two-Stage Paired Curriculum Schedule}} \\
+Maximum Context Allocation & $N_{\text{enc}} \le 32{,}768$ ($80\%$) : $N_{\text{dec}} \le 8{,}192$ ($20\%$) \\
+Stage~1 Duration & First $50\%$ of Total Steps (Frozen Decoder) \\
+\quad Learning Rates (Stage~1) & $\text{LR}_{\text{bridge}} = \text{LR}_{\text{cross}} = 10^{-4}$ \\
+Stage~2 Duration & Final $50\%$ of Total Steps (Joint LoRA SFT) \\
+\quad Learning Rates (Stage~2) & $\text{LR}_{\text{bridge}} = \text{LR}_{\text{cross}} = 5 \times 10^{-5}, \text{LR}_{\text{lora}} = 2 \times 10^{-5}$ \\
+Stage~2 Task Replay Mix & $80\%$ Patch Synthesis : $20\%$ Comprehension \\
+Partitioned Weight Decay $\lambda_{\text{wd}}$ & $10^{-4}$ on 2D Bridge Matrices; $0.0$ on Norms/LoRA \\
+\bottomrule
+\end{tabular}
+\end{table}

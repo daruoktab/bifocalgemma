@@ -54,9 +54,9 @@
     "ast_empty": true
   },
   "configs/training_resume_compatibility.json": {
-    "mtime": 1794267067.998929,
-    "seen": 1794267098.0303662,
-    "ast_hash": "25682a68bded53cf38360270736a334c",
+    "mtime": 1794342069.565235,
+    "seen": 1794342122.34389,
+    "ast_hash": "1d2e940207b05d1c547f8a6804e2e2f5",
     "semantic_hash": ""
   },
   "docs/data/ai_runtime_upgrade_20261009.json": {
@@ -2535,9 +2535,9 @@
     "semantic_hash": ""
   },
   "paper/PAPER_DRAFT.md": {
-    "mtime": 1794290389.933314,
-    "seen": 1794290493.9802022,
-    "ast_hash": "01caf5c8846d9c6f72f7e986aa28702f",
+    "mtime": 1794341916.0602844,
+    "seen": 1794342122.3444228,
+    "ast_hash": "3b8ced1058eea158f4cbec349017015e",
     "semantic_hash": ""
   },
   "paper/figures/fig1_architecture.svg": {
@@ -2607,15 +2607,15 @@
     "semantic_hash": ""
   },
   "paper/BifocalGemma_Paper.pdf": {
-    "mtime": 1794218286.98133,
-    "seen": 1794218309.1647408,
-    "ast_hash": "9e8406edfccf4031c3034693cb2e5c53",
+    "mtime": 1794341771.9705749,
+    "seen": 1794342122.3444228,
+    "ast_hash": "d07acf9a0a02e283538b3cdce960c8dd",
     "semantic_hash": ""
   },
   "paper/main.pdf": {
-    "mtime": 1794218286.98133,
-    "seen": 1794218309.1647408,
-    "ast_hash": "9e8406edfccf4031c3034693cb2e5c53",
+    "mtime": 1794341771.9705749,
+    "seen": 1794342122.3444228,
+    "ast_hash": "d07acf9a0a02e283538b3cdce960c8dd",
     "semantic_hash": ""
   },
   "tests/test_fast_pipeline.py": {
@@ -2628,6 +2628,42 @@
     "mtime": 1794293569.5590441,
     "seen": 1794295118.651732,
     "ast_hash": "31183802d1faef7761a903e39269c574",
+    "semantic_hash": ""
+  },
+  "tools/generate_fig1.py": {
+    "mtime": 1794340965.3715987,
+    "seen": 1794342122.3444228,
+    "ast_hash": "eecf41902378be71d6f0ba20b9b94407",
+    "semantic_hash": ""
+  },
+  "tools/generate_fig2.py": {
+    "mtime": 1794341003.0005066,
+    "seen": 1794342122.3444228,
+    "ast_hash": "e9e4509db164f4a3b958be7dee3938b2",
+    "semantic_hash": ""
+  },
+  "paper/figures/fig1_transformer_architecture.pdf": {
+    "mtime": 1794341760.9824686,
+    "seen": 1794342122.3444228,
+    "ast_hash": "1860fa444a23d82b9cff91093d7cc0e6",
+    "semantic_hash": ""
+  },
+  "paper/figures/fig2_layer_topology.pdf": {
+    "mtime": 1794341013.7864902,
+    "seen": 1794342122.3444228,
+    "ast_hash": "2a7012ffe07dd418c2f7d5ebe31515a9",
+    "semantic_hash": ""
+  },
+  "paper/figures/fig1_transformer_architecture.svg": {
+    "mtime": 1794341760.797371,
+    "seen": 1794342122.3444228,
+    "ast_hash": "97e41ab686af1e2e789d9d1f6ae94170",
+    "semantic_hash": ""
+  },
+  "paper/figures/fig2_layer_topology.svg": {
+    "mtime": 1794341013.6267626,
+    "seen": 1794342122.3444228,
+    "ast_hash": "f7a96411cf7e902d2eb6331c7b1df8ab",
     "semantic_hash": ""
   }
 }

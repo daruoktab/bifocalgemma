@@ -70,9 +70,16 @@ Recent efforts to adapt causal backbones into bidirectional encoders~\cite{llm2v
 
 \section{Architecture and Methodology}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/fig1_transformer_architecture.pdf}
+\caption{\textbf{The BifocalGemma V3 Model Architecture.} Comprehensive bottom-to-top structural dataflow following the classic Transformer paradigm: (\textbf{Left}) The Bidirectional Repository Encoder Stack ($N_{\text{enc}} \le 32{,}768$) with stream-isolated Per-Layer Embeddings (PLE, $d_{\text{ple}}=256$), unmasked self-attention across sliding and global heads, and final encoder RMSNorm; (\textbf{Center-Top}) The SwiGLU Dual-Gate Coordinate Bridge ($\text{SwiGLUDualGateBridge}$) with intermediate expansion $d_{\text{mid}} = \max(d_{\text{enc}}, d_{\text{dec}})$, identity/orthogonal residual pathway $W_{\text{res}}$, and per-channel scale calibration $\gamma_{\text{calib}}$; (\textbf{Center}) The $Z_{\text{enc}}$ corridor highway conveying stationary Key/Value representations to decoder cross-attention; and (\textbf{Right}) The Decoupled Causal Decoder Stack ($N_{\text{dec}} \le 8{,}192$) with parallel decoupled cross-attention ($\Theta_{\text{cross}}=0$) and causal self-attention, dual-gated head and token fusion, tied language model head, and logit softcapping.}
+\label{fig:architecture}
+\end{figure*}
+
 \subsection{Asymmetric Gemma~4 Backbone and Bidirectional Repository Encoder}
 
-Given a repository context $X_{\text{enc}}$ of length $N_{\text{enc}} \le 32{,}768$ and a task instruction $q$, we prepend a lightweight query prefix (\texttt{[QUERY] <instruction>\textbackslash n}) to $X_{\text{enc}}$ so that encoder self-attention layers condition repository representations on the target issue from layer~0. The encoder backbone is initialized from \texttt{Gemma~4} (\texttt{E2B} with $d_{\text{enc}}=1536$, $L=35$ layers, $H_Q=8$, $H_{KV}=1$; or \texttt{E4B} with $d_{\text{enc}}=2560$, $L=42$ layers, $H_Q=8$, $H_{KV}=2$).
+Given a repository context $X_{\text{enc}}$ of length $N_{\text{enc}} \le 32{,}768$ and a task instruction $q$, we prepend a lightweight query prefix (\texttt{[QUERY] <instruction>\textbackslash n}) to $X_{\text{enc}}$ so that encoder self-attention layers condition repository representations on the target issue from layer~0. The encoder backbone is initialized from \texttt{Gemma~4} (\texttt{E2B} with $d_{\text{enc}}=1536$, $L=35$ layers, $H_Q=8$, $H_{KV}=1$; or \texttt{E4B} with $d_{\text{enc}}=2560$, $L=42$ layers, $H_Q=8$, $H_{KV}=2$). As visualized in Figure~\ref{fig:architecture} (Left), the encoder processes the entire multi-file repository context in a single global bidirectional pass.
 
 To convert the causal Gemma~4 backbone into a true bidirectional repository encoder:
 \begin{enumerate}
@@ -90,14 +97,27 @@ G &= \text{SiLU}(\tilde{H} W_{\text{gate}}) \odot (\tilde{H} W_{\text{up}}), \qu
 Z &= W_{\text{res}}(\tilde{H}) + G W_{\text{down}}, \quad W_{\text{down}} \in \mathbb{R}^{d_{\text{mid}} \times d_{\text{dec}}}, \\
 Z_{\text{enc}} &= \left(\gamma_{\text{calib}} \odot \text{RMSNorm}_{\text{post}}(Z)\right) \odot \mathbb{I}[\text{mask}_{\text{enc}} = 1].
 \end{align}
-Here, $W_{\text{res}}$ is an identity mapping when $d_{\text{enc}} = d_{\text{dec}}$ (\texttt{E2B}$\rightarrow$\texttt{E2B}, \texttt{E4B}$\rightarrow$\texttt{E4B}) and an orthogonally initialized linear projection when $d_{\text{enc}} \neq d_{\text{dec}}$ (\texttt{E2B}$\rightarrow$\texttt{E4B}, \texttt{E4B}$\rightarrow$\texttt{E2B}). The down-projection $W_{\text{down}}$ is initialized near zero ($\mathcal{N}(0, (0.01 / \sqrt{d_{\text{mid}}})^2)$) so the bridge begins as a clean linear/identity manifold transport, while $\gamma_{\text{calib}} \in \mathbb{R}^{d_{\text{dec}}}$ (initialized to $\mathbf{1}$) provides learnable per-channel scale calibration prior to cross-attention key/value projection.
+Here, $W_{\text{res}}$ is an identity mapping when $d_{\text{enc}} = d_{\text{dec}}$ (\texttt{E2B}$\rightarrow$\texttt{E2B}, \texttt{E4B}$\rightarrow$\texttt{E4B}) and an orthogonally initialized linear projection ($3{,}932{,}160$ parameters) when $d_{\text{enc}} \neq d_{\text{dec}}$ (\texttt{E2B}$\rightarrow$\texttt{E4B}, \texttt{E4B}$\rightarrow$\texttt{E2B}). The down-projection $W_{\text{down}}$ is initialized near zero ($\mathcal{N}(0, (0.01 / \sqrt{d_{\text{mid}}})^2)$) so the bridge begins as a clean linear/identity manifold transport, while $\gamma_{\text{calib}} \in \mathbb{R}^{d_{\text{dec}}}$ (initialized to $\mathbf{1}$) provides learnable per-channel scale calibration prior to cross-attention key/value projection.
+
+\input{tables/tab2_parameters}
+
+Table~\ref{tab:parameters} provides the exact parameter budgets across all components for the complete 6-model matrix. In symmetric pairings (\texttt{Bifocal-2B} and \texttt{Bifocal-4B}), the bridge introduces only $7.08\text{M}$ and $19.67\text{M}$ parameters ($<0.15\%$ of model scale), while asymmetric projections scale smoothly to $18.36\text{M}$ and $20.98\text{M}$. During Stage~2 joint SFT, LoRA adapter parameterization ($r=16, \alpha=32$) restricts trainable updates to $32.06\text{M}$ ($0.36\%$) in \texttt{Bifocal-2B} and $111.34\text{M}$ ($0.78\%$) in \texttt{Bifocal-4B}, maintaining exceptional parameter efficiency.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.96\textwidth]{figures/fig2_layer_topology.pdf}
+\caption{\textbf{Gemma~4 Cross-Layer KV-Sharing Topology in Decoupled Cross-Attention.} Structural layer allocation across the 35 layers of \texttt{Gemma-4-E2B} (Panel~A) and 42 layers of \texttt{Gemma-4-E4B} (Panel~B). Dedicated BF16 Cross-KV projections are instantiated exclusively on KV-owner layers ($15$ in \texttt{E2B}; $24$ in \texttt{E4B}). Subsequent KV-shared layers ($20$ in \texttt{E2B}, $57.14\%$; $18$ in \texttt{E4B}, $42.86\%$) reuse stationary $(K_{\text{cross}}, V_{\text{cross}})$ states computed by designated Anchor layers (\texttt{L13}/\texttt{L14} in \texttt{E2B}; \texttt{L22}/\texttt{L23} in \texttt{E4B}), reducing cross-attention KV-cache storage by up to $57.14\%$ with $\mathcal{O}(1)$ step overhead.}
+\label{fig:layer_topology}
+\end{figure*}
 
 \subsection{Decoupled Stationary Full-Rank Cross-Attention}
 
-Every decoder layer wraps the native Gemma~4 attention module inside a \texttt{BifocalAttentionBlock} that executes causal self-attention and encoder-decoder cross-attention in parallel before merging their outputs through the shared output projection $W_O$.
+Every decoder layer wraps the native Gemma~4 attention module inside a \texttt{BifocalAttentionBlock} that executes causal self-attention and encoder-decoder cross-attention in parallel before merging their outputs through the shared output projection $W_O$ (Figure~\ref{fig:architecture}, Right).
 
 \paragraph{Preservation of Gemma~4 Cross-Layer KV-Sharing.}
-Gemma~4 employs a hybrid KV-sharing architecture in which only the first 15 of 35 layers in \texttt{E2B} (and 24 of 42 layers in \texttt{E4B}) compute independent KV projections (\texttt{is\_kv\_shared\_layer = False}), while downstream shared layers reuse the KV states of their designated owner layer. BifocalGemma mirrors this exact invariant for cross-attention: only KV-owner layers instantiate dedicated BF16 full-rank projections $W_{K,\text{cross}}, W_{V,\text{cross}} \in \mathbb{R}^{d_{\text{dec}} \times (H_{KV} \cdot d_h)}$ and RMSNorms ($\text{RMSNorm}_{K,\text{cross}}, \text{RMSNorm}_{V,\text{cross}}$), warm-started from the pretrained self-attention $W_K, W_V$ weights. During autoregressive generation, $(K_{\text{cross}}, V_{\text{cross}})$ are computed once during prefill, cached inside \texttt{BifocalDynamicCache}, and reused across both KV-shared layers and subsequent decoding tokens with $\mathcal{O}(1)$ recomputation cost.
+Gemma~4 employs a hybrid KV-sharing architecture in which only the first 15 of 35 layers in \texttt{E2B} (and 24 of 42 layers in \texttt{E4B}) compute independent KV projections (\texttt{is\_kv\_shared\_layer = False}), while downstream shared layers reuse the KV states of their designated owner layer (Figure~\ref{fig:layer_topology} and Table~\ref{tab:layer_specs}). BifocalGemma mirrors this exact invariant for cross-attention: only KV-owner layers instantiate dedicated BF16 full-rank projections $W_{K,\text{cross}}, W_{V,\text{cross}} \in \mathbb{R}^{d_{\text{dec}} \times (H_{KV} \cdot d_h)}$ and RMSNorms ($\text{RMSNorm}_{K,\text{cross}}, \text{RMSNorm}_{V,\text{cross}}$), warm-started from the pretrained self-attention $W_K, W_V$ weights. During autoregressive generation, $(K_{\text{cross}}, V_{\text{cross}})$ are computed once during prefill, cached inside \texttt{BifocalDynamicCache}, and reused across both KV-shared layers and subsequent decoding tokens with $\mathcal{O}(1)$ recomputation cost, yielding a $57.14\%$ memory reduction on \texttt{E2B} and $42.86\%$ on \texttt{E4B}.
+
+\input{tables/tab3_layer_specs}
 
 \paragraph{Stationary Coordinate Invariance ($\Theta_{\text{cross}} = 0$).}
 While causal self-attention applies standard RoPE rotations $\mathcal{R}_{\Theta, t}$ to $Q_{\text{self}}$ and $K_{\text{self}}$, applying RoPE to cross-attention introduces spurious positional interference between the decoder's generation index and the encoder's file offset. Because $Z_{\text{enc}}$ already encodes intra-file and inter-file structural topology from 35--42 layers of RoPE-equipped bidirectional self-attention, we enforce \emph{Stationary Coordinate Invariance} ($\Theta_{\text{cross}} = 0$) on the cross-attention branch:
@@ -127,11 +147,13 @@ At step~0 of training, cross-attention contributes a bounded $5\%$ perturbation 
 \subsection{Chunked Differential Diff Objective and Two-Stage Curriculum}
 
 \paragraph{Chunked Differential Diff Cross-Entropy ($\mathcal{L}_{\text{diff}}$).}
-Standard uniform token-level cross-entropy under-weights critical edit operations (\texttt{+} additions and \texttt{-} deletions) relative to boilerplate context lines inside unified diffs. We optimize \emph{Chunked Differential Diff Cross-Entropy} ($\mathcal{L}_{\text{diff}}$), which parses target patches into line-level syntactic categories and assigns differential token weights: $w_{\text{add}} = 1.4$ for added lines (\texttt{+}), $w_{\text{del}} = 1.2$ for deleted lines (\texttt{-}), $w_{\text{hdr}} = 1.1$ for hunk headers (\texttt{@@ ... @@}, \texttt{---}, \texttt{+++}), and $w_{\text{ctx}} = 0.8$ for unchanged context lines. Weights are normalized per sequence to maintain unit mean ($\frac{1}{|S|} \sum_{t \in S} \tilde{w}_t = 1.0$). To minimize peak VRAM on $d_{\text{vocab}} = 262{,}144$, logits are computed in chunks of $128$ tokens with Gemma~4 final logit softcapping ($30.0$):
+Standard uniform token-level cross-entropy under-weights critical edit operations (\texttt{+} additions and \texttt{-} deletions) relative to boilerplate context lines inside unified diffs. We optimize \emph{Chunked Differential Diff Cross-Entropy} ($\mathcal{L}_{\text{diff}}$), which parses target patches into line-level syntactic categories and assigns differential token weights: $w_{\text{add}} = 1.4$ for added lines (\texttt{+}), $w_{\text{del}} = 1.2$ for deleted lines (\texttt{-}), $w_{\text{hdr}} = 1.1$ for hunk headers (\texttt{@@ ... @@}, \texttt{---}, \texttt{+++}), and $w_{\text{ctx}} = 0.8$ for unchanged context lines (Table~\ref{tab:hyperparameters}). Weights are normalized per sequence to maintain unit mean ($\frac{1}{|S|} \sum_{t \in S} \tilde{w}_t = 1.0$). To minimize peak VRAM on $d_{\text{vocab}} = 262{,}144$, logits are computed in chunks of $128$ tokens with Gemma~4 final logit softcapping ($30.0$):
 \begin{equation}
 \mathcal{L}_{\text{diff}} = \frac{1}{|S|} \sum_{t \in S} \tilde{w}_t \, \text{CE}\!\left(30.0 \tanh\!\left(\frac{h_t W_{\text{lm}}^\top}{30.0}\right),\, y_t\right).
 \end{equation}
 Streaming pointer-generator copy loss is explicitly disabled ($\lambda_{\text{ptr}} = 0.0$) to prevent verbatim copy bias when synthesizing novel bug-fix tokens.
+
+\input{tables/tab4_hyperparameters}
 
 \paragraph{Two-Stage Paired Curriculum vs.\ Fair Baseline Curriculum.}
 \begin{itemize}
@@ -157,9 +179,9 @@ Table~\ref{tab:configs} details our controlled 6-model experimental matrix spann
 \subsection{Evaluation Integrity Safeguards}
 Our benchmark harness enforces two strict invariants: (1) a \textbf{Neutral Prompt Contract} providing identical task instructions and the full $32\text{K}$ repository context to both causal baselines (concatenated into the causal prefix up to $40{,}960$ tokens) and BifocalGemma (routed to the $32\text{K}$ bidirectional encoder), without architecture-specific prompt hints, and (2) a \textbf{256-Token Comprehension Generation Floor} (\texttt{max\_new\_tokens} $\ge 256$) on all MCQ, QA, and retrieval tasks so analytical reasoning preambles are never truncated before emitting the final answer.
 
-\input{tables/tab2_sweqa}
-\input{tables/tab3_repair}
-\input{tables/tab4_hardware}
+\input{tables/tab5_sweqa}
+\input{tables/tab6_repair}
+\input{tables/tab7_hardware}
 
 \section{Empirical Results}
 

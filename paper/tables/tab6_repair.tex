@@ -1,0 +1,19 @@
+\begin{table*}[t]
+\centering
+\caption{Automated Bug Localization and Unified Diff Patch Synthesis on \texttt{SWE-bench Lite}. \textsc{BifocalGemma} variants are trained with Chunked Differential Diff Cross-Entropy ($\mathcal{L}_{\text{diff}}$, $\lambda_{\text{ptr}} = 0.0$) and a Two-Stage Paired Curriculum with $20\%$ comprehension replay. \textit{Note: Placeholder cells (\texttt{[TBD]}) will be populated upon completion of the active runs.}}
+\label{tab:repair}
+\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Model} & \textbf{Valid Unified Diff Format (\%)} & \textbf{File / Hunk Localization Acc. (\%)} & \textbf{Exact Patch Resolution (\%)} & \textbf{Validation Loss ($\mathcal{L}_{\text{diff}}$)} \\
+\midrule
+\texttt{Baseline-E2B-IT} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Baseline-E4B-IT} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\midrule
+\texttt{Bifocal-2B} (\texttt{E2B} $\rightarrow$ \texttt{E2B}) & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Bifocal-4B-E2B} (\texttt{E2B} $\rightarrow$ \texttt{E4B}) & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Bifocal-2B-E4B} (\texttt{E4B} $\rightarrow$ \texttt{E2B}) & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\texttt{Bifocal-4B} (\texttt{E4B} $\rightarrow$ \texttt{E4B}) & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
+\bottomrule
+\end{tabular}
+\end{table*}

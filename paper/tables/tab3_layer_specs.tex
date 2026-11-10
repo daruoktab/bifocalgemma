@@ -1,0 +1,33 @@
+\begin{table}[t]
+\centering
+\caption{Architectural Specifications and Cross-Layer KV-Sharing Topology for the \texttt{Gemma~4} Backbone Stacks. In both encoder and decoder, only KV-owner layers instantiate independent key/value projections. For cross-attention, downstream KV-shared layers completely bypass Cross-KV projection, reusing cached states from designated Sliding and Global Anchor layers with $\mathcal{O}(1)$ step overhead.}
+\label{tab:layer_specs}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Structural Attribute} & \textbf{\texttt{Gemma-4-E2B}} & \textbf{\texttt{Gemma-4-E4B}} \\
+\midrule
+Hidden Dimension ($d$) & $1536$ & $2560$ \\
+Total Transformer Layers ($L$) & $35$ & $42$ \\
+Query Heads ($H_Q$) & $8$ ($d_h=256 / 512$) & $8$ ($d_h=256 / 512$) \\
+Key-Value Heads ($H_{KV}$) & $1$ (GQA 8:1) & $2$ (GQA 4:1) \\
+Per-Layer Embedding ($d_{\text{ple}}$) & $256$ (Stream-Isolated) & $256$ (Stream-Isolated) \\
+\midrule
+\textbf{Global Full-Attention Layers} & $7 \;/\; 35$ ($20.0\%$) & $7 \;/\; 42$ ($16.67\%$) \\
+\quad Layer Indices & \texttt{L04, 09, 14, 19, 24, 29, 34} & \texttt{L05, 11, 17, 23, 29, 35, 41} \\
+\quad Global Head Dimension & $512$ ($25\%$ RoPE Rotated) & $512$ ($25\%$ RoPE Rotated) \\
+\textbf{Sliding Window Layers} & $28 \;/\; 35$ ($80.0\%$) & $35 \;/\; 42$ ($83.33\%$) \\
+\quad Window Size / Head Dim & $w=512 \;/\; d_h=256$ & $w=512 \;/\; d_h=256$ \\
+\midrule
+\textbf{KV-Owner Layers} & $15 \;/\; 35$ ($42.86\%$) & $24 \;/\; 42$ ($57.14\%$) \\
+\quad Dedicated Cross-KV Proj. & \texttt{L00} -- \texttt{L14} & \texttt{L00} -- \texttt{L23} \\
+\textbf{KV-Shared Layers} & $20 \;/\; 35$ ($57.14\%$) & $18 \;/\; 42$ ($42.86\%$) \\
+\quad Reused Anchor Layers & \texttt{L15} -- \texttt{L34} & \texttt{L24} -- \texttt{L41} \\
+\midrule
+\textbf{Designated Anchor Layers} & & \\
+\quad Sliding Window Anchor & \texttt{L13} (\texttt{store\_full\_kv}) & \texttt{L22} (\texttt{store\_full\_kv}) \\
+\quad Global Full Anchor & \texttt{L14} (\texttt{store\_full\_kv}) & \texttt{L23} (\texttt{store\_full\_kv}) \\
+\textbf{Cross-KV Memory Reduction} & \textbf{57.14\%} & \textbf{42.86\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
