@@ -2607,15 +2607,15 @@
     "semantic_hash": ""
   },
   "paper/BifocalGemma_Paper.pdf": {
-    "mtime": 1794341771.9705749,
-    "seen": 1794342122.3444228,
-    "ast_hash": "d07acf9a0a02e283538b3cdce960c8dd",
+    "mtime": 1794342845.3141644,
+    "seen": 1794342911.0351489,
+    "ast_hash": "f5ae56a610f2f0eccb82178c45ce9829",
     "semantic_hash": ""
   },
   "paper/main.pdf": {
-    "mtime": 1794341771.9705749,
-    "seen": 1794342122.3444228,
-    "ast_hash": "d07acf9a0a02e283538b3cdce960c8dd",
+    "mtime": 1794342845.3141644,
+    "seen": 1794342911.0351489,
+    "ast_hash": "f5ae56a610f2f0eccb82178c45ce9829",
     "semantic_hash": ""
   },
   "tests/test_fast_pipeline.py": {
@@ -2637,9 +2637,9 @@
     "semantic_hash": ""
   },
   "tools/generate_fig2.py": {
-    "mtime": 1794341003.0005066,
-    "seen": 1794342122.3444228,
-    "ast_hash": "e9e4509db164f4a3b958be7dee3938b2",
+    "mtime": 1794342554.4292073,
+    "seen": 1794342911.0346088,
+    "ast_hash": "9b202460518bb3877b8a606dfb2d1aad",
     "semantic_hash": ""
   },
   "paper/figures/fig1_transformer_architecture.pdf": {
@@ -2649,9 +2649,9 @@
     "semantic_hash": ""
   },
   "paper/figures/fig2_layer_topology.pdf": {
-    "mtime": 1794341013.7864902,
-    "seen": 1794342122.3444228,
-    "ast_hash": "2a7012ffe07dd418c2f7d5ebe31515a9",
+    "mtime": 1794342566.1620383,
+    "seen": 1794342911.0351489,
+    "ast_hash": "49af611139b6352d51f86f7f040b4c99",
     "semantic_hash": ""
   },
   "paper/figures/fig1_transformer_architecture.svg": {
@@ -2661,9 +2661,9 @@
     "semantic_hash": ""
   },
   "paper/figures/fig2_layer_topology.svg": {
-    "mtime": 1794341013.6267626,
-    "seen": 1794342122.3444228,
-    "ast_hash": "f7a96411cf7e902d2eb6331c7b1df8ab",
+    "mtime": 1794342566.0203953,
+    "seen": 1794342911.0351489,
+    "ast_hash": "4a53653127bc4c995d6f0f092de2d59b",
     "semantic_hash": ""
   }
 }

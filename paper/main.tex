@@ -11,6 +11,34 @@
 \usepackage{listings}
 \usepackage[expansion=false]{microtype}
 \usepackage{caption}
+\usepackage{dblfloatfix}
+
+% Compact bibliography & float spacing to ensure tight, professional 8-page layout
+\let\oldthebibliography\thebibliography
+\renewcommand{\thebibliography}[1]{%
+  \oldthebibliography{#1}%
+  \setlength{\itemsep}{0pt}%
+  \setlength{\parskip}{0pt}%
+  \setlength{\parsep}{0pt}%
+}
+
+\setlength{\textfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\floatsep}{8pt plus 2pt minus 2pt}
+\setlength{\intextsep}{8pt plus 2pt minus 2pt}
+\setlength{\dbltextfloatsep}{10pt plus 2pt minus 2pt}
+\setlength{\dblfloatsep}{8pt plus 2pt minus 2pt}
+
+% Float placement tuning to prevent float postponement to end of document
+\renewcommand{\topfraction}{0.95}
+\renewcommand{\dbltopfraction}{0.95}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.05}
+\renewcommand{\floatpagefraction}{0.80}
+\renewcommand{\dblfloatpagefraction}{0.80}
+\setcounter{topnumber}{3}
+\setcounter{dbltopnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{5}
 
 \hypersetup{
     colorlinks=true,
@@ -72,7 +100,7 @@ Recent efforts to adapt causal backbones into bidirectional encoders~\cite{llm2v
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.96\textwidth]{figures/fig1_transformer_architecture.pdf}
+\includegraphics[width=0.88\textwidth,height=0.42\textheight,keepaspectratio]{figures/fig1_transformer_architecture.pdf}
 \caption{\textbf{The BifocalGemma V3 Model Architecture.} Comprehensive bottom-to-top structural dataflow following the classic Transformer paradigm: (\textbf{Left}) The Bidirectional Repository Encoder Stack ($N_{\text{enc}} \le 32{,}768$) with stream-isolated Per-Layer Embeddings (PLE, $d_{\text{ple}}=256$), unmasked self-attention across sliding and global heads, and final encoder RMSNorm; (\textbf{Center-Top}) The SwiGLU Dual-Gate Coordinate Bridge ($\text{SwiGLUDualGateBridge}$) with intermediate expansion $d_{\text{mid}} = \max(d_{\text{enc}}, d_{\text{dec}})$, identity/orthogonal residual pathway $W_{\text{res}}$, and per-channel scale calibration $\gamma_{\text{calib}}$; (\textbf{Center}) The $Z_{\text{enc}}$ corridor highway conveying stationary Key/Value representations to decoder cross-attention; and (\textbf{Right}) The Decoupled Causal Decoder Stack ($N_{\text{dec}} \le 8{,}192$) with parallel decoupled cross-attention ($\Theta_{\text{cross}}=0$) and causal self-attention, dual-gated head and token fusion, tied language model head, and logit softcapping.}
 \label{fig:architecture}
 \end{figure*}
@@ -105,7 +133,7 @@ Table~\ref{tab:parameters} provides the exact parameter budgets across all compo
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.96\textwidth]{figures/fig2_layer_topology.pdf}
+\includegraphics[width=0.88\textwidth,height=0.36\textheight,keepaspectratio]{figures/fig2_layer_topology.pdf}
 \caption{\textbf{Gemma~4 Cross-Layer KV-Sharing Topology in Decoupled Cross-Attention.} Structural layer allocation across the 35 layers of \texttt{Gemma-4-E2B} (Panel~A) and 42 layers of \texttt{Gemma-4-E4B} (Panel~B). Dedicated BF16 Cross-KV projections are instantiated exclusively on KV-owner layers ($15$ in \texttt{E2B}; $24$ in \texttt{E4B}). Subsequent KV-shared layers ($20$ in \texttt{E2B}, $57.14\%$; $18$ in \texttt{E4B}, $42.86\%$) reuse stationary $(K_{\text{cross}}, V_{\text{cross}})$ states computed by designated Anchor layers (\texttt{L13}/\texttt{L14} in \texttt{E2B}; \texttt{L22}/\texttt{L23} in \texttt{E4B}), reducing cross-attention KV-cache storage by up to $57.14\%$ with $\mathcal{O}(1)$ step overhead.}
 \label{fig:layer_topology}
 \end{figure*}

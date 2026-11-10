@@ -1,7 +1,7 @@
 # Graph Report - bifocalgemma  (2026-11-11)
 
 ## Corpus Check
-- 294 files · ~375,624 words
+- 294 files · ~376,040 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 25 file(s) not represented in the graph (top: .tex 11, .ipynb 3, (none) 2)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `5242724f`
+- Built from commit: `443bded2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -152,14 +152,14 @@
 10. `run_matrix_training()` - 40 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `test_widgets_update_in_place_and_restore_history_without_duplicate_points()` --uses--> `WigglyDashboard`  [INFERRED]
+  tests/test_training_telemetry_v2.py → src/bifocalgemma/training/wiggly_dashboard.py
 - `test_bifocalgemma_config_initialization_and_serialization()` --calls--> `BifocalGemmaConfig`  [INFERRED]
   tests/test_pretrained_hf_model.py → src/bifocalgemma/configuration_bifocalgemma.py
 - `test_swiglu_dual_gate_bridge_symmetric_and_asymmetric_shapes_and_grads()` --calls--> `SwiGLUDualGateBridge`  [INFERRED]
   tests/test_molab_matrix_notebooks.py → src/bifocalgemma/v3/bridge.py
 - `test_telemetry_history_appends_all_active_stages()` --uses--> `TrainingDashboard`  [INFERRED]
   tests/test_molab_matrix_notebooks.py → src/bifocalgemma/training/telemetry.py
-- `test_widgets_update_in_place_and_restore_history_without_duplicate_points()` --uses--> `WigglyDashboard`  [INFERRED]
-  tests/test_training_telemetry_v2.py → src/bifocalgemma/training/wiggly_dashboard.py
 - `test_semantic_identity_allows_comments_and_ui_but_rejects_model_changes()` --calls--> `source_fingerprints()`  [INFERRED]
   tests/test_training_telemetry_v2.py → src/bifocalgemma/training/source_identity.py
 
@@ -565,16 +565,16 @@ Nodes (4): run_length_grid(), test_length_grid_matches_baseline_budget_and_stops
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `atomic_json()` connect `atomic_json` to `workflow`, `run_sequential_pipeline`, `prepare_colab_pilot.py`, `check_followers`, `tempfile`, `test_v2_fixed_execution.py`, `json`, `re`, `calibrate_shared_profile`, `calibration`, `stable_fingerprint`, `run_repo_niah_eval`, `typing`, `journaled_loss`, `benchmark_upload.py`, `v2_preflight.py`, `matrix.py`, `pathlib`, `examples`, `get_v2_experiment`, `pathlib`, `v3/__init__.py`, `run`, `test_preflight_upload_verifies_exact_evidence_without_checkpoint`, `atomic_json`, `benchmark_upload.py`, `shared_execution.py`, `v2.py`, `test_checkpoint_upload_and_retention_receipt_are_one_scoped_commit`, `packed_tokens.py`, `pilot_e2b_e2b`?**
-  _High betweenness centrality (0.036) - this node is a cross-community bridge._
+  _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **Are the 14 inferred relationships involving `atomic_json()` (e.g. with `test_completed_benchmark_with_pending_upload_resumes_without_model_load()` and `benchmark()`) actually correct?**
   _`atomic_json()` has 14 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `bifocalgemma` to the rest of the system?**
   _1 weakly-connected nodes found - possible missing edges._
 - **Should `test_notebook_dependencies.py` be split into smaller, more focused modules?**
   _Cohesion score 0.07419712070874862 - nodes in this community are weakly interconnected._
-- **Why does `TokenizedRepairExample` connect `TokenizedRepairExample` to `prepare_colab_pilot.py`, `__main__.py`, `v3/__init__.py`, `re`, `test_memory_efficient_training.py`, `test_editing_manifest.py`, `torch`, `prepare_colab_probe.py`, `fast_pipeline.py`, `configure_memory_efficient_training`, `default_training_profiles`, `typing`, `memory_probe.py`, `PackedTokenizedDataset`, `journaled_loss`, `v2_preflight.py`, `pathlib`, `RepairCollator`, `CodeOverlapIndex`, `RepositoryFile`, `.run_benchmark_suite`, `packed_tokens.py`, `curation.py`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+- **Why does `TestBifocalGemmaArchitecture` connect `TestBifocalGemmaArchitecture` to `ASTGraphProjector`, `v2/__init__.py`, `GatedCrossAttentionBridge`, `RepoContextRouter`, `._run_bridge_test`?**
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
 - **Should `molab_pilot_support.py` be split into smaller, more focused modules?**
   _Cohesion score 0.1455026455026455 - nodes in this community are weakly interconnected._
-- **Why does `FastTrainingPipeline` connect `FastTrainingConfig` to `test_molab_matrix_notebooks.py`, `__main__.py`, `fast_pipeline.py`, `BifocalGemmaForCausalLM`, `.run_benchmark_suite`, `typing`, `.run`?**
-  _High betweenness centrality (0.024) - this node is a cross-community bridge._
+- **Why does `TokenizedRepairExample` connect `TokenizedRepairExample` to `prepare_colab_pilot.py`, `__main__.py`, `v3/__init__.py`, `re`, `test_memory_efficient_training.py`, `test_editing_manifest.py`, `torch`, `prepare_colab_probe.py`, `fast_pipeline.py`, `configure_memory_efficient_training`, `default_training_profiles`, `typing`, `memory_probe.py`, `PackedTokenizedDataset`, `journaled_loss`, `v2_preflight.py`, `pathlib`, `RepairCollator`, `CodeOverlapIndex`, `RepositoryFile`, `.run_benchmark_suite`, `packed_tokens.py`, `curation.py`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
