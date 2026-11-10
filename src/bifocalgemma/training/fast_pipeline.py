@@ -1060,6 +1060,8 @@ class FastTrainingPipeline:
         if self.cfg.tiny:
             return []
 
+        # 1. Clear residual training memory and cached allocator blocks
+        import gc
         import shutil
 
         from bifocalgemma.data.releases import fetch_collection
@@ -1069,11 +1071,13 @@ class FastTrainingPipeline:
         from bifocalgemma.v3.constants import BENCHMARKS
         from bifocalgemma.v3.matrix import make_experiment_spec
 
-        # 1. Consolidate LoRA adapters and configure model for fast inference
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # 2. Consolidate LoRA adapters and configure model for fast memory-efficient inference
         self.model.merge_and_unload()
-        for stack in (self.model.encoder, self.model.decoder):
-            if stack is not None:
-                stack.gradient_checkpointing_disable()
+        self.model.enable_memory_efficient_training(gradient_checkpointing=False)
         self.model.eval()
         setattr(inference_cache_mod, "CachedAttention", FullCrossCachedAttention)
 
