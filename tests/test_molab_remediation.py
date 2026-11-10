@@ -73,23 +73,37 @@ def test_mcq_budget_floor_in_v3_benchmark_logic():
     # 1. MCQ row with hardcoded 32-token budget on real Molab run (max_new_tokens=2048)
     row_mcq = {"task_type": "mcq", "max_new_tokens": 32}
     max_new_tokens = 2048
-    row_budget = int(row_mcq.get("max_new_tokens", max_new_tokens))
-    if str(row_mcq.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"} and max_new_tokens >= 256:
+    row_budget = row_mcq.get("max_new_tokens", max_new_tokens)
+    task_type = row_mcq.get("task_type", "")
+    if (
+        isinstance(task_type, str)
+        and task_type.lower() in {"mcq", "qa", "retrieval"}
+        and max_new_tokens >= 256
+    ):
         row_budget = max(row_budget, 256)
     new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
     assert new_tokens == 256
 
     # 2. Retrieval row with 32 tokens
     row_retrieval = {"task_type": "retrieval", "max_new_tokens": 32}
-    row_budget = int(row_retrieval.get("max_new_tokens", max_new_tokens))
-    if str(row_retrieval.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"} and max_new_tokens >= 256:
+    row_budget = row_retrieval.get("max_new_tokens", max_new_tokens)
+    retrieval_type = row_retrieval.get("task_type", "")
+    if (
+        isinstance(retrieval_type, str)
+        and retrieval_type.lower() in {"mcq", "qa", "retrieval"}
+        and max_new_tokens >= 256
+    ):
         row_budget = max(row_budget, 256)
     assert row_budget == 256
 
     # 3. Fast unit test with tiny budget (e.g. max_new_tokens=8) is NOT bumped to 256
     tiny_max_tokens = 8
-    row_budget = int(row_mcq.get("max_new_tokens", tiny_max_tokens))
-    if str(row_mcq.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"} and tiny_max_tokens >= 256:
+    row_budget = row_mcq.get("max_new_tokens", tiny_max_tokens)
+    if (
+        isinstance(task_type, str)
+        and task_type.lower() in {"mcq", "qa", "retrieval"}
+        and tiny_max_tokens >= 256
+    ):
         row_budget = max(row_budget, 256)
     new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
     assert new_tokens == 32 or new_tokens == 8
@@ -108,7 +122,9 @@ def test_context_benchmark_mcq_budget_floor_execution(tmp_path, monkeypatch):
 
     def mock_greedy_decode(model, enc, prefix, *args, **kwargs):
         recorded_budgets.append(kwargs.get("max_new_tokens"))
-        return SimpleNamespace(token_ids=[4], stop_reason="eos", wall_clock_seconds=0.01, generated_tokens=1, text="B")
+        return SimpleNamespace(
+            token_ids=[4], stop_reason="eos", wall_clock_seconds=0.01, generated_tokens=1, text="B"
+        )
 
     monkeypatch.setattr(eval_ctx, "greedy_decode", mock_greedy_decode)
 
@@ -125,11 +141,13 @@ def test_context_benchmark_mcq_budget_floor_execution(tmp_path, monkeypatch):
             "max_new_tokens": 32,
         }
     ]
-    gold = [
-        {"instance_id": "case-mcq-32", "answer": "B"}
-    ]
-    (root / "eval_inputs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in public), encoding="utf-8")
-    (root / "eval_private/specs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in gold), encoding="utf-8")
+    gold = [{"instance_id": "case-mcq-32", "answer": "B"}]
+    (root / "eval_inputs.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in public), encoding="utf-8"
+    )
+    (root / "eval_private/specs.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in gold), encoding="utf-8"
+    )
 
     model = FixtureGenerationModel()
     settings = dict(
@@ -150,7 +168,7 @@ def test_context_benchmark_mcq_budget_floor_execution(tmp_path, monkeypatch):
 
     assert len(recorded_budgets) == 1
     # Despite row having max_new_tokens=32, greedy_decode received at least 256!
-    assert recorded_budgets[0] >= 256
+    assert recorded_budgets[0] is not None and recorded_budgets[0] >= 256
     assert report["total"] == 1
 
 
@@ -164,8 +182,18 @@ def test_clean_recipe_version_and_constants():
 def test_pretrained_model_subfolder_support_and_repo_creation(tmp_path):
     """Verify save_pretrained creates repo and uploads to path_in_repo, and from_pretrained loads from subfolder."""
     cfg = BifocalGemmaConfig(
-        encoder_config={"hidden_size": 64, "num_hidden_layers": 1, "num_attention_heads": 2, "vocab_size": 256},
-        decoder_config={"hidden_size": 64, "num_hidden_layers": 1, "num_attention_heads": 2, "vocab_size": 256},
+        encoder_config={
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "vocab_size": 256,
+        },
+        decoder_config={
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "vocab_size": 256,
+        },
     )
     model = BifocalGemmaForCausalLM(cfg)
 
@@ -186,8 +214,18 @@ def test_export_matrix_pretrained_model_with_subfolder_and_tokenizer(tmp_path, m
     """Verify export_matrix_pretrained_model copies tokenizer assets and creates repo."""
     spec = make_experiment_spec("2base-2it")
     cfg = BifocalGemmaConfig(
-        encoder_config={"hidden_size": 64, "num_hidden_layers": 1, "num_attention_heads": 2, "vocab_size": 256},
-        decoder_config={"hidden_size": 64, "num_hidden_layers": 1, "num_attention_heads": 2, "vocab_size": 256},
+        encoder_config={
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "vocab_size": 256,
+        },
+        decoder_config={
+            "hidden_size": 64,
+            "num_hidden_layers": 1,
+            "num_attention_heads": 2,
+            "vocab_size": 256,
+        },
     )
     model = BifocalGemmaForCausalLM(cfg)
 
@@ -255,9 +293,7 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
     (train_dir / "training_report.json").write_text(
         json.dumps({"global_step": 11102, "status": "completed"}), encoding="utf-8"
     )
-    (ckpt_dir / "manifest.json").write_text(
-        json.dumps({"global_step": 11102}), encoding="utf-8"
-    )
+    (ckpt_dir / "manifest.json").write_text(json.dumps({"global_step": 11102}), encoding="utf-8")
     (ckpt_dir / "adapters.safetensors").write_bytes(b"dummy_adapters")
     (ckpt_dir / "trainer_state.pt").write_bytes(b"dummy_state")
     marker = {
@@ -282,10 +318,14 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
     monkeypatch.setattr("bifocalgemma.v3.matrix.recover_remote_run", lambda *a, **k: None)
 
     # Calling run_matrix_training should detect legacy artifacts, wipe them, and log discarded_legacy_checkpoint
-    monkeypatch.setattr("bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped")))
+    monkeypatch.setattr(
+        "bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
+    )
 
     with pytest.raises(StopIteration):
-        run_matrix_training("2base-2it", output_root=output_legacy, upload=False, token=None, monitor=MockMonitor())
+        run_matrix_training(
+            "2base-2it", output_root=output_legacy, upload=False, token=None, monitor=MockMonitor()
+        )
 
     stages = [e.get("stage") for e in logged_events if isinstance(e, dict)]
     assert "discarded_legacy_checkpoint" in stages
@@ -306,18 +346,27 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
     (ckpt_dir_clean / "adapters.safetensors").write_bytes(b"clean_adapters")
     (ckpt_dir_clean / "trainer_state.pt").write_bytes(b"clean_state")
     marker_clean = {
-        "manifest.json": hashlib.sha256((ckpt_dir_clean / "manifest.json").read_bytes()).hexdigest(),
+        "manifest.json": hashlib.sha256(
+            (ckpt_dir_clean / "manifest.json").read_bytes()
+        ).hexdigest(),
         "adapters.safetensors": hashlib.sha256(b"clean_adapters").hexdigest(),
         "trainer_state.pt": hashlib.sha256(b"clean_state").hexdigest(),
     }
     (ckpt_dir_clean / "READY.json").write_text(json.dumps(marker_clean), encoding="utf-8")
     (train_dir_clean / "training_report.json").write_text(
-        json.dumps({"global_step": 11102, "recipe_version": CLEAN_RECIPE_VERSION, "status": "completed"}),
+        json.dumps(
+            {"global_step": 11102, "recipe_version": CLEAN_RECIPE_VERSION, "status": "completed"}
+        ),
         encoding="utf-8",
     )
 
     res = run_matrix_training(
-        "2base-2it", output_root=output_clean, total_steps=11102, upload=False, token=None, monitor=MockMonitor()
+        "2base-2it",
+        output_root=output_clean,
+        total_steps=11102,
+        upload=False,
+        token=None,
+        monitor=MockMonitor(),
     )
     assert res["status"] == "COMPLETED"
     assert res["message"] == "Full matrix training already completed."

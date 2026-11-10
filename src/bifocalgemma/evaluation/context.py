@@ -80,7 +80,9 @@ LETTER_TOKEN = rf"{DELIM_OPEN}{LETTER}{DELIM_CLOSE}(?!\w)"
 LETTER_RAW = r"[A-Da-d]"
 LETTER_TOKEN_NC = rf"{DELIM_OPEN}{LETTER_RAW}{DELIM_CLOSE}(?!\w)"
 OPT_ADVERBS = r"(?:(?:clearly|definitely|actually|obviously|certainly|surely|indeed|simply|basically|likely|probably|\w+ly)\s+){0,2}"
-CONJ_GUARD = rf"(?!\s*{DELIM_CLOSE}\s+(?:and|or|nor|vs)\s+(?:option\s+|choice\s+)?{LETTER_TOKEN_NC})"
+CONJ_GUARD = (
+    rf"(?!\s*{DELIM_CLOSE}\s+(?:and|or|nor|vs)\s+(?:option\s+|choice\s+)?{LETTER_TOKEN_NC})"
+)
 
 
 def fallback_letter_regex(text: str) -> str | None:
@@ -90,8 +92,16 @@ def fallback_letter_regex(text: str) -> str | None:
 
     # Ambiguity check: e.g. "A or B", "A and B", "A vs B", "between option A and option D"
     has_ambiguity = bool(
-        re.search(rf"{LETTER_TOKEN_NC}\s+(?:or|nor|vs|and)\s+(?:option\s+|choice\s+)?{LETTER_TOKEN_NC}", text, re.I)
-        or re.search(rf"\b(?:between|either)\b.*?{LETTER_TOKEN_NC}.*?\b(?:and|or|nor)\b.*?{LETTER_TOKEN_NC}", text, re.I | re.S)
+        re.search(
+            rf"{LETTER_TOKEN_NC}\s+(?:or|nor|vs|and)\s+(?:option\s+|choice\s+)?{LETTER_TOKEN_NC}",
+            text,
+            re.I,
+        )
+        or re.search(
+            rf"\b(?:between|either)\b.*?{LETTER_TOKEN_NC}.*?\b(?:and|or|nor)\b.*?{LETTER_TOKEN_NC}",
+            text,
+            re.I | re.S,
+        )
     )
 
     # Priority 1: Conclusive explicit statements with positive resolution
@@ -124,9 +134,21 @@ def fallback_letter_regex(text: str) -> str | None:
         cand = upper_letters[0]
         cand_token = rf"{DELIM_OPEN}{cand}{DELIM_CLOSE}(?!\w)"
         neg_guard = (
-            re.search(rf"\b(?:not|never|no|isn['’]t|wasn['’]t|cannot|can['’]t|couldn['’]t|won['’]t)\b(?:\s+\w+){{0,2}}\s+(?:option\s+|choice\s+)?{cand_token}", text, re.I)
-            or re.search(rf"(?:option\s+|choice\s+)?{cand_token}\s+(?:is\s+)?(?:not\s+correct|wrong|incorrect|invalid|suboptimal|false|not\s+right)", text, re.I)
-            or re.search(rf"(?:answer|option|choice)\s+is\s+(?:(?:\w+\s+){{0,2}}not\s+){cand_token}", text, re.I)
+            re.search(
+                rf"\b(?:not|never|no|isn['’]t|wasn['’]t|cannot|can['’]t|couldn['’]t|won['’]t)\b(?:\s+\w+){{0,2}}\s+(?:option\s+|choice\s+)?{cand_token}",
+                text,
+                re.I,
+            )
+            or re.search(
+                rf"(?:option\s+|choice\s+)?{cand_token}\s+(?:is\s+)?(?:not\s+correct|wrong|incorrect|invalid|suboptimal|false|not\s+right)",
+                text,
+                re.I,
+            )
+            or re.search(
+                rf"(?:answer|option|choice)\s+is\s+(?:(?:\w+\s+){{0,2}}not\s+){cand_token}",
+                text,
+                re.I,
+            )
         )
         if not neg_guard:
             return cand
@@ -194,7 +216,7 @@ def score_repo_niah_case(
             )
             for m in matches:
                 start = m.start()
-                preceding = completion[max(0, start - 40):start]
+                preceding = completion[max(0, start - 40) : start]
                 if not negation_pattern.search(preceding):
                     correct = True
                     break
@@ -405,7 +427,10 @@ def run_context_benchmark(
         )
         paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
         row_budget = int(row.get("max_new_tokens", max_new_tokens))
-        if str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"} and max_new_tokens >= 256:
+        if (
+            str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"}
+            and max_new_tokens >= 256
+        ):
             row_budget = max(row_budget, 256)
         new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
         if new_tokens < 1:

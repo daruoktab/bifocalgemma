@@ -71,7 +71,7 @@ class ReferenceMergedAttention(nn.Module):
         # Unit RMS for values, with no trainable scale in this reference.
         self.scale = 1.0
 
-    def forward(  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
+    def forward(  # nn.Module.forward is annotated Callable.
         self,
         decoder_states: torch.Tensor,
         encoder_states: torch.Tensor,

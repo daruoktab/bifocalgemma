@@ -294,10 +294,18 @@ def test_monitor_escapes_errors_updates_validation_and_exports_html(tmp_path):
         }
     )
     assert "3 / 7" in outputs[-1]
-    dashboard({"stage": "benchmark_upload_deferred", "benchmark_backup_status": "DEFERRED",
-               "backup_pending": True, "backup_next_retry_at": 1800000000,
-               "active_case": 2, "instance_id": "<case>", "generated_tokens": 19,
-               "case_elapsed_seconds": 12})
+    dashboard(
+        {
+            "stage": "benchmark_upload_deferred",
+            "benchmark_backup_status": "DEFERRED",
+            "backup_pending": True,
+            "backup_next_retry_at": 1800000000,
+            "active_case": 2,
+            "instance_id": "<case>",
+            "generated_tokens": 19,
+            "case_elapsed_seconds": 12,
+        }
+    )
     assert "DEFERRED" in outputs[-1] and "Token dihasilkan 19" in outputs[-1]
     assert "&lt;case&gt;" in outputs[-1]
     dashboard({"stage": "validation_complete", "step": 1, "dev_loss": 0.6})
@@ -322,7 +330,9 @@ def test_preflight_changes_neither_weights_rng_nor_dataset(batch_size):
     weights = {name: p.detach().clone() for name, p in model.named_parameters()}
     rng = torch.get_rng_state().clone()
     events = []
-    result = run_training_memory_preflight(model, data, progress=events.append, batch_size=batch_size)
+    result = run_training_memory_preflight(
+        model, data, progress=events.append, batch_size=batch_size
+    )
     assert result["status"] == "PASS" and result["optimizer_updates"] == 0
     assert all(row["batch_size"] == batch_size for row in result["rows"])
     assert result["rows"][-1]["shape_only"] is True

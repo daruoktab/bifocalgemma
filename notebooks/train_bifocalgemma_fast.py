@@ -46,7 +46,7 @@ def _():
     import zipfile
     from pathlib import Path
 
-    RUNTIME_BUNDLE_VERSION = "2026-11-10-bench-v2"
+    RUNTIME_BUNDLE_VERSION = "2026-11-10-v3-fp32-fix"
 
     def ensure_fast_runtime(force_refresh: bool = False) -> Path:
         root = Path(__file__).resolve().parents[1] if "__file__" in globals() else Path.cwd()
@@ -55,9 +55,7 @@ def _():
             runtime_dir = Path("outputs/runtime").resolve()
             version_file = runtime_dir / ".runtime_version"
             current_ver = (
-                version_file.read_text(encoding="utf-8").strip()
-                if version_file.is_file()
-                else ""
+                version_file.read_text(encoding="utf-8").strip() if version_file.is_file() else ""
             )
             if (
                 force_refresh
@@ -71,7 +69,11 @@ def _():
                     with zipfile.ZipFile(io.BytesIO(resp.read())) as zf:
                         zf.extractall(runtime_dir)
                 version_file.write_text(RUNTIME_BUNDLE_VERSION, encoding="utf-8")
-                for mod_name in [k for k in list(sys.modules) if k == "bifocalgemma" or k.startswith("bifocalgemma.")]:
+                for mod_name in [
+                    k
+                    for k in list(sys.modules)
+                    if k == "bifocalgemma" or k.startswith("bifocalgemma.")
+                ]:
                     sys.modules.pop(mod_name, None)
             src_dir = runtime_dir / "src"
         if str(src_dir) not in sys.path:
@@ -190,6 +192,8 @@ def _(
     ensure_fast_runtime(force_refresh=True)
     from bifocalgemma.training.fast_pipeline import (
         FastTrainingConfig as _LiveFastTrainingConfig,
+    )
+    from bifocalgemma.training.fast_pipeline import (
         FastTrainingPipeline as _LiveFastTrainingPipeline,
     )
 
@@ -288,13 +292,13 @@ def _(
                 mo.md(
                     f"""
                     ### {status_title}
-                    - **Model Target:** `{summary['model_choice']}`
-                    - **Langkah Tercapai:** `{summary['total_steps']} / {steps}`
-                    - **Validation Loss Terakhir:** `{summary['final_val_loss']:.4f}`
+                    - **Model Target:** `{summary["model_choice"]}`
+                    - **Langkah Tercapai:** `{summary["total_steps"]} / {steps}`
+                    - **Validation Loss Terakhir:** `{summary["final_val_loss"]:.4f}`
                     - **Benchmark Selesai:** `{len(benchmark_rows)} / 8`
-                    - **Total Waktu Sesi Ini:** `{summary.get('elapsed_time_sec', 0):.1f} detik`
+                    - **Total Waktu Sesi Ini:** `{summary.get("elapsed_time_sec", 0):.1f} detik`
                     - **Folder Hugging Face:** [`{DEFAULT_FAST_HF_REPO}/{subfolder}`]({hub_url})
-                    - **Folder Lokal:** `{summary['export_dir']}`
+                    - **Folder Lokal:** `{summary["export_dir"]}`
                     """
                 ),
                 mo.ui.table(benchmark_rows, label="📊 Hasil Evaluasi Benchmark Suite")

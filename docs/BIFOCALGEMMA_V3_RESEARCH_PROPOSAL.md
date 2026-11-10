@@ -437,7 +437,9 @@ To maximize the utility of the 32k encoder context and prevent attention dispers
    # file: pandas/core/indexing.py
    class _NDFrameIndexer(_LocIndexer):
        def __getitem__(self, key: Any) -> Any: ...
-       def _has_valid_tuple(self, key: Tuple) -> bool: ... # calls: common.is_list_like
+       def _has_valid_tuple(self, key: Tuple) -> bool: ...  # calls: common.is_list_like
+
+
    # file: pandas/core/dtypes/common.py
    def is_list_like(obj: Any) -> bool: ...
    ```
@@ -732,7 +734,7 @@ import torch.nn.functional as F
 
 class SwiGLUDualGateBridge(nn.Module):
     """Non-linear SwiGLU bridge adapter warping encoder representations into decoder manifold.
-    
+
     Includes Pre-RMSNorm, gated SiLU activation, residual link, Post-RMSNorm,
     and learned scale calibration vector.
     """
@@ -786,11 +788,17 @@ class SwiGLUDualGateBridge(nn.Module):
         down = self.w_down(h_mid.to(self.w_down.weight.dtype))
 
         # Residual link + Post-RMSNorm
-        res = self.w_res(h) if isinstance(self.w_res, nn.Linear) else self.w_res(hidden_states.to(down.dtype))
+        res = (
+            self.w_res(h)
+            if isinstance(self.w_res, nn.Linear)
+            else self.w_res(hidden_states.to(down.dtype))
+        )
         combined = down + res
 
         norm_post_dtype = self.norm_post.weight.dtype
-        out = self.norm_post(combined.to(norm_post_dtype)).to(orig_dtype) * self.gamma_calib.to(orig_dtype)
+        out = self.norm_post(combined.to(norm_post_dtype)).to(orig_dtype) * self.gamma_calib.to(
+            orig_dtype
+        )
         return out
 ```
 
@@ -808,7 +816,7 @@ import torch.nn.functional as F
 
 class DecoupledGatedCrossAttention(nn.Module):
     """Decoupled cross-attention block with learned tanh(g) gate initialized at atanh(0.05).
-    
+
     Operates without RoPE on cross-queries and cross-keys (stationary coordinates).
     Leverages FlashAttention-2 / SDPA over static cross-KV cache.
     """
@@ -838,7 +846,10 @@ class DecoupledGatedCrossAttention(nn.Module):
         cached_cross_kv: tuple[torch.Tensor, torch.Tensor] | None = None,
         context_scale_beta: float = 1.0,
         return_lse: bool = False,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]] | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> (
+        tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]
+        | tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor], torch.Tensor]
+    ):
         """hidden_states: [B, L_dec, d_dec]
         encoder_hidden_states: [B, L_enc, d_dec]
         cached_cross_kv: static tuple (k, v) with shape [B, num_kv_heads, L_enc, head_dim]
@@ -855,8 +866,16 @@ class DecoupledGatedCrossAttention(nn.Module):
             k_cache, v_cache = cached_cross_kv
         else:
             L_enc = encoder_hidden_states.shape[1]
-            k_cache = self.k_proj(encoder_hidden_states).view(B, L_enc, self.num_kv_heads, self.head_dim).transpose(1, 2)
-            v_cache = self.v_proj(encoder_hidden_states).view(B, L_enc, self.num_kv_heads, self.head_dim).transpose(1, 2)
+            k_cache = (
+                self.k_proj(encoder_hidden_states)
+                .view(B, L_enc, self.num_kv_heads, self.head_dim)
+                .transpose(1, 2)
+            )
+            v_cache = (
+                self.v_proj(encoder_hidden_states)
+                .view(B, L_enc, self.num_kv_heads, self.head_dim)
+                .transpose(1, 2)
+            )
 
         # Expand KV heads for GQA into local variables (preserves unexpanded static cache)
         if self.num_kv_heads != self.num_heads:
@@ -917,7 +936,7 @@ import torch.nn as nn
 
 class StreamingPointerLoss(nn.Module):
     """Computes exact copy pointer loss directly from FlashAttention's online LSE vector.
-    
+
     Zero intermediate attention matrix is materialized in global VRAM.
     Uses log-mean-exp head pooling and vectorized non-padding filtering.
     """
@@ -929,10 +948,10 @@ class StreamingPointerLoss(nn.Module):
 
     def forward(
         self,
-        q_norm: torch.Tensor,               # [B, L_dec, H, D]
-        k_cross: torch.Tensor,              # [B, L_enc, H, D]
-        lse: torch.Tensor,                  # [B, H, L_dec] from FlashAttention operator hook
-        labels: torch.Tensor,               # [B, L_dec]
+        q_norm: torch.Tensor,  # [B, L_dec, H, D]
+        k_cross: torch.Tensor,  # [B, L_enc, H, D]
+        lse: torch.Tensor,  # [B, H, L_dec] from FlashAttention operator hook
+        labels: torch.Tensor,  # [B, L_dec]
         match_index_dict: dict[int, list[int]],  # token_id -> list of source indices
         scale: float,
     ) -> torch.Tensor:
@@ -958,7 +977,7 @@ class StreamingPointerLoss(nn.Module):
                 # Dot products for matches only: [H, num_matches]
                 scores_match = torch.einsum("hd,mhd->hm", q_t, k_matches) * scale
                 match_lse = torch.logsumexp(scores_match, dim=-1)  # [H]
-                lse_full = lse[b, :, t]                            # [H]
+                lse_full = lse[b, :, t]  # [H]
 
                 # Designated pointer head selection
                 if self.pointer_heads is not None:
@@ -1002,7 +1021,9 @@ def build_bifocalgemma_v3_optimizer(
         if not param.requires_grad:
             continue
         # Group 1: Bridge Linear
-        if any(k in name for k in ["bridge.w_gate", "bridge.w_up", "bridge.w_down", "bridge.w_res"]):
+        if any(
+            k in name for k in ["bridge.w_gate", "bridge.w_up", "bridge.w_down", "bridge.w_res"]
+        ):
             bridge_linear.append(param)
         # Group 2: Bridge RMSNorm & Scale Calibration Gain (STRICT 0.0 WD)
         elif any(k in name for k in ["bridge.norm_pre", "bridge.norm_post", "bridge.gamma_calib"]):

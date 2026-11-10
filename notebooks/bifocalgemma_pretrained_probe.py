@@ -1442,9 +1442,7 @@ def _(
             assert encoder is not None
             encoder_ids = tuple(encoder.encode(context, add_special_tokens=True)[:encoder_tokens])
             assert encoder_ids[0] == 2 and len(encoder_ids) == encoder_tokens
-            prompt = (
-                f"Return only a unified diff fixing this issue.\n\n{issue}"
-            )
+            prompt = f"Return only a unified diff fixing this issue.\n\n{issue}"
             encoder_policy = "synthetic_comment_padding_then_explicit_token_crop"
         else:
             # Baseline receives equivalent selected context, rather than the entire padding tail.

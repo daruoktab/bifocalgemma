@@ -695,7 +695,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
             self.out_features = int(w.shape[0])
             self.weight = torch.nn.Parameter(w)
 
-        def forward(self, x: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-mutable-override]  # torch Module callable attribute.
+        def forward(self, x: torch.Tensor) -> torch.Tensor:  # torch Module callable attribute.
             compute_dtype = (
                 torch.bfloat16
                 if (x.device.type == "cuda" or x.dtype == torch.bfloat16)
@@ -706,7 +706,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
     class FullCrossTiledAttention(TiledMergedAttention):
         """Decoupled causal self-attention and unrotated full-rank 16-bit gated cross-attention."""
 
-        def forward(  # ty: ignore[invalid-method-override]  # Runtime replacement accepts merged context.
+        def forward(  # ty: ignore[incompatible-method-override]  # Runtime replacement accepts merged context.
             self: Any,
             hidden_states: torch.Tensor,
             position_embeddings: tuple[torch.Tensor, torch.Tensor],

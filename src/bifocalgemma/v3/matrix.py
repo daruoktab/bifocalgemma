@@ -410,7 +410,7 @@ def run_matrix_stage(
 def run_matrix_training(
     model_key: str,
     *,
-    token: str,
+    token: str | None = None,
     mo: Any = None,
     output_root: str | Path = "outputs/v2",
     cache: str | Path = "outputs/v2_cache",
@@ -439,13 +439,13 @@ def run_matrix_training(
     )
     subfolder = cfg.get("subfolder", model_key)
 
-    resolved_total = int(total_steps) if total_steps is not None else TOTAL_STEPS
+    resolved_total = total_steps if total_steps is not None else TOTAL_STEPS
     if spec.encoder is None:
         resolved_stage1 = resolved_total
         resolved_stage2 = 0
     else:
         if stage1_steps is not None:
-            resolved_stage1 = int(stage1_steps)
+            resolved_stage1 = stage1_steps
         elif total_steps is None:
             resolved_stage1 = STAGE1_STEPS
         else:
@@ -927,7 +927,7 @@ def run_matrix_training(
 def run_matrix_benchmark(
     model_key: str,
     *,
-    token: str,
+    token: str | None = None,
     mo: Any = None,
     output_root: str | Path = "outputs/v2",
     cache: str | Path = "outputs/v2_cache",
@@ -952,13 +952,13 @@ def run_matrix_benchmark(
     repo = (repo_id.strip() if repo_id and repo_id.strip() else None) or cfg["repo"]
     subfolder = cfg.get("subfolder", model_key)
 
-    resolved_total = int(total_steps) if total_steps is not None else TOTAL_STEPS
+    resolved_total = total_steps if total_steps is not None else TOTAL_STEPS
     if spec.encoder is None:
         resolved_stage1 = resolved_total
         resolved_stage2 = 0
     else:
         if stage1_steps is not None:
-            resolved_stage1 = int(stage1_steps)
+            resolved_stage1 = stage1_steps
         elif total_steps is None:
             resolved_stage1 = STAGE1_STEPS
         else:
@@ -1198,7 +1198,7 @@ def run_matrix_benchmark(
 def run_matrix_training_and_benchmark(
     model_key: str,
     *,
-    token: str,
+    token: str | None = None,
     mo: Any = None,
     output_root: str | Path = "outputs/v2",
     cache: str | Path = "outputs/v2_cache",

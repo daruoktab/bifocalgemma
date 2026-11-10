@@ -24,7 +24,7 @@ dependencies = [
     "torch==2.15.0",
     "torchvision==0.29.2",
     "safetensors==0.8.0",
-    "transformers==5.22.1",
+    "transformers>=5.22.1,<=5.22.2",
     "huggingface-hub==2.4.0",
     "tokenizers==0.23.3",
     "pyarrow==26.0.0",
@@ -32,21 +32,21 @@ dependencies = [
     "PyYAML==6.0.3",
     "accelerate==1.15.0",
     "peft==0.21.2",
-    "datasets==5.1.0",
+    "datasets>=5.1.0,<=5.2.0",
     "einops>=0.8.0",
 ]
 
 [project.optional-dependencies]
-notebook = ["marimo==0.25.2", "pytest==9.2.0", "wigglystuff==0.5.36"]
+notebook = ["marimo==0.25.2", "pytest==9.2.0", "wigglystuff>=0.5.36,<=0.5.37"]
 gpu-kernels = [
     "triton-windows==3.9.0.post30; sys_platform == 'win32'",
     "triton==3.9.0; sys_platform == 'linux'",
 ]
 dev = [
     "pytest>=9.2.0",
-    "ruff>=0.17.3",
-    "ty>=0.0.95",
-    "pyrefly>=1.4.0",
+    "ruff>=0.17.4",
+    "ty>=0.0.100",
+    "pyrefly>=1.4.1",
     "types-PyYAML>=6.0.12.20260906",
     "types-psutil>=7.2.2.20260906",
 ]

@@ -44,7 +44,7 @@ def infer_benchmark_weight_tier(benchmark_item: dict[str, Any] | None) -> str:
     if not benchmark_item:
         return "sft_eval"
     if "weight_tier" in benchmark_item and benchmark_item["weight_tier"] in BENCHMARK_TIER_CONFIG:
-        return str(benchmark_item["weight_tier"])
+        return benchmark_item["weight_tier"]
     name = str(benchmark_item.get("collection", "")).lower()
     if "gsm8k" in name:
         return "light"
@@ -79,7 +79,7 @@ def resolve_optimal_eval_batch_size(
     tier_cfg = BENCHMARK_TIER_CONFIG[tier]
     scale_factor = float(profile["scale_factor"])
     per_sample_gib = float(tier_cfg["per_sample_gib"]) / scale_factor
-    max_cap = int(round(float(tier_cfg["max_batch"]) * min(1.25, max(0.65, scale_factor))))
+    max_cap = round(float(tier_cfg["max_batch"]) * min(1.25, max(0.65, scale_factor)))
     max_cap = max(2, max_cap)
 
     if free_vram_gib is None and torch.cuda.is_available():
@@ -122,10 +122,10 @@ def prepare_sampled_benchmark_collection(
     Guarantees identical sampled `instance_id` cohorts across all 10 models.
     """
     src_dir = Path(collection_dir).resolve()
-    if sample_limit is None or int(sample_limit) <= 0:
+    if sample_limit is None or sample_limit <= 0:
         return src_dir
 
-    limit = int(sample_limit)
+    limit = sample_limit
     inputs_name = (
         "eval_inputs.jsonl" if (src_dir / "eval_inputs.jsonl").exists() else "inputs.jsonl"
     )
@@ -221,9 +221,9 @@ def batched_greedy_decode(
     if bsz == 0:
         return []
     if isinstance(max_new_tokens_list, int):
-        budgets = [int(max_new_tokens_list)] * bsz
+        budgets = [max_new_tokens_list] * bsz
     else:
-        budgets = [int(x) for x in max_new_tokens_list]
+        budgets = list(max_new_tokens_list)
 
     if bsz == 1:
         return [
@@ -299,7 +299,7 @@ def batched_greedy_decode(
             prefill_valid = torch.zeros((bsz, max_pref_len), dtype=torch.bool, device=device)
             sequences: list[list[int]] = []
             for b, (pref_ids, pad_len) in enumerate(zip(batch_prefix_ids, pad_lens, strict=True)):
-                pad_tok = int(pref_ids[0])
+                pad_tok = pref_ids[0]
                 sequences.append([pad_tok] * pad_len + list(pref_ids))
                 prefill_valid[b, pad_len:] = True
 
@@ -356,7 +356,7 @@ def batched_greedy_decode(
                     cap = model.decoder.config.final_logit_softcapping
                     if cap is not None:
                         logits = torch.tanh(logits / cap) * cap
-                    cache.offset += int(ids.shape[1])
+                    cache.offset += ids.shape[1]
                     next_logits = logits[:, -1]
                     if not bool(torch.isfinite(next_logits).all()):
                         raise ValueError("nonfinite_generation_logits")
@@ -438,8 +438,8 @@ def run_batched_context_benchmark(
 
     device = next(model.parameters()).device
     resolved_batch_size = (
-        int(batch_size)
-        if batch_size is not None and int(batch_size) >= 1
+        batch_size
+        if batch_size is not None and batch_size >= 1
         else resolve_optimal_eval_batch_size(
             model_key or "4base-4it", benchmark_item, device=device
         )
@@ -563,7 +563,10 @@ def run_batched_context_benchmark(
             )
             paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
             row_budget = int(row.get("max_new_tokens", max_new_tokens))
-            if str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"} and max_new_tokens >= 256:
+            if (
+                str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"}
+                and max_new_tokens >= 256
+            ):
                 row_budget = max(row_budget, 256)
             new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
             if new_tokens < 1:

@@ -299,10 +299,15 @@ def test_greedy_encoder_once_stop_mode_and_vocab_guards():
     assert result.token_ids == (18, 106) and result.stop_reason == "eos"
     assert model.encodes == 1 and model.training
     events = []
-    monitored = greedy_decode(ScriptedModel(), (2, 3), (2, 105), max_new_tokens=4,
-                              progress=events.append)
+    monitored = greedy_decode(
+        ScriptedModel(), (2, 3), (2, 105), max_new_tokens=4, progress=events.append
+    )
     assert monitored == result
-    assert [e["generated_tokens"] for e in events if e["stage"] == "benchmark_decoding"] == [0, 1, 2]
+    assert [e["generated_tokens"] for e in events if e["stage"] == "benchmark_decoding"] == [
+        0,
+        1,
+        2,
+    ]
     with pytest.raises(ValueError, match="vocabulary"):
         greedy_decode(model, (262143,), (2,), max_new_tokens=1)
     with pytest.raises(ValueError, match="budget"):

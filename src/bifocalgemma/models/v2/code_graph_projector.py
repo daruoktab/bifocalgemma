@@ -43,7 +43,7 @@ class ASTGraphProjector(nn.Module):
         self.layer_norm = nn.LayerNorm(embed_dim, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
+    def forward(  # nn.Module.forward is annotated Callable.
         self,
         node_types: torch.Tensor,
         depths: Optional[torch.Tensor] = None,

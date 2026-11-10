@@ -104,7 +104,9 @@ def test_alignment_initialization_with_cuda_default_device(input_width, output_w
     with torch.device("cuda"):
         alignment = NormalizedAlignment(input_width, output_width)
     assert all(p.device.type == "cuda" and p.dtype == torch.float32 for p in alignment.parameters())
-    torch.testing.assert_close(alignment.linear.weight.cpu(), reference.linear.weight, rtol=0, atol=0)
+    torch.testing.assert_close(
+        alignment.linear.weight.cpu(), reference.linear.weight, rtol=0, atol=0
+    )
     hidden = torch.randn(1, 3, input_width, device="cuda", dtype=torch.bfloat16, requires_grad=True)
     result = alignment(hidden)
     assert result.dtype == torch.bfloat16

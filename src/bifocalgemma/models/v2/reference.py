@@ -42,7 +42,7 @@ class TinyReferenceModel(nn.Module):
         )
         self.output_norm = nn.RMSNorm(decoder_dim)
 
-    def forward(self, batch: Seq2SeqBatch) -> ModelOutput:  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
+    def forward(self, batch: Seq2SeqBatch) -> ModelOutput:  # nn.Module.forward is annotated Callable.
         encoded = self.encoder(
             self.encoder_words(batch.encoder_input_ids),
             src_key_padding_mask=~batch.encoder_attention_mask,

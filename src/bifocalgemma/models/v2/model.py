@@ -27,7 +27,7 @@ class BifocalGemmaModel(nn.Module):
         """Future uncached merged decoder [B,Ldec,V]; incremental cache belongs to M06."""
         raise FeatureNotReadyError("M05", "Wire native merged attention, PLE and LM head.")
 
-    def forward(self, batch: Seq2SeqBatch) -> ModelOutput:  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
+    def forward(self, batch: Seq2SeqBatch) -> ModelOutput:  # nn.Module.forward is annotated Callable.
         """Future: native bidirectional encoder -> adapted H -> merged decoder -> LM head."""
         raise FeatureNotReadyError("M05", "Full Gemma decoder layer wiring is still required.")
 

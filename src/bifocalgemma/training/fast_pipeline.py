@@ -10,10 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import torch
 from torch.utils.data import DataLoader, Dataset
@@ -24,9 +25,10 @@ from bifocalgemma.contracts import Seq2SeqBatch, TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
 from bifocalgemma.modeling_bifocalgemma import BifocalGemmaForCausalLM
 from bifocalgemma.training.memory_probe import ProbeLoRALinear, configure_probe_training
+from bifocalgemma.v3.curriculum import build_anti_forgetting_curriculum
 from bifocalgemma.v3.objectives import (
     build_bifocalgemma_v3_optimizer,
-    compute_bifocalgemma_v3_loss,
+    compute_v3_step_loss,
     is_cross_bridge_parameter,
 )
 
@@ -49,6 +51,13 @@ class FastTrainingConfig:
     lr_cross: float = 1e-4
     lr_lora: float = 2e-5  # Conservative Stage 2 decoder LR to avoid catastrophic interference
     lambda_ptr: float = 0.0  # Clean cross-entropy; eliminates copy-bias on code repair
+    stage1_lambda_ptr: float = 0.15  # Stage 1 pointer grounding loss
+    gate_init_tanh: float = 0.10  # Initial tanh cross-attention gate value
+    stage1_encoder_lora: bool = True  # Enable ProbeLoRALinear on encoder during Stage 1
+    use_comprehension_curriculum: bool = True  # Mix anti-forgetting comprehension replay in Stage 1
+    inject_query_into_encoder: bool = (
+        True  # Inject task instruction [QUERY] into bidirectional encoder
+    )
     warmup_steps: int = 100
     weight_decay_bridge: float = 1e-4
     eval_interval: int = 200
@@ -102,10 +111,13 @@ class JSONLRepairDataset(Dataset):
         split: str | None = None,
         max_samples: int | None = None,
         max_vocab_size: int | None = None,
+        inject_query_into_encoder: bool = True,
     ) -> None:
         self.examples: list[TokenizedRepairExample] = []
         self.tokenizer = tokenizer
         self.max_vocab_size = max_vocab_size
+        self.is_baseline = is_baseline
+        self.inject_query_into_encoder = inject_query_into_encoder
         path = Path(file_or_dir)
         files: list[Path] = []
         if path.is_file():
@@ -179,13 +191,23 @@ class JSONLRepairDataset(Dataset):
             "completion": "Return only the missing Python code, preserving its indentation.",
         }.get(task_kind, "Return only a unified diff fulfilling the instruction.")
         instruction_body = row.get("instruction") or "Repair the bug."
+        instruction = row.get("instruction") or ""
+
+        encoder_context = context
+        if (
+            not is_baseline
+            and self.inject_query_into_encoder
+            and instruction
+            and (instruction not in context)
+        ):
+            encoder_context = f"[QUERY] {instruction}\n\n{context}"
 
         if tokenizer is not None:
             if is_baseline:
                 enc_ids = ()
                 prompt = f"{task_instruction_header}\n\n{context}"
             else:
-                enc_ids = tuple(tokenizer.encode(context, add_special_tokens=True))
+                enc_ids = tuple(tokenizer.encode(encoder_context, add_special_tokens=True))
                 prompt = f"{task_instruction_header}\n\n{instruction_body}"
 
             messages = [{"role": "user", "content": prompt}]
@@ -246,8 +268,8 @@ class JSONLRepairDataset(Dataset):
     def __len__(self) -> int:
         return len(self.examples)
 
-    def __getitem__(self, idx: int) -> TokenizedRepairExample:
-        return self.examples[idx]
+    def __getitem__(self, index: int) -> TokenizedRepairExample:
+        return self.examples[index]
 
 
 class SyntheticRepairDataset(Dataset):
@@ -268,7 +290,8 @@ class SyntheticRepairDataset(Dataset):
     def __len__(self) -> int:
         return self.num_samples
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        idx = index
         torch.manual_seed(idx)
         enc_ids = torch.randint(10, self.vocab_size, (self.enc_len,))
         dec_ids = torch.randint(10, self.vocab_size, (max(2, self.dec_len),))
@@ -316,40 +339,7 @@ class FastTrainingPipeline:
                 logger.debug("HF login skipped: %s", _login_exc)
 
         # 1. Instantiate BifocalGemma PreTrainedModel
-        is_baseline = self.cfg.model_choice == "baseline-2b"
-        self.model_config = BifocalGemmaConfig(
-            encoder_size="none" if is_baseline else "E2B",
-            decoder_size="E2B",
-            tiny=self.cfg.tiny,
-            gate_init_tanh=0.05,
-            init_rms_scale=1.0,
-            learnable_cross_scale=True,
-        )
-        if self.cfg.tiny:
-            self.model = BifocalGemmaForCausalLM(self.model_config).to(self.cfg.device)
-        else:
-            dec_src = self.cfg.pretrained_backbone_dir or self.cfg.decoder_backbone
-            enc_src = (
-                (self.cfg.pretrained_backbone_dir or self.cfg.encoder_backbone)
-                if not is_baseline
-                else None
-            )
-            backbone_dtype = (
-                torch.bfloat16
-                if self.cfg.device.startswith("cuda") and torch.cuda.is_bf16_supported()
-                else None
-            )
-            self.model = BifocalGemmaForCausalLM.from_pretrained_backbones(
-                config=self.model_config,
-                decoder_path_or_id=dec_src,
-                encoder_path_or_id=enc_src,
-                pretrained_backbone_dir=self.cfg.pretrained_backbone_dir,
-                torch_dtype=backbone_dtype,
-                device=self.cfg.device,
-                token=self.cfg.hf_token,
-            )
-
-        self.model.enable_memory_efficient_training(gradient_checkpointing=not self.cfg.tiny)
+        self.model = self._build_model()
 
         # 2. Setup tokenizer if available (only for full-scale models; tiny uses synthetic vocab_size)
         self.tokenizer = None
@@ -372,8 +362,78 @@ class FastTrainingPipeline:
                     logger.debug("Tokenizer load skipped: %s", _exc)
 
         # 3. Setup dataloaders
+        self.train_loader, self.val_loader = self._prepare_dataloaders(
+            train_dataloader=train_dataloader,
+            val_dataloader=val_dataloader,
+        )
+
+        self.out_path = Path(self.cfg.output_dir)
+        self.out_path.mkdir(parents=True, exist_ok=True)
+        self.history: list[dict[str, Any]] = []
+
+    def _build_model(self) -> BifocalGemmaForCausalLM:
+        """Instantiate BifocalGemma PreTrainedModel."""
+        is_baseline = self.cfg.model_choice == "baseline-2b"
+        self.model_config = BifocalGemmaConfig(
+            encoder_size="none" if is_baseline else "E2B",
+            decoder_size="E2B",
+            tiny=self.cfg.tiny,
+            gate_init_tanh=self.cfg.gate_init_tanh,
+            init_rms_scale=1.0,
+            learnable_cross_scale=True,
+        )
+        if self.cfg.tiny:
+            model = cast(Any, BifocalGemmaForCausalLM(self.model_config)).to(self.cfg.device)
+        else:
+            dec_src = self.cfg.pretrained_backbone_dir or self.cfg.decoder_backbone
+            enc_src = (
+                (self.cfg.pretrained_backbone_dir or self.cfg.encoder_backbone)
+                if not is_baseline
+                else None
+            )
+            backbone_dtype = (
+                torch.bfloat16
+                if self.cfg.device.startswith("cuda") and torch.cuda.is_bf16_supported()
+                else None
+            )
+            model = BifocalGemmaForCausalLM.from_pretrained_backbones(
+                config=self.model_config,
+                decoder_path_or_id=dec_src,
+                encoder_path_or_id=enc_src,
+                pretrained_backbone_dir=self.cfg.pretrained_backbone_dir,
+                torch_dtype=backbone_dtype,
+                device=self.cfg.device,
+                token=self.cfg.hf_token,
+            )
+
+        model.enable_memory_efficient_training(gradient_checkpointing=not self.cfg.tiny)
+        if model.decoder is not None and hasattr(model.decoder, "layers"):
+            for layer in model.decoder.layers:
+                attn = getattr(layer, "self_attn", None)
+                if attn is not None and hasattr(attn, "cross_v_norm"):
+                    if not hasattr(attn.cross_v_norm, "weight") or attn.cross_v_norm.weight is None:
+                        dev = (
+                            next(attn.parameters()).device
+                            if list(attn.parameters())
+                            else model.device
+                        )
+                        attn.cross_v_norm.weight = torch.nn.Parameter(
+                            torch.ones(
+                                getattr(attn, "head_dim", 32), dtype=torch.float32, device=dev
+                            )
+                        )
+        return model
+
+    def _prepare_dataloaders(
+        self,
+        train_dataloader: DataLoader | None = None,
+        val_dataloader: DataLoader | None = None,
+    ) -> tuple[DataLoader, DataLoader]:
+        """Set up training and validation dataloaders with curriculum replay support."""
         vocab = self.model_config.vocab_size
         max_vocab = vocab if self.cfg.tiny else None
+        is_baseline = self.cfg.model_choice == "baseline-2b"
+
         if train_dataloader is None:
             data_path = Path(self.cfg.data_dir) if self.cfg.data_dir else None
             if data_path is None and not self.cfg.tiny and self.cfg.auto_download_curated:
@@ -411,27 +471,41 @@ class FastTrainingPipeline:
                     if (data_path / "train.jsonl").is_file()
                     else data_path
                 )
-                train_ds: Dataset = JSONLRepairDataset(
+                train_ds = JSONLRepairDataset(
                     train_file,
                     tokenizer=self.tokenizer,
                     is_baseline=is_baseline,
                     split="train",
                     max_vocab_size=max_vocab,
+                    inject_query_into_encoder=self.cfg.inject_query_into_encoder,
                 )
+                if (
+                    isinstance(train_ds, JSONLRepairDataset)
+                    and hasattr(train_ds, "examples")
+                    and len(train_ds.examples) >= 8
+                    and self.cfg.use_comprehension_curriculum
+                ):
+                    curriculum_examples, _ = build_anti_forgetting_curriculum(
+                        train_ds.examples,
+                        stage_name="stage1",
+                        seed=self.cfg.seed,
+                        decoder=self.tokenizer,
+                    )
+                    train_ds.examples = curriculum_examples
+
                 val_file = (
                     data_path / "val.jsonl"
                     if (data_path / "val.jsonl").is_file()
-                    else (
-                        data_path / "dev.jsonl" if (data_path / "dev.jsonl").is_file() else None
-                    )
+                    else (data_path / "dev.jsonl" if (data_path / "dev.jsonl").is_file() else None)
                 )
                 if val_file is not None:
-                    val_ds: Dataset = JSONLRepairDataset(
+                    val_ds = JSONLRepairDataset(
                         val_file,
                         tokenizer=self.tokenizer,
                         is_baseline=is_baseline,
                         split="val",
                         max_vocab_size=max_vocab,
+                        inject_query_into_encoder=self.cfg.inject_query_into_encoder,
                     )
                 else:
                     if len(train_ds) > 1:
@@ -446,13 +520,13 @@ class FastTrainingPipeline:
                         val_ds = train_ds
 
                 collator = RepairCollator(pad_token_id=0, ignore_index=-100)
-                self.train_loader = DataLoader(
+                train_loader = DataLoader(
                     train_ds,
                     batch_size=self.cfg.batch_size,
                     shuffle=True,
                     collate_fn=collator,
                 )
-                self.val_loader = DataLoader(
+                val_loader = DataLoader(
                     val_ds,
                     batch_size=self.cfg.batch_size,
                     shuffle=False,
@@ -465,76 +539,110 @@ class FastTrainingPipeline:
                 )
             else:
                 train_ds = SyntheticRepairDataset(num_samples=256, vocab_size=vocab)
-                self.train_loader = DataLoader(
+                train_loader = DataLoader(
                     train_ds,
                     batch_size=self.cfg.batch_size,
                     shuffle=True,
                     collate_fn=collate_fast_batch,
                 )
                 val_ds = SyntheticRepairDataset(num_samples=32, vocab_size=vocab)
-                self.val_loader = DataLoader(
+                val_loader = DataLoader(
                     val_ds,
                     batch_size=self.cfg.batch_size,
                     shuffle=False,
                     collate_fn=collate_fast_batch,
                 )
         else:
-            self.train_loader = train_dataloader
-            self.val_loader = val_dataloader if val_dataloader is not None else train_dataloader
+            train_loader = train_dataloader
+            val_loader = val_dataloader if val_dataloader is not None else train_dataloader
 
-        self.out_path = Path(self.cfg.output_dir)
-        self.out_path.mkdir(parents=True, exist_ok=True)
-        self.history: list[dict[str, Any]] = []
+        return train_loader, val_loader
 
     def configure_stage1(self) -> torch.optim.Optimizer:
-        """Stage 1: Freeze decoder backbone; train SwiGLU bridge and decoupled cross-attention."""
+        """Stage 1: Freeze decoder backbone; train SwiGLU bridge, cross-attention, and optional encoder LoRA."""
         if self.model.encoder is None:
             raise ValueError(
                 "Stage 1 Bridge Alignment requires an encoder; baseline decoder-only model has no bridge."
             )
-        # Freeze all decoder parameters except cross bridge
-        for name, param in self.model.decoder.named_parameters():
-            if is_cross_bridge_parameter(name):
+
+        if self.cfg.stage1_encoder_lora:
+            if not any(isinstance(m, ProbeLoRALinear) for m in self.model.modules()):
+                configure_probe_training(self.model, policy="lora", rank=16)
+
+            for name, module in self.model.named_modules():
+                if isinstance(module, ProbeLoRALinear):
+                    if name.startswith("encoder.") or ".encoder." in name:
+                        module.scaling = 2.0
+                    elif name.startswith("decoder.") or ".decoder." in name:
+                        module.scaling = 0.0
+
+            for name, param in self.model.named_parameters():
+                if name.startswith("encoder_projection."):
+                    param.requires_grad = True
+                elif is_cross_bridge_parameter(name):
+                    param.requires_grad = True
+                elif (name.startswith("encoder.") or ".encoder." in name) and (
+                    name.endswith(".lora_A") or name.endswith(".lora_B")
+                ):
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+
+            if hasattr(self.model, "lm_head") and hasattr(self.model.lm_head, "weight"):
+                self.model.lm_head.weight.requires_grad = False
+
+            return build_bifocalgemma_v3_optimizer(
+                self.model,
+                lr_bridge=self.cfg.lr_bridge,
+                lr_cross=self.cfg.lr_cross,
+                lr_lora=self.cfg.lr_lora,
+                weight_decay_bridge=self.cfg.weight_decay_bridge,
+            )
+        else:
+            for name, param in self.model.decoder.named_parameters():
+                if is_cross_bridge_parameter(name):
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+
+            for param in self.model.encoder.parameters():
+                param.requires_grad = False
+
+            if self.model.encoder_projection is not None:
+                for param in self.model.encoder_projection.parameters():
+                    param.requires_grad = True
+
+            self.model.lm_head.weight.requires_grad = False
+
+            return build_bifocalgemma_v3_optimizer(
+                self.model,
+                lr_bridge=self.cfg.lr_bridge,
+                lr_cross=self.cfg.lr_cross,
+                lr_lora=0.0,
+                weight_decay_bridge=self.cfg.weight_decay_bridge,
+            )
+
+    def configure_stage2(self) -> torch.optim.Optimizer:
+        """Stage 2: Unfreeze LoRA on encoder and decoder with conservative learning rate."""
+        if not any(isinstance(m, ProbeLoRALinear) for m in self.model.modules()):
+            configure_probe_training(self.model, policy="lora", rank=16)
+
+        for name, module in self.model.named_modules():
+            if isinstance(module, ProbeLoRALinear):
+                module.scaling = 2.0
+
+        for name, param in self.model.named_parameters():
+            if name.startswith("encoder_projection."):
+                param.requires_grad = True
+            elif is_cross_bridge_parameter(name):
+                param.requires_grad = True
+            elif name.endswith(".lora_A") or name.endswith(".lora_B"):
                 param.requires_grad = True
             else:
                 param.requires_grad = False
 
-        if self.model.encoder is not None:
-            for param in self.model.encoder.parameters():
-                param.requires_grad = False
-
-        if self.model.encoder_projection is not None:
-            for param in self.model.encoder_projection.parameters():
-                param.requires_grad = True
-
-        self.model.lm_head.weight.requires_grad = False
-
-        return build_bifocalgemma_v3_optimizer(
-            self.model,
-            lr_bridge=self.cfg.lr_bridge,
-            lr_cross=self.cfg.lr_cross,
-            lr_lora=0.0,
-            weight_decay_bridge=self.cfg.weight_decay_bridge,
-        )
-
-    def configure_stage2(self) -> torch.optim.Optimizer:
-        """Stage 2: Unfreeze LoRA on encoder and decoder with conservative learning rate."""
-        # Attach probe LoRA to attention projections if not already attached (e.g. from checkpoint resume)
-        if not any(isinstance(m, ProbeLoRALinear) for m in self.model.modules()):
-            configure_probe_training(self.model, policy="lora", rank=16)
-        else:
-            for name, param in self.model.named_parameters():
-                if ".lora_A" in name or ".lora_B" in name:
-                    param.requires_grad = True
-
-        # Ensure cross bridge and projection remain trainable
-        if self.model.encoder_projection is not None:
-            for param in self.model.encoder_projection.parameters():
-                param.requires_grad = True
-
-        for name, param in self.model.decoder.named_parameters():
-            if is_cross_bridge_parameter(name):
-                param.requires_grad = True
+        if hasattr(self.model, "lm_head") and hasattr(self.model.lm_head, "weight"):
+            self.model.lm_head.weight.requires_grad = False
 
         return build_bifocalgemma_v3_optimizer(
             self.model,
@@ -543,6 +651,27 @@ class FastTrainingPipeline:
             lr_lora=self.cfg.lr_lora,
             weight_decay_bridge=self.cfg.weight_decay_bridge,
         )
+
+    def _update_learning_rates(self, optimizer: torch.optim.Optimizer, global_step: int) -> None:
+        """Apply linear warmup and cosine decay to all optimizer parameter groups."""
+        warmup_steps = max(1, self.cfg.warmup_steps)
+        total_steps = max(warmup_steps + 1, self.cfg.total_steps)
+        min_lr_ratio = 0.10
+
+        if global_step < warmup_steps:
+            factor = float(global_step) / float(warmup_steps)
+        else:
+            decay_steps = max(1, total_steps - warmup_steps)
+            progress = min(1.0, max(0.0, float(global_step - warmup_steps) / float(decay_steps)))
+            factor = min_lr_ratio + (1.0 - min_lr_ratio) * 0.5 * (
+                1.0 + math.cos(math.pi * progress)
+            )
+
+        for group in optimizer.param_groups:
+            base_lr = group.get("base_lr", group["lr"])
+            if "base_lr" not in group:
+                group["base_lr"] = base_lr
+            group["lr"] = base_lr * factor
 
     def save_checkpoint(self, global_step: int, stage_name: str) -> Path:
         """Save lightweight trainable state locally and sync to Hugging Face Hub if enabled."""
@@ -594,7 +723,7 @@ class FastTrainingPipeline:
 
     def try_resume_checkpoint(self) -> int:
         """Resume from local or remote Hugging Face checkpoint if available and compatible."""
-        if not self.cfg.resume_if_available or self.cfg.tiny:
+        if not self.cfg.resume_if_available:
             return 0
 
         ckpt_dir = self.out_path / "checkpoint_latest"
@@ -602,6 +731,7 @@ class FastTrainingPipeline:
 
         if (
             not ckpt_file.is_file()
+            and not self.cfg.tiny
             and self.cfg.push_to_hub
             and self.cfg.hub_repo
             and self.cfg.hf_token
@@ -629,14 +759,35 @@ class FastTrainingPipeline:
                 if payload.get("model_choice") == self.cfg.model_choice:
                     saved_step = int(payload.get("global_step", 0))
                     if saved_step > 0:
-                        if payload.get("has_lora") and not any(
+                        has_lora = payload.get("has_lora", False)
+                        if has_lora and not any(
                             isinstance(m, ProbeLoRALinear) for m in self.model.modules()
                         ):
                             configure_probe_training(self.model, policy="lora", rank=16)
+
+                        stage = str(payload.get("stage", ""))
+                        is_stage1 = (saved_step < self.cfg.stage1_steps) or ("stage1" in stage)
+                        if has_lora:
+                            if (
+                                is_stage1
+                                and self.cfg.stage1_encoder_lora
+                                and self.model.encoder is not None
+                            ):
+                                for name, module in self.model.named_modules():
+                                    if isinstance(module, ProbeLoRALinear):
+                                        if name.startswith("encoder.") or ".encoder." in name:
+                                            module.scaling = 2.0
+                                        elif name.startswith("decoder.") or ".decoder." in name:
+                                            module.scaling = 0.0
+                            else:
+                                for name, module in self.model.named_modules():
+                                    if isinstance(module, ProbeLoRALinear):
+                                        module.scaling = 2.0
+
                         tensors = payload.get("tensors", {})
                         if tensors:
                             self.model.load_state_dict(tensors, strict=False)
-                            self.model.to(self.cfg.device)
+                            cast(Any, self.model).to(self.cfg.device)
                         self.history = list(payload.get("history", []))
                         print(
                             f"[{time.strftime('%X')}] 🔄 Melanjutkan otomatis dari checkpoint step {saved_step}/{self.cfg.total_steps} ({self.cfg.model_choice})...",
@@ -679,16 +830,20 @@ class FastTrainingPipeline:
                 self.model.merge_and_unload()
                 state = load_file(str(local_final), device="cpu")
                 self.model.load_state_dict(state, strict=False)
-                self.model.to(self.cfg.device)
+                cast(Any, self.model).to(self.cfg.device)
                 print(
                     f"[{time.strftime('%X')}] ✅ Memuat model selesai ({self.cfg.total_steps}/{self.cfg.total_steps} steps) dari {local_final}...",
                     flush=True,
                 )
                 return self.cfg.total_steps
             except Exception as _exc:
-                logger.warning("Could not load completed pretrained model %s: %s", local_final, _exc)
+                logger.warning(
+                    "Could not load completed pretrained model %s: %s", local_final, _exc
+                )
 
         return 0
+
+    load_checkpoint_if_available = try_resume_checkpoint
 
     def _sync_existing_legacy_export_if_present(self) -> None:
         """If a completed 2000-step model exists at outputs/fast_bifocalgemma/final_pretrained_model, upload it to Hub."""
@@ -726,7 +881,10 @@ class FastTrainingPipeline:
                 logger.warning("Legacy model auto-upload skipped: %s", _exc)
 
     def train_step(
-        self, batch: dict[str, torch.Tensor] | Seq2SeqBatch, stage_name: str
+        self,
+        batch: dict[str, torch.Tensor] | Seq2SeqBatch,
+        stage_name: str,
+        lambda_ptr: float | None = None,
     ) -> torch.Tensor:
         """Execute single forward pass with clean chunked Differential Cross-Entropy."""
         if isinstance(batch, Seq2SeqBatch):
@@ -753,9 +911,8 @@ class FastTrainingPipeline:
                 if "decoder_attention_mask" in batch and batch["decoder_attention_mask"] is not None
                 else torch.ones_like(dec_ids, dtype=torch.bool)
             )
-            labels = (
-                batch.get("labels") if "labels" in batch else batch.get("targets", dec_ids)
-            ).to(device)
+            lbl_raw = batch.get("labels") if "labels" in batch else batch.get("targets", dec_ids)
+            labels = (lbl_raw if lbl_raw is not None else dec_ids).to(device)
 
             if (
                 "encoder_input_ids" in batch
@@ -782,11 +939,21 @@ class FastTrainingPipeline:
                 labels=labels,
             )
 
-        return compute_bifocalgemma_v3_loss(
+        if lambda_ptr is None:
+            if stage_name in ("stage1_bridge_warmup", "stage1_bridge_align", "stage1"):
+                active_lambda_ptr = (
+                    self.cfg.lambda_ptr if self.cfg.lambda_ptr > 0 else self.cfg.stage1_lambda_ptr
+                )
+            else:
+                active_lambda_ptr = self.cfg.lambda_ptr
+        else:
+            active_lambda_ptr = lambda_ptr
+
+        return compute_v3_step_loss(
             self.model,
             seq2seq_batch,
             stage_name=stage_name,
-            lambda_ptr=self.cfg.lambda_ptr,
+            lambda_ptr=active_lambda_ptr,
         )
 
     def evaluate(self) -> float:
@@ -811,9 +978,7 @@ class FastTrainingPipeline:
     ) -> Path:
         """Export standalone PreTrainedModel, merging LoRA weights and optionally uploading to Hub."""
         target_dir = (
-            Path(export_dir)
-            if export_dir is not None
-            else self.out_path / "final_pretrained_model"
+            Path(export_dir) if export_dir is not None else self.out_path / "final_pretrained_model"
         )
         should_push = self.cfg.push_to_hub if push_to_hub is None else push_to_hub
         repo = self.cfg.hub_repo if hub_repo is None else hub_repo
@@ -840,12 +1005,10 @@ class FastTrainingPipeline:
 
             api = HfApi(token=self.cfg.hf_token)
             sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
-            return bool(
-                api.file_exists(
-                    repo_id=self.cfg.hub_repo,
-                    filename=f"{sub}/pretrained_model/model.safetensors",
-                    repo_type="model",
-                )
+            return api.file_exists(
+                repo_id=self.cfg.hub_repo,
+                filename=f"{sub}/pretrained_model/model.safetensors",
+                repo_type="model",
             )
         except Exception:
             return False
@@ -890,7 +1053,9 @@ class FastTrainingPipeline:
                     shutil.copyfile(downloaded, raw / name)
             load_verified_tokenizer(ref, tokenizer_cache)
 
-    def run_benchmark_suite(self, summary_base: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def run_benchmark_suite(
+        self, summary_base: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Execute the 8-benchmark evaluation suite with automatic per-benchmark & intra-benchmark resume and Hub sync."""
         if self.cfg.tiny:
             return []
@@ -957,7 +1122,11 @@ class FastTrainingPipeline:
                     )
                     shutil.copy2(dl_report, report_file)
                 except Exception:
-                    for partial_name in ("evaluation_state.json", "predictions.jsonl", "timing.json"):
+                    for partial_name in (
+                        "evaluation_state.json",
+                        "predictions.jsonl",
+                        "timing.json",
+                    ):
                         target_partial = bench_out_dir / partial_name
                         if not target_partial.is_file():
                             try:
@@ -1158,6 +1327,80 @@ class FastTrainingPipeline:
 
         return reports
 
+    def _run_stage(
+        self,
+        stage_name: str,
+        optimizer: torch.optim.Optimizer,
+        start_step: int,
+        target_step: int,
+        data_iter: Any,
+        start_time: float,
+    ) -> tuple[int, Any]:
+        """Execute one training stage with warmup + cosine scheduling, evaluation, and checkpointing."""
+        self.current_stage = stage_name
+        global_step = start_step
+        total_stage_steps = target_step - start_step
+        log_step = max(1, min(self.cfg.log_interval, max(1, total_stage_steps // 20)))
+        save_every = max(1, self.cfg.save_interval)
+
+        while global_step < target_step:
+            self.model.train()
+            optimizer.zero_grad()
+            accum_loss = 0.0
+
+            if stage_name in ("stage1_bridge_warmup", "stage1_bridge_align", "stage1"):
+                active_lambda_ptr = (
+                    self.cfg.lambda_ptr if self.cfg.lambda_ptr > 0 else self.cfg.stage1_lambda_ptr
+                )
+            else:
+                active_lambda_ptr = self.cfg.lambda_ptr
+
+            for _ in range(self.cfg.gradient_accumulation_steps):
+                try:
+                    batch = next(data_iter)
+                except StopIteration:
+                    data_iter = iter(self.train_loader)
+                    batch = next(data_iter)
+
+                loss = (
+                    self.train_step(batch, stage_name=stage_name, lambda_ptr=active_lambda_ptr)
+                    / self.cfg.gradient_accumulation_steps
+                )
+                loss.backward()
+                accum_loss += float(loss.item())
+
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            self._update_learning_rates(optimizer, global_step)
+            optimizer.step()
+            global_step += 1
+
+            step_loss = accum_loss * self.cfg.gradient_accumulation_steps
+            val_loss = (
+                self.evaluate()
+                if (global_step % self.cfg.eval_interval == 0 or global_step == target_step)
+                else None
+            )
+            record = {
+                "stage": stage_name,
+                "step": global_step,
+                "loss": step_loss,
+                "val_loss": val_loss,
+                "elapsed_sec": time.time() - start_time,
+            }
+            if global_step % log_step == 0 or global_step == target_step:
+                self.history.append(record)
+                val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
+                print(
+                    f"[{time.strftime('%X')}] Step {global_step}/{target_step} [{stage_name}] - loss={record['loss']:.4f}{val_str}",
+                    flush=True,
+                )
+            if not self.cfg.tiny and (global_step % save_every == 0 or global_step == target_step):
+                self.save_checkpoint(global_step, stage_name)
+            if self.callback:
+                self.callback(record)
+
+        return global_step, data_iter
+
     def run(self) -> dict[str, Any]:
         """Execute complete fast two-stage training, export standalone model, and run benchmark suite."""
         start_time = time.time()
@@ -1166,7 +1409,7 @@ class FastTrainingPipeline:
         already_completed = global_step >= self.cfg.total_steps
         data_iter = iter(self.train_loader)
         current_stage = "completed" if already_completed else "starting"
-        save_every = max(1, self.cfg.save_interval)
+        self.current_stage = current_stage
 
         try:
             if already_completed:
@@ -1208,64 +1451,22 @@ class FastTrainingPipeline:
                     flush=True,
                 )
                 opt = self.configure_stage2()
-                log_step = max(1, min(self.cfg.log_interval, full_steps // 20))
-
-                while global_step < full_steps:
-                    self.model.train()
-                    opt.zero_grad()
-                    accum_loss = 0.0
-
-                    for _ in range(self.cfg.gradient_accumulation_steps):
-                        try:
-                            batch = next(data_iter)
-                        except StopIteration:
-                            data_iter = iter(self.train_loader)
-                            batch = next(data_iter)
-
-                        loss = (
-                            self.train_step(batch, stage_name="full_decoder_sft")
-                            / self.cfg.gradient_accumulation_steps
-                        )
-                        loss.backward()
-                        accum_loss += float(loss.item())
-
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                    opt.step()
-                    global_step += 1
-
-                    step_loss = accum_loss * self.cfg.gradient_accumulation_steps
-                    val_loss = (
-                        self.evaluate()
-                        if (global_step % self.cfg.eval_interval == 0 or global_step == full_steps)
-                        else None
-                    )
-                    record = {
-                        "stage": "full_decoder_sft",
-                        "step": global_step,
-                        "loss": step_loss,
-                        "val_loss": val_loss,
-                        "elapsed_sec": time.time() - start_time,
-                    }
-                    if global_step % log_step == 0 or global_step == full_steps:
-                        self.history.append(record)
-                        val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
-                        print(
-                            f"[{time.strftime('%X')}] Step {global_step}/{full_steps} [full_decoder_sft] - loss={record['loss']:.4f}{val_str}",
-                            flush=True,
-                        )
-                    if not self.cfg.tiny and (
-                        global_step % save_every == 0 or global_step == full_steps
-                    ):
-                        self.save_checkpoint(global_step, "full_decoder_sft")
-                    if self.callback:
-                        self.callback(record)
+                global_step, data_iter = self._run_stage(
+                    stage_name="full_decoder_sft",
+                    optimizer=opt,
+                    start_step=global_step,
+                    target_step=full_steps,
+                    data_iter=data_iter,
+                    start_time=start_time,
+                )
             else:
                 # Paired BifocalGemma model: Two-Stage Training (Stage 1 Bridge Alignment + Stage 2 Joint SFT)
                 # -------------------------------------------------------------
                 # STAGE 1: Bridge Manifold Alignment
                 # -------------------------------------------------------------
+                opt1 = None
                 if global_step < self.cfg.stage1_steps:
-                    current_stage = "stage1_bridge_align"
+                    current_stage = "stage1_bridge_warmup"
                     logger.info(
                         "Starting Stage 1: Bridge Alignment (%d steps)", self.cfg.stage1_steps
                     )
@@ -1274,66 +1475,14 @@ class FastTrainingPipeline:
                         flush=True,
                     )
                     opt1 = self.configure_stage1()
-                    log_step1 = max(
-                        1, min(self.cfg.log_interval, max(1, self.cfg.stage1_steps // 20))
+                    global_step, data_iter = self._run_stage(
+                        stage_name="stage1_bridge_warmup",
+                        optimizer=opt1,
+                        start_step=global_step,
+                        target_step=self.cfg.stage1_steps,
+                        data_iter=data_iter,
+                        start_time=start_time,
                     )
-
-                    while global_step < self.cfg.stage1_steps:
-                        self.model.train()
-                        opt1.zero_grad()
-                        accum_loss = 0.0
-
-                        for _ in range(self.cfg.gradient_accumulation_steps):
-                            try:
-                                batch = next(data_iter)
-                            except StopIteration:
-                                data_iter = iter(self.train_loader)
-                                batch = next(data_iter)
-
-                            loss = (
-                                self.train_step(batch, stage_name="stage1")
-                                / self.cfg.gradient_accumulation_steps
-                            )
-                            loss.backward()
-                            accum_loss += float(loss.item())
-
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                        opt1.step()
-                        global_step += 1
-
-                        step_loss = accum_loss * self.cfg.gradient_accumulation_steps
-                        val_loss = (
-                            self.evaluate()
-                            if (
-                                global_step % self.cfg.eval_interval == 0
-                                or global_step == self.cfg.stage1_steps
-                            )
-                            else None
-                        )
-                        record = {
-                            "stage": "stage1_bridge_align",
-                            "step": global_step,
-                            "loss": step_loss,
-                            "val_loss": val_loss,
-                            "elapsed_sec": time.time() - start_time,
-                        }
-                        if (
-                            global_step % log_step1 == 0
-                            or global_step == self.cfg.stage1_steps
-                        ):
-                            self.history.append(record)
-                            val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
-                            print(
-                                f"[{time.strftime('%X')}] Step {global_step}/{self.cfg.stage1_steps} [stage1] - loss={record['loss']:.4f}{val_str}",
-                                flush=True,
-                            )
-                        if not self.cfg.tiny and (
-                            global_step % save_every == 0
-                            or global_step == self.cfg.stage1_steps
-                        ):
-                            self.save_checkpoint(global_step, "stage1_bridge_align")
-                        if self.callback:
-                            self.callback(record)
 
                 # -------------------------------------------------------------
                 # STAGE 2: Joint LoRA Fine-Tuning
@@ -1350,74 +1499,46 @@ class FastTrainingPipeline:
                         flush=True,
                     )
                     opt2 = self.configure_stage2()
-                    log_step2 = max(
-                        1, min(self.cfg.log_interval, max(1, remaining_stage2_steps // 20))
-                    )
 
-                    while global_step < stage2_target:
-                        self.model.train()
-                        opt2.zero_grad()
-                        accum_loss = 0.0
-
-                        for _ in range(self.cfg.gradient_accumulation_steps):
-                            try:
-                                batch = next(data_iter)
-                            except StopIteration:
-                                data_iter = iter(self.train_loader)
-                                batch = next(data_iter)
-
-                            loss = (
-                                self.train_step(batch, stage_name="stage2")
-                                / self.cfg.gradient_accumulation_steps
-                            )
-                            loss.backward()
-                            accum_loss += float(loss.item())
-
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                        opt2.step()
-                        global_step += 1
-
-                        step_loss = accum_loss * self.cfg.gradient_accumulation_steps
-                        val_loss = (
-                            self.evaluate()
-                            if (
-                                global_step % self.cfg.eval_interval == 0
-                                or global_step == stage2_target
-                            )
-                            else None
+                    # Preserve AdamW momentum state (exp_avg, exp_avg_sq, step) from Stage 1 into Stage 2
+                    if opt1 is not None and hasattr(opt1, "state") and opt1.state:
+                        opt2_params = {p for group in opt2.param_groups for p in group["params"]}
+                        transferred = 0
+                        for p, s in opt1.state.items():
+                            if p in opt2_params:
+                                opt2.state[p] = {
+                                    k: (v.clone() if isinstance(v, torch.Tensor) else v)
+                                    for k, v in s.items()
+                                }
+                                transferred += 1
+                        logger.info(
+                            "Preserved AdamW momentum state for %d parameters across Stage 1 -> Stage 2",
+                            transferred,
                         )
-                        record = {
-                            "stage": "stage2_joint_sft",
-                            "step": global_step,
-                            "loss": step_loss,
-                            "val_loss": val_loss,
-                            "elapsed_sec": time.time() - start_time,
-                        }
-                        if global_step % log_step2 == 0 or global_step == stage2_target:
-                            self.history.append(record)
-                            val_str = f" | val_loss={val_loss:.4f}" if val_loss is not None else ""
-                            print(
-                                f"[{time.strftime('%X')}] Step {global_step}/{stage2_target} [stage2] - loss={record['loss']:.4f}{val_str}",
-                                flush=True,
-                            )
-                        if not self.cfg.tiny and (
-                            global_step % save_every == 0 or global_step == stage2_target
-                        ):
-                            self.save_checkpoint(global_step, "stage2_joint_sft")
-                        if self.callback:
-                            self.callback(record)
+
+                    global_step, data_iter = self._run_stage(
+                        stage_name="stage2_joint_sft",
+                        optimizer=opt2,
+                        start_step=global_step,
+                        target_step=stage2_target,
+                        data_iter=data_iter,
+                        start_time=start_time,
+                    )
         except KeyboardInterrupt:
             print(
                 f"\n[{time.strftime('%X')}] ⏸️ Pelatihan/Evaluasi dihentikan pada step {global_step}. Menyimpan checkpoint otomatis...",
                 flush=True,
             )
             if not already_completed:
-                self.save_checkpoint(global_step, current_stage)
+                self.save_checkpoint(global_step, getattr(self, "current_stage", current_stage))
             last_val = next(
                 (h["val_loss"] for h in reversed(self.history) if h.get("val_loss") is not None),
                 0.0,
             )
-            safe_cfg_int = {k: ("***REDACTED***" if k == "hf_token" and v else v) for k, v in asdict(self.cfg).items()}
+            safe_cfg_int = {
+                k: ("***REDACTED***" if k == "hf_token" and v else v)
+                for k, v in asdict(self.cfg).items()
+            }
             interrupted_summary = {
                 "status": "INTERRUPTED_SAVED",
                 "model_choice": self.cfg.model_choice,
@@ -1444,9 +1565,7 @@ class FastTrainingPipeline:
             None,
         )
         final_val_loss = (
-            float(cached_val)
-            if (already_completed and cached_val is not None)
-            else self.evaluate()
+            float(cached_val) if (already_completed and cached_val is not None) else self.evaluate()
         )
         export_dir = self.out_path / "final_pretrained_model"
         if already_completed and (
@@ -1468,7 +1587,10 @@ class FastTrainingPipeline:
             self.export_pretrained(export_dir)
 
         # Save training summary (redact hf_token so Hugging Face secret scanner allows upload)
-        safe_cfg = {k: ("***REDACTED***" if k == "hf_token" and v else v) for k, v in asdict(self.cfg).items()}
+        safe_cfg = {
+            k: ("***REDACTED***" if k == "hf_token" and v else v)
+            for k, v in asdict(self.cfg).items()
+        }
         summary: dict[str, Any] = {
             "status": "COMPLETED",
             "model_choice": self.cfg.model_choice,
@@ -1569,6 +1691,10 @@ def run_fast_training(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip automatic benchmark suite execution after training",
     )
+    parser.add_argument("--stage1-lambda-ptr", type=float, default=0.15)
+    parser.add_argument("--gate-init-tanh", type=float, default=0.10)
+    parser.add_argument("--no-stage1-encoder-lora", action="store_true")
+    parser.add_argument("--no-curriculum", action="store_true")
 
     args = parser.parse_args(argv)
     stage1 = 0 if args.model == "baseline-2b" else args.steps // 2
@@ -1586,6 +1712,10 @@ def run_fast_training(argv: list[str] | None = None) -> int:
         tokenizer_path=args.tokenizer_path,
         push_to_hub=args.push_to_hub,
         hub_repo=args.hub_repo,
+        stage1_lambda_ptr=args.stage1_lambda_ptr,
+        gate_init_tanh=args.gate_init_tanh,
+        stage1_encoder_lora=not args.no_stage1_encoder_lora,
+        use_comprehension_curriculum=not args.no_curriculum,
         tiny=args.tiny,
         run_benchmarks=not args.no_benchmarks,
     )

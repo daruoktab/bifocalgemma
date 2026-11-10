@@ -35,7 +35,10 @@ def main() -> None:
     if session_id not in sessions_check.stdout:
         print(f"[Launcher] Creating new Colab session '{session_id}' with A100 GPU...", flush=True)
         new_res = run_cmd(["colab", "new", "--gpu", "A100", "-s", session_id])
-        print(f"[Launcher] Session create: {new_res.stdout.strip()} {new_res.stderr.strip()}", flush=True)
+        print(
+            f"[Launcher] Session create: {new_res.stdout.strip()} {new_res.stderr.strip()}",
+            flush=True,
+        )
 
     # 2. Write token file onto VM so it survives subshell boundaries
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as tf:
@@ -73,7 +76,10 @@ def main() -> None:
         flush=True,
     )
     print("[Launcher] Live notifications: https://ntfy.sh/bifocalgemma-daru", flush=True)
-    print("[Launcher] Auto-sync dataset: https://huggingface.co/datasets/daruokta/bifocalgemma-pilot-results", flush=True)
+    print(
+        "[Launcher] Auto-sync dataset: https://huggingface.co/datasets/daruokta/bifocalgemma-pilot-results",
+        flush=True,
+    )
     print("[Launcher] Auto-shutdown: enabled via runtime.unassign()", flush=True)
 
     proc = subprocess.Popen(

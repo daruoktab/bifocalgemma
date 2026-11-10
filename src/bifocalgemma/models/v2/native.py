@@ -4,9 +4,7 @@ The upstream text stack owns PLE, residuals, MLP and RoPE. Only decoder attentio
 is replaced. Same-forward shared KV includes both self and cross branches.
 """
 
-import json
 from importlib.metadata import version
-from importlib.resources import files
 from typing import Callable, cast
 
 import torch
@@ -29,12 +27,12 @@ from bifocalgemma.training.objectives import chunked_linear_cross_entropy, patch
 
 def native_config(size: ModelSize, *, tiny: bool = True, encoder: bool = False):
     """Full dimensions are for meta inspection only; factory always uses tiny."""
-    if version("transformers") not in {"5.19.0", "5.20.2", "5.22.1"}:
+    if version("transformers") not in {"5.19.0", "5.20.2", "5.22.1", "5.22.2"}:
         raise RuntimeError(
             "Native integration requires the validated transformers 5.19.0/5.20.2 interface."
         )
-    asset = files("bifocalgemma.assets").joinpath(f"gemma4_{size.lower()}.json")
     from bifocalgemma.assets import load_asset_json
+
     values = load_asset_json(f"gemma4_{size.lower()}.json")["text_config"]
     if tiny:
         width = 32 if size == "E2B" else 48
@@ -257,7 +255,7 @@ class NativeTinyModel(nn.Module):
             input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=True
         )
 
-    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
+    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:  # nn.Module.forward is annotated Callable.
         if self.encoder is None:
             if batch.encoder_input_ids.shape[1] != 0:
                 raise ValueError("Baseline requires an empty encoder sequence.")

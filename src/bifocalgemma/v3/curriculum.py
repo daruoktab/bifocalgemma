@@ -228,7 +228,7 @@ def build_anti_forgetting_curriculum(
         }
 
     ratio = max(0.10, min(0.25, float(comprehension_ratio)))
-    target_comp_count = max(1, int(round(total * ratio))) if total >= 4 else 0
+    target_comp_count = max(1, round(total * ratio)) if total >= 4 else 0
 
     existing_comp = [ex for ex in train_examples if is_comprehension_example(ex)]
     repair_pool = [ex for ex in train_examples if not is_comprehension_example(ex)]
@@ -270,7 +270,7 @@ def build_anti_forgetting_curriculum(
     rep_idx = 0
     remaining_total = total - len(curriculum)
     stride = (
-        max(2, int(round(remaining_total / max(1, len(rest_comp)))))
+        max(2, round(remaining_total / max(1, len(rest_comp))))
         if rest_comp
         else remaining_total + 1
     )

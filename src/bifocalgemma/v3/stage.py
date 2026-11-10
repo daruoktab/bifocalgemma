@@ -30,7 +30,7 @@ def configure_matrix_stage(
         raise ValueError("Stage horizon must be a positive integer.")
     default_scaling = policy["alpha"] / policy["rank"]
     has_encoder = getattr(model, "encoder", None) is not None
-    effective_freeze_decoder = bool(freeze_decoder and has_encoder)
+    effective_freeze_decoder = freeze_decoder and has_encoder
 
     for name, module in model.named_modules():
         if isinstance(module, ProbeLoRALinear):

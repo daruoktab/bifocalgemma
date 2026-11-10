@@ -1,8 +1,8 @@
 import json
 import zipfile
 
-with zipfile.ZipFile('outputs/colab/it_encoder_frozen_then_joint_results.zip') as z:
-    d = json.loads(z.read('pilot_e2b_e2b.json').decode('utf-8'))
+with zipfile.ZipFile("outputs/colab/it_encoder_frozen_then_joint_results.zip") as z:
+    d = json.loads(z.read("pilot_e2b_e2b.json").decode("utf-8"))
 
 print("=== INITIAL EVAL ===")
 print(json.dumps(d.get("initial_eval"), indent=2))

@@ -106,8 +106,16 @@ def validate_empirical_results_schema(data: Dict[str, Any]) -> None:
         "sweqa_clean_oracle": {"accuracy": float, "n": int},
         "sweqa_noisy_oracle": {"accuracy": float, "n": int, "degradation": float},
         "longcodeqa": {"accuracy": float, "n": int},
-        "humanevalfix_clean": {"syntax_pass_rate": float, "functional_pass_rate": float, "headline": float},
-        "crosscodelong": {"sequence_similarity": float, "regex_f1": float, "exact_match": (float, int, bool)},
+        "humanevalfix_clean": {
+            "syntax_pass_rate": float,
+            "functional_pass_rate": float,
+            "headline": float,
+        },
+        "crosscodelong": {
+            "sequence_similarity": float,
+            "regex_f1": float,
+            "exact_match": (float, int, bool),
+        },
         "gsm8k_8shot": {"accuracy": float, "n": int},
     }
 
@@ -128,8 +136,17 @@ def validate_empirical_results_schema(data: Dict[str, Any]) -> None:
                 )
 
             # Value range checks
-            if field in ("accuracy", "syntax_pass_rate", "functional_pass_rate", "headline", "sequence_similarity", "regex_f1"):
-                assert 0.0 <= float(val) <= 1.0, f"Value of '{benchmark_key}.{field}' must be in [0.0, 1.0], got {val}"
+            if field in (
+                "accuracy",
+                "syntax_pass_rate",
+                "functional_pass_rate",
+                "headline",
+                "sequence_similarity",
+                "regex_f1",
+            ):
+                assert 0.0 <= float(val) <= 1.0, (
+                    f"Value of '{benchmark_key}.{field}' must be in [0.0, 1.0], got {val}"
+                )
             elif field == "n":
                 assert val > 0, f"Count 'n' in '{benchmark_key}' must be positive, got {val}"
 
@@ -173,4 +190,3 @@ def reference_resilient_mcq_parser(text: str) -> Optional[str]:
     from bifocalgemma.evaluation.context import extract_mcq_letter
 
     return extract_mcq_letter(text)
-

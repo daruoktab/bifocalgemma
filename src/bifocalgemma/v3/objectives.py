@@ -93,15 +93,15 @@ class StreamingPointerLoss(torch.nn.Module):
         use_checkpoint: bool = True,
     ) -> None:
         super().__init__()
-        self.d_ptr = int(d_ptr)
-        self.chunk_size = int(chunk_size)
+        self.d_ptr = d_ptr
+        self.chunk_size = chunk_size
         self.scale = 1.0 / math.sqrt(float(self.d_ptr))
-        self.w_ptr_q = torch.nn.Linear(int(d_dec), self.d_ptr, bias=False)
-        self.w_ptr_k = torch.nn.Linear(int(d_dec), self.d_ptr, bias=False)
+        self.w_ptr_q = torch.nn.Linear(d_dec, self.d_ptr, bias=False)
+        self.w_ptr_k = torch.nn.Linear(d_dec, self.d_ptr, bias=False)
         self.trivial_token_ids = trivial_token_ids
         self.use_checkpoint = use_checkpoint
 
-    def forward(  # ty: ignore[invalid-mutable-override]
+    def forward(
         self,
         h_dec: torch.Tensor,
         z_enc: torch.Tensor,
@@ -273,7 +273,7 @@ def streaming_pointer_auxiliary_loss(
     """Parameter-free zero-materialization streaming pointer NLL aligning decoder hidden states to bridge states."""
     if z_enc is None or z_enc.shape[1] == 0 or not bool(enc_valid_mask.any()):
         return h_dec.sum() * 0.0
-    d_model = max(1, int(h_dec.shape[-1]))
+    d_model = max(1, h_dec.shape[-1])
     q_norm = F.normalize(h_dec.float(), dim=-1) * math.sqrt(float(d_model))
     k_norm = F.normalize(z_enc.float(), dim=-1) * math.sqrt(float(d_model))
     scale = 1.0 / math.sqrt(float(d_model))
@@ -493,11 +493,7 @@ def compute_v3_step_loss(
         return ce_loss
 
     DEFAULT_LAMBDA_PTR = 0.0
-    ptr_weight = (
-        float(lambda_ptr)
-        if lambda_ptr is not None
-        else DEFAULT_LAMBDA_PTR
-    )
+    ptr_weight = float(lambda_ptr) if lambda_ptr is not None else DEFAULT_LAMBDA_PTR
     if ptr_weight <= 0.0:
         return ce_loss
     trivial_ids = getattr(model, "trivial_token_ids", None) or trivial_token_ids

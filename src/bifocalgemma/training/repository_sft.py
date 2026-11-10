@@ -27,10 +27,7 @@ def tokenize_repository_record(
     context = row["context"]
     encoder_ids = tuple(encoder.encode(context, add_special_tokens=True)) if spec.encoder else ()
     if spec.encoder:
-        prompt = (
-            "Return only a unified diff fulfilling the instruction.\n\n"
-            + row["instruction"]
-        )
+        prompt = "Return only a unified diff fulfilling the instruction.\n\n" + row["instruction"]
     else:
         prompt = "Return only a unified diff fulfilling the instruction.\n\n" + context
     messages = [{"role": "user", "content": prompt}]

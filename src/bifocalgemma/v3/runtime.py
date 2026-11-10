@@ -18,7 +18,7 @@ def ensure_hardware_memory_guards() -> dict[str, Any]:
 
 def clamped_triton_kernel_options(head_dim: int) -> dict[str, int]:
     """Clamp Triton tile dimensions for head_dim >= 256 to respect the 101,376B sm86 SRAM limit."""
-    if int(head_dim) >= 256:
+    if head_dim >= 256:
         return {
             "BLOCK_M": 16,
             "BLOCK_N": 16,

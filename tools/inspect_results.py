@@ -12,8 +12,15 @@ if os.path.exists(p):
         st = e.get("stage")
         sub = e.get("sub_stage")
         dev_loss = e.get("dev_loss")
-        if dev_loss is not None or st in ["stage1_eval", "stage2_eval", "arm_completed", "initial_eval"]:
-            print(f"Stage: {st}, Sub: {sub}, Step: {e.get('step')}, DevLoss: {dev_loss}, EvDone: {e.get('eval_examples_done')}")
+        if dev_loss is not None or st in [
+            "stage1_eval",
+            "stage2_eval",
+            "arm_completed",
+            "initial_eval",
+        ]:
+            print(
+                f"Stage: {st}, Sub: {sub}, Step: {e.get('step')}, DevLoss: {dev_loss}, EvDone: {e.get('eval_examples_done')}"
+            )
 
 print("\n=== 2. Inspecting grounding_eval_it_encoder_frozen_then_joint.json ===")
 p_grounding = "outputs/colab/grounding_eval_it_encoder_frozen_then_joint.json"
@@ -26,7 +33,9 @@ if os.path.exists(p_grounding):
             cases = res.get("cases", [])
             app_cnt = res.get("applied_count", 0)
             p_cnt = res.get("pass_count", 0)
-            print(f"Condition: {cond} -> Applied: {app_cnt}/{len(cases)}, Pass: {p_cnt}/{len(cases)}")
+            print(
+                f"Condition: {cond} -> Applied: {app_cnt}/{len(cases)}, Pass: {p_cnt}/{len(cases)}"
+            )
             reasons = {}
             for c in cases:
                 r = c.get("reason", "unknown")

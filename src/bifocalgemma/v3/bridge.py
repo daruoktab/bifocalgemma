@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any, Callable
 
 import torch
 import torch.utils.checkpoint
@@ -26,9 +27,9 @@ class SwiGLUDualGateBridge(torch.nn.Module):
         eps: float = 1e-6,
     ) -> None:
         super().__init__()
-        self.d_enc = int(d_enc)
-        self.d_dec = int(d_dec)
-        self.d_mid = int(d_mid) if d_mid is not None else int(max(d_enc, d_dec))
+        self.d_enc = d_enc
+        self.d_dec = d_dec
+        self.d_mid = d_mid if d_mid is not None else max(d_enc, d_dec)
 
         self.pre_norm = torch.nn.RMSNorm(self.d_enc, eps=eps)
         self.w_gate = torch.nn.Linear(self.d_enc, self.d_mid, bias=False)
@@ -54,7 +55,16 @@ class SwiGLUDualGateBridge(torch.nn.Module):
             torch.nn.init.xavier_uniform_(self.w_up.weight, gain=0.5)
             torch.nn.init.normal_(self.w_down.weight, mean=0.0, std=0.01 / math.sqrt(self.d_mid))
 
-    def forward(self, h_enc: torch.Tensor) -> torch.Tensor:  # ty: ignore[invalid-mutable-override]
+    def _apply(self, fn: Callable[..., Any], recurse: bool = True) -> SwiGLUDualGateBridge:
+        super()._apply(fn, recurse=recurse)
+        for p in self.parameters(recurse=recurse):
+            if p.dtype in (torch.bfloat16, torch.float16):
+                p.data = p.data.float()
+                if p.grad is not None and p.grad.dtype in (torch.bfloat16, torch.float16):
+                    p.grad.data = p.grad.data.float()
+        return self
+
+    def forward(self, h_enc: torch.Tensor) -> torch.Tensor:
         orig_dtype = h_enc.dtype
         compute_dtype = (
             torch.bfloat16

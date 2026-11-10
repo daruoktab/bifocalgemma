@@ -30,7 +30,7 @@ class TinyLossModel(torch.nn.Module):
         self.words = torch.nn.Embedding(128, 8)
         self.head = torch.nn.Linear(8, 128, bias=False)
 
-    def forward(self, batch):  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is annotated Callable.
+    def forward(self, batch):  # nn.Module.forward is annotated Callable.
         logits = self.head(self.words(batch.decoder_input_ids))
         return ModelOutput(logits, patch_cross_entropy(logits, batch.labels))
 
@@ -253,7 +253,9 @@ class TestNotebookCellParity(unittest.TestCase):
     def test_hub_upload_controls_and_path(self):
         root = Path(__file__).resolve().parents[1]
         for family in ("symmetric", "asymmetric"):
-            text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
+            text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(
+                encoding="utf-8"
+            )
             self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
             self.assertIn("HF_UPLOAD_ENABLED = True", text)
             self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)

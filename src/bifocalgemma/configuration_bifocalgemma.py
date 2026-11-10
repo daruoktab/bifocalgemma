@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Any, cast
 
 from transformers.configuration_utils import PretrainedConfig
 
@@ -41,16 +41,21 @@ class BifocalGemmaConfig(PretrainedConfig):
         **kwargs: Any,
     ) -> None:
         super().__init__(
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            pad_token_id=pad_token_id,
-            tie_word_embeddings=tie_word_embeddings,
-            **kwargs,
+            **cast(
+                Any,
+                {
+                    "bos_token_id": bos_token_id,
+                    "eos_token_id": eos_token_id,
+                    "pad_token_id": pad_token_id,
+                    "tie_word_embeddings": tie_word_embeddings,
+                    **kwargs,
+                },
+            )
         )
 
-        self.encoder_size = str(encoder_size)
-        self.decoder_size = str(decoder_size)
-        self.tiny = bool(tiny)
+        self.encoder_size = encoder_size
+        self.decoder_size = decoder_size
+        self.tiny = tiny
 
         # Resolve decoder subconfig
         if decoder_config is None:
@@ -84,20 +89,20 @@ class BifocalGemmaConfig(PretrainedConfig):
             else dec_hidden
         )
 
-        self.d_enc = int(d_enc) if d_enc is not None else enc_hidden
-        self.d_dec = int(d_dec) if d_dec is not None else dec_hidden
-        self.d_mid = int(d_mid) if d_mid is not None else max(self.d_enc, self.d_dec)
+        self.d_enc = d_enc if d_enc is not None else enc_hidden
+        self.d_dec = d_dec if d_dec is not None else dec_hidden
+        self.d_mid = d_mid if d_mid is not None else max(self.d_enc, self.d_dec)
 
         self.init_rms_scale = float(init_rms_scale)
         self.gate_init_tanh = float(gate_init_tanh)
-        self.learnable_cross_scale = bool(learnable_cross_scale)
+        self.learnable_cross_scale = learnable_cross_scale
         dec_vocab = (
             self.decoder_config.get("vocab_size", 262144 if not self.tiny else 128)
             if isinstance(self.decoder_config, dict)
             else getattr(self.decoder_config, "vocab_size", 262144 if not self.tiny else 128)
         )
         self.vocab_size = int(dec_vocab)
-        self.max_position_embeddings = int(max_position_embeddings)
+        self.max_position_embeddings = max_position_embeddings
         self.architectures = ["BifocalGemmaForCausalLM"]
         self.auto_map = {
             "AutoConfig": "configuration_bifocalgemma.BifocalGemmaConfig",
@@ -116,6 +121,7 @@ class BifocalGemmaConfig(PretrainedConfig):
         if size_clean not in ("E2B", "E4B"):
             size_clean = "E2B"
         from bifocalgemma.models.v2.native import native_config
+
         return native_config(size_clean, tiny=tiny, encoder=encoder).to_dict()
 
     def to_dict(self) -> dict[str, Any]:

@@ -22,9 +22,7 @@ def test_combination_eval_metrics_to_paper_data_serialization(
     """Verify evaluation outputs serialize to paper/data/empirical_benchmark_results.json format."""
     # Serialize to disk
     output_file = tmp_path / "empirical_benchmark_results.json"
-    output_file.write_text(
-        json.dumps(authoritative_empirical_results, indent=2), encoding="utf-8"
-    )
+    output_file.write_text(json.dumps(authoritative_empirical_results, indent=2), encoding="utf-8")
 
     # Read back and validate schema
     loaded = json.loads(output_file.read_text(encoding="utf-8"))
@@ -84,7 +82,10 @@ def test_combination_crosscode_continuous_metrics_aggregation():
     # Simulate 5 completion predictions with typical partial matches
     predictions = [
         ("def calc(a, b): return a + b", "def calc(x, y): return x + y"),
-        ("def filter_items(items): return [i for i in items if i > 0]", "def filter_items(lst): return [x for x in lst if x > 0]"),
+        (
+            "def filter_items(items): return [i for i in items if i > 0]",
+            "def filter_items(lst): return [x for x in lst if x > 0]",
+        ),
         ("class Node: pass", "class Node:\n    def __init__(self): pass"),
         ("result = query.fetch()", "result = query.execute()"),
         ("import os\nimport sys", "import sys\nimport os"),

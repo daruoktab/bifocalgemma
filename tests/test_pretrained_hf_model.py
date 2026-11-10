@@ -1,5 +1,7 @@
 """Comprehensive test suite for standard Hugging Face PreTrainedModel BifocalGemma."""
 
+from typing import Any, cast
+
 import torch
 import torch.nn as nn
 from transformers import AutoConfig, AutoModelForCausalLM
@@ -78,23 +80,26 @@ def test_bifocalgemma_merge_and_unload():
     model = BifocalGemmaForCausalLM(config)
 
     # Wrap a decoder projection with ProbeLoRALinear
-    first_layer = model.decoder.layers[0]
-    base_linear = first_layer.mlp.gate_proj
+    assert model.decoder is not None
+    decoder = cast(Any, model.decoder)
+    first_layer = decoder.layers[0]
+    mlp = first_layer.mlp
+    base_linear = mlp.gate_proj
     lora_module = ProbeLoRALinear(base_linear, rank=4)
     # Give non-zero weights to lora_A and lora_B
     lora_module.lora_A.data.fill_(0.1)
     lora_module.lora_B.data.fill_(0.2)
-    first_layer.mlp.gate_proj = lora_module
+    mlp.gate_proj = lora_module
 
     w_before = base_linear.weight.clone()
-    assert isinstance(first_layer.mlp.gate_proj, ProbeLoRALinear)
+    assert isinstance(mlp.gate_proj, ProbeLoRALinear)
 
     # Merge and unload
     model.merge_and_unload()
-    assert not isinstance(first_layer.mlp.gate_proj, ProbeLoRALinear)
-    assert isinstance(first_layer.mlp.gate_proj, nn.Linear)
+    assert not isinstance(mlp.gate_proj, ProbeLoRALinear)
+    assert isinstance(mlp.gate_proj, nn.Linear)
 
-    w_after = first_layer.mlp.gate_proj.weight
+    w_after = mlp.gate_proj.weight
     # Check that weights were actually changed by lora delta
     assert not torch.allclose(w_before, w_after)
 
@@ -104,8 +109,10 @@ def test_bifocalgemma_save_and_from_pretrained_roundtrip(tmp_path):
     model = BifocalGemmaForCausalLM(config)
 
     # Attach LoRA to verify automatic merge on save
-    first_layer = model.decoder.layers[0]
-    first_layer.mlp.gate_proj = ProbeLoRALinear(first_layer.mlp.gate_proj, rank=4)
+    assert model.decoder is not None
+    first_layer = cast(Any, model.decoder).layers[0]
+    mlp = first_layer.mlp
+    mlp.gate_proj = ProbeLoRALinear(mlp.gate_proj, rank=4)
     assert any(isinstance(m, ProbeLoRALinear) for m in model.modules())
 
     export_dir = tmp_path / "bifocalgemma_export"
@@ -142,6 +149,7 @@ def test_bifocalgemma_save_and_from_pretrained_roundtrip(tmp_path):
         from transformers import AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained(export_dir)
+        assert tokenizer is not None
         tokens = tokenizer.encode("def add(a, b): return a + b")
         assert len(tokens) > 0
 
@@ -175,13 +183,13 @@ def test_from_pretrained_backbones_loading(tmp_path):
     base_model = BifocalGemmaForCausalLM(config)
 
     # Save mock backbone safetensors with official Gemma-4 prefix "model.language_model."
+    assert base_model.decoder is not None
+    assert base_model.encoder is not None
     dec_state = {
-        f"model.language_model.{k}": v.clone()
-        for k, v in base_model.decoder.state_dict().items()
+        f"model.language_model.{k}": v.clone() for k, v in base_model.decoder.state_dict().items()
     }
     enc_state = {
-        f"model.language_model.{k}": v.clone()
-        for k, v in base_model.encoder.state_dict().items()
+        f"model.language_model.{k}": v.clone() for k, v in base_model.encoder.state_dict().items()
     }
 
     dec_file = tmp_path / "dec_model.safetensors"
@@ -322,6 +330,7 @@ def test_fast_training_pipeline_with_jsonl_data_dir(tmp_path):
         paired_text = pipeline.tokenizer.decode(
             list(tok_ds[0].decoder_prefix_ids), skip_special_tokens=False
         )
+        assert isinstance(paired_text, str)
         assert "using the encoder context" not in paired_text.lower(), (
             f"Prompt leakage detected in paired decoder prefix: {paired_text!r}"
         )
@@ -330,6 +339,7 @@ def test_fast_training_pipeline_with_jsonl_data_dir(tmp_path):
         base_text = pipeline.tokenizer.decode(
             list(tok_base_ds[0].decoder_prefix_ids), skip_special_tokens=False
         )
+        assert isinstance(base_text, str)
         assert "using the encoder context" not in base_text.lower()
 
     # Verify dataloaders yield Seq2SeqBatch
@@ -455,8 +465,7 @@ def test_from_pretrained_backbones_baseline(tmp_path):
     assert base_model.encoder is None
 
     dec_state = {
-        f"model.language_model.{k}": v.clone()
-        for k, v in base_model.decoder.state_dict().items()
+        f"model.language_model.{k}": v.clone() for k, v in base_model.decoder.state_dict().items()
     }
     backbone_dir = tmp_path / "baseline_backbone_dir"
     backbone_dir.mkdir(parents=True, exist_ok=True)
@@ -563,9 +572,12 @@ def test_enable_memory_efficient_training_and_softcapping():
     paired_model.enable_memory_efficient_training(
         query_chunk_size=64, loss_chunk_size=64, gradient_checkpointing=False
     )
-    assert isinstance(paired_model.encoder.layers[0].self_attn, TiledEncoderAttention)
+    assert paired_model.encoder is not None
+    assert paired_model.decoder is not None
+    encoder = cast(Any, paired_model.encoder)
+    assert isinstance(encoder.layers[0].self_attn, TiledEncoderAttention)
     assert paired_model.loss_chunk_size == 64
-    assert not paired_model.encoder.config.use_cache
+    assert not encoder.config.use_cache
     assert not paired_model.decoder.config.use_cache
 
 
@@ -658,8 +670,9 @@ def test_fast_pipeline_skips_training_when_already_completed(tmp_path, monkeypat
         monkeypatch.setattr(
             p2,
             "train_step",
-            lambda batch, stage_name: called_steps.append(stage_name)
-            or torch.tensor(0.5, requires_grad=True),
+            lambda batch, stage_name: (
+                called_steps.append(stage_name) or torch.tensor(0.5, requires_grad=True)
+            ),
         )
         summary = p2.run()
         assert summary["status"] == "COMPLETED"

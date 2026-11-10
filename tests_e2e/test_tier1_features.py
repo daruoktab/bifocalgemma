@@ -104,7 +104,9 @@ def test_f2_mcq_resilient_regex_parser():
 
     for raw_text, expected in test_cases:
         parsed = extract_mcq_letter(raw_text)
-        assert parsed == expected, f"extract_mcq_letter('{raw_text}') parsed '{parsed}' != expected '{expected}'"
+        assert parsed == expected, (
+            f"extract_mcq_letter('{raw_text}') parsed '{parsed}' != expected '{expected}'"
+        )
 
 
 # ==============================================================================
@@ -186,7 +188,9 @@ def test_f5_training_compatibility_hash_sync(project_root: Path):
 
     assert approved_hash is not None, "Missing 'approved_source_semantics_sha256' in config"
     assert source_hash is not None, "Missing 'source_semantics_sha256' in config"
-    assert baseline_training_hash is not None, "Missing 'baseline_training_semantics_sha256' in config"
+    assert baseline_training_hash is not None, (
+        "Missing 'baseline_training_semantics_sha256' in config"
+    )
     assert approved_hash == source_hash, (
         f"Inconsistent configuration: 'approved_source_semantics_sha256' ({approved_hash}) != "
         f"'source_semantics_sha256' ({source_hash})"
@@ -213,7 +217,6 @@ def test_f5_training_compatibility_hash_sync(project_root: Path):
     )
 
 
-
 # ==============================================================================
 # F6: Repository Test Runner Execution Health
 # ==============================================================================
@@ -232,7 +235,9 @@ def test_f6_repo_core_syntax_tests_executable(project_root: Path):
         "-q",
     ]
     res = subprocess.run(cmd, cwd=str(project_root), capture_output=True, text=True, timeout=60)
-    assert res.returncode == 0, f"Core syntax tests failed with exit code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert res.returncode == 0, (
+        f"Core syntax tests failed with exit code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    )
 
 
 # ==============================================================================
@@ -262,7 +267,9 @@ def test_f8_scientific_paper_structure(project_root: Path):
     tex_path = project_root / "paper/main.tex"
 
     if not draft_path.exists() and not tex_path.exists():
-        pytest.skip("Paper manuscript (M3) not yet generated in paper/; skipping until M3 is completed.")
+        pytest.skip(
+            "Paper manuscript (M3) not yet generated in paper/; skipping until M3 is completed."
+        )
 
     target_path = draft_path if draft_path.exists() else tex_path
     content = target_path.read_text(encoding="utf-8")
@@ -276,7 +283,9 @@ def test_f8_scientific_paper_structure(project_root: Path):
 # F9: Empirical Tables Integrity Verification
 # ==============================================================================
 @pytest.mark.tier1
-def test_f9_empirical_tables_integrity(project_root: Path, authoritative_empirical_results: Dict[str, Any]):
+def test_f9_empirical_tables_integrity(
+    project_root: Path, authoritative_empirical_results: Dict[str, Any]
+):
     """F9: Validates format and numeric ranges of reported benchmark metrics."""
     results_path = project_root / "paper/data/empirical_benchmark_results.json"
     if results_path.exists():

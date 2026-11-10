@@ -96,7 +96,9 @@ def validate_training_policy(policy, model=None):
                 raise ValueError(f"Invalid {key} for {name}.")
     if model is not None:
         if v2 and model.spec.architecture_version != "normalized_merged_v2":
-            raise ValueError("unified_v2 requires a v2 model; legacy checkpoints cannot resume this architecture.")
+            raise ValueError(
+                "unified_v2 requires a v2 model; legacy checkpoints cannot resume this architecture."
+            )
         if family == "decoder_only":
             if model.encoder is not None or model.encoder_projection is not None:
                 raise ValueError("Decoder-only policy requires a baseline model.")

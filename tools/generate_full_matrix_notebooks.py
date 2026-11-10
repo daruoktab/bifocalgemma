@@ -179,7 +179,9 @@ def render_notebook(model_key: str, manifest: dict[str, str]) -> str:
         - **Backbone:** Decoder `{decoder_id}` (rev `{decoder_rev}`)
         - **Kurikulum:** Full Decoder SFT = 11,102 steps terbuka penuh dari awal tanpa pembagian tahap (Batch=2, Accum=2)
         - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
-        ready_message = "**Runtime Baseline siap** · Full Decoder SFT & dynamic benchmark batching aktif."
+        ready_message = (
+            "**Runtime Baseline siap** · Full Decoder SFT & dynamic benchmark batching aktif."
+        )
     else:
         cell1_md = f"""        # {title}
 

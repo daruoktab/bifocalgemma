@@ -25,6 +25,7 @@ from bifocalgemma.evaluation.context import (
 # 1. Regex MCQ Parser Adversarial Challenges
 # ==============================================================================
 
+
 @pytest.mark.tier5
 @pytest.mark.parametrize(
     "raw_input,expected",
@@ -59,9 +60,7 @@ def test_adversarial_mcq_ambiguity_guards():
     ]
     for text in ambiguous_samples:
         parsed = extract_mcq_letter(text)
-        assert parsed is None, (
-            f"Expected None for ambiguous text '{text}', but got '{parsed}'"
-        )
+        assert parsed is None, f"Expected None for ambiguous text '{text}', but got '{parsed}'"
 
 
 @pytest.mark.tier5
@@ -143,6 +142,7 @@ def test_adversarial_mcq_lowercase_letter_normalization():
 # 2. Prompt Neutrality Across Tasks & Modes
 # ==============================================================================
 
+
 @pytest.mark.tier5
 def test_adversarial_prompt_neutrality_matrix():
     """Verify prompt neutrality across exhaustive combination of task kinds and modes."""
@@ -218,6 +218,7 @@ def test_adversarial_context_containing_forbidden_phrases():
 # ==============================================================================
 # 3. Continuous Metrics Adversarial Boundaries
 # ==============================================================================
+
 
 @pytest.mark.tier5
 def test_adversarial_metrics_disjoint_identifiers():
@@ -308,6 +309,7 @@ def test_adversarial_metrics_multiline_diff_inflation():
 # 4. RepoNIAH Distractor Harness Adversarial Challenge
 # ==============================================================================
 
+
 @pytest.mark.tier5
 @pytest.mark.parametrize("depth", [1000, 4000, 8000, 16000, 32000])
 @pytest.mark.parametrize("depth_ratio", [0.0, 0.5, 1.0])
@@ -317,7 +319,9 @@ def test_adversarial_reponiah_depth_and_ratio_extremes(depth: int, depth_ratio: 
     haystack = pub["context"]
     needle = gold["needle"]
 
-    assert needle in haystack, f"Needle '{needle}' missing from haystack at depth={depth}, ratio={depth_ratio}"
+    assert needle in haystack, (
+        f"Needle '{needle}' missing from haystack at depth={depth}, ratio={depth_ratio}"
+    )
 
     # Verify monotonic position
     needle_pos = haystack.find(needle)
@@ -326,7 +330,9 @@ def test_adversarial_reponiah_depth_and_ratio_extremes(depth: int, depth_ratio: 
     if depth_ratio == 0.0:
         assert rel_pos < 0.10, f"Needle at ratio 0.0 should be near start, got {rel_pos:.3f}"
     elif depth_ratio == 0.5:
-        assert 0.35 <= rel_pos <= 0.65, f"Needle at ratio 0.5 should be near center, got {rel_pos:.3f}"
+        assert 0.35 <= rel_pos <= 0.65, (
+            f"Needle at ratio 0.5 should be near center, got {rel_pos:.3f}"
+        )
     elif depth_ratio == 1.0:
         assert rel_pos > 0.80, f"Needle at ratio 1.0 should be near end, got {rel_pos:.3f}"
 
@@ -339,7 +345,10 @@ def test_adversarial_reponiah_deterministic_reproducibility():
 
     assert pub1 == pub2
     assert gold1 == gold2
-    assert hashlib.sha256(pub1["context"].encode()).hexdigest() == hashlib.sha256(pub2["context"].encode()).hexdigest()
+    assert (
+        hashlib.sha256(pub1["context"].encode()).hexdigest()
+        == hashlib.sha256(pub2["context"].encode()).hexdigest()
+    )
 
     # Different seeds must yield different needles
     pub3, gold3 = build_repo_niah_case(8000, 0.5, seed=1000)
@@ -361,7 +370,9 @@ def test_adversarial_reponiah_scorer_negation_vulnerability():
     assert res_exact["correct"] is True
 
     # Adversarial negation output
-    res_negated = score_repo_niah_case(pub, gold, "The secret key is definitely NOT secret_omega_42, it is missing.")
+    res_negated = score_repo_niah_case(
+        pub, gold, "The secret key is definitely NOT secret_omega_42, it is missing."
+    )
     # Confirms negation guard: negated completion evaluates to False
     assert res_negated["correct"] is False, "Expected negation guard to reject negated needle"
 
@@ -415,6 +426,7 @@ def test_adversarial_mcq_delimited_negation_and_conjunction_guards():
 def test_adversarial_mcq_redos_scaling():
     """Verify linear/sub-millisecond execution on adversarial repeated adverbs (no ReDoS)."""
     import time
+
     for n in [2, 10, 25, 50]:
         text = "therefore " + "clearly " * n + "something"
         t0 = time.perf_counter()
@@ -422,4 +434,3 @@ def test_adversarial_mcq_redos_scaling():
         dt = time.perf_counter() - t0
         assert res is None
         assert dt < 0.05, f"ReDoS detected at n={n}: took {dt:.4f}s"
-

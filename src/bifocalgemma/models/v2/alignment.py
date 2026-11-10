@@ -30,7 +30,7 @@ class NormalizedAlignment(nn.Module):
         self.norm.float()
         return self
 
-    def forward(self, hidden):  # ty: ignore[invalid-mutable-override]  # nn.Module.forward is a writable Callable.
+    def forward(self, hidden):  # nn.Module.forward is a writable Callable.
         projected = F.linear(hidden.float(), self.linear.weight)
         normalized = projected * torch.rsqrt(projected.square().mean(-1, keepdim=True) + 1e-6)
         return (normalized * self.norm.weight).to(hidden.dtype)

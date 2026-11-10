@@ -13,7 +13,10 @@ def main() -> None:
     print(f"[Status] Checking Colab session '{session_id}'...", flush=True)
     sessions = subprocess.run(["colab", "sessions"], capture_output=True, text=True)
     if session_id not in sessions.stdout:
-        print(f"[Status] Colab session '{session_id}' is NOT active (completed & released, or stopped).", flush=True)
+        print(
+            f"[Status] Colab session '{session_id}' is NOT active (completed & released, or stopped).",
+            flush=True,
+        )
         return
 
     check_code = """import json, os, subprocess
@@ -60,13 +63,19 @@ print(json.dumps({
         temp_file = tf.name
 
     try:
-        res = subprocess.run(["colab", "exec", "-s", session_id, "--timeout", "30", "-f", temp_file], capture_output=True, text=True)
+        res = subprocess.run(
+            ["colab", "exec", "-s", session_id, "--timeout", "30", "-f", temp_file],
+            capture_output=True,
+            text=True,
+        )
         if res.returncode != 0:
             print(f"[Status] Error querying session: {res.stderr}")
             return
         data = json.loads(res.stdout.strip().splitlines()[-1])
         status_str = "RUNNING" if data["alive"] else "STOPPED/FINISHED"
-        print(f"[Status] Process: PID={data['pid']} | State={status_str} | GPU Utilization/VRAM={data['gpu']}")
+        print(
+            f"[Status] Process: PID={data['pid']} | State={status_str} | GPU Utilization/VRAM={data['gpu']}"
+        )
         if data["last_events"]:
             print("[Status] Latest Events:")
             for ev in data["last_events"]:

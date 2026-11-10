@@ -64,7 +64,9 @@ def verify_gate_round_2_resolved_cases():
             failures.append((text, expected, actual))
         print(f"  NIAH: {text!r} -> {actual} (expected {expected})")
 
-    print(f"Result: {len(r2_cases) + len(r2_niah_cases) - len(failures)}/{len(r2_cases) + len(r2_niah_cases)} passed.")
+    print(
+        f"Result: {len(r2_cases) + len(r2_niah_cases) - len(failures)}/{len(r2_cases) + len(r2_niah_cases)} passed."
+    )
     return failures
 
 
@@ -166,9 +168,17 @@ def probe_reponiah_negation_coverage():
         ("The key is secret_omega_42", True, "prefix sentence"),
         ("Found needle: `secret_omega_42` in repo", True, "backticked found"),
         ("The secret key is 'secret_omega_42'.", True, "single-quoted affirmative"),
-        ("Initial guess was not secret_omega_42, but the actual key is secret_omega_42.", True, "negated then affirmed"),
+        (
+            "Initial guess was not secret_omega_42, but the actual key is secret_omega_42.",
+            True,
+            "negated then affirmed",
+        ),
         # Supported Negations (MUST be False)
-        ("The secret key is definitely NOT secret_omega_42, it is missing.", False, "definitely NOT"),
+        (
+            "The secret key is definitely NOT secret_omega_42, it is missing.",
+            False,
+            "definitely NOT",
+        ),
         ("The key is not secret_omega_42", False, "is not"),
         ("It never matches secret_omega_42", False, "never matches"),
         ("There is no secret_omega_42 found in the context.", False, "no ... found"),
@@ -186,7 +196,11 @@ def probe_reponiah_negation_coverage():
         ("I can't find secret_omega_42", False, "can't find"),
         ("It won't find secret_omega_42", False, "won't find"),
         ("We don’t have secret_omega_42", False, "don’t have (curly apostrophe U+2019)"),
-        ("The repository doesn’t contain secret_omega_42", False, "doesn’t contain (curly apostrophe U+2019)"),
+        (
+            "The repository doesn’t contain secret_omega_42",
+            False,
+            "doesn’t contain (curly apostrophe U+2019)",
+        ),
     ]
 
     failures = []
@@ -247,8 +261,20 @@ def probe_unicode_and_metrics():
     failures = []
     for pred, ref, exp_em, exp_f1 in cases:
         metrics = completion_metrics(pred, ref)
-        if metrics["exact_match"] != exp_em or abs(metrics["regex_identifier_set_f1"] - exp_f1) > 1e-4:
-            failures.append((pred, ref, exp_em, metrics["exact_match"], exp_f1, metrics["regex_identifier_set_f1"]))
+        if (
+            metrics["exact_match"] != exp_em
+            or abs(metrics["regex_identifier_set_f1"] - exp_f1) > 1e-4
+        ):
+            failures.append(
+                (
+                    pred,
+                    ref,
+                    exp_em,
+                    metrics["exact_match"],
+                    exp_f1,
+                    metrics["regex_identifier_set_f1"],
+                )
+            )
     print(f"Result: {len(cases) - len(failures)}/{len(cases)} passed.")
     return failures
 
@@ -261,7 +287,10 @@ def probe_prompt_neutrality_scan():
 
     eval_dir = Path("src/bifocalgemma/evaluation")
     data_dir = Path("src/bifocalgemma/data")
-    eval_files = list(eval_dir.glob("*.py")) + [data_dir / "context_tasks.py", data_dir / "context_benchmarks.py"]
+    eval_files = list(eval_dir.glob("*.py")) + [
+        data_dir / "context_tasks.py",
+        data_dir / "context_benchmarks.py",
+    ]
 
     forbidden = [
         "using the encoder context",
@@ -296,15 +325,37 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("EMPIRICAL ADVERSARIAL CHALLENGE SUMMARY")
     print("=" * 60)
-    print(f"Probe 1 (Round 2 Resolved Cases):     {'PASS (0 failures)' if not f1 else f'FAIL ({len(f1)} failures)'}")
-    print(f"Probe 2 (Delimiters & Markdown):      {'PASS (0 failures)' if not f2 else f'FAIL ({len(f2)} failures)'}")
-    print(f"Probe 3 (Preambles & Ambiguity):      {'PASS (0 failures)' if not f3 else f'FAIL ({len(f3)} failures)'}")
-    print(f"Probe 4 (RepoNIAH Negation Coverage): {'PASS (0 failures)' if not f4 else f'FAIL ({len(f4)} failures)'}")
-    print(f"Probe 5 (ReDoS Scaling Audit):        {'DETECTED (O(2^N) exponential backtracking)' if times[-1][1] > 0.05 else 'PASS'}")
-    print(f"Probe 6 (Unicode & Metrics):          {'PASS (0 failures)' if not f6 else f'FAIL ({len(f6)} failures)'}")
-    print(f"Probe 7 (Prompt Neutrality Leaks):    {'PASS (0 leaks)' if not f7 else f'FAIL ({len(f7)} leaks)'}")
+    print(
+        f"Probe 1 (Round 2 Resolved Cases):     {'PASS (0 failures)' if not f1 else f'FAIL ({len(f1)} failures)'}"
+    )
+    print(
+        f"Probe 2 (Delimiters & Markdown):      {'PASS (0 failures)' if not f2 else f'FAIL ({len(f2)} failures)'}"
+    )
+    print(
+        f"Probe 3 (Preambles & Ambiguity):      {'PASS (0 failures)' if not f3 else f'FAIL ({len(f3)} failures)'}"
+    )
+    print(
+        f"Probe 4 (RepoNIAH Negation Coverage): {'PASS (0 failures)' if not f4 else f'FAIL ({len(f4)} failures)'}"
+    )
+    print(
+        f"Probe 5 (ReDoS Scaling Audit):        {'DETECTED (O(2^N) exponential backtracking)' if times[-1][1] > 0.05 else 'PASS'}"
+    )
+    print(
+        f"Probe 6 (Unicode & Metrics):          {'PASS (0 failures)' if not f6 else f'FAIL ({len(f6)} failures)'}"
+    )
+    print(
+        f"Probe 7 (Prompt Neutrality Leaks):    {'PASS (0 leaks)' if not f7 else f'FAIL ({len(f7)} leaks)'}"
+    )
 
-    total_defects = len(f1) + len(f2) + len(f3) + len(f4) + (1 if times[-1][1] > 0.05 else 0) + len(f6) + len(f7)
+    total_defects = (
+        len(f1)
+        + len(f2)
+        + len(f3)
+        + len(f4)
+        + (1 if times[-1][1] > 0.05 else 0)
+        + len(f6)
+        + len(f7)
+    )
     print(f"\nTOTAL DEFECTS SURFACED: {total_defects}")
     if total_defects > 0:
         sys.exit(1)

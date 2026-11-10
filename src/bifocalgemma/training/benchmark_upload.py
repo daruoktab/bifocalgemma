@@ -54,7 +54,9 @@ class BenchmarkUploadQueue:
     Shared backoff prevents subsequent model runs hammering the same Hub repo.
     """
 
-    def __init__(self, root, *, backoff_path, progress=None, clock=time.time, interval=300, label="Benchmark"):
+    def __init__(
+        self, root, *, backoff_path, progress=None, clock=time.time, interval=300, label="Benchmark"
+    ):
         self.path = Path(root) / "benchmark_upload_status.json"
         self.backoff_path = Path(backoff_path)
         self.progress, self.clock, self.interval = progress, clock, interval

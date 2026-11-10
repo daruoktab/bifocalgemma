@@ -162,6 +162,10 @@ subfolder = "fast-bifocalgemma-2b"
 
 tokenizer = AutoTokenizer.from_pretrained(repo_id, subfolder=subfolder, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(
-    repo_id, subfolder=subfolder, torch_dtype=torch.bfloat16, device_map="auto", trust_remote_code=True
+    repo_id,
+    subfolder=subfolder,
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
+    trust_remote_code=True,
 )
 ```

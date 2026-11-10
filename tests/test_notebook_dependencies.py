@@ -142,7 +142,9 @@ def test_cpu_wheel_invalidates_matching_receipt(monkeypatch, tmp_path):
 def test_marimo_setup_token_order_precedes_native_imports():
     root = Path(__file__).resolve().parents[1]
     for family in ("symmetric", "asymmetric", "baseline"):
-        text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
+        text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(
+            encoding="utf-8"
+        )
         cells = [node for node in ast.parse(text).body if isinstance(node, ast.FunctionDef)]
         assert cells[0].args.args == []
         first = ast.get_source_segment(text, cells[1])

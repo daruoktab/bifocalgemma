@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import torch
 import torch.nn as nn
@@ -27,6 +28,7 @@ from bifocalgemma.models.v2.checkpoint_transfer import transfer_text_checkpoint
 from bifocalgemma.training.memory_probe import ProbeLoRALinear
 from bifocalgemma.v3.attention import configure_full_rank_cross_attention
 from bifocalgemma.v3.bridge import SwiGLUDualGateBridge
+from bifocalgemma.v3.objectives import is_cross_bridge_parameter
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +67,7 @@ def _resolve_backbone_weights(
         import os
 
         hub_cache = (
-            Path(cache_dir)
-            if cache_dir
-            else Path(os.path.expanduser("~/.cache/huggingface/hub"))
+            Path(cache_dir) if cache_dir else Path(os.path.expanduser("~/.cache/huggingface/hub"))
         )
         repo_dir = hub_cache / f"models--{str(path_or_id).replace('/', '--')}"
         if repo_dir.is_dir():
@@ -150,7 +150,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             self._tied_weights_keys = {"lm_head.weight": "decoder.embed_tokens.weight"}
 
         # 3. LM head
-        self.config.vocab_size = int(dec_cfg.vocab_size)
+        self.config.vocab_size = dec_cfg.vocab_size
         self.lm_head = nn.Linear(config.d_dec, dec_cfg.vocab_size, bias=False)
 
         # 4. Configure full-rank decoupled cross attention on decoder layers
@@ -163,7 +163,9 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
 
     def tie_weights(self, *args: Any, **kwargs: Any) -> None:
         """Tie weights cleanly, excluding encoder when absent."""
-        if getattr(self, "encoder", None) is None or not getattr(self.config, "tie_word_embeddings", True):
+        if getattr(self, "encoder", None) is None or not getattr(
+            self.config, "tie_word_embeddings", True
+        ):
             self._tied_weights_keys = {"lm_head.weight": "decoder.embed_tokens.weight"}
         else:
             self._tied_weights_keys = {
@@ -184,12 +186,25 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
 
     def _apply(self, fn: Callable[..., Any], recurse: bool = True) -> BifocalGemmaForCausalLM:
         super()._apply(fn, recurse=recurse)
+        for name, param in self.named_parameters():
+            if (
+                is_cross_bridge_parameter(name) or name.endswith((".lora_A", ".lora_B"))
+            ) and param.dtype in (
+                torch.bfloat16,
+                torch.float16,
+            ):
+                param.data = param.data.float()
+                if param.grad is not None and param.grad.dtype in (torch.bfloat16, torch.float16):
+                    param.grad.data = param.grad.data.float()
         self._tie_words()
         return self
 
     def load_state_dict(
-        self, state_dict: dict[str, Any], strict: bool = True, assign: bool = False
-    ) -> Any:
+        self,
+        state_dict: Mapping[str, Any],
+        strict: bool = True,
+        assign: bool = False,
+    ) -> torch.nn.modules.module._IncompatibleKeys:
         result = super().load_state_dict(state_dict, strict=strict, assign=assign)
         self._tie_words()
         return result
@@ -217,9 +232,10 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 setattr(parent, attr, module.base)
 
         # Check for PEFT merge_and_unload
-        if hasattr(self, "base_model") and hasattr(self.base_model, "merge_and_unload"):
+        base_model = getattr(self, "base_model", None)
+        if base_model is not None and hasattr(base_model, "merge_and_unload"):
             try:
-                self.base_model.merge_and_unload()
+                cast(Any, base_model).merge_and_unload()
             except Exception as exc:
                 logger.debug("PEFT merge_and_unload skipped: %s", exc)
 
@@ -242,14 +258,14 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 attn = layer.self_attn
                 if not isinstance(attn, TiledEncoderAttention):
                     tiled = copy.copy(attn)
-                    tiled.__class__ = TiledEncoderAttention
-                    tiled.query_chunk_size = query_chunk_size
-                    tiled.attention_backend = "tiled_eager_fp32"
-                    tiled.structured_masks = True
-                    layer.self_attn = tiled
+                    object.__setattr__(tiled, "__class__", TiledEncoderAttention)
+                    object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                    object.__setattr__(tiled, "structured_masks", True)
+                    layer.self_attn = cast(Any, tiled)
                 else:
-                    attn.query_chunk_size = query_chunk_size
-                    attn.structured_masks = True
+                    object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "structured_masks", True)
 
         if self.decoder is not None:
             for layer in self.decoder.layers:
@@ -257,17 +273,17 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 if self.encoder is None:
                     if not isinstance(attn, TiledEncoderAttention):
                         tiled = copy.copy(attn)
-                        tiled.__class__ = TiledEncoderAttention
-                        tiled.query_chunk_size = query_chunk_size
-                        tiled.attention_backend = "tiled_eager_fp32"
-                        tiled.structured_masks = True
-                        layer.self_attn = tiled
+                        object.__setattr__(tiled, "__class__", TiledEncoderAttention)
+                        object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
+                        object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                        object.__setattr__(tiled, "structured_masks", True)
+                        layer.self_attn = cast(Any, tiled)
                     else:
-                        attn.query_chunk_size = query_chunk_size
-                        attn.structured_masks = True
+                        object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                        object.__setattr__(attn, "structured_masks", True)
                 else:
                     # Paired decoders already use FullCrossTiledAttention
-                    attn.query_chunk_size = query_chunk_size
+                    object.__setattr__(attn, "query_chunk_size", query_chunk_size)
 
         for stack in (self.encoder, self.decoder):
             if stack is not None:
@@ -298,9 +314,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             )
         eff_mask = attention_mask if attention_mask is not None else encoder_attention_mask
         if eff_mask is None:
-            eff_mask = torch.ones(
-                input_ids.shape, dtype=torch.bool, device=input_ids.device
-            )
+            eff_mask = torch.ones(input_ids.shape, dtype=torch.bool, device=input_ids.device)
         pos_ids = self._positions(eff_mask)
         encoder_outputs = self.encoder(
             input_ids=input_ids,
@@ -395,22 +409,31 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         batch: Seq2SeqBatch | None = None,
         return_dict: bool = True,
         **kwargs: Any,
-    ) -> CausalLMOutputWithPast | ModelOutput:
+    ) -> CausalLMOutputWithPast | ModelOutput | tuple[Any, ...]:
         """Forward execution supporting Hugging Face standard kwargs and Seq2SeqBatch."""
         # Support Seq2SeqBatch input
-        if batch is not None or isinstance(input_ids, Seq2SeqBatch):
-            b = batch if batch is not None else input_ids  # type: ignore[assignment]
-            input_ids = b.decoder_input_ids
-            attention_mask = b.decoder_attention_mask
-            encoder_input_ids = b.encoder_input_ids
-            encoder_attention_mask = b.encoder_attention_mask
-            labels = b.labels
+        if batch is not None:
+            input_ids = batch.decoder_input_ids
+            attention_mask = batch.decoder_attention_mask
+            encoder_input_ids = batch.encoder_input_ids
+            encoder_attention_mask = batch.encoder_attention_mask
+            labels = batch.labels
+        elif isinstance(input_ids, Seq2SeqBatch):
+            attention_mask = input_ids.decoder_attention_mask
+            encoder_input_ids = input_ids.encoder_input_ids
+            encoder_attention_mask = input_ids.encoder_attention_mask
+            labels = input_ids.labels
+            input_ids = input_ids.decoder_input_ids
 
         if input_ids is None:
             raise ValueError("input_ids or batch must be provided to forward().")
 
         # Context encoding
-        if encoder_hidden_states is None and encoder_input_ids is not None and self.encoder is not None:
+        if (
+            encoder_hidden_states is None
+            and encoder_input_ids is not None
+            and self.encoder is not None
+        ):
             encoder_hidden_states = self.encode_context(
                 encoder_input_ids, encoder_attention_mask=encoder_attention_mask
             )
@@ -447,8 +470,8 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             return ((loss,) + output) if loss is not None else output
 
         return CausalLMOutputWithPast(
-            loss=loss,
-            logits=logits,
+            loss=cast(Any, loss),
+            logits=cast(Any, logits),
             past_key_values=None,
             hidden_states=None,
             attentions=None,
@@ -457,6 +480,10 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
     def forward_loss(self, batch: Any) -> ModelOutput:
         """Bridge compatibility helper for legacy training loops."""
         result = self.forward(batch=batch)
+        if isinstance(result, tuple):
+            loss = result[0] if len(result) > 1 else None
+            logits = result[1] if len(result) > 1 else result[0]
+            return ModelOutput(loss=loss, logits=logits)
         return ModelOutput(loss=result.loss, logits=result.logits)
 
     @torch.no_grad()
@@ -493,7 +520,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 break
         return current_ids
 
-    def save_pretrained(
+    def save_pretrained(  # ty: ignore[incompatible-method-override]  # pyrefly: ignore [bad-override]
         self,
         save_directory: str | Path,
         is_main_process: bool = True,
@@ -685,11 +712,11 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
             if isinstance(torch_dtype, str) and hasattr(torch, torch_dtype):
                 torch_dtype = getattr(torch, torch_dtype)
             if isinstance(torch_dtype, torch.dtype):
-                model.to(dtype=torch_dtype)
+                cast(Any, model).to(dtype=torch_dtype)
 
         if device_map is not None:
             if isinstance(device_map, (str, torch.device)):
-                model.to(device=device_map)
+                cast(Any, model).to(device=device_map)
 
         model._tie_words()
         model.eval()
@@ -741,7 +768,9 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
 
         if not config.tiny:
             # 1. Resolve and transfer decoder weights
-            dec_file = _resolve_backbone_weights(decoder_path_or_id, cache_dir=cache_dir, token=token)
+            dec_file = _resolve_backbone_weights(
+                decoder_path_or_id, cache_dir=cache_dir, token=token
+            )
             transfer_text_checkpoint(model.decoder, dec_file)
 
             # 2. Resolve and transfer encoder weights if configured
@@ -760,15 +789,25 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
             # In tiny mode, allow explicit local files or directories for verification tests
             try:
                 dec_file = None
-                if isinstance(decoder_path_or_id, (str, Path)) and Path(decoder_path_or_id).exists():
-                    dec_file = _resolve_backbone_weights(decoder_path_or_id, cache_dir=cache_dir, token=token)
+                if (
+                    isinstance(decoder_path_or_id, (str, Path))
+                    and Path(decoder_path_or_id).exists()
+                ):
+                    dec_file = _resolve_backbone_weights(
+                        decoder_path_or_id, cache_dir=cache_dir, token=token
+                    )
                 if dec_file is not None and dec_file.is_file():
                     transfer_text_checkpoint(model.decoder, dec_file)
 
                 if model.encoder is not None and encoder_path_or_id:
                     enc_file = None
-                    if isinstance(encoder_path_or_id, (str, Path)) and Path(encoder_path_or_id).exists():
-                        enc_file = _resolve_backbone_weights(encoder_path_or_id, cache_dir=cache_dir, token=token)
+                    if (
+                        isinstance(encoder_path_or_id, (str, Path))
+                        and Path(encoder_path_or_id).exists()
+                    ):
+                        enc_file = _resolve_backbone_weights(
+                            encoder_path_or_id, cache_dir=cache_dir, token=token
+                        )
                     if enc_file is not None and enc_file.is_file():
                         transfer_text_checkpoint(
                             model.encoder,
@@ -783,13 +822,13 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
             if isinstance(torch_dtype, str) and hasattr(torch, torch_dtype):
                 torch_dtype = getattr(torch, torch_dtype)
             if isinstance(torch_dtype, torch.dtype):
-                model.to(dtype=torch_dtype)
+                cast(Any, model).to(dtype=torch_dtype)
 
         if device_map is not None:
             if isinstance(device_map, (str, torch.device)):
-                model.to(device=device_map)
+                cast(Any, model).to(device=device_map)
         elif device is not None:
-            model.to(device=device)
+            cast(Any, model).to(device=device)
 
         model._tie_words()
         return model
@@ -820,9 +859,7 @@ def export_matrix_pretrained_model(
                 parent = model
                 attr = name
             with torch.no_grad():
-                delta_w = (
-                    module.lora_B.data.float() @ module.lora_A.data.float()
-                ) * module.scaling
+                delta_w = (module.lora_B.data.float() @ module.lora_A.data.float()) * module.scaling
                 module.base.weight.data.add_(delta_w.to(module.base.weight.dtype))
             setattr(parent, attr, module.base)
 
@@ -836,11 +873,7 @@ def export_matrix_pretrained_model(
             if (spec and getattr(spec, "encoder", None))
             else ("E2B" if getattr(model, "encoder", None) is not None else "none")
         )
-        dec_size = (
-            spec.decoder.size
-            if (spec and getattr(spec, "decoder", None))
-            else "E2B"
-        )
+        dec_size = spec.decoder.size if (spec and getattr(spec, "decoder", None)) else "E2B"
         d_enc = (
             int(model.encoder.config.hidden_size)
             if getattr(model, "encoder", None) is not None
@@ -959,7 +992,9 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
     if spec is not None and getattr(spec, "decoder", None) is not None:
         dec_slug = spec.decoder.model_id.replace("/", "__")
     elif hasattr(config, "decoder_config") and isinstance(config.decoder_config, dict):
-        dec_id = config.decoder_config.get("_name_or_path") or config.decoder_config.get("model_id", "")
+        dec_id = config.decoder_config.get("_name_or_path") or config.decoder_config.get(
+            "model_id", ""
+        )
         dec_slug = str(dec_id).replace("/", "__") if dec_id else ""
 
     tok_candidates = []
