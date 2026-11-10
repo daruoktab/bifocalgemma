@@ -2,7 +2,7 @@
 \centering
 \caption{Controlled 6-Model Ablation Matrix for \textsc{BifocalGemma}. All models use native Gemma~4 backbones with stream-isolated Per-Layer Embeddings ($d_{\text{ple}}=256$) and preserve cross-layer KV-sharing (15/35 KV-owner layers in \texttt{E2B}; 24/42 KV-owner layers in \texttt{E4B}). Causal baselines use a single-stage full SFT curriculum, whereas \textsc{BifocalGemma} variants use the two-stage paired curriculum (Frozen Decoder Bridge Alignment $\rightarrow$ Joint LoRA SFT).}
 \label{tab:configs}
-\small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}llllccc@{}}
 \toprule
 \textbf{Model ID} & \textbf{Topology} & \textbf{Encoder Backbone} & \textbf{Decoder Backbone} & \textbf{Bridge ($d_{\text{enc}} \rightarrow d_{\text{mid}} \rightarrow d_{\text{dec}}$)} & \textbf{Context ($N_{\text{enc}} / N_{\text{dec}}$)} & \textbf{Curriculum} \\
@@ -15,5 +15,6 @@
 \texttt{Bifocal-2B-E4B} & Enc-Heavy & \texttt{Gemma-4-E4B} (42L) & \texttt{Gemma-4-E2B-IT} (35L) & $2560 \rightarrow 2560 \rightarrow 1536$ (Ortho $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
 \texttt{Bifocal-4B} & Symmetric & \texttt{Gemma-4-E4B} (42L) & \texttt{Gemma-4-E4B-IT} (42L) & $2560 \rightarrow 2560 \rightarrow 2560$ (Identity $W_{\text{res}}$) & $32{,}768 \;/\; 8{,}192$ & 2-Stage Paired \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}

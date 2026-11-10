@@ -2,7 +2,7 @@
 \centering
 \caption{Architectural Specifications and Cross-Layer KV-Sharing Topology for the \texttt{Gemma~4} Backbone Stacks. In both encoder and decoder, only KV-owner layers instantiate independent key/value projections. For cross-attention, downstream KV-shared layers completely bypass Cross-KV projection, reusing cached states from designated Sliding and Global Anchor layers with $\mathcal{O}(1)$ step overhead.}
 \label{tab:layer_specs}
-\small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}lcc@{}}
 \toprule
 \textbf{Structural Attribute} & \textbf{\texttt{Gemma-4-E2B}} & \textbf{\texttt{Gemma-4-E4B}} \\
@@ -29,5 +29,6 @@ Per-Layer Embedding ($d_{\text{ple}}$) & $256$ (Stream-Isolated) & $256$ (Stream
 \quad Global Full Anchor & \texttt{L14} (\texttt{store\_full\_kv}) & \texttt{L23} (\texttt{store\_full\_kv}) \\
 \textbf{Cross-KV Memory Reduction} & \textbf{57.14\%} & \textbf{42.86\%} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}

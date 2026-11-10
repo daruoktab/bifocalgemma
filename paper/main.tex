@@ -131,19 +131,19 @@ Here, $W_{\text{res}}$ is an identity mapping when $d_{\text{enc}} = d_{\text{de
 
 Table~\ref{tab:parameters} provides the exact parameter budgets across all components for the complete 6-model matrix. In symmetric pairings (\texttt{Bifocal-2B} and \texttt{Bifocal-4B}), the bridge introduces only $7.08\text{M}$ and $19.67\text{M}$ parameters ($<0.15\%$ of model scale), while asymmetric projections scale smoothly to $18.36\text{M}$ and $20.98\text{M}$. During Stage~2 joint SFT, LoRA adapter parameterization ($r=16, \alpha=32$) restricts trainable updates to $32.06\text{M}$ ($0.36\%$) in \texttt{Bifocal-2B} and $111.34\text{M}$ ($0.78\%$) in \texttt{Bifocal-4B}, maintaining exceptional parameter efficiency.
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=0.88\textwidth,height=0.36\textheight,keepaspectratio]{figures/fig2_layer_topology.pdf}
-\caption{\textbf{Gemma~4 Cross-Layer KV-Sharing Topology in Decoupled Cross-Attention.} Structural layer allocation across the 35 layers of \texttt{Gemma-4-E2B} (Panel~A) and 42 layers of \texttt{Gemma-4-E4B} (Panel~B). Dedicated BF16 Cross-KV projections are instantiated exclusively on KV-owner layers ($15$ in \texttt{E2B}; $24$ in \texttt{E4B}). Subsequent KV-shared layers ($20$ in \texttt{E2B}, $57.14\%$; $18$ in \texttt{E4B}, $42.86\%$) reuse stationary $(K_{\text{cross}}, V_{\text{cross}})$ states computed by designated Anchor layers (\texttt{L13}/\texttt{L14} in \texttt{E2B}; \texttt{L22}/\texttt{L23} in \texttt{E4B}), reducing cross-attention KV-cache storage by up to $57.14\%$ with $\mathcal{O}(1)$ step overhead.}
-\label{fig:layer_topology}
-\end{figure*}
-
 \subsection{Decoupled Stationary Full-Rank Cross-Attention}
 
 Every decoder layer wraps the native Gemma~4 attention module inside a \texttt{BifocalAttentionBlock} that executes causal self-attention and encoder-decoder cross-attention in parallel before merging their outputs through the shared output projection $W_O$ (Figure~\ref{fig:architecture}, Right).
 
 \paragraph{Preservation of Gemma~4 Cross-Layer KV-Sharing.}
 Gemma~4 employs a hybrid KV-sharing architecture in which only the first 15 of 35 layers in \texttt{E2B} (and 24 of 42 layers in \texttt{E4B}) compute independent KV projections (\texttt{is\_kv\_shared\_layer = False}), while downstream shared layers reuse the KV states of their designated owner layer (Figure~\ref{fig:layer_topology} and Table~\ref{tab:layer_specs}). BifocalGemma mirrors this exact invariant for cross-attention: only KV-owner layers instantiate dedicated BF16 full-rank projections $W_{K,\text{cross}}, W_{V,\text{cross}} \in \mathbb{R}^{d_{\text{dec}} \times (H_{KV} \cdot d_h)}$ and RMSNorms ($\text{RMSNorm}_{K,\text{cross}}, \text{RMSNorm}_{V,\text{cross}}$), warm-started from the pretrained self-attention $W_K, W_V$ weights. During autoregressive generation, $(K_{\text{cross}}, V_{\text{cross}})$ are computed once during prefill, cached inside \texttt{BifocalDynamicCache}, and reused across both KV-shared layers and subsequent decoding tokens with $\mathcal{O}(1)$ recomputation cost, yielding a $57.14\%$ memory reduction on \texttt{E2B} and $42.86\%$ on \texttt{E4B}.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.88\textwidth,height=0.36\textheight,keepaspectratio]{figures/fig2_layer_topology.pdf}
+\caption{\textbf{Gemma~4 Cross-Layer KV-Sharing Topology in Decoupled Cross-Attention.} Structural layer allocation across the 35 layers of \texttt{Gemma-4-E2B} (Panel~A) and 42 layers of \texttt{Gemma-4-E4B} (Panel~B). Dedicated BF16 Cross-KV projections are instantiated exclusively on KV-owner layers ($15$ in \texttt{E2B}; $24$ in \texttt{E4B}). Subsequent KV-shared layers ($20$ in \texttt{E2B}, $57.14\%$; $18$ in \texttt{E4B}, $42.86\%$) reuse stationary $(K_{\text{cross}}, V_{\text{cross}})$ states computed by designated Anchor layers (\texttt{L13}/\texttt{L14} in \texttt{E2B}; \texttt{L22}/\texttt{L23} in \texttt{E4B}), reducing cross-attention KV-cache storage by up to $57.14\%$ with $\mathcal{O}(1)$ step overhead.}
+\label{fig:layer_topology}
+\end{figure*}
 
 \input{tables/tab3_layer_specs}
 
@@ -207,15 +207,12 @@ Table~\ref{tab:configs} details our controlled 6-model experimental matrix spann
 \subsection{Evaluation Integrity Safeguards}
 Our benchmark harness enforces two strict invariants: (1) a \textbf{Neutral Prompt Contract} providing identical task instructions and the full $32\text{K}$ repository context to both causal baselines (concatenated into the causal prefix up to $40{,}960$ tokens) and BifocalGemma (routed to the $32\text{K}$ bidirectional encoder), without architecture-specific prompt hints, and (2) a \textbf{256-Token Comprehension Generation Floor} (\texttt{max\_new\_tokens} $\ge 256$) on all MCQ, QA, and retrieval tasks so analytical reasoning preambles are never truncated before emitting the final answer.
 
-\input{tables/tab5_sweqa}
-\input{tables/tab6_repair}
-\input{tables/tab7_hardware}
-
 \section{Empirical Results}
 
 \noindent\textbf{[PLACEHOLDER --- ACTIVE EXPERIMENTAL RUNS]}: \textit{All empirical metrics from earlier exploratory runs have been omitted. This section and Tables~\ref{tab:sweqa}, \ref{tab:repair}, and \ref{tab:hardware} will be populated with final verified metrics upon completion of the active training and benchmark evaluation runs.}
 
 \subsection{Long-Context Repository Comprehension}
+\input{tables/tab5_sweqa}
 Table~\ref{tab:sweqa} reports accuracy across \texttt{SWE-QA} ($8\text{K}$, $16\text{K}$, $32\text{K}$) and \texttt{RepoBench-C-8k}.
 \begin{itemize}
     \item \textbf{[PLACEHOLDER]}: Comparative analysis of repository comprehension accuracy (\texttt{SWE-QA} and \texttt{RepoBench-C-8k}) between Causal Baselines and BifocalGemma across $8\text{K}$, $16\text{K}$, and $32\text{K}$ token context buckets.
@@ -223,12 +220,14 @@ Table~\ref{tab:sweqa} reports accuracy across \texttt{SWE-QA} ($8\text{K}$, $16\
 \end{itemize}
 
 \subsection{Repository-Level Code Repair}
+\input{tables/tab6_repair}
 Table~\ref{tab:repair} reports unified diff validity, localization accuracy, and patch resolution on \texttt{SWE-bench Lite}.
 \begin{itemize}
     \item \textbf{[PLACEHOLDER]}: Evaluation of unified diff synthesis quality, git patch syntactic validity, and file/hunk localization accuracy under the Two-Stage Paired Curriculum and Chunked Differential Diff Cross-Entropy ($\lambda_{\text{ptr}} = 0.0$).
 \end{itemize}
 
 \subsection{Hardware Telemetry and Training Dynamics}
+\input{tables/tab7_hardware}
 Table~\ref{tab:hardware} summarizes peak VRAM, prefill latency, and decoding throughput at $32\text{K}$ context length.
 \begin{itemize}
     \item \textbf{[PLACEHOLDER]}: Analysis of KV-cache memory efficiency from reusing Cross-KV states across Gemma~4 KV-shared layers and decoding throughput (tok/s) relative to causal baselines.

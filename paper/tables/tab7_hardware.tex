@@ -2,7 +2,7 @@
 \centering
 \caption{Hardware Telemetry and Inference Efficiency at $32\text{K}$ Repository Context. Only KV-owner layers instantiate dedicated Cross-KV projections, reusing cached $(K_{\text{cross}}, V_{\text{cross}})$ across KV-shared layers during autoregressive generation. \textit{Note: Placeholder cells (\texttt{[TBD]}) will be populated upon completion of the active runs.}}
 \label{tab:hardware}
-\small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{@{}lccccc@{}}
 \toprule
 \textbf{Model} & \textbf{Active Params (Enc + Dec)} & \textbf{KV-Owner Cross-Attn Layers} & \textbf{Peak VRAM @ 32K (GB)} & \textbf{Prefill Latency @ 32K (ms)} & \textbf{Decode Throughput (tok/s)} \\
@@ -15,5 +15,6 @@
 \texttt{Bifocal-2B-E4B} & $4.0\text{B} + 2.0\text{B}$ & $15 / 35$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
 \texttt{Bifocal-4B} & $4.0\text{B} + 4.0\text{B}$ & $24 / 42$ & \texttt{[TBD]} & \texttt{[TBD]} & \texttt{[TBD]} \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table*}

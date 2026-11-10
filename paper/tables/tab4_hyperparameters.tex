@@ -2,7 +2,7 @@
 \centering
 \caption{Operational Hyperparameters, Gating Initializations, and Optimization Schedule for \textsc{BifocalGemma}. All gating and scaling factors are formulated to preserve causal fluency at initialization while permitting stable cross-stream gradient flow.}
 \label{tab:hyperparameters}
-\small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}ll@{}}
 \toprule
 \textbf{Component / Hyperparameter} & \textbf{Operational Setting / Formula} \\
@@ -38,5 +38,6 @@ Stage~2 Duration & Final $50\%$ of Total Steps (Joint LoRA SFT) \\
 Stage~2 Task Replay Mix & $80\%$ Patch Synthesis : $20\%$ Comprehension \\
 Partitioned Weight Decay $\lambda_{\text{wd}}$ & $10^{-4}$ on 2D Bridge Matrices; $0.0$ on Norms/LoRA \\
 \bottomrule
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
