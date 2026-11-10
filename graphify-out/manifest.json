@@ -2589,9 +2589,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/fast_pipeline.py": {
-    "mtime": 1794295438.6942275,
-    "seen": 1794296873.7109942,
-    "ast_hash": "eb9e90438dca04276b8d3f653780c206",
+    "mtime": 1794337884.7543616,
+    "seen": 1794338223.8789093,
+    "ast_hash": "dda79b3c4924f3ff41c5c5118ef81d0b",
     "semantic_hash": ""
   },
   "tests/test_pretrained_hf_model.py": {
