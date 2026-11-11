@@ -296,9 +296,9 @@ class SyntheticRepairDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         idx = index
-        torch.manual_seed(idx)
-        enc_ids = torch.randint(10, self.vocab_size, (self.enc_len,))
-        dec_ids = torch.randint(10, self.vocab_size, (max(2, self.dec_len),))
+        g = torch.Generator().manual_seed(idx)
+        enc_ids = torch.randint(10, self.vocab_size, (self.enc_len,), generator=g)
+        dec_ids = torch.randint(10, self.vocab_size, (max(2, self.dec_len),), generator=g)
         inputs = dec_ids[:-1]
         targets = dec_ids[1:].clone()
         prefix_len = inputs.shape[0] // 2

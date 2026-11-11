@@ -714,8 +714,11 @@ def run_matrix_training(
         from bifocalgemma.data.tokenization import load_verified_tokenizer
 
         decoder_tokenizer, _ = load_verified_tokenizer(spec.decoder, Path(cache) / "tokenizers")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "Could not load decoder tokenizer for diff token resolution; falling back to Gemma defaults: %s",
+            exc,
+        )
     if not hasattr(model, "diff_token_ids") or getattr(model, "diff_token_ids", None) is None:
         object.__setattr__(model, "diff_token_ids", resolve_diff_token_ids(decoder_tokenizer))
 
@@ -1112,6 +1115,11 @@ def run_matrix_benchmark(
             try:
                 rep = json.loads(report_file.read_text(encoding="utf-8"))
                 if rep.get("status") == "COMPLETED" and rep.get("experiment") == spec.name:
+                    eval_state_data = json.loads(state_file.read_text(encoding="utf-8"))
+                    state_sig = eval_state_data.get("signature")
+                    rep_sig = rep.get("signature")
+                    if state_sig and rep_sig and state_sig != rep_sig:
+                        raise ValueError("Signature mismatch between benchmark state and report")
                     reports.append(rep)
                     continue
             except Exception:

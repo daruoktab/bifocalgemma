@@ -1,6 +1,7 @@
 """I01 short greedy reference generation; no temporal KV cache or fake scores."""
 
 from dataclasses import dataclass
+from typing import Any
 
 import torch
 
@@ -95,6 +96,14 @@ def greedy_decode(
     return GreedyGeneration(tuple(output), reason, len(encoder_ids), len(prefix_ids))
 
 
+def _safe_apply_chat_template(tokenizer: Any, messages: list[dict[str, Any]], **kwargs: Any) -> str:
+    try:
+        return tokenizer.apply_chat_template(messages, **kwargs)
+    except TypeError:
+        kwargs.pop("enable_thinking", None)
+        return tokenizer.apply_chat_template(messages, **kwargs)
+
+
 def repair_prompt_ids(
     spec, example, tokenizer_cache, *, context: str | None = None, max_encoder_tokens=4096
 ):
@@ -118,7 +127,8 @@ def repair_prompt_ids(
             if context is not None
             else "Return only a unified diff that fixes the issue.\n\n"
         ) + rendered
-    text = decoder.apply_chat_template(
+    text = _safe_apply_chat_template(
+        decoder,
         [{"role": "user", "content": prompt}],
         tokenize=False,
         add_generation_prompt=True,
@@ -189,7 +199,8 @@ def generate_diagnostic_text(
         prompt = instruction
     else:
         prompt = instruction + "\n\n" + context
-    text = decoder.apply_chat_template(
+    text = _safe_apply_chat_template(
+        decoder,
         [{"role": "user", "content": prompt}],
         tokenize=False,
         add_generation_prompt=True,

@@ -314,10 +314,10 @@ def resolve_diff_token_ids(tokenizer: Any = None) -> dict[str, tuple[int, ...]]:
         except Exception:
             return None
 
-    add_ids = tuple(filter(None, [_enc("+"), _enc(" +")]))
-    del_ids = tuple(filter(None, [_enc("-"), _enc(" -")]))
+    add_ids = tuple(x for x in [_enc("+"), _enc(" +")] if x is not None)
+    del_ids = tuple(x for x in [_enc("-"), _enc(" -")] if x is not None)
     hdr_candidates = ["diff", "---", "+++", "@@", " @@", " --", "git"]
-    hdr_ids = tuple(filter(None, [_enc(c) for c in hdr_candidates]))
+    hdr_ids = tuple(x for x in (_enc(c) for c in hdr_candidates) if x is not None)
 
     return {
         "add_token_ids": add_ids or DEFAULT_DIFF_ADD_TOKEN_IDS,

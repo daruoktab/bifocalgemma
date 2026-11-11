@@ -703,12 +703,20 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
         weights_path = model_path / "model.safetensors"
         if weights_path.exists():
             state_dict = load_file(str(weights_path), device="cpu")
-            model.load_state_dict(state_dict, strict=False)
+            load_result = model.load_state_dict(state_dict, strict=False)
+            if load_result.missing_keys:
+                logger.warning("from_pretrained: missing keys when loading state_dict: %s", load_result.missing_keys)
+            if load_result.unexpected_keys:
+                logger.warning("from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys)
         else:
             bin_path = model_path / "pytorch_model.bin"
             if bin_path.exists():
                 state_dict = torch.load(str(bin_path), map_location="cpu")
-                model.load_state_dict(state_dict, strict=False)
+                load_result = model.load_state_dict(state_dict, strict=False)
+                if load_result.missing_keys:
+                    logger.warning("from_pretrained: missing keys when loading state_dict: %s", load_result.missing_keys)
+                if load_result.unexpected_keys:
+                    logger.warning("from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys)
 
         if torch_dtype is not None:
             if isinstance(torch_dtype, str) and hasattr(torch, torch_dtype):
