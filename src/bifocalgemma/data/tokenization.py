@@ -74,7 +74,7 @@ def tokenize_repair_example(
         raise ValueError("SFT tokenization requires a nonempty target patch.")
     decoder, decoder_manifest = load_verified_tokenizer(spec.decoder, tokenizer_cache)
     context = format_encoder_context(example)
-    encoder_ids = ()
+    encoder_ids: tuple[int, ...] = ()
     encoder_manifest = None
     if spec.encoder:
         encoder, encoder_manifest = load_verified_tokenizer(spec.encoder, tokenizer_cache)

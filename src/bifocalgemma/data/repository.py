@@ -181,7 +181,7 @@ class GitSnapshotStore:
                 .strip()
             )
         entries = self._git(mirror, "ls-tree", "-rlz", commit).split(b"\0")
-        files = []
+        files: list[RepositoryFile] = []
         total = 0
         for entry in entries:
             if not entry:

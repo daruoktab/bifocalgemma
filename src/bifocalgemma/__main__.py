@@ -117,10 +117,10 @@ def main(argv: list[str] | None = None) -> int:
             from bifocalgemma.models.v2.native import run_native_smoke
 
             torch.set_num_threads(min(4, torch.get_num_threads()))
-            selected = (
+            native_selected = (
                 EXPERIMENT_SPECS if args.experiment == "all" else (get_experiment(args.experiment),)
             )
-            for spec in selected:
+            for spec in native_selected:
                 print(json.dumps(run_native_smoke(spec, args.device)))
         elif args.command == "train":
             from bifocalgemma.training.trainer import SFTConfig, train_direct_sft

@@ -1,10 +1,11 @@
+# mypy: disable-error-code="override"
 """Decoupled full-rank cross-attention for the V3 decoder."""
 
 from __future__ import annotations
 
 import copy
 import math
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import torch
 import torch.utils.checkpoint
@@ -53,9 +54,12 @@ def _compute_per_row_cross_query(
     return (query_cross.float() * inv_beta).to(query_cross.dtype)
 
 
-_ORIGINAL_CACHED_ATTENTION = getattr(
-    inference_cache_mod, "_orig_cached_attention", inference_cache_mod.CachedAttention
-)
+if TYPE_CHECKING:
+    _ORIGINAL_CACHED_ATTENTION = inference_cache_mod.CachedAttention
+else:
+    _ORIGINAL_CACHED_ATTENTION = getattr(
+        inference_cache_mod, "_orig_cached_attention", inference_cache_mod.CachedAttention
+    )
 setattr(inference_cache_mod, "_orig_cached_attention", _ORIGINAL_CACHED_ATTENTION)
 
 
@@ -86,7 +90,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                     param.grad.data = param.grad.data.float()
         return self
 
-    def forward(
+    def forward(  # ty: ignore[incompatible-method-override]  # type: ignore[override]
         self: Any,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
@@ -341,7 +345,7 @@ class FullCrossTiledAttention(TiledMergedAttention):
                     param.grad.data = param.grad.data.float()
         return self
 
-    def forward(  # ty: ignore[incompatible-method-override]
+    def forward(  # ty: ignore[incompatible-method-override]  # type: ignore[override]
         self: Any,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
@@ -486,11 +490,27 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
             "total_cross_bridge_parameters": 0,
         }
 
-    # Install SwiGLUDualGateBridge as model.encoder_projection
+    # Install SwiGLUDualGateBridge as model.encoder_projection, respecting config parameters
     enc_dim = int(model.encoder.config.hidden_size)
     dec_dim = int(model.decoder.config.hidden_size)
     dev = next(model.decoder.parameters()).device
-    model.encoder_projection = SwiGLUDualGateBridge(enc_dim, dec_dim).to(dev)
+    cfg = getattr(model, "config", None)
+    d_mid = getattr(cfg, "d_mid", None)
+    init_rms = getattr(cfg, "init_rms_scale", 1.0)
+    existing_proj = getattr(model, "encoder_projection", None)
+    if (
+        isinstance(existing_proj, SwiGLUDualGateBridge)
+        and existing_proj.d_enc == enc_dim
+        and existing_proj.d_dec == dec_dim
+    ):
+        model.encoder_projection = existing_proj.to(dev)
+    else:
+        model.encoder_projection = SwiGLUDualGateBridge(
+            d_enc=enc_dim,
+            d_dec=dec_dim,
+            d_mid=d_mid,
+            init_rms_scale=init_rms,
+        ).to(dev)
 
     raw_gate_init = getattr(getattr(model, "config", None), "gate_init_tanh", GATE_INIT_TANH)
     gate_init_tanh = float(raw_gate_init if raw_gate_init is not None else GATE_INIT_TANH)

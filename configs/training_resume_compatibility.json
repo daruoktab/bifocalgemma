@@ -1,13 +1,13 @@
 {
   "version": "exact_source_training_equivalence_v1",
-  "reason": "Structural V2/V3 split, 256-token MCQ budget floor, PreTrainedModel Hub export with subfolder support, clean recipe versioning, and standalone Molab runtime embedding. Model math, data, optimizer, schedules and checkpoint semantics are unchanged.",
+  "reason": "Structural V2/V3 split, 256-token MCQ budget floor, PreTrainedModel Hub export with subfolder support, clean recipe versioning, robust checkpoint resume & upload interval, and standalone Molab runtime embedding. Model math, data, optimizer, schedules and checkpoint semantics are unchanged.",
   "baseline_runtime_sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
   "baseline_training_semantics_sha256": "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
-  "approved_source_semantics_sha256": "3d00115fd5d15633a09e9692007ee3bfe542469ec706a7bc267965326af468e2",
-  "source_semantics_sha256": "3d00115fd5d15633a09e9692007ee3bfe542469ec706a7bc267965326af468e2",
+  "approved_source_semantics_sha256": "8ae425d68c78fa826faf3bfae0b6b1f2f6bea2adc78e39d381a1b5f7d6d8de36",
+  "source_semantics_sha256": "8ae425d68c78fa826faf3bfae0b6b1f2f6bea2adc78e39d381a1b5f7d6d8de36",
   "reviewed_changed_files": {
     "evaluation/context.py": {
-      "after": "5ee2891e40a61a92e763d37e76cfc1d11a5f7465bec0ade7707472c5ae423018"
+      "after": "68a455539690ce78514e036bfdd3dddcbae25acb34ac79689af746811db23fae"
     },
     "evaluation/gsm8k.py": {
       "after": "718907c162c67b65222f8cafb0ebe9bbb678c00974d3d3e370aa951691265b77"
@@ -22,16 +22,31 @@
       "after": "d0358fadf903301e2038e1b04dbe058de648d4c3788c9329a44427958b4fff56"
     },
     "v3/attention.py": {
-      "after": "1191829ece1603ce18e11c0de77c0313e583cb960b95b8b805715526d582f877"
+      "after": "1032421497a60015e976803942c68b6a061fe5222398ec7abb9d3ebac35c0ae4"
+    },
+    "v3/benchmark.py": {
+      "after": "a624c3c5acdc3766c559b55475ad6dfee8674e27092b53844f22f914ee67db8d"
     },
     "v3/bridge.py": {
       "after": "382aa4015a1a52fae303e564211c9c3bb7141827d1d9eb44834a8cc704f3c91c"
+    },
+    "v3/curriculum.py": {
+      "after": "8c487a0e4e65afd53723fb534524dbedc9ae3fc7328edf914183a34d1d66f2ee"
     },
     "v3/objectives.py": {
       "after": "72d41831073b4e3a5674bf8fefd6ef190507c1009e732ea0e01fbd4a0bf8ea83"
     },
     "v3/matrix.py": {
-      "after": "37a65320bfe15ea38a8ffcb73d4e706956b0e83b31f45cd9e02f8a18399f658d"
+      "after": "4dce97f705bf71c3cdafff51a4127b23a8d73f51cd1c7bae30a8b4cd65c9d592"
+    },
+    "training/fast_pipeline.py": {
+      "after": "751fc965cecb8493cec6824da77b967427e68b763b5003ec64ba0f01b48323d0"
+    },
+    "training/hub.py": {
+      "after": "979d060fb6b02cb5ee1366eb7d4a096d6aae9e892a39fccf04ae9a858626b0cc"
+    },
+    "training/stages.py": {
+      "after": "b95832712fe9266765b6e73c3ccf8938c3dc660bb225006ffb3e03fe9aee3188"
     },
     "models/v2/native.py": {
       "after": "3e866c3ad5271f5f7b95547e05adabf7fb079b0809ad71e383236ade8ffd9319"

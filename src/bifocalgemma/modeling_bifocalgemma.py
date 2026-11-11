@@ -1,3 +1,4 @@
+# mypy: disable-error-code="override"
 """Hugging Face standard PreTrainedModel implementation for BifocalGemma."""
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from transformers.modeling_outputs import CausalLMOutputWithPast
 
 from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
 from bifocalgemma.contracts import ModelOutput, Seq2SeqBatch
-from bifocalgemma.models.v2.checkpoint_transfer import transfer_text_checkpoint
+from bifocalgemma.models.checkpoint_transfer import transfer_text_checkpoint
 from bifocalgemma.training.memory_probe import ProbeLoRALinear
 from bifocalgemma.v3.attention import configure_full_rank_cross_attention
 from bifocalgemma.v3.bridge import SwiGLUDualGateBridge
@@ -520,7 +521,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 break
         return current_ids
 
-    def save_pretrained(  # ty: ignore[incompatible-method-override]  # pyrefly: ignore [bad-override]
+    def save_pretrained(  # ty: ignore[incompatible-method-override]  # pyrefly: ignore [bad-override]  # type: ignore[override]
         self,
         save_directory: str | Path,
         is_main_process: bool = True,
@@ -531,6 +532,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         token: str | bool | None = None,
         tokenizer: Any = None,
         copy_default_tokenizer: bool = True,
+        distributed_checkpoint: bool = False,
         **kwargs: Any,
     ) -> None:
         """Save complete pre-trained model artifact after merging active LoRA adapters."""
@@ -664,7 +666,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                 )
 
     @classmethod
-    def from_pretrained(
+    def from_pretrained(  # type: ignore[override]
         cls,
         pretrained_model_name_or_path: str | Path,
         *model_args: Any,

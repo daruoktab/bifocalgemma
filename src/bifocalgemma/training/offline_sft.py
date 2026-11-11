@@ -488,12 +488,10 @@ def fit_offline_sft(
             if not token_count:
                 raise ValueError("No supervised tokens in optimizer window.")
             optimizer.zero_grad(set_to_none=True)
-            mean_loss, window_sources, phase_times = (
-                0.0,
-                {},
-                {"forward_seconds": 0.0, "backward_seconds": 0.0},
-            )
-            window_tasks = {}
+            mean_loss = 0.0
+            window_sources: dict[str, dict[str, float]] = {}
+            phase_times: dict[str, float] = {"forward_seconds": 0.0, "backward_seconds": 0.0}
+            window_tasks: dict[str, dict[str, float]] = {}
             for micro, (batch_cpu, items) in enumerate(
                 zip(micro_batches, item_batches, strict=True), 1
             ):

@@ -122,7 +122,9 @@ class BifocalGemmaConfig(PretrainedConfig):
             size_clean = "E2B"
         from bifocalgemma.models.v2.native import native_config
 
-        return native_config(size_clean, tiny=tiny, encoder=encoder).to_dict()
+        if size_clean == "E4B":
+            return native_config("E4B", tiny=tiny, encoder=encoder).to_dict()
+        return native_config("E2B", tiny=tiny, encoder=encoder).to_dict()
 
     def to_dict(self) -> dict[str, Any]:
         output = copy.deepcopy(super().to_dict())

@@ -35,7 +35,7 @@ def _prepare() -> None:
             raise
     src = Path(__file__).resolve().parents[1] / "src"
     if not (src / "bifocalgemma" / "v3").is_dir():
-        raise
+        raise FileNotFoundError(f"Source directory not found: {src / 'bifocalgemma' / 'v3'}")
     # `load_runtime` may already have appended the checkout's src behind the
     # pinned bundle, so promote it rather than skipping the insert.
     if str(src) in sys.path:

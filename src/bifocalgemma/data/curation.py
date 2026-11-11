@@ -195,7 +195,7 @@ class CodeOverlapIndex:
         candidates = (
             sorted(grams)[: self.candidate_shingles] if self.candidate_shingles else list(grams)
         )
-        counts = Counter()
+        counts: Counter[str] = Counter()
         if self.db is not None:
             for offset in range(0, len(candidates), 800):
                 chunk = candidates[offset : offset + 800]
@@ -318,7 +318,7 @@ def curate_paired_sources(
     for source, rows in sources:
         if source not in SOURCE_REFS:
             raise ValueError("source_not_admitted: " + source)
-        counts = Counter()
+        counts: Counter[str] = Counter()
         warning_summary = empty_syntax_warning_summary()
         for offset, raw in enumerate(rows):
             counts["raw"] += 1

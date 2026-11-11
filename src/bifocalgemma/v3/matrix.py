@@ -26,7 +26,13 @@ from bifocalgemma.models.memory_efficient import (
 )
 from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
 from bifocalgemma.training.curated_sft import prepare_curated_training
-from bifocalgemma.training.hub import recover_remote_run
+from bifocalgemma.training.hub import (
+    RemoteHeartbeat,
+    benchmark_directory_name,
+    download_model,
+    recover_remote_run,
+    target_fingerprint,
+)
 from bifocalgemma.training.offline_sft import evaluate_sft_loss
 from bifocalgemma.training.policy import configure_policy_model, update_policy_learning_rates
 from bifocalgemma.training.recipes import unified_recipe
@@ -36,8 +42,6 @@ from bifocalgemma.training.stages import (
     latest_checkpoint,
 )
 from bifocalgemma.training.telemetry import TrainingDashboard
-from bifocalgemma.training.v2 import benchmark_directory_name, download_model, target_fingerprint
-from bifocalgemma.training.v2_hub import RemoteHeartbeat
 from bifocalgemma.v3.attention import configure_full_rank_cross_attention
 from bifocalgemma.v3.benchmark import (
     resolve_optimal_eval_batch_size,
@@ -48,7 +52,7 @@ from bifocalgemma.v3.checkpoint import (
     prune_matrix_checkpoints,
     restore_matrix_checkpoint,
     save_matrix_checkpoint,
-    synchronize_v2,
+    synchronize_matrix_v3,
 )
 from bifocalgemma.v3.constants import (
     ACCUMULATION,
@@ -412,7 +416,7 @@ def run_matrix_training(
     *,
     token: str | None = None,
     mo: Any = None,
-    output_root: str | Path = "outputs/v2",
+    output_root: str | Path = "outputs/matrix",
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
@@ -525,6 +529,9 @@ def run_matrix_training(
                     )
                     if rec_ver != CLEAN_RECIPE_VERSION:
                         return True
+                    compat = m_data.get("compatibility", {})
+                    if compat.get("spec_name") and compat.get("spec_name") != spec.name:
+                        return True
                 except Exception:
                     return True
             else:
@@ -537,7 +544,8 @@ def run_matrix_training(
         if upload and token:
             try:
                 recover_remote_run(repo, root, prefix, token=token)
-            except ValueError:
+            except ValueError as _rec_err:
+                logger.warning("Remote recovery raised ValueError: %s", _rec_err)
                 if latest_checkpoint(root / "training") is None:
                     for item in list(root.iterdir()):
                         if item.is_dir():
@@ -547,7 +555,7 @@ def run_matrix_training(
                     try:
                         recover_remote_run(repo, root, prefix, token=token)
                     except Exception as _rec_exc:
-                        logger.warning("Remote recovery skipped: %s", _rec_exc)
+                        logger.warning("Remote recovery retry skipped: %s", _rec_exc)
             except Exception as _rec_exc:
                 logger.warning("Remote recovery skipped: %s", _rec_exc)
         if check_legacy_artifacts():
@@ -555,7 +563,7 @@ def run_matrix_training(
             dashboard(
                 {
                     "stage": "discarded_legacy_checkpoint",
-                    "message": "Discarded legacy checkpoint lacking clean recipe version.",
+                    "message": "Discarded incompatible checkpoint.",
                 }
             )
 
@@ -601,7 +609,7 @@ def run_matrix_training(
         root,
         backoff_path=root / ".upload-backoff.json",
         progress=dashboard,
-        interval=1800,
+        interval=300,
         label="Checkpoint / results",
     )
 
@@ -624,7 +632,7 @@ def run_matrix_training(
             return None
         queue.mark_pending()
         result = queue.attempt(
-            lambda: synchronize_v2(repo, root, prefix, token=token, require_checkpoint=True),
+            lambda: synchronize_matrix_v3(repo, root, prefix, token=token, require_checkpoint=True),
             final=final,
         )
         if result and heartbeat:
@@ -866,6 +874,8 @@ def run_matrix_training(
 
     # Export standalone Hugging Face PreTrainedModel artifact
     export_dir = root / "pretrained_model"
+    export_succeeded = False
+    export_error_msg = None
     try:
         from bifocalgemma.modeling_bifocalgemma import export_matrix_pretrained_model
 
@@ -892,12 +902,14 @@ def run_matrix_training(
                 path_in_repo=None,
                 tokenizer_cache=Path(cache) / "tokenizers",
             )
+        export_succeeded = True
         progress({"stage": "pretrained_model_exported", "export_dir": str(export_dir)})
     except Exception as exc:
+        export_error_msg = str(exc)
         logger.warning("Failed to export standalone pretrained model: %s", exc)
 
     final_report = {
-        "status": "COMPLETED",
+        "status": "COMPLETED" if export_succeeded else "COMPLETED_WITHOUT_STANDALONE_EXPORT",
         "recipe_version": CLEAN_RECIPE_VERSION,
         "model_key": model_key,
         "repo": repo,
@@ -910,7 +922,8 @@ def run_matrix_training(
         "stage1": stage1_report,
         "stage2": stage2_report,
         "last_checkpoint": str(train_dir / f"checkpoint-{resolved_total:06d}"),
-        "pretrained_model": str(export_dir),
+        "pretrained_model": str(export_dir) if export_succeeded else None,
+        "export_error": export_error_msg,
     }
     atomic_json(root / "training/training_report.json", final_report)
     snapshot(final=True)
@@ -929,7 +942,7 @@ def run_matrix_benchmark(
     *,
     token: str | None = None,
     mo: Any = None,
-    output_root: str | Path = "outputs/v2",
+    output_root: str | Path = "outputs/matrix",
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
@@ -1045,7 +1058,7 @@ def run_matrix_benchmark(
             return None
         queue.mark_pending()
         result = queue.attempt(
-            lambda: synchronize_v2(repo, root, prefix, token=token, require_checkpoint=True),
+            lambda: synchronize_matrix_v3(repo, root, prefix, token=token, require_checkpoint=True),
             final=final,
         )
         if result and heartbeat:
@@ -1094,11 +1107,13 @@ def run_matrix_benchmark(
         }
         dest = root / "benchmarks" / benchmark_directory_name(settings)
         report_file = dest / "benchmark_report.json"
-        if report_file.is_file():
+        state_file = dest / "evaluation_state.json"
+        if report_file.is_file() and state_file.is_file():
             try:
                 rep = json.loads(report_file.read_text(encoding="utf-8"))
-                reports.append(rep)
-                continue
+                if rep.get("status") == "COMPLETED" and rep.get("experiment") == spec.name:
+                    reports.append(rep)
+                    continue
             except Exception:
                 pass
         missing_jobs.append((item, settings, dest))
@@ -1200,7 +1215,7 @@ def run_matrix_training_and_benchmark(
     *,
     token: str | None = None,
     mo: Any = None,
-    output_root: str | Path = "outputs/v2",
+    output_root: str | Path = "outputs/matrix",
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,

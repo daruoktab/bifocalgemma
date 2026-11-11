@@ -141,7 +141,7 @@ def configure_policy_model(model, policy):
 
 def build_training_groups(model, policy, total_steps=None) -> "list[dict[str, Any]]":
     validate_training_policy(policy, model)
-    entries = {name: [] for name in ("encoder", "decoder", "alignment")}
+    entries: dict[str, list[Any]] = {name: [] for name in ("encoder", "decoder", "alignment")}
     seen = set()
     # named_parameters deduplicates shared Parameter objects, including aliases.
     for name, parameter in sorted(model.named_parameters()):

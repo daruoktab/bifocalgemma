@@ -69,6 +69,8 @@ class GatedCrossAttentionBridge(nn.Module):
         self.out_proj = nn.Linear(self.inner_dim, decoder_dim, bias=False)
 
         # QK-Norm
+        self.q_norm: nn.Module
+        self.k_norm: nn.Module
         if self.use_qk_norm:
             self.q_norm = RMSNorm(self.head_dim)
             self.k_norm = RMSNorm(self.head_dim)

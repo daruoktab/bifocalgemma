@@ -254,10 +254,8 @@ class RemoteHeartbeat:
             self.failures = 0
         except Exception as error:
             delay = retry_delay(error, self.failures + 1, now)
-            if delay is None:
-                raise
             self.failures += 1
-            self.retry_at = now + delay
+            self.retry_at = now + (delay if delay is not None else 60.0)
             atomic_json(
                 self.root / "heartbeat_upload_status.json",
                 {

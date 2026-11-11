@@ -40,7 +40,9 @@ class PackedTokenizedDataset(Sequence[TokenizedRepairExample]):
             tuple(int(v) for v in self.tokens[start : start + length])
             for start, length in row["offsets"]
         ]
-        return TokenizedRepairExample(row["instance_id"], *arrays, metadata=row["metadata"])
+        return TokenizedRepairExample(
+            row["instance_id"], arrays[0], arrays[1], arrays[2], metadata=row["metadata"]
+        )
 
     def close(self):
         mapping = getattr(self.tokens, "_mmap", None)

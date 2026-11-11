@@ -325,7 +325,7 @@ def synchronize_matrix_v3(
         )
     )
 
-    retryable_codes = {412, 429, 500, 502, 503, 504}
+    retryable_codes = {408, 409, 412, 429, 500, 502, 503, 504}
     for attempt in range(max_retries):
         parent = api.model_info(repo_id).sha
         try:
@@ -333,16 +333,20 @@ def synchronize_matrix_v3(
                 repo_id,
                 operations=operations,
                 parent_commit=parent,
-                commit_message="Save verified v2 checkpoint and results snapshot",
+                commit_message="Save verified checkpoint and results snapshot",
             )
             break
         except HfHubHTTPError as error:
             status_code = getattr(getattr(error, "response", None), "status_code", None)
             if status_code not in retryable_codes or attempt == max_retries - 1:
                 raise
-            if base_delay > 0:
+            if status_code == 409:
+                delay = min(60.0, max(2.0, 2.0 * (2 ** min(attempt, 4)))) * (0.8 + 0.4 * random.random())
+            elif base_delay > 0:
                 delay = base_delay * (1.5 ** min(attempt, 6)) * (0.5 + random.random())
-                time.sleep(delay)
+            else:
+                delay = 1.0
+            time.sleep(delay)
     else:
         raise RuntimeError("Snapshot commit retry exhausted.")
 
@@ -378,9 +382,13 @@ def synchronize_matrix_v3(
                 status_code = getattr(getattr(error, "response", None), "status_code", None)
                 if status_code not in retryable_codes or attempt == max_retries - 1:
                     raise
-                if base_delay > 0:
+                if status_code == 409:
+                    delay = min(60.0, max(2.0, 2.0 * (2 ** min(attempt, 4)))) * (0.8 + 0.4 * random.random())
+                elif base_delay > 0:
                     delay = base_delay * (1.5 ** min(attempt, 6)) * (0.5 + random.random())
-                    time.sleep(delay)
+                else:
+                    delay = 1.0
+                time.sleep(delay)
 
     atomic_json(root / "upload_complete.json", receipt)
     return {"revision": revision, "retained_checkpoints": sorted(keep), "verified_at": time.time()}

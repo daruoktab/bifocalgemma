@@ -20,11 +20,14 @@ def retry_delay(error, failures, now):
     """None means fatal; do not hide permissions, disk, or integrity errors."""
     response = getattr(error, "response", None)
     code = getattr(response, "status_code", None)
-    if code not in {408, 412, 429, 500, 502, 503, 504} and not isinstance(
+    if code not in {408, 409, 412, 429, 500, 502, 503, 504} and not isinstance(
         error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
     ):
         return None
-    delay = min(3600, 60 * 2 ** min(max(0, failures - 1), 6))
+    if code == 409:
+        delay = min(60, 5 * 2 ** min(max(0, failures - 1), 4))
+    else:
+        delay = min(3600, 60 * 2 ** min(max(0, failures - 1), 6))
     if response is not None:
         headers = response.headers
         rate = parse_ratelimit_headers(headers)

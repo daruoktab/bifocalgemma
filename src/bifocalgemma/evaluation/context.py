@@ -76,13 +76,40 @@ def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
 DELIM_OPEN = r"[*'\"`\(\{\[]*"
 DELIM_CLOSE = r"[*'\"`\)\}\]]*"
 LETTER = r"([A-Da-d])"
-LETTER_TOKEN = rf"{DELIM_OPEN}{LETTER}{DELIM_CLOSE}(?!\w)"
-LETTER_RAW = r"[A-Da-d]"
-LETTER_TOKEN_NC = rf"{DELIM_OPEN}{LETTER_RAW}{DELIM_CLOSE}(?!\w)"
+STRICT_DELIM_OPEN = r"[*'\"`\(\{\[]+"
+STRICT_DELIM_CLOSE = r"[*'\"`\)\}\]]+"
+
+# Safe letter token:
+# 1. Bare letter MUST be uppercase [A-D] (so common English prose like "is a function" or "returns a list" is never matched as option A).
+# 2. Lowercase [a-d] is accepted ONLY when explicitly enclosed in delimiters (e.g. (a), [b], `c`, **d**).
+LETTER_TOKEN = (
+    rf"(?:(?<![\w<])([A-D])(?![\w>])"
+    rf"|{STRICT_DELIM_OPEN}([A-Da-d]){STRICT_DELIM_CLOSE}(?!\w))"
+)
+LETTER_TOKEN_NC = (
+    rf"(?:(?<![\w<])[A-D](?![\w>])"
+    rf"|{STRICT_DELIM_OPEN}[A-Da-d]{STRICT_DELIM_CLOSE}(?!\w))"
+)
+
 OPT_ADVERBS = r"(?:(?:clearly|definitely|actually|obviously|certainly|surely|indeed|simply|basically|likely|probably|\w+ly)\s+){0,2}"
 CONJ_GUARD = (
     rf"(?!\s*{DELIM_CLOSE}\s+(?:and|or|nor|vs)\s+(?:option\s+|choice\s+)?{LETTER_TOKEN_NC})"
 )
+
+
+def _extract_match_letter(match: re.Match[str]) -> str | None:
+    """Return uppercase letter from match. Bare letter must be uppercase; delimited may be any case."""
+    grps = match.groups()
+    if len(grps) >= 2:
+        bare_grp, delim_grp = grps[-2], grps[-1]
+        if bare_grp and bare_grp.isupper():
+            return bare_grp
+        if delim_grp:
+            return delim_grp.upper()
+    for grp in grps:
+        if grp and grp.isupper():
+            return grp
+    return None
 
 
 def fallback_letter_regex(text: str) -> str | None:
@@ -106,17 +133,27 @@ def fallback_letter_regex(text: str) -> str | None:
 
     # Priority 1: Conclusive explicit statements with positive resolution
     conclusive_patterns = [
+        rf"(?:ultimately\s+)?(?:option\s+|choice\s+){LETTER_TOKEN}\s+is\s+(?:{OPT_ADVERBS})?(?:the\s+)?correct{CONJ_GUARD}",
         rf"(?:ultimately\s+)?(?:option\s+|choice\s+)?{LETTER_TOKEN}\s+(?:is\s+(?:{OPT_ADVERBS})?(?:the\s+)?correct\s*(?:answer|choice|option)?){CONJ_GUARD}",
         rf"(?:final\s+answer|correct\s+(?:answer|option|choice|letter)|the\s+correct\s+answer)(?:\s+is)?(?:\s*:)?\s*{OPT_ADVERBS}{LETTER_TOKEN}{CONJ_GUARD}",
         rf"(?:therefore|thus|hence|so|in\s+conclusion|finally)[,\s]+(?:(?:[^\w\n]*\w+){{0,6}}\s+)?(?:(?:the\s+answer|option|choice)\s+is\s+|it\s+is\s+)?{LETTER_TOKEN}\s*[.]?\s*$",
         rf"(?<!not\s)(?:the\s+answer|answer)\s+is(?:\s*:)?\s*(?!(?:(?:\w+\s+)?not\b)){OPT_ADVERBS}{LETTER_TOKEN}{CONJ_GUARD}",
         rf"(?:it\s+is|it's)\s+{OPT_ADVERBS}{LETTER_TOKEN}{CONJ_GUARD}(?:\.|\b|\s|$)",
-        rf"(?:select|choose|pick)(?:\s+option|\s+choice|\s+letter)?(?:\s*:)?\s*{OPT_ADVERBS}{LETTER_TOKEN}{CONJ_GUARD}",
+        rf"(?:select|choose|pick)(?:\s+option|\s+choice|\s+letter)?(?:\s*:)?\s*{OPT_ADVERBS}{LETTER_TOKEN}{CONJ_GUARD}\s*[.]?\s*$",
     ]
     for pat in conclusive_patterns:
-        matches = list(re.finditer(pat, text, re.I))
+        matches = list(re.finditer(pat, text, re.I | re.M))
         if matches:
-            return matches[-1].group(1).upper()
+            ltr = _extract_match_letter(matches[-1])
+            if ltr:
+                return ltr
+
+    # Allow bare lowercase letter only if it directly follows an explicit answer verb at line end
+    terminal_verb = re.search(
+        r"(?:answer(?:\s+is)?|select|choose|pick)\s*:?\s*([a-d])\s*[.)]?\s*$", text, re.I
+    )
+    if terminal_verb:
+        return terminal_verb.group(1).upper()
 
     if has_ambiguity:
         return None
@@ -125,13 +162,18 @@ def fallback_letter_regex(text: str) -> str | None:
     prefix_pat = rf"(?:answer|option|choice)(?:\s+is)?(?:\s*:)?\s*(?!(?:(?:\w+\s+)?not\b)){OPT_ADVERBS}{LETTER_TOKEN}(?!\s*{DELIM_CLOSE}\s+(?:is\s+wrong|is\s+incorrect|is\s+not|is\s+suboptimal|is\s+invalid|is\s+false|is\s+not\s+right|and|or|nor|vs)){CONJ_GUARD}"
     prefix_matches = list(re.finditer(prefix_pat, text, re.I))
     if prefix_matches:
-        return prefix_matches[-1].group(1).upper()
+        ltr = _extract_match_letter(prefix_matches[-1])
+        if ltr:
+            return ltr
 
     # Priority 3: Single unique isolated letter candidate across text (guarded against negative statements)
-    letters = re.findall(rf"(?<![<\w]){LETTER}(?![>\w])", text, re.I)
-    upper_letters = [item.upper() for item in letters]
-    if len(set(upper_letters)) == 1:
-        cand = upper_letters[0]
+    cands: set[str] = set()
+    for m in re.finditer(LETTER_TOKEN, text):
+        ltr = _extract_match_letter(m)
+        if ltr:
+            cands.add(ltr)
+    if len(cands) == 1:
+        cand = cands.pop()
         cand_token = rf"{DELIM_OPEN}{cand}{DELIM_CLOSE}(?!\w)"
         neg_guard = (
             re.search(
@@ -761,8 +803,8 @@ def run_repo_niah_eval(
     }
     atomic_json(out_path / "reponiah_summary.json", summary)
     with (out_path / "reponiah_predictions.jsonl").open("w", encoding="utf-8") as f:
-        for r in predictions:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        for pred_rec in predictions:
+            f.write(json.dumps(pred_rec, ensure_ascii=False) + "\n")
     return summary
 
 

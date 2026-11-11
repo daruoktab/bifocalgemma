@@ -165,11 +165,13 @@ class JSONLRepairDataset(Dataset):
                 enc_ids = tuple((t % limit) + 1 for t in enc_ids)
                 prefix_ids = tuple((t % limit) + 1 for t in prefix_ids)
                 target_ids = tuple((t % limit) + 1 for t in target_ids)
+            task_kind = str(row.get("task_type") or row.get("task_kind") or "repair")
             return TokenizedRepairExample(
                 instance_id=str(row.get("instance_id", f"example-{idx}")),
                 encoder_ids=enc_ids,
                 decoder_prefix_ids=prefix_ids,
                 target_ids=target_ids,
+                metadata={"task_type": task_kind},
             )
 
         # Raw text format
@@ -244,11 +246,13 @@ class JSONLRepairDataset(Dataset):
                 prefix_ids = tuple((t % limit) + 1 for t in prefix_ids)
                 target = tuple((t % limit) + 1 for t in target)
 
+            task_kind = str(row.get("task_type") or row.get("task_kind") or "repair")
             return TokenizedRepairExample(
                 instance_id=instance_id,
                 encoder_ids=enc_ids,
                 decoder_prefix_ids=prefix_ids or (2,),
                 target_ids=target or (106,),
+                metadata={"task_type": task_kind},
             )
         else:
             limit = max(1, self.max_vocab_size - 20) if self.max_vocab_size else 100
@@ -471,7 +475,7 @@ class FastTrainingPipeline:
                     if (data_path / "train.jsonl").is_file()
                     else data_path
                 )
-                train_ds = JSONLRepairDataset(
+                train_ds: Any = JSONLRepairDataset(
                     train_file,
                     tokenizer=self.tokenizer,
                     is_baseline=is_baseline,
@@ -499,7 +503,7 @@ class FastTrainingPipeline:
                     else (data_path / "dev.jsonl" if (data_path / "dev.jsonl").is_file() else None)
                 )
                 if val_file is not None:
-                    val_ds = JSONLRepairDataset(
+                    val_ds: Any = JSONLRepairDataset(
                         val_file,
                         tokenizer=self.tokenizer,
                         is_baseline=is_baseline,
@@ -673,7 +677,12 @@ class FastTrainingPipeline:
                 group["base_lr"] = base_lr
             group["lr"] = base_lr * factor
 
-    def save_checkpoint(self, global_step: int, stage_name: str) -> Path:
+    def save_checkpoint(
+        self,
+        global_step: int,
+        stage_name: str,
+        optimizer: torch.optim.Optimizer | None = None,
+    ) -> Path:
         """Save lightweight trainable state locally and sync to Hugging Face Hub if enabled."""
         ckpt_dir = self.out_path / "checkpoint_latest"
         ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -690,6 +699,13 @@ class FastTrainingPipeline:
             )
         }
         has_lora = any(isinstance(m, ProbeLoRALinear) for m in self.model.modules())
+        active_opt = optimizer if optimizer is not None else getattr(self, "current_optimizer", None)
+        opt_state = None
+        if active_opt is not None:
+            try:
+                opt_state = active_opt.state_dict()
+            except Exception as _opt_exc:
+                logger.warning("Could not serialize optimizer state: %s", _opt_exc)
         payload = {
             "model_choice": self.cfg.model_choice,
             "global_step": global_step,
@@ -697,11 +713,19 @@ class FastTrainingPipeline:
             "has_lora": has_lora,
             "history": self.history[-200:],
             "tensors": saved_tensors,
+            "optimizer": opt_state,
             "saved_at": time.time(),
         }
         tmp_file = ckpt_dir / "checkpoint_state.pt.tmp"
         torch.save(payload, str(tmp_file))
         tmp_file.replace(ckpt_file)
+
+        # Also save versioned milestone checkpoint locally
+        milestone_file = ckpt_dir / f"checkpoint_step_{global_step}.pt"
+        try:
+            torch.save(payload, str(milestone_file))
+        except Exception as _ms_exc:
+            logger.warning("Could not write milestone checkpoint file: %s", _ms_exc)
 
         if self.cfg.push_to_hub and self.cfg.hub_repo and self.cfg.hf_token:
             try:
@@ -717,6 +741,17 @@ class FastTrainingPipeline:
                     repo_type="model",
                     commit_message=f"[{self.cfg.model_choice}] Save checkpoint at step {global_step}",
                 )
+                if (
+                    global_step % (self.cfg.save_interval * 2) == 0
+                    or global_step == self.cfg.total_steps
+                ):
+                    api.upload_file(
+                        path_or_fileobj=str(milestone_file),
+                        path_in_repo=f"{sub}/checkpoint_latest/checkpoint_step_{global_step}.pt",
+                        repo_id=self.cfg.hub_repo,
+                        repo_type="model",
+                        commit_message=f"[{self.cfg.model_choice}] Save milestone checkpoint at step {global_step}",
+                    )
             except Exception as _exc:
                 logger.warning("Remote checkpoint upload skipped at step %d: %s", global_step, _exc)
         return ckpt_file
@@ -729,9 +764,18 @@ class FastTrainingPipeline:
         ckpt_dir = self.out_path / "checkpoint_latest"
         ckpt_file = ckpt_dir / "checkpoint_state.pt"
 
+        local_step = 0
+        if ckpt_file.is_file():
+            try:
+                local_payload = torch.load(str(ckpt_file), map_location="cpu", weights_only=False)
+                if local_payload.get("model_choice") == self.cfg.model_choice:
+                    local_step = int(local_payload.get("global_step", 0))
+            except Exception as _l_exc:
+                logger.warning("Could not read local checkpoint %s: %s", ckpt_file, _l_exc)
+
+        # Check remote checkpoint on Hugging Face if enabled
         if (
-            not ckpt_file.is_file()
-            and not self.cfg.tiny
+            not self.cfg.tiny
             and self.cfg.push_to_hub
             and self.cfg.hub_repo
             and self.cfg.hf_token
@@ -740,18 +784,32 @@ class FastTrainingPipeline:
                 from huggingface_hub import hf_hub_download
 
                 sub = (self.cfg.hub_subfolder or f"fast-{self.cfg.model_choice}").strip("/")
-                downloaded = hf_hub_download(
+                remote_file = hf_hub_download(
                     repo_id=self.cfg.hub_repo,
                     filename=f"{sub}/checkpoint_latest/checkpoint_state.pt",
                     repo_type="model",
                     token=self.cfg.hf_token,
                 )
-                ckpt_dir.mkdir(parents=True, exist_ok=True)
-                import shutil
+                remote_payload = torch.load(remote_file, map_location="cpu", weights_only=False)
+                if remote_payload.get("model_choice") == self.cfg.model_choice:
+                    remote_step = int(remote_payload.get("global_step", 0))
+                    if remote_step > local_step:
+                        ckpt_dir.mkdir(parents=True, exist_ok=True)
+                        import shutil
 
-                shutil.copy2(downloaded, ckpt_file)
-            except Exception:
-                pass
+                        shutil.copy2(remote_file, ckpt_file)
+                        print(
+                            f"[{time.strftime('%X')}] 📥 Mengunduh checkpoint terbaru dari Hub (step {remote_step} > local {local_step})...",
+                            flush=True,
+                        )
+                    else:
+                        logger.info(
+                            "Local checkpoint step %d >= remote step %d; keeping local.",
+                            local_step,
+                            remote_step,
+                        )
+            except Exception as _hub_exc:
+                logger.info("No remote checkpoint downloaded from Hub: %s", _hub_exc)
 
         if ckpt_file.is_file():
             try:
@@ -789,6 +847,7 @@ class FastTrainingPipeline:
                             self.model.load_state_dict(tensors, strict=False)
                             cast(Any, self.model).to(self.cfg.device)
                         self.history = list(payload.get("history", []))
+                        self._resumed_optimizer_state = payload.get("optimizer")
                         print(
                             f"[{time.strftime('%X')}] 🔄 Melanjutkan otomatis dari checkpoint step {saved_step}/{self.cfg.total_steps} ({self.cfg.model_choice})...",
                             flush=True,
@@ -1149,7 +1208,22 @@ class FastTrainingPipeline:
             if report_file.is_file():
                 try:
                     existing_report = json.loads(report_file.read_text(encoding="utf-8"))
-                    if existing_report.get("status") == "COMPLETED":
+                    eval_state_file = bench_out_dir / "evaluation_state.json"
+                    state_sig = None
+                    if eval_state_file.is_file():
+                        try:
+                            state_sig = json.loads(eval_state_file.read_text(encoding="utf-8")).get("signature")
+                        except Exception:
+                            pass
+                    is_valid_sig = True
+                    if state_sig and existing_report.get("signature"):
+                        is_valid_sig = (state_sig == existing_report.get("signature"))
+
+                    if (
+                        existing_report.get("status") == "COMPLETED"
+                        and existing_report.get("experiment") == spec.name
+                        and is_valid_sig
+                    ):
                         acc = existing_report.get("accuracy")
                         acc_str = f"{acc * 100:.2f}%" if isinstance(acc, (int, float)) else "N/A"
                         print(
@@ -1342,6 +1416,7 @@ class FastTrainingPipeline:
     ) -> tuple[int, Any]:
         """Execute one training stage with warmup + cosine scheduling, evaluation, and checkpointing."""
         self.current_stage = stage_name
+        self.current_optimizer = optimizer
         global_step = start_step
         total_stage_steps = target_step - start_step
         log_step = max(1, min(self.cfg.log_interval, max(1, total_stage_steps // 20)))
@@ -1399,7 +1474,7 @@ class FastTrainingPipeline:
                     flush=True,
                 )
             if not self.cfg.tiny and (global_step % save_every == 0 or global_step == target_step):
-                self.save_checkpoint(global_step, stage_name)
+                self.save_checkpoint(global_step, stage_name, optimizer=optimizer)
             if self.callback:
                 self.callback(record)
 
@@ -1455,6 +1530,14 @@ class FastTrainingPipeline:
                     flush=True,
                 )
                 opt = self.configure_stage2()
+                resumed_opt_state = getattr(self, "_resumed_optimizer_state", None)
+                if resumed_opt_state is not None:
+                    try:
+                        opt.load_state_dict(resumed_opt_state)
+                        logger.info("Restored optimizer state into baseline SFT optimizer.")
+                    except Exception as _opt_r_exc:
+                        logger.warning("Could not restore baseline optimizer state: %s", _opt_r_exc)
+                    self._resumed_optimizer_state = None
                 global_step, data_iter = self._run_stage(
                     stage_name="full_decoder_sft",
                     optimizer=opt,
@@ -1479,6 +1562,14 @@ class FastTrainingPipeline:
                         flush=True,
                     )
                     opt1 = self.configure_stage1()
+                    resumed_opt_state = getattr(self, "_resumed_optimizer_state", None)
+                    if resumed_opt_state is not None:
+                        try:
+                            opt1.load_state_dict(resumed_opt_state)
+                            logger.info("Restored optimizer state into Stage 1 optimizer.")
+                        except Exception as _opt_r_exc:
+                            logger.warning("Could not restore Stage 1 optimizer state: %s", _opt_r_exc)
+                        self._resumed_optimizer_state = None
                     global_step, data_iter = self._run_stage(
                         stage_name="stage1_bridge_warmup",
                         optimizer=opt1,
@@ -1504,8 +1595,16 @@ class FastTrainingPipeline:
                     )
                     opt2 = self.configure_stage2()
 
+                    resumed_opt_state = getattr(self, "_resumed_optimizer_state", None)
+                    if resumed_opt_state is not None:
+                        try:
+                            opt2.load_state_dict(resumed_opt_state)
+                            logger.info("Restored optimizer state into Stage 2 optimizer.")
+                        except Exception as _opt_r_exc:
+                            logger.warning("Could not restore Stage 2 optimizer state: %s", _opt_r_exc)
+                        self._resumed_optimizer_state = None
                     # Preserve AdamW momentum state (exp_avg, exp_avg_sq, step) from Stage 1 into Stage 2
-                    if opt1 is not None and hasattr(opt1, "state") and opt1.state:
+                    elif opt1 is not None and hasattr(opt1, "state") and opt1.state:
                         opt2_params = {p for group in opt2.param_groups for p in group["params"]}
                         transferred = 0
                         for p, s in opt1.state.items():
@@ -1534,7 +1633,11 @@ class FastTrainingPipeline:
                 flush=True,
             )
             if not already_completed:
-                self.save_checkpoint(global_step, getattr(self, "current_stage", current_stage))
+                self.save_checkpoint(
+                    global_step,
+                    getattr(self, "current_stage", current_stage),
+                    optimizer=getattr(self, "current_optimizer", None),
+                )
             last_val = next(
                 (h["val_loss"] for h in reversed(self.history) if h.get("val_loss") is not None),
                 0.0,

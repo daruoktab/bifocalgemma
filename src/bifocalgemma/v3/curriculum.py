@@ -259,7 +259,7 @@ def build_anti_forgetting_curriculum(
 
     # Interleave comprehension examples uniformly across the epoch; in Stage 1 also front-load warmup
     curriculum: list[TokenizedRepairExample] = []
-    if stage_name == "frozen_decoder" and len(selected_comp) >= 4:
+    if stage_name in ("frozen_decoder", "stage1", "stage1_bridge_warmup") and len(selected_comp) >= 4:
         front_count = max(1, len(selected_comp) // 3)
         curriculum.extend(selected_comp[:front_count])
         rest_comp = selected_comp[front_count:]

@@ -226,6 +226,18 @@ def batched_greedy_decode(
         budgets = list(max_new_tokens_list)
 
     if bsz == 1:
+        if (
+            getattr(inference_cache_mod.CachedAttention, "__name__", "")
+            != "FullCrossCachedAttention"
+        ):
+            from bifocalgemma.v3.attention import FullCrossCachedAttention
+
+            if getattr(model, "encoder", None) is None or hasattr(
+                model.decoder.layers[0].self_attn, "cross_q_norm"
+            ):
+                setattr(inference_cache_mod, "CachedAttention", FullCrossCachedAttention)
+            else:
+                configure_full_rank_cross_attention(model)
         return [
             greedy_decode(
                 model,
@@ -555,12 +567,19 @@ def run_batched_context_benchmark(
             cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
             enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
             paired_prompt = decoder_prompt(row, paired=True)
-            paired_rendered = decoder.apply_chat_template(
-                [{"role": "user", "content": paired_prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
+            try:
+                paired_rendered = decoder.apply_chat_template(
+                    [{"role": "user", "content": paired_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                paired_rendered = decoder.apply_chat_template(
+                    [{"role": "user", "content": paired_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
             paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
             row_budget = int(row.get("max_new_tokens", max_new_tokens))
             if (
@@ -648,10 +667,10 @@ def run_batched_context_benchmark(
                 "eval_batch_size": len(chunk_rows),
                 **scoring,
             }
-            with predictions.open("a", encoding="utf-8", newline="\n") as stream:
-                stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
-                stream.flush()
-                os.fsync(stream.fileno())
+            with predictions.open("a", encoding="utf-8", newline="\n") as out_stream:
+                out_stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
+                out_stream.flush()
+                os.fsync(out_stream.fileno())
             completed.append(record)
             if prediction_callback and (index % upload_every == 0 or index == len(ids)):
                 prediction_callback()

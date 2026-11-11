@@ -74,7 +74,7 @@ def score_python_patch(
                 instance_id, "INFRA_ERROR", True, None, "Invalid evaluator script: " + str(error)
             )
         unittest_names = {"unittest"}
-        main_names = set()
+        main_names: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 unittest_names.update(

@@ -90,7 +90,7 @@ def _(DEVICE, PRECISION, mo):
         repeat_kv,
     )
 
-    assert version("transformers") == "5.19.0", "Gunakan transformers==5.19.0."
+    assert version("transformers") >= "5.19.0", "Gunakan transformers>=5.19.0."
     torch.set_num_threads(min(4, torch.get_num_threads()))
     torch.set_float32_matmul_precision("highest")
     device_request = os.environ.get("BIFOCALGEMMA_NOTEBOOK_DEVICE", DEVICE)
@@ -365,8 +365,8 @@ def _(SimpleNamespace, copy, version, Gemma4TextConfig, mo):
 
     def native_config(size: str, *, tiny: bool = True, encoder: bool = False):
         """Full dimensions are for meta inspection only; factory always uses tiny."""
-        if version("transformers") != "5.19.0":
-            raise RuntimeError("Native integration is validated against transformers==5.19.0.")
+        if version("transformers") < "5.19.0":
+            raise RuntimeError("Native integration requires transformers>=5.19.0.")
         values = copy.deepcopy(AUDITED_CONFIGS[size]["text_config"])
         if tiny:
             width = 32 if size == "E2B" else 48

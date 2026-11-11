@@ -57,7 +57,7 @@ def greedy_decode(
             if progress:
                 progress({"stage": "benchmark_encoding", "generated_tokens": 0})
             enc = torch.tensor([encoder_ids], dtype=torch.long, device=device)
-            enc_mask = torch.ones_like(enc, dtype=torch.bool)
+            enc_mask: torch.Tensor | None = torch.ones_like(enc, dtype=torch.bool)
             states = model.encode_context(enc, enc_mask) if model.encoder is not None else None
             if model.encoder is None:
                 enc_mask = None

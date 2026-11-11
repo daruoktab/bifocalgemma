@@ -31,7 +31,7 @@ svg_code = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 620" wid
     <rect x="0" y="0" width="1000" height="230" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
     <rect x="18" y="-12" width="420" height="24" rx="5" fill="#1e293b"/>
     <text x="228" y="4" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#ffffff">PANEL A: GEMMA 4 E2B (35 Layers · 15 KV-Owners / 20 Shared)</text>
-    
+
     <rect x="630" y="-12" width="350" height="24" rx="5" fill="#ecfdf5" stroke="#059669" stroke-width="1.2"/>
     <text x="805" y="4" text-anchor="middle" font-size="11" font-weight="bold" fill="#065f46">Cross-KV Cache Reduction: 57.14% (20 / 35 Layers)</text>
 '''
@@ -79,7 +79,7 @@ svg_code += "\n".join(e2b_nodes)
 svg_code += '''
     <!-- Annotation & Routing Banner -->
     <rect x="23" y="140" width="954" height="74" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
-    
+
     <!-- Left Box: Anchor Badge -->
     <rect x="35" y="148" width="195" height="58" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
     <text x="132" y="168" text-anchor="middle" font-size="11" font-weight="bold" fill="#78350f">★ DESIGNATED ANCHORS</text>
@@ -107,7 +107,7 @@ svg_code += '''
     <rect x="0" y="0" width="1000" height="230" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
     <rect x="18" y="-12" width="420" height="24" rx="5" fill="#1e293b"/>
     <text x="228" y="4" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#ffffff">PANEL B: GEMMA 4 E4B (42 Layers · 24 KV-Owners / 18 Shared)</text>
-    
+
     <rect x="630" y="-12" width="350" height="24" rx="5" fill="#ecfdf5" stroke="#059669" stroke-width="1.2"/>
     <text x="805" y="4" text-anchor="middle" font-size="11" font-weight="bold" fill="#065f46">Cross-KV Cache Reduction: 42.86% (18 / 42 Layers)</text>
 '''
@@ -149,7 +149,7 @@ svg_code += "\n".join(e4b_nodes)
 svg_code += '''
     <!-- Annotation & Routing Banner -->
     <rect x="23" y="140" width="954" height="74" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
-    
+
     <!-- Left Box: Anchor Badge -->
     <rect x="35" y="148" width="195" height="58" rx="6" fill="#fef3c7" stroke="#d97706" stroke-width="1.5"/>
     <text x="132" y="168" text-anchor="middle" font-size="11" font-weight="bold" fill="#78350f">★ DESIGNATED ANCHORS</text>
