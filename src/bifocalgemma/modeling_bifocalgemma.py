@@ -163,24 +163,28 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         self.post_init()
 
     def tie_weights(self, *args: Any, **kwargs: Any) -> None:
-        """Tie weights cleanly, excluding encoder when absent."""
-        if getattr(self, "encoder", None) is None or not getattr(
-            self.config, "tie_word_embeddings", True
-        ):
-            self._tied_weights_keys = {"lm_head.weight": "decoder.embed_tokens.weight"}
-        else:
-            self._tied_weights_keys = {
-                "lm_head.weight": "decoder.embed_tokens.weight",
-                "encoder.embed_tokens.weight": "decoder.embed_tokens.weight",
-            }
+        """Tie weights cleanly, excluding encoder unless explicitly configured and dimensions match."""
+        tie_enc_dec = (
+            getattr(self, "encoder", None) is not None
+            and getattr(self.config, "tie_encoder_decoder_words", False)
+            and getattr(self.config, "d_enc", None) == getattr(self.config, "d_dec", None)
+        )
+        tied: dict[str, str] = {}
+        if getattr(self.config, "tie_word_embeddings", True):
+            tied["lm_head.weight"] = "decoder.embed_tokens.weight"
+        if tie_enc_dec:
+            tied["encoder.embed_tokens.weight"] = "decoder.embed_tokens.weight"
+        self._tied_weights_keys = tied
         super().tie_weights(*args, **kwargs)
 
     def _tie_words(self) -> None:
         """Tie decoder word embeddings to lm_head and optionally encoder embeddings."""
-        self.lm_head.weight = self.decoder.embed_tokens.weight
+        if getattr(self.config, "tie_word_embeddings", True):
+            self.lm_head.weight = self.decoder.embed_tokens.weight
         if (
             self.encoder is not None
-            and getattr(self.config, "tie_word_embeddings", True)
+            and getattr(self.config, "tie_encoder_decoder_words", False)
+            and getattr(self.config, "d_enc", None) == getattr(self.config, "d_dec", None)
             and hasattr(self.encoder, "embed_tokens")
         ):
             self.encoder.embed_tokens.weight = self.decoder.embed_tokens.weight
@@ -409,6 +413,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         encoder_hidden_states: torch.Tensor | None = None,
         batch: Seq2SeqBatch | None = None,
         return_dict: bool = True,
+        shift_labels: bool | None = None,
         **kwargs: Any,
     ) -> CausalLMOutputWithPast | ModelOutput | tuple[Any, ...]:
         """Forward execution supporting Hugging Face standard kwargs and Seq2SeqBatch."""
@@ -450,19 +455,23 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         if labels is not None:
             import torch.nn.functional as F
 
-            # If labels is already aligned with logits (e.g. from RepairCollator / Seq2SeqBatch with -100 prefix)
-            if labels.shape == input_ids.shape and (labels == -100).any():
+            should_shift = (
+                shift_labels
+                if shift_labels is not None
+                else (labels.shape[1] > 1 and labels.shape == input_ids.shape and not (labels == -100).any())
+            )
+            if not should_shift:
                 loss = F.cross_entropy(
                     logits.float().view(-1, logits.size(-1)),
                     labels.view(-1),
                     ignore_index=-100,
                 )
             else:
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = labels[..., 1:].contiguous()
+                shift_log = logits[..., :-1, :].contiguous()
+                shift_lab = labels[..., 1:].contiguous()
                 loss = F.cross_entropy(
-                    shift_logits.view(-1, shift_logits.size(-1)),
-                    shift_labels.view(-1),
+                    shift_log.view(-1, shift_log.size(-1)),
+                    shift_lab.view(-1),
                     ignore_index=-100,
                 )
 
@@ -674,6 +683,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
         cache_dir: str | Path | None = None,
         torch_dtype: torch.dtype | str | None = None,
         device_map: str | dict[str, Any] | None = None,
+        strict: bool = False,
         **kwargs: Any,
     ) -> BifocalGemmaForCausalLM:
         """Load an intact BifocalGemma pre-trained model from local path or Hub."""
@@ -703,18 +713,25 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
         weights_path = model_path / "model.safetensors"
         if weights_path.exists():
             state_dict = load_file(str(weights_path), device="cpu")
-            load_result = model.load_state_dict(state_dict, strict=False)
+            load_result = model.load_state_dict(state_dict, strict=strict)
             if load_result.missing_keys:
                 logger.warning("from_pretrained: missing keys when loading state_dict: %s", load_result.missing_keys)
+                # Check for critical missing core layers
+                critical_missing = [k for k in load_result.missing_keys if "decoder.embed_tokens" in k or "decoder.layers.0." in k]
+                if critical_missing:
+                    raise ValueError(f"Checkpoint in {model_path} is missing critical backbone weights: {critical_missing}")
             if load_result.unexpected_keys:
                 logger.warning("from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys)
         else:
             bin_path = model_path / "pytorch_model.bin"
             if bin_path.exists():
                 state_dict = torch.load(str(bin_path), map_location="cpu")
-                load_result = model.load_state_dict(state_dict, strict=False)
+                load_result = model.load_state_dict(state_dict, strict=strict)
                 if load_result.missing_keys:
                     logger.warning("from_pretrained: missing keys when loading state_dict: %s", load_result.missing_keys)
+                    critical_missing = [k for k in load_result.missing_keys if "decoder.embed_tokens" in k or "decoder.layers.0." in k]
+                    if critical_missing:
+                        raise ValueError(f"Checkpoint in {model_path} is missing critical backbone weights: {critical_missing}")
                 if load_result.unexpected_keys:
                     logger.warning("from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys)
 
@@ -772,6 +789,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                 gate_init_tanh=0.05,
                 init_rms_scale=1.0,
                 learnable_cross_scale=True,
+                tie_encoder_decoder_words=False,
             )
 
         model = cls(config)
@@ -790,7 +808,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                 transfer_text_checkpoint(
                     model.encoder,
                     enc_file,
-                    skip_words=getattr(config, "tie_word_embeddings", True),
+                    skip_words=getattr(config, "tie_encoder_decoder_words", False),
                 )
 
             # 3. Cleanly initialize the SwiGLU bridge and decoupled cross-attention
@@ -903,6 +921,7 @@ def export_matrix_pretrained_model(
             gate_init_tanh=0.05,
             init_rms_scale=1.0,
             learnable_cross_scale=True,
+            tie_encoder_decoder_words=False,
             encoder_config=model.encoder.config.to_dict()
             if getattr(model, "encoder", None) is not None
             else None,

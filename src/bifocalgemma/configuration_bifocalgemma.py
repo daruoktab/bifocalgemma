@@ -32,6 +32,7 @@ class BifocalGemmaConfig(PretrainedConfig):
         gate_init_tanh: float = 0.05,
         learnable_cross_scale: bool = True,
         tie_word_embeddings: bool = True,
+        tie_encoder_decoder_words: bool = False,
         vocab_size: int = 256000,
         max_position_embeddings: int = 32768,
         bos_token_id: int = 2,
@@ -48,6 +49,7 @@ class BifocalGemmaConfig(PretrainedConfig):
                     "eos_token_id": eos_token_id,
                     "pad_token_id": pad_token_id,
                     "tie_word_embeddings": tie_word_embeddings,
+                    "tie_encoder_decoder_words": tie_encoder_decoder_words,
                     **kwargs,
                 },
             )
@@ -56,6 +58,7 @@ class BifocalGemmaConfig(PretrainedConfig):
         self.encoder_size = encoder_size
         self.decoder_size = decoder_size
         self.tiny = tiny
+        self.tie_encoder_decoder_words = tie_encoder_decoder_words
 
         # Resolve decoder subconfig
         if decoder_config is None:

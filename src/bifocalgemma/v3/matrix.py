@@ -247,6 +247,11 @@ def run_matrix_stage(
         optimizer.zero_grad(set_to_none=True)
         mean_loss = 0.0
         for items, batch_cpu in zip(raw_item_groups, micro_batches, strict=True):
+            saved_grads = {
+                p: p.grad.clone()
+                for p in model.parameters()
+                if p.grad is not None
+            }
             try:
                 batch = batch_cpu.to(device)
                 count = int((batch_cpu.labels != -100).sum())
@@ -264,6 +269,12 @@ def run_matrix_stage(
                     torch.cuda.empty_cache()
                 if len(items) <= 1:
                     raise
+                # Restore pre-microbatch gradient state to prevent accumulating partial corrupted gradients
+                for p, g in saved_grads.items():
+                    p.grad = g.clone()
+                for p in model.parameters():
+                    if p not in saved_grads and p.grad is not None:
+                        p.grad = None
                 # Automatic OOM fallback: split batch=2 microbatch into single-item sub-batches
                 for single_item in items:
                     sub_cpu = collator([single_item])
@@ -874,6 +885,12 @@ def run_matrix_training(
             ]
             ledger.finish("stage2_joint", stage2_files, stage2_report)
             snapshot(final=True)
+
+    # Ensure model has the latest trained weights and adapters loaded prior to export
+    final_ckpt = latest_checkpoint(train_dir)
+    if final_ckpt is not None:
+        logger.info("Restoring latest trained checkpoint %s into model before export", final_ckpt)
+        restore_matrix_checkpoint(model=model, optimizer=None, checkpoint_dir=Path(final_ckpt))
 
     # Export standalone Hugging Face PreTrainedModel artifact
     export_dir = root / "pretrained_model"
