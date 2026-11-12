@@ -1,6 +1,6 @@
 # Data and training protocol V4
 
-This document describes the implemented local protocol for the main ten-model matrix, version `bifocalgemma_shared_schedule_2026_11_12`. Local tests exercise all ten tiny model configurations, shared loaders, label masks, stage transitions, interruption/resume, partial-backward OOM recovery, effective benchmark settings, and trained-adapter export/reload. These checks do not establish pretrained model quality. The generated runtime is a local preview, not a published Hub release.
+This document describes the implemented local protocol for the main ten-model matrix, version `bifocalgemma_shared_schedule_2026_11_12`. Local tests exercise all ten tiny model configurations, shared loaders, label masks, stage transitions, interruption/resume, partial-backward OOM recovery, effective benchmark settings, and trained-adapter export/reload. These checks do not establish pretrained model quality. The source runtime was subsequently published at immutable Hub revision `55cdfa8bfbb28ee785f37db0787aca95c89c431f`; see [runtime release verification](RUNTIME_RELEASE.md).
 
 ## Training exposure
 
@@ -78,3 +78,5 @@ conda run --no-capture-output -n ai python -m pytest -q --tb=short --junitxml=ou
 ```
 
 Pyrefly (`--min-severity=warn`), ty, Ruff (`--fix`), strict marimo validation of all ten matrix notebooks, and deterministic notebook/runtime `--check` all passed. The final isolated runtime check passed for baseline and asymmetric tiny stages. The knowledge graph was updated after code changes. The old training-equivalence approval was preserved and does not authorize this protocol. Pretrained quality results and an immutable remote publication are not claimed by these local acceptance checks.
+
+The subsequent bootstrap release correction published the same source ZIP, pinned all ten notebooks to the immutable revision, and added a release check rejecting `LOCAL-PREVIEW`. An anonymous network test started without a local ZIP/cache and executed the rendered notebook loader with a temporary marimo cell filename. Its checksum and imported module paths were verified; 62 focused bootstrap/notebook tests passed. This publication does not change model or training semantics.

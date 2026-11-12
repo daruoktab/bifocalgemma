@@ -250,14 +250,25 @@ def _(mo):
             else None
         )
         cached = root / "runtime.zip"
-        source = local if local is not None and local.is_file() else cached
-        data = source.read_bytes() if source.is_file() else b""
+        data = b""
+        for source in (local, cached):
+            if source is not None and source.is_file():
+                candidate = source.read_bytes()
+                if hashlib.sha256(candidate).hexdigest() == expected_sha:
+                    data = candidate
+                    break
         if hashlib.sha256(data).hexdigest() != expected_sha:
+            if revision == "LOCAL-PREVIEW":
+                raise ValueError(
+                    "This notebook references an unpublished LOCAL-PREVIEW runtime. "
+                    "Use the published notebook, or provide its matching local runtime ZIP."
+                )
             urls = [
                 f"https://huggingface.co/{{repo_id}}/resolve/{{revision}}/{{filename}}",
                 f"https://huggingface.co/datasets/{{repo_id}}/resolve/{{revision}}/{{filename}}",
             ]
             downloaded = False
+            errors = []
             for url in urls:
                 try:
                     req = urllib.request.Request(
@@ -268,12 +279,17 @@ def _(mo):
                     if hashlib.sha256(data).hexdigest() == expected_sha:
                         downloaded = True
                         break
-                except Exception:
+                except Exception as error:
+                    errors.append(type(error).__name__ + ": " + str(error))
                     continue
             if not downloaded and (
                 len(data) > 64 * 2**20 or hashlib.sha256(data).hexdigest() != expected_sha
             ):
-                raise ValueError("Runtime archive checksum mismatch; no code was activated.")
+                raise ValueError(
+                    "Runtime archive unavailable or checksum mismatch; no code was activated. "
+                    f"Expected SHA-256 {{expected_sha}} at revision {{revision}}. "
+                    + "; ".join(errors)
+                )
 
         root.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -295,12 +311,6 @@ def _(mo):
             sys.path.insert(0, str(root / "src"))
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
-
-        if notebook_file:
-            repo_root = Path(notebook_file).resolve().parents[1]
-            if (repo_root / "src/bifocalgemma").is_dir() and str(repo_root / "src") not in sys.path:
-                sys.path.insert(0, str(repo_root / "src"))
-                sys.path.insert(0, str(repo_root))
 
         return root
 
@@ -432,13 +442,20 @@ def format_code(code: str, filename: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--check", action="store_true", help="Check existing files match generated code"
     )
-    parser.add_argument(
+    mode.add_argument(
         "--publish", action="store_true", help="Publish immutable runtime bundle to Hugging Face"
     )
+    parser.add_argument(
+        "--require-published", action="store_true",
+        help="With --check, require an immutable Hub revision instead of LOCAL-PREVIEW.",
+    )
     args = parser.parse_args()
+    if args.require_published and not args.check:
+        parser.error("--require-published requires --check")
 
     print("Building deterministic source bundle...")
     payload, bundle_sha = matrix_bundle(ROOT)
@@ -470,7 +487,7 @@ def main():
             commit_message="Publish immutable BifocalGemma matrix notebook runtime",
         )
         print(f"Uploaded commit: {commit.oid}")
-        remote = hf_hub_download(repo_id, filename, revision=commit.oid)
+        remote = hf_hub_download(repo_id, filename, revision=commit.oid, token=False, force_download=True)
         if hashlib.sha256(Path(remote).read_bytes()).hexdigest() != bundle_sha:
             raise ValueError("Published runtime checksum mismatch.")
         manifest = {
@@ -491,6 +508,11 @@ def main():
         if not manifest_path.is_file():
             raise SystemExit(f"Missing runtime manifest: {manifest_path}.")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        revision = manifest.get("revision", "")
+        if args.require_published and not (
+            len(revision) == 40 and all(c in "0123456789abcdef" for c in revision)
+        ):
+            raise SystemExit("Runtime is not published at an immutable revision; run with --publish before shipping notebooks.")
         if manifest.get("sha256") != bundle_sha:
             raise SystemExit(
                 f"Source bundle hash ({bundle_sha}) does not match manifest ({manifest.get('sha256')}). "

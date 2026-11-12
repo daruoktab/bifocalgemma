@@ -62,14 +62,25 @@ def _(mo):
             else None
         )
         cached = root / "runtime.zip"
-        source = local if local is not None and local.is_file() else cached
-        data = source.read_bytes() if source.is_file() else b""
+        data = b""
+        for source in (local, cached):
+            if source is not None and source.is_file():
+                candidate = source.read_bytes()
+                if hashlib.sha256(candidate).hexdigest() == expected_sha:
+                    data = candidate
+                    break
         if hashlib.sha256(data).hexdigest() != expected_sha:
+            if revision == "LOCAL-PREVIEW":
+                raise ValueError(
+                    "This notebook references an unpublished LOCAL-PREVIEW runtime. "
+                    "Use the published notebook, or provide its matching local runtime ZIP."
+                )
             urls = [
                 f"https://huggingface.co/{repo_id}/resolve/{revision}/{filename}",
                 f"https://huggingface.co/datasets/{repo_id}/resolve/{revision}/{filename}",
             ]
             downloaded = False
+            errors = []
             for url in urls:
                 try:
                     req = urllib.request.Request(
@@ -80,12 +91,16 @@ def _(mo):
                     if hashlib.sha256(data).hexdigest() == expected_sha:
                         downloaded = True
                         break
-                except Exception:
+                except Exception as error:
+                    errors.append(type(error).__name__ + ": " + str(error))
                     continue
             if not downloaded and (
                 len(data) > 64 * 2**20 or hashlib.sha256(data).hexdigest() != expected_sha
             ):
-                raise ValueError("Runtime archive checksum mismatch; no code was activated.")
+                raise ValueError(
+                    "Runtime archive unavailable or checksum mismatch; no code was activated. "
+                    f"Expected SHA-256 {expected_sha} at revision {revision}. " + "; ".join(errors)
+                )
 
         root.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
@@ -108,18 +123,12 @@ def _(mo):
         if str(root) not in sys.path:
             sys.path.insert(0, str(root))
 
-        if notebook_file:
-            repo_root = Path(notebook_file).resolve().parents[1]
-            if (repo_root / "src/bifocalgemma").is_dir() and str(repo_root / "src") not in sys.path:
-                sys.path.insert(0, str(repo_root / "src"))
-                sys.path.insert(0, str(repo_root))
-
         return root
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-2026-11-02",
         "filename": "runtime/runtime-cf70346b7c90c626.zip",
-        "revision": "LOCAL-PREVIEW",
+        "revision": "55cdfa8bfbb28ee785f37db0787aca95c89c431f",
         "sha256": "cf70346b7c90c626c7c238fcea0b540e37b9425e9ea64179536b568948270556",
     }
     runtime_root = load_runtime(
