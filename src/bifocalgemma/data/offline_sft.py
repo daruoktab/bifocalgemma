@@ -120,7 +120,7 @@ def editing_manifest(records):
     manifest = []
     for raw in records:
         row = raw
-        if raw.get("record_type") == "context_sft_v1":
+        if raw.get("record_type") in {"context_sft_v1", "grounded_context_sft_v1"}:
             from bifocalgemma.data.context_tasks import normalize_context_task
 
             row = normalize_context_task(raw)
@@ -249,7 +249,7 @@ def load_curated_pool(directory):
             if row["instance_id"] in all_ids:
                 raise ValueError("curated_pool_duplicate_identity")
             all_ids.add(row["instance_id"])
-            if row.get("record_type") == "context_sft_v1":
+            if row.get("record_type") in {"context_sft_v1", "grounded_context_sft_v1"}:
                 from bifocalgemma.data.context_tasks import normalize_context_task
 
                 normalize_context_task(row)

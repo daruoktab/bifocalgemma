@@ -13,11 +13,16 @@ from typing import Any
 
 from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
+from bifocalgemma.evaluation.protocol import (
+    build_effective_benchmark_spec,
+    effective_generation_budget,
+    mcq_report_metrics,
+)
 from bifocalgemma.training.stages import atomic_json
 
-EVALUATION_PROTOCOL = "greedy_no_cache_context_v2_explicit_repair_format"
-V2_EVALUATION_PROTOCOL = "greedy_cached_normalized_merged_v3_exact_prompt_budget"
-BENCHMARK_RESET_ID = "2026-10-26-exact-prompt-budget-v3"
+EVALUATION_PROTOCOL = "greedy_no_cache_context_v3_strict_mcq_bounded_generation"
+V2_EVALUATION_PROTOCOL = "greedy_cached_context_v4_strict_mcq_bounded_generation"
+BENCHMARK_RESET_ID = "2026-11-12-strict-mcq-bounded-generation-v4"
 
 
 def greedy_decode(*args, **kwargs):
@@ -277,10 +282,16 @@ def score_context_case(
 ):
     kind = row.get("task_type")
     if kind == "mcq":
-        parsed = extract_mcq_letter(completion)
+        parsed = strict_letter(completion)
+        resilient = extract_mcq_letter(completion)
         return {
             "correct": parsed == gold["answer"],
             "parsed_answer": parsed,
+            "strict_correct": parsed == gold["answer"],
+            "strict_parsed_answer": parsed,
+            "resilient_correct": resilient == gold["answer"],
+            "resilient_parsed_answer": resilient,
+            "primary_metric": "mcq_strict_accuracy",
             "status": "INVALID_OUTPUT" if parsed is None else "SCORED",
         }
     if kind == "completion":
@@ -376,6 +387,18 @@ def run_context_benchmark(
         raise ValueError("benchmark_public_gold_cohort_mismatch")
     gold = {r["instance_id"]: r for r in hidden}
     protocol_version = V2_EVALUATION_PROTOCOL if use_cache else EVALUATION_PROTOCOL
+    effective_protocol = build_effective_benchmark_spec(
+        spec=spec,
+        model=model,
+        public_rows=public,
+        gold_rows=hidden,
+        collection=root.name,
+        encoder_limit=encoder_limit,
+        decoder_limit=decoder_limit,
+        suite_cap=max_new_tokens,
+        use_cache=use_cache,
+        allow_execution=allow_execution,
+    )
     signature = stable_fingerprint(
         {
             "model": spec.to_dict(),
@@ -387,7 +410,7 @@ def run_context_benchmark(
             "max_new_tokens": max_new_tokens,
             "execution": allow_execution,
             "protocol": protocol_version,
-            "generation_budget_policy": "actual_paired_prompt_v1",
+            "effective_protocol": effective_protocol,
         }
     )
     output.mkdir(parents=True, exist_ok=True)
@@ -396,7 +419,12 @@ def run_context_benchmark(
         if json.loads(state_path.read_text(encoding="utf-8")).get("signature") != signature:
             raise ValueError("Benchmark/checkpoint/protocol changed; choose a new output.")
     else:
-        atomic_json(state_path, {"signature": signature, "total": len(ids)})
+        if (output / "predictions.jsonl").exists():
+            raise ValueError("Prediction journal has no protocol identity; choose a new output.")
+        atomic_json(
+            state_path,
+            {"signature": signature, "total": len(ids), "effective_protocol": effective_protocol},
+        )
     predictions = output / "predictions.jsonl"
     completed = []
     if predictions.exists():
@@ -421,6 +449,8 @@ def run_context_benchmark(
     completed_ids = [r["instance_id"] for r in completed]
     if completed_ids != ids[: len(completed_ids)]:
         raise ValueError("Prediction journal identity/order mismatch.")
+    if any(record.get("protocol_signature") != signature for record in completed):
+        raise ValueError("Prediction journal protocol signature mismatch.")
     decoder, _ = load_verified_tokenizer(spec.decoder, Path(tokenizer_cache))
     encoder = (
         load_verified_tokenizer(spec.encoder, Path(tokenizer_cache))[0] if spec.encoder else None
@@ -468,15 +498,12 @@ def run_context_benchmark(
             enable_thinking=False,
         )
         paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
-        row_budget = int(row.get("max_new_tokens", max_new_tokens))
-        if (
-            str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"}
-            and max_new_tokens >= 256
-        ):
-            row_budget = max(row_budget, 256)
-        new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
-        if new_tokens < 1:
-            raise ValueError("benchmark_decoder_prefix_exceeds_budget")
+        new_tokens = effective_generation_budget(
+            max_new_tokens,
+            row_cap=row.get("max_new_tokens"),
+            paired_prefix_tokens=paired_prefix_size,
+            decoder_limit=decoder_limit,
+        )
         total = decoder_limit if spec.encoder else cap + decoder_limit + 512
         if len(prefix) + new_tokens > total:
             raise ValueError("benchmark_decoder_prefix_exceeds_budget")
@@ -508,11 +535,14 @@ def run_context_benchmark(
             **({"include_syntax": True} if use_cache else {}),
         )
         record = {
+            "protocol_signature": signature,
             "instance_id": row["instance_id"],
             "completion": completion,
             "stop_reason": generated.stop_reason,
             "encoder_tokens": len(enc),
             "decoder_prefix_tokens": len(prefix),
+            "paired_decoder_prefix_tokens": paired_prefix_size,
+            "generation_max_new_tokens": new_tokens,
             "generated_tokens": len(tokens),
             "case_seconds": time.monotonic() - case_started,
             **scoring,
@@ -567,10 +597,14 @@ def run_context_benchmark(
         "timing": clock.summary(),
         "official_protocol": False,
         "protocol_version": protocol_version,
+        "effective_protocol": effective_protocol,
+        "primary_metric": "task_specific_accuracy",
+        "accuracy_alias": "task_specific_accuracy",
         "protocol": ("greedy_cached" if use_cache else "greedy_no_temporal_cache")
         + "; fixed eligible cohort; no context truncation",
         "resources": resource_snapshot(next(model.parameters()).device),
     }
+    report.update(mcq_report_metrics(completed))
     for key in (
         "exact_match",
         "sequence_similarity",

@@ -10,6 +10,9 @@ TASK_INSTRUCTIONS = {
     "repair": "Return only a unified diff fulfilling the instruction.",
     "localization": "Return only a JSON list of repository file paths relevant to fixing the issue.",
     "completion": "Return only the missing Python code, preserving its indentation.",
+    "source_extraction": "Return only the exact requested source text.",
+    "source_mcq": "Return only one option letter: A, B, C, or D.",
+    "source_reconstruction": "Return only the missing source line, preserving indentation.",
 }
 
 
@@ -47,11 +50,17 @@ def repair_preimage_coverage(patch, selection):
 
 
 def normalize_context_task(row):
-    if row.get("role") != "train" or row.get("record_type") != "context_sft_v1":
+    if row.get("role") != "train" or row.get("record_type") not in {"context_sft_v1", "grounded_context_sft_v1"}:
         raise ValueError("context_task_is_not_training_data")
     kind = row.get("task_type")
     if kind not in TASK_INSTRUCTIONS:
         raise ValueError("unsupported_context_task")
+    if row.get("record_type") == "grounded_context_sft_v1":
+        from bifocalgemma.data.grounded_tasks import validate_grounded_task
+
+        validate_grounded_task(row)
+    elif kind not in {"repair", "completion", "localization"}:
+        raise ValueError("grounded_task_requires_evidence")
     for key in (
         "instance_id",
         "group",

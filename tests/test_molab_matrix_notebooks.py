@@ -76,8 +76,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E2B-it",
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "2base-2it",
+        "repo": "daruokta/bifocalgemma-2base-2it",
+        "subfolder": "latest",
     },
     "2it-2it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -85,8 +85,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E2B-it",
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "2it-2it",
+        "repo": "daruokta/bifocalgemma-2it-2it",
+        "subfolder": "latest",
     },
     "4base-4it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -94,8 +94,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E4B-it",
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "4base-4it",
+        "repo": "daruokta/bifocalgemma-4base-4it",
+        "subfolder": "latest",
     },
     "4it-4it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -103,8 +103,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E4B-it",
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "4it-4it",
+        "repo": "daruokta/bifocalgemma-4it-4it",
+        "subfolder": "latest",
     },
     "4base-2it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -112,8 +112,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E2B-it",
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "4base-2it",
+        "repo": "daruokta/bifocalgemma-4base-2it",
+        "subfolder": "latest",
     },
     "4it-2it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -121,8 +121,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E2B-it",
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "4it-2it",
+        "repo": "daruokta/bifocalgemma-4it-2it",
+        "subfolder": "latest",
     },
     "2base-4it": {
         "encoder_id": "google/gemma-4-E2B",
@@ -130,8 +130,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E4B-it",
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "2base-4it",
+        "repo": "daruokta/bifocalgemma-2base-4it",
+        "subfolder": "latest",
     },
     "2it-4it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -139,8 +139,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E4B-it",
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "2it-4it",
+        "repo": "daruokta/bifocalgemma-2it-4it",
+        "subfolder": "latest",
     },
     "e2b-it": {
         "encoder_id": None,
@@ -148,8 +148,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E2B-it",
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "decoder_only",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "e2b-it",
+        "repo": "daruokta/bifocalgemma-e2b-it",
+        "subfolder": "latest",
     },
     "e4b-it": {
         "encoder_id": None,
@@ -157,8 +157,8 @@ EXPECTED_MODELS = {
         "decoder_id": "google/gemma-4-E4B-it",
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "decoder_only",
-        "repo": CENTRALIZED_HF_REPO,
-        "subfolder": "e4b-it",
+        "repo": "daruokta/bifocalgemma-e4b-it",
+        "subfolder": "latest",
     },
 }
 
@@ -238,14 +238,14 @@ def test_notebook_exists_and_is_valid_ast(model_key):
 
 
 @pytest.mark.parametrize("model_key", list(EXPECTED_MODELS.keys()))
-def test_notebook_has_correct_metadata_and_centralized_hf_repo(model_key):
+def test_notebook_has_correct_metadata_and_per_model_hf_repo(model_key):
     filename = f"train_{model_key.replace('-', '_')}.py"
     notebook_path = ROOT / "notebooks" / filename
     code = notebook_path.read_text(encoding="utf-8")
     expected = EXPECTED_MODELS[model_key]
 
     assert f'MODEL_KEY = "{model_key}"' in code
-    assert f'HF_REPO_ID = "{CENTRALIZED_HF_REPO}"' in code
+    assert f'HF_REPO_ID = "{expected["repo"]}"' in code
     assert f'HF_SUBFOLDER = "{expected["subfolder"]}"' in code
     if expected["encoder_id"] is not None:
         assert expected["encoder_id"] in code
@@ -633,6 +633,8 @@ def test_save_and_restore_matrix_checkpoint_and_prune(tmp_path):
 
 
 def test_run_matrix_stage_execution_batch2_and_frozen_decoder_invariance(tmp_path):
+    from bifocalgemma.training.schedule import build_shared_schedule, canonical_schedule_records
+
     spec = make_experiment_spec("2base-2it")
     policy = unified_recipe("symmetric")
     model = NativeTinyModel(spec, tiny=True)
@@ -648,8 +650,14 @@ def test_run_matrix_stage_execution_batch2_and_frozen_decoder_invariance(tmp_pat
             (50 + i, 60 + i, 107),
             metadata={"source": "nebius/SWE-rebench-V2", "task_type": "repair"},
         )
-        for i in range(12)
+        for i in range(16)
     ]
+    schedule = build_shared_schedule(canonical_schedule_records([
+        {"instance_id": ex.instance_id, "source": "fixture", "instruction": "Fix the code",
+         "context": str(ex.encoder_ids), "target_text": str(ex.target_ids),
+         "token_lengths": {"encoder": len(ex.encoder_ids)}}
+        for ex in examples
+    ]), dataset_identity={"fixture": "stage-transition"})
     decoder_before = {
         n: p.detach().clone()
         for n, p in model.named_parameters()
@@ -669,10 +677,11 @@ def test_run_matrix_stage_execution_batch2_and_frozen_decoder_invariance(tmp_pat
         start_global_step=0,
         batch_size=BATCH_SIZE,
         accumulation=ACCUMULATION,
+        shared_schedule=schedule,
     )
     assert rep1["completed_steps"] == 2
     assert rep1["end_global_step"] == 2
-    assert rep1["curriculum"]["comprehension_examples"] > 0
+    assert rep1["schedule"]["synthetic_replacements"] == 0
 
     for n, p_before in decoder_before.items():
         p_after = model.get_parameter(n)
@@ -691,6 +700,8 @@ def test_run_matrix_stage_execution_batch2_and_frozen_decoder_invariance(tmp_pat
         start_global_step=2,
         batch_size=BATCH_SIZE,
         accumulation=ACCUMULATION,
+        shared_schedule=schedule,
+        resume_from_checkpoint=rep1["last_checkpoint"],
     )
     assert rep2["completed_steps"] == 2
     assert rep2["end_global_step"] == 4

@@ -452,8 +452,11 @@ def compute_v3_step_loss(
     lambda_ptr: float | None = None,
     diff_token_ids: dict[str, tuple[int, ...]] | None = None,
     trivial_token_ids: tuple[int, ...] | torch.Tensor | None = None,
+    token_weighting: str = "diff_marker_v1",
 ) -> torch.Tensor:
     """Compute BifocalGemma V3 training loss combining chunked differential CE and streaming pointer loss."""
+    if token_weighting not in {"uniform_target_v1", "diff_marker_v1"}:
+        raise ValueError(f"Unknown token weighting: {token_weighting}")
     if not hasattr(model, "_decode_hidden") or not hasattr(model, "lm_head"):
         output = model.forward_loss(batch) if hasattr(model, "forward_loss") else model(batch)
         return output.loss
@@ -472,7 +475,7 @@ def compute_v3_step_loss(
         encoder_mask,
     )
     diff_ids = getattr(model, "diff_token_ids", None) or diff_token_ids or {}
-    token_weights = compute_diff_token_weights(
+    token_weights = None if token_weighting == "uniform_target_v1" else compute_diff_token_weights(
         batch.labels,
         add_token_ids=diff_ids.get("add_token_ids", DEFAULT_DIFF_ADD_TOKEN_IDS),
         del_token_ids=diff_ids.get("del_token_ids", DEFAULT_DIFF_DEL_TOKEN_IDS),

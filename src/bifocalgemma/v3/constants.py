@@ -6,7 +6,7 @@ import math
 from typing import Any
 
 CENTRALIZED_HF_REPO = "daruokta/bifocalgemma-2026-11-02"
-CLEAN_RECIPE_VERSION = "bifocalgemma_clean_2026_11_07"
+CLEAN_RECIPE_VERSION = "bifocalgemma_shared_schedule_2026_11_12"
 CLEAN_DEFAULT_HF_REPO = "daruokta/bifocalgemma-clean"
 ARCHIVE_HF_REPO = "daruokta/bifocalgemma-archive"
 DATASET_REPO = "daruokta/bifocalgemma-data"
@@ -21,6 +21,7 @@ BATCH_SIZE = 2
 ACCUMULATION = 2
 TOTAL_EXAMPLES = 44408
 
+# Legacy curriculum helpers only; the main matrix performs no replacements.
 COMPREHENSION_MIX_RATIO = 0.20
 WARMUP_RATIO = 0.05
 BENCHMARK_SAMPLE_SEED = 17
@@ -177,7 +178,7 @@ BENCHMARKS: list[dict[str, Any]] = [
         "collection": "longcodeqa_gemma32k_dec8k_v1",
         "encoder_limit": 32768,
         "decoder_limit": 8192,
-        "max_new_tokens": 2048,
+        "max_new_tokens": 32,
         "sample_limit": None,
         "weight_tier": "medium_long",
     },
@@ -193,7 +194,7 @@ BENCHMARKS: list[dict[str, Any]] = [
         "collection": "sweqa_oracle_gemma32k_dec8k_v1",
         "encoder_limit": 32768,
         "decoder_limit": 8192,
-        "max_new_tokens": 2048,
+        "max_new_tokens": 32,
         "sample_limit": None,
         "weight_tier": "medium_long",
     },
@@ -201,7 +202,7 @@ BENCHMARKS: list[dict[str, Any]] = [
         "collection": "sweqa_noisy_oracle_gemma32k_dec8k_v1",
         "encoder_limit": 32768,
         "decoder_limit": 8192,
-        "max_new_tokens": 2048,
+        "max_new_tokens": 32,
         "sample_limit": None,
         "weight_tier": "medium_long",
     },

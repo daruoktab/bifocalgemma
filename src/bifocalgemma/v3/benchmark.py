@@ -25,6 +25,11 @@ from bifocalgemma.evaluation.context import (
     prompt_ids,
     score_context_case,
 )
+from bifocalgemma.evaluation.protocol import (
+    build_effective_benchmark_spec,
+    effective_generation_budget,
+    mcq_report_metrics,
+)
 from bifocalgemma.inference.generation import GreedyGeneration, greedy_decode
 from bifocalgemma.models import inference_cache as inference_cache_mod
 from bifocalgemma.training.stages import (
@@ -475,6 +480,20 @@ def run_batched_context_benchmark(
         raise ValueError("benchmark_public_gold_cohort_mismatch")
     gold = {r["instance_id"]: r for r in hidden}
     protocol_version = V2_EVALUATION_PROTOCOL if use_cache else EVALUATION_PROTOCOL
+    effective_protocol = build_effective_benchmark_spec(
+        spec=spec,
+        model=model,
+        public_rows=public,
+        gold_rows=hidden,
+        collection=Path(directory).name,
+        encoder_limit=encoder_limit,
+        decoder_limit=decoder_limit,
+        suite_cap=max_new_tokens,
+        use_cache=use_cache,
+        allow_execution=allow_execution,
+        sample_limit=sample_limit,
+        sample_seed=sample_seed,
+    )
     signature = stable_fingerprint(
         {
             "model": spec.to_dict(),
@@ -486,7 +505,7 @@ def run_batched_context_benchmark(
             "max_new_tokens": max_new_tokens,
             "execution": allow_execution,
             "protocol": protocol_version,
-            "generation_budget_policy": "actual_paired_prompt_mcq256_v2",
+            "effective_protocol": effective_protocol,
         }
     )
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -495,7 +514,12 @@ def run_batched_context_benchmark(
         if json.loads(state_path.read_text(encoding="utf-8")).get("signature") != signature:
             raise ValueError("Benchmark/checkpoint/protocol changed; choose a new output.")
     else:
-        atomic_json(state_path, {"signature": signature, "total": len(ids)})
+        if (out_dir / "predictions.jsonl").exists():
+            raise ValueError("Prediction journal has no protocol identity; choose a new output.")
+        atomic_json(
+            state_path,
+            {"signature": signature, "total": len(ids), "effective_protocol": effective_protocol},
+        )
 
     predictions = out_dir / "predictions.jsonl"
     completed = []
@@ -520,6 +544,8 @@ def run_batched_context_benchmark(
     completed_ids = [r["instance_id"] for r in completed]
     if completed_ids != ids[: len(completed_ids)]:
         raise ValueError("Prediction journal identity/order mismatch.")
+    if any(record.get("protocol_signature") != signature for record in completed):
+        raise ValueError("Prediction journal protocol signature mismatch.")
 
     decoder, _ = load_verified_tokenizer(spec.decoder, Path(tokenizer_cache))
     encoder = (
@@ -561,6 +587,7 @@ def run_batched_context_benchmark(
         batch_enc: list[tuple[int, ...]] = []
         batch_pref: list[tuple[int, ...]] = []
         batch_budgets: list[int] = []
+        batch_paired_prefix_sizes: list[int] = []
         max_total_dec = 0
 
         for row in chunk_rows:
@@ -581,21 +608,19 @@ def run_batched_context_benchmark(
                     add_generation_prompt=True,
                 )
             paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
-            row_budget = int(row.get("max_new_tokens", max_new_tokens))
-            if (
-                str(row.get("task_type", "")).lower() in {"mcq", "qa", "retrieval"}
-                and max_new_tokens >= 256
-            ):
-                row_budget = max(row_budget, 256)
-            new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
-            if new_tokens < 1:
-                raise ValueError("benchmark_decoder_prefix_exceeds_budget")
+            new_tokens = effective_generation_budget(
+                max_new_tokens,
+                row_cap=row.get("max_new_tokens"),
+                paired_prefix_tokens=paired_prefix_size,
+                decoder_limit=decoder_limit,
+            )
             total = decoder_limit if spec.encoder else cap + decoder_limit + 512
             if len(prefix) + new_tokens > total:
                 raise ValueError("benchmark_decoder_prefix_exceeds_budget")
             batch_enc.append(enc)
             batch_pref.append(prefix)
             batch_budgets.append(new_tokens)
+            batch_paired_prefix_sizes.append(paired_prefix_size)
             max_total_dec = max(max_total_dec, total)
 
         activity(
@@ -639,8 +664,14 @@ def run_batched_context_benchmark(
             raise
 
         per_item_seconds = (time.monotonic() - chunk_started) / max(1, len(chunk_rows))
-        for row, generated, enc, prefix in zip(
-            chunk_rows, generations, batch_enc, batch_pref, strict=True
+        for row, generated, enc, prefix, budget, paired_prefix_size in zip(
+            chunk_rows,
+            generations,
+            batch_enc,
+            batch_pref,
+            batch_budgets,
+            batch_paired_prefix_sizes,
+            strict=True,
         ):
             index = len(completed) + 1
             tokens = generated.token_ids
@@ -657,11 +688,14 @@ def run_batched_context_benchmark(
                 **({"include_syntax": True} if use_cache else {}),
             )
             record = {
+                "protocol_signature": signature,
                 "instance_id": row["instance_id"],
                 "completion": completion,
                 "stop_reason": generated.stop_reason,
                 "encoder_tokens": len(enc),
                 "decoder_prefix_tokens": len(prefix),
+                "paired_decoder_prefix_tokens": paired_prefix_size,
+                "generation_max_new_tokens": budget,
                 "generated_tokens": len(tokens),
                 "case_seconds": per_item_seconds,
                 "eval_batch_size": len(chunk_rows),
@@ -714,10 +748,14 @@ def run_batched_context_benchmark(
         "timing": clock.summary(),
         "official_protocol": False,
         "protocol_version": protocol_version,
+        "effective_protocol": effective_protocol,
+        "primary_metric": "task_specific_accuracy",
+        "accuracy_alias": "task_specific_accuracy",
         "protocol": ("greedy_cached" if use_cache else "greedy_no_temporal_cache")
         + "; fixed eligible cohort; no context truncation",
         "resources": resource_snapshot(device),
     }
+    report.update(mcq_report_metrics(completed))
     for key in ("exact_match", "sequence_similarity", "regex_identifier_set_f1"):
         if completed and key in completed[0]:
             report[key] = sum(float(r[key]) for r in completed) / len(ids)

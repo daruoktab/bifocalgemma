@@ -16,7 +16,7 @@ from bifocalgemma.data.tokenization import load_verified_tokenizer
 def tokenize_repository_record(
     row, spec, encoder, decoder, *, encoder_limit=4096, decoder_limit=8192
 ):
-    if row.get("record_type") == "context_sft_v1":
+    if row.get("record_type") in {"context_sft_v1", "grounded_context_sft_v1"}:
         from bifocalgemma.data.context_tasks import tokenize_context_task
 
         return tokenize_context_task(

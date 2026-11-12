@@ -177,24 +177,50 @@ def restore_matrix_checkpoint(
     model: Any,
     optimizer: Any,
     checkpoint_dir: Path,
+    *,
+    expected_compatibility: dict[str, Any] | None = None,
+    expected_schedule: Any = None,
+    expected_stage: tuple[str, int, int] | None = None,
 ) -> dict[str, Any]:
     """Restore checkpoint and verified parameters; load trainer state and RNG."""
     checkpoint_dir = Path(checkpoint_dir).resolve()
     validate_checkpoint_files(checkpoint_dir)
     manifest = json.loads((checkpoint_dir / "manifest.json").read_text(encoding="utf-8"))
+    if expected_compatibility is not None and manifest.get("compatibility") != expected_compatibility:
+        raise ValueError("Checkpoint training/data/model compatibility changed; choose a new run.")
 
     weights = load_file(str(checkpoint_dir / "adapters.safetensors"), device="cpu")
     parameters = dict(model.named_parameters())
-    with torch.no_grad():
-        for name, tensor in weights.items():
-            if name in parameters:
-                parameters[name].copy_(tensor.to(parameters[name].device))
-            else:
-                raise ValueError(f"Adapter parameter {name} not found in model.")
-
+    expected_names = {
+        name for name in parameters
+        if is_cross_bridge_parameter(name) or name.endswith((".lora_A", ".lora_B"))
+    }
+    if set(weights) != expected_names:
+        raise ValueError("Checkpoint adapter parameter set differs from the model.")
+    for name, tensor in weights.items():
+        if parameters[name].shape != tensor.shape:
+            raise ValueError(f"Checkpoint adapter shape mismatch: {name}.")
     trainer_payload = torch.load(
         checkpoint_dir / "trainer_state.pt", map_location="cpu", weights_only=False
     )
+    state = trainer_payload.get("training_state", {})
+    if state.get("global_step") != manifest.get("global_step") or state.get("stage") != manifest.get("stage"):
+        raise ValueError("Checkpoint trainer cursor disagrees with its manifest.")
+    if expected_schedule is not None:
+        if state.get("schedule_signature") != expected_schedule.signature:
+            raise ValueError("Checkpoint shared schedule changed.")
+        expected_schedule.validate_cursor(state["global_step"], example_cursor=state.get("example_cursor", -1))
+    if expected_stage is not None:
+        name, start, steps = expected_stage
+        if state.get("stage") == name:
+            local_step = state["global_step"] - start
+            if state.get("step") != local_step or not 0 <= local_step <= steps:
+                raise ValueError("Checkpoint stage cursor disagrees with stage horizon.")
+        elif state["global_step"] != start:
+            raise ValueError("Checkpoint is not at the stage transition boundary.")
+    with torch.no_grad():
+        for name, tensor in weights.items():
+            parameters[name].copy_(tensor.to(parameters[name].device))
     optimizer_restored_stats = None
     if "optimizer" in trainer_payload and optimizer is not None:
         try:

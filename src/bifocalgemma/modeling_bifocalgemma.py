@@ -91,10 +91,7 @@ class BifocalGemmaPreTrainedModel(PreTrainedModel):
         "SwiGLUDualGateBridge",
         "FullCrossTiledAttention",
     ]
-    _tied_weights_keys = {
-        "lm_head.weight": "decoder.embed_tokens.weight",
-        "encoder.embed_tokens.weight": "decoder.embed_tokens.weight",
-    }
+    _tied_weights_keys = {"lm_head.weight": "decoder.embed_tokens.weight"}
 
     def _init_weights(self, module: nn.Module) -> None:
         std = getattr(self.config, "initializer_range", 0.02)
@@ -153,6 +150,14 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         # 3. LM head
         self.config.vocab_size = dec_cfg.vocab_size
         self.lm_head = nn.Linear(config.d_dec, dec_cfg.vocab_size, bias=False)
+        # Transformers caches this mapping at the start of post_init(), before
+        # calling tie_weights(recompute_mapping=False). Set the complete instance
+        # policy now so a default class mapping cannot alias an independent encoder.
+        self._tied_weights_keys = {}
+        if config.tie_word_embeddings:
+            self._tied_weights_keys["lm_head.weight"] = "decoder.embed_tokens.weight"
+        if self.encoder is not None and config.tie_encoder_decoder_words and config.d_enc == config.d_dec:
+            self._tied_weights_keys["encoder.embed_tokens.weight"] = "decoder.embed_tokens.weight"
 
         # 4. Configure full-rank decoupled cross attention on decoder layers
         configure_full_rank_cross_attention(self)

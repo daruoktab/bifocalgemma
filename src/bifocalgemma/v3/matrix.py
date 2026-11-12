@@ -17,6 +17,7 @@ import torch.utils.checkpoint
 
 from bifocalgemma.config import CheckpointRef, ExperimentSpec
 from bifocalgemma.data.collator import RepairCollator
+from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.releases import fetch_collection
 from bifocalgemma.evaluation.context import (
     V2_EVALUATION_PROTOCOL,
@@ -36,6 +37,12 @@ from bifocalgemma.training.hub import (
 from bifocalgemma.training.offline_sft import evaluate_sft_loss
 from bifocalgemma.training.policy import configure_policy_model, update_policy_learning_rates
 from bifocalgemma.training.recipes import unified_recipe
+from bifocalgemma.training.schedule import (
+    SharedSchedule,
+    build_shared_schedule,
+    persist_shared_schedule,
+)
+from bifocalgemma.training.source_identity import source_fingerprints
 from bifocalgemma.training.stages import (
     StageLedger,
     atomic_json,
@@ -61,18 +68,11 @@ from bifocalgemma.v3.constants import (
     CLEAN_DEFAULT_HF_REPO,
     CLEAN_RECIPE_VERSION,
     COLLECTION,
-    COMPREHENSION_MIX_RATIO,
     DATASET_REPO,
     DATASET_REVISION,
     MATRIX_MODELS,
-    STAGE1_STEPS,
-    STAGE2_STEPS,
     TOTAL_STEPS,
     WARMUP_RATIO,
-)
-from bifocalgemma.v3.curriculum import (
-    build_anti_forgetting_curriculum,
-    is_comprehension_example,
 )
 from bifocalgemma.v3.objectives import (
     compute_v3_step_loss,
@@ -86,6 +86,30 @@ from bifocalgemma.v3.runtime import (
 from bifocalgemma.v3.stage import configure_matrix_stage
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_training_contract(spec, *, total_steps=None, stage1_steps=None, pool_directory=None) -> dict[str, Any]:
+    """Declare local supplements and pilots explicitly; never replace the pinned pool."""
+    dataset = {"dataset_repo": DATASET_REPO, "dataset_revision": DATASET_REVISION, "collection": COLLECTION}
+    updates = TOTAL_STEPS
+    if pool_directory is not None:
+        manifest = json.loads((Path(pool_directory) / "manifest.json").read_text(encoding="utf-8"))
+        if (manifest.get("format") != "bifocalgemma_curated_pool_v1"
+            or stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"}) != manifest.get("fingerprint")):
+            raise ValueError("Local pool manifest integrity failed.")
+        size = len(manifest["record_ids"]["train"])
+        if size < 1:
+            raise ValueError("Local training pool is empty.")
+        updates = (size + BATCH_SIZE * ACCUMULATION - 1) // (BATCH_SIZE * ACCUMULATION)
+        dataset = {"dataset_repo": "local_curated_pool", "dataset_revision": manifest["fingerprint"],
+                   "collection": Path(pool_directory).name}
+    total = updates if total_steps is None else total_steps
+    if type(total) is not int or not 1 <= total <= updates:
+        raise ValueError("total_steps must fit the positive one-pass training horizon.")
+    first = total if spec.encoder is None else (max(1, total // 2) if stage1_steps is None else stage1_steps)
+    if type(first) is not int or not 0 <= first <= total:
+        raise ValueError("stage1_steps must fall within the total training horizon.")
+    return {**dataset, "total_steps": total, "stage1_steps": first, "stage2_steps": total - first}
 
 
 def make_experiment_spec(model_key: str) -> ExperimentSpec:
@@ -151,7 +175,7 @@ def run_matrix_stage(
     save_interval_seconds: float = 900.0,
     save_every_steps: int = 500,
     resume_from_checkpoint: Path | str | None = None,
-    use_anti_forgetting_curriculum: bool = True,
+    shared_schedule: SharedSchedule,
     decoder: Any = None,
     diff_token_ids: dict[str, tuple[int, ...]] | None = None,
     total_steps: int | None = None,
@@ -163,19 +187,16 @@ def run_matrix_stage(
     train_dir.mkdir(parents=True, exist_ok=True)
     device = next(model.parameters()).device
 
-    if use_anti_forgetting_curriculum and len(train_examples) >= 8:
-        active_examples, curriculum_stats = build_anti_forgetting_curriculum(
-            train_examples, stage_name=stage_name, seed=seed, decoder=decoder
-        )
-    else:
-        active_examples = list(train_examples)
-        curriculum_stats = {
-            "stage_name": stage_name,
-            "total_examples": len(active_examples),
-            "comprehension_examples": sum(
-                1 for ex in active_examples if is_comprehension_example(ex)
-            ),
-        }
+    if batch_size * accumulation != shared_schedule.effective_batch:
+        raise ValueError("Execution batch disagrees with shared schedule.")
+    if seed != shared_schedule.seed:
+        raise ValueError("Execution seed disagrees with shared schedule.")
+    if len(train_examples) != shared_schedule.total_examples:
+        raise ValueError("Training cohort disagrees with shared schedule.")
+    if max_steps < 1 or start_global_step < 0:
+        raise ValueError("Invalid stage horizon.")
+    shared_schedule.validate_cursor(start_global_step + max_steps)
+    persist_shared_schedule(train_dir / "shared_schedule.json", shared_schedule)
 
     groups, stage_summary = configure_matrix_stage(
         model, policy, freeze_decoder=freeze_decoder, total_steps=max_steps
@@ -200,22 +221,24 @@ def run_matrix_stage(
     }
 
     start_step = 0
-    order = list(range(len(active_examples)))
-    if not use_anti_forgetting_curriculum:
-        random.Random(seed + (1 if stage_name == "joint" else 0)).shuffle(order)
-    cursor = 0
-    epoch = 0
     history: list[dict[str, Any]] = []
 
     if resume_from_checkpoint is not None:
-        restored = restore_matrix_checkpoint(model, optimizer, Path(resume_from_checkpoint))
+        restored = restore_matrix_checkpoint(
+            model, optimizer, Path(resume_from_checkpoint),
+            expected_compatibility=compatibility, expected_schedule=shared_schedule,
+            expected_stage=(stage_name, start_global_step, max_steps),
+        )
         state = restored.get("training_state", {})
         if state.get("stage") == stage_name:
-            start_step = state.get("step", 0)
-            order = state.get("order", order)
-            cursor = state.get("cursor", cursor)
-            epoch = state.get("epoch", epoch)
+            start_step = state["global_step"] - start_global_step
+            if state.get("step") != start_step or not 0 <= start_step <= max_steps:
+                raise ValueError("Checkpoint stage cursor disagrees with stage horizon.")
             history = state.get("history", [])
+        elif state["global_step"] != start_global_step:
+            raise ValueError("Checkpoint is not at the stage transition boundary.")
+    elif start_global_step:
+        raise ValueError("A later stage requires the preceding trained checkpoint.")
 
     model.train()
     last_save_time = time.monotonic()
@@ -227,77 +250,59 @@ def run_matrix_stage(
 
         raw_item_groups: list[list[Any]] = []
         micro_batches = []
-        for _ in range(accumulation):
-            if cursor >= len(order):
-                epoch += 1
-                order = list(range(len(active_examples)))
-                random.Random(seed + epoch).shuffle(order)
-                cursor = 0
-            indices = order[cursor : cursor + batch_size]
-            cursor += len(indices)
-            items = [active_examples[i] for i in indices]
+        window_indices = shared_schedule.window(global_step - 1)
+        for offset in range(0, len(window_indices), batch_size):
+            indices = window_indices[offset : offset + batch_size]
+            items = [train_examples[i] for i in indices]
             raw_item_groups.append(items)
             micro_batches.append(collator(items))
+        scheduled_records = shared_schedule.records[
+            (global_step - 1) * shared_schedule.effective_batch : global_step * shared_schedule.effective_batch
+        ]
+        drawn_items = [item for items in raw_item_groups for item in items]
+        if [item.instance_id for item in drawn_items] != [record.instance_id for record in scheduled_records]:
+            raise ValueError("Tokenized loader order disagrees with the canonical shared schedule.")
 
         token_count = sum(int((b.labels != -100).sum()) for b in micro_batches)
         if not token_count:
-            token_count = 1
+            raise ValueError("Shared schedule window has no supervised target tokens.")
 
         active_diff_token_ids = getattr(model, "diff_token_ids", None) or diff_token_ids
-        optimizer.zero_grad(set_to_none=True)
-        mean_loss = 0.0
-        for items, batch_cpu in zip(raw_item_groups, micro_batches, strict=True):
-            saved_grads = {
-                p: p.grad.clone()
-                for p in model.parameters()
-                if p.grad is not None
-            }
-            try:
+        def backward_window(batches):
+            loss_value = 0.0
+            for batch_cpu in batches:
                 batch = batch_cpu.to(device)
                 count = int((batch_cpu.labels != -100).sum())
-                scale = count / token_count if token_count else (1.0 / len(micro_batches))
+                scale = count / token_count
                 step_loss = compute_v3_step_loss(
-                    model, batch, stage_name=stage_name, diff_token_ids=active_diff_token_ids
+                    model, batch, stage_name=stage_name, diff_token_ids=active_diff_token_ids,
+                    token_weighting="uniform_target_v1",
                 )
                 if step_loss is None or not bool(torch.isfinite(step_loss)):
                     raise RuntimeError(f"Nonfinite loss at step {step + 1} (global {global_step})")
                 (step_loss * scale).backward()
-                mean_loss += step_loss.detach().item() * scale
+                loss_value += step_loss.detach().item() * scale
                 del step_loss, batch
-            except torch.cuda.OutOfMemoryError:
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                if len(items) <= 1:
-                    raise
-                # Restore pre-microbatch gradient state to prevent accumulating partial corrupted gradients
-                for p, g in saved_grads.items():
-                    p.grad = g.clone()
-                for p in model.parameters():
-                    if p not in saved_grads and p.grad is not None:
-                        p.grad = None
-                # Automatic OOM fallback: split batch=2 microbatch into single-item sub-batches
-                for single_item in items:
-                    sub_cpu = collator([single_item])
-                    sub_batch = sub_cpu.to(device)
-                    sub_count = int((sub_cpu.labels != -100).sum())
-                    sub_scale = (
-                        sub_count / token_count
-                        if token_count
-                        else (1.0 / (len(micro_batches) * len(items)))
-                    )
-                    sub_loss = compute_v3_step_loss(
-                        model,
-                        sub_batch,
-                        stage_name=stage_name,
-                        diff_token_ids=active_diff_token_ids,
-                    )
-                    if sub_loss is None or not bool(torch.isfinite(sub_loss)):
-                        raise RuntimeError(
-                            f"Nonfinite loss at step {step + 1} (global {global_step})"
-                        )
-                    (sub_loss * sub_scale).backward()
-                    mean_loss += sub_loss.detach().item() * sub_scale
-                    del sub_loss, sub_batch
+            return loss_value
+
+        optimizer.zero_grad(set_to_none=True)
+        torch_rng = torch.get_rng_state()
+        python_rng = random.getstate()
+        cuda_rng = torch.cuda.get_rng_state_all() if device.type == "cuda" else []
+        try:
+            mean_loss = backward_window(micro_batches)
+        except torch.cuda.OutOfMemoryError:
+            # Replay the complete update: a failed backward may have written partial
+            # gradients. No parameter/optimizer/cursor advance happens on failure.
+            optimizer.zero_grad(set_to_none=True)
+            if not any(len(items) > 1 for items in raw_item_groups):
+                raise
+            torch.set_rng_state(torch_rng)
+            random.setstate(python_rng)
+            if device.type == "cuda":
+                torch.cuda.set_rng_state_all(cuda_rng)
+                torch.cuda.empty_cache()
+            mean_loss = backward_window([collator([item]) for item in drawn_items])
 
         if effective_freeze_decoder:
             leaked = [
@@ -341,6 +346,17 @@ def run_matrix_stage(
             "step_seconds": step_seconds,
             "batch_size": batch_size,
             "accumulation": accumulation,
+            "instance_ids": [item.instance_id for items in raw_item_groups for item in items],
+            "schedule_signature": shared_schedule.signature,
+            "example_cursor": shared_schedule.validate_cursor(global_step),
+            "target_tokens_by_task": {
+                task: sum(len(item.target_ids) for item, record in zip(drawn_items, scheduled_records, strict=True) if record.task == task)
+                for task in sorted({record.task for record in scheduled_records})
+            },
+            "examples_by_source": {
+                source: sum(record.source == source for record in scheduled_records)
+                for source in sorted({record.source for record in scheduled_records})
+            },
             "peak_allocated_gib": (
                 torch.cuda.max_memory_allocated(device) / 2**30 if device.type == "cuda" else 0.0
             ),
@@ -365,9 +381,8 @@ def run_matrix_stage(
                 training_state={
                     "step": step + 1,
                     "global_step": global_step,
-                    "order": order,
-                    "cursor": cursor,
-                    "epoch": epoch,
+                    "schedule_signature": shared_schedule.signature,
+                    "example_cursor": shared_schedule.validate_cursor(global_step),
                     "history": history[-100:],
                 },
             )
@@ -417,7 +432,12 @@ def run_matrix_stage(
         "completed_steps": max_steps,
         "end_global_step": start_global_step + max_steps,
         "held_out_loss": held_out,
-        "curriculum": curriculum_stats,
+        "schedule": {
+            "signature": shared_schedule.signature,
+            "start_update": start_global_step,
+            "end_update": start_global_step + max_steps,
+            "synthetic_replacements": 0,
+        },
         "last_checkpoint": str(train_dir / f"checkpoint-{(start_global_step + max_steps):06d}"),
     }
 
@@ -436,6 +456,7 @@ def run_matrix_training(
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     force_fresh: bool = False,
+    pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
     """Execute complete two-stage matrix training run with configurable steps and clean recipe version."""
     ensure_hardware_memory_guards()
@@ -454,24 +475,11 @@ def run_matrix_training(
     )
     subfolder = cfg.get("subfolder", model_key)
 
-    resolved_total = total_steps if total_steps is not None else TOTAL_STEPS
-    if spec.encoder is None:
-        resolved_stage1 = resolved_total
-        resolved_stage2 = 0
-    else:
-        if stage1_steps is not None:
-            resolved_stage1 = stage1_steps
-        elif total_steps is None:
-            resolved_stage1 = STAGE1_STEPS
-        else:
-            resolved_stage1 = max(1, resolved_total // 2)
-        resolved_stage2 = (
-            STAGE2_STEPS
-            if total_steps is None and stage1_steps is None
-            else max(0, resolved_total - resolved_stage1)
-        )
+    contract = resolve_training_contract(spec, total_steps=total_steps, stage1_steps=stage1_steps,
+                                         pool_directory=pool_directory)
+    resolved_total, resolved_stage1, resolved_stage2 = (contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps"))
 
-    root = Path(output_root) / model_key / "train"
+    root = (Path(output_root) / model_key / "train").resolve()
     root.mkdir(parents=True, exist_ok=True)
     prefix = f"{subfolder}/{spec.name}/train"
 
@@ -489,6 +497,9 @@ def run_matrix_training(
     rep_file = train_dir / "training_report.json"
 
     def wipe_stale_artifacts():
+        for target in (train_dir, bench_dir):
+            if target.is_symlink() or target.resolve().parent != root:
+                raise ValueError("Refusing to clear artifacts outside the selected run directory.")
         if train_dir.exists():
             shutil.rmtree(train_dir, ignore_errors=True)
         if bench_dir.exists():
@@ -541,7 +552,7 @@ def run_matrix_training(
                     if rec_ver != CLEAN_RECIPE_VERSION:
                         return True
                     compat = m_data.get("compatibility", {})
-                    if compat.get("spec_name") and compat.get("spec_name") != spec.name:
+                    if compat.get("experiment") and compat.get("experiment") != spec.name:
                         return True
                 except Exception:
                     return True
@@ -555,38 +566,21 @@ def run_matrix_training(
         if upload and token:
             try:
                 recover_remote_run(repo, root, prefix, token=token)
-            except ValueError as _rec_err:
-                logger.warning("Remote recovery raised ValueError: %s", _rec_err)
-                if latest_checkpoint(root / "training") is None:
-                    for item in list(root.iterdir()):
-                        if item.is_dir():
-                            shutil.rmtree(item, ignore_errors=True)
-                        else:
-                            item.unlink(missing_ok=True)
-                    try:
-                        recover_remote_run(repo, root, prefix, token=token)
-                    except Exception as _rec_exc:
-                        logger.warning("Remote recovery retry skipped: %s", _rec_exc)
+            except ValueError:
+                raise
             except Exception as _rec_exc:
                 logger.warning("Remote recovery skipped: %s", _rec_exc)
         if check_legacy_artifacts():
-            wipe_stale_artifacts()
-            dashboard(
-                {
-                    "stage": "discarded_legacy_checkpoint",
-                    "message": "Discarded incompatible checkpoint.",
-                }
-            )
+            raise ValueError("Incompatible or corrupt training artifacts; choose a new output_root or explicitly force_fresh.")
 
     identity = {
         "format": "bifocalgemma_pipeline_v1",
         "version": "bifocalgemma_v3_swiglu_cross",
         "recipe_version": CLEAN_RECIPE_VERSION,
+        "training_semantics_sha256": source_fingerprints()["training_semantics_sha256"],
         "spec": spec.to_dict(),
         "policy": policy,
-        "dataset_repo": DATASET_REPO,
-        "dataset_revision": DATASET_REVISION,
-        "collection": COLLECTION,
+        **contract,
         "run_name": "train",
         "seed": 17,
         "total_steps": resolved_total,
@@ -599,18 +593,6 @@ def run_matrix_training(
         "subfolder": subfolder,
     }
     ledger_file = root / "pipeline_state.json"
-    if ledger_file.is_file():
-        try:
-            from bifocalgemma.data.offline_sft import stable_fingerprint
-
-            existing_state = json.loads(ledger_file.read_text(encoding="utf-8"))
-            new_sig = stable_fingerprint(identity)
-            if existing_state.get("signature") != new_sig:
-                existing_state["identity"] = identity
-                existing_state["signature"] = new_sig
-                atomic_json(ledger_file, existing_state)
-        except Exception:
-            ledger_file.unlink(missing_ok=True)
     ledger = StageLedger(root, identity)
     if not ledger.path.exists():
         atomic_json(ledger.path, ledger.state)
@@ -671,26 +653,6 @@ def run_matrix_training(
             )
         return result
 
-    existing_ckpt = latest_checkpoint(train_dir)
-    completed_report_path = root / "training/training_report.json"
-    if completed_report_path.is_file() and existing_ckpt:
-        rep = json.loads(completed_report_path.read_text(encoding="utf-8"))
-        if (
-            rep.get("global_step") == resolved_total
-            and rep.get("recipe_version") == CLEAN_RECIPE_VERSION
-        ):
-            progress({"stage": "training_completed", "step": resolved_total})
-            snapshot(final=True)
-            return {
-                "status": "COMPLETED",
-                "model_key": model_key,
-                "repo": repo,
-                "subfolder": subfolder,
-                "global_step": resolved_total,
-                "pretrained_model": str(root / "pretrained_model"),
-                "message": "Full matrix training already completed.",
-            }
-
     progress({"stage": "starting_training", "message": f"Starting {cfg['title']} ({model_key})"})
 
     # Download model backbone
@@ -704,10 +666,11 @@ def run_matrix_training(
         progress({"stage": "configured_cross_attention", **cross_info})
 
     # Prepare curated dataset
-    pool = Path(cache) / "dataset" / COLLECTION
-    fetch_collection(
-        DATASET_REPO, DATASET_REVISION, COLLECTION, pool, expected_role="train", token=token
-    )
+    pool = Path(pool_directory) if pool_directory is not None else Path(cache) / "dataset" / COLLECTION
+    if pool_directory is None:
+        fetch_collection(
+            DATASET_REPO, DATASET_REVISION, COLLECTION, pool, expected_role="train", token=token
+        )
     train_data, dev_data, manifest = prepare_curated_training(
         spec,
         pool,
@@ -715,10 +678,23 @@ def run_matrix_training(
         packed_cache=Path(cache) / "packed",
         progress=progress,
     )
+    if pool_directory is not None and manifest["pool_fingerprint"] != contract["dataset_revision"]:
+        raise ValueError("Local training pool changed during preparation.")
     manifest["matched_target_fingerprints"] = {
         "train": target_fingerprint(train_data),
         "dev": target_fingerprint(dev_data),
     }
+    shared_schedule = build_shared_schedule(
+        manifest["schedule_records"],
+        dataset_identity={
+            "repo": contract["dataset_repo"], "revision": contract["dataset_revision"],
+            "collection": contract["collection"], "pool_fingerprint": manifest["pool_fingerprint"],
+        },
+        seed=17, effective_batch=BATCH_SIZE * ACCUMULATION,
+    )
+    if resolved_total > shared_schedule.total_updates:
+        raise ValueError("Training horizon exceeds the immutable one-pass schedule.")
+    persist_shared_schedule(train_dir / "shared_schedule.json", shared_schedule)
 
     decoder_tokenizer = None
     try:
@@ -751,7 +727,11 @@ def run_matrix_training(
         "seed": 17,
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
-        "comprehension_mix_ratio": COMPREHENSION_MIX_RATIO,
+        "schedule_signature": shared_schedule.signature,
+        "schedule_total_updates": shared_schedule.total_updates,
+        "training_semantics_sha256": identity["training_semantics_sha256"],
+        "sampling_policy": "shared_one_pass_without_replacement_v1",
+        "loss_policy": "uniform_target_v1",
         "training_policy": policy,
         "memory_policy": model.memory_policy,
         "total_steps": resolved_total,
@@ -767,9 +747,16 @@ def run_matrix_training(
             (Path(resume_ckpt) / "manifest.json").read_text(encoding="utf-8")
         )
         current_global_step = manifest_meta.get("global_step", 0)
+        if manifest_meta.get("compatibility") != compatibility:
+            raise ValueError("Checkpoint training/data/model compatibility changed; choose a new run.")
+        if not 0 <= current_global_step <= resolved_total:
+            raise ValueError("Checkpoint cursor exceeds this run's horizon.")
 
-    stage1_report = None
-    stage2_report = None
+    previous_report = json.loads(rep_file.read_text(encoding="utf-8")) if rep_file.is_file() else {}
+    if previous_report and previous_report.get("schedule_signature") != shared_schedule.signature:
+        raise ValueError("Existing training report belongs to a different shared schedule.")
+    stage1_report = previous_report.get("stage1")
+    stage2_report = previous_report.get("stage2")
     if spec.encoder is None:
         if current_global_step < resolved_total:
             progress(
@@ -799,6 +786,7 @@ def run_matrix_training(
                 resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
+                shared_schedule=shared_schedule,
             )
             progress(
                 {
@@ -835,6 +823,7 @@ def run_matrix_training(
                 resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
+                shared_schedule=shared_schedule,
             )
             progress(
                 {
@@ -873,6 +862,7 @@ def run_matrix_training(
                 resume_from_checkpoint=resume_ckpt,
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
+                shared_schedule=shared_schedule,
             )
             progress(
                 {
@@ -890,7 +880,10 @@ def run_matrix_training(
     final_ckpt = latest_checkpoint(train_dir)
     if final_ckpt is not None:
         logger.info("Restoring latest trained checkpoint %s into model before export", final_ckpt)
-        restore_matrix_checkpoint(model=model, optimizer=None, checkpoint_dir=Path(final_ckpt))
+        restore_matrix_checkpoint(
+            model=model, optimizer=None, checkpoint_dir=Path(final_ckpt),
+            expected_compatibility=compatibility, expected_schedule=shared_schedule,
+        )
 
     # Export standalone Hugging Face PreTrainedModel artifact
     export_dir = root / "pretrained_model"
@@ -939,6 +932,14 @@ def run_matrix_training(
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
         "provenance": provenance,
+        "schedule_signature": shared_schedule.signature,
+        "schedule_total_examples": shared_schedule.total_examples,
+        "schedule_total_updates": shared_schedule.total_updates,
+        "realized_example_cursor": shared_schedule.validate_cursor(resolved_total),
+        "realized_id_order_sha256": stable_fingerprint(shared_schedule.ordered_ids[:shared_schedule.validate_cursor(resolved_total)]),
+        "loss_policy": "uniform_target_v1",
+        "explicit_prefix_pilot": resolved_total < shared_schedule.total_updates,
+        "training_semantics_sha256": identity["training_semantics_sha256"],
         "stage1": stage1_report,
         "stage2": stage2_report,
         "last_checkpoint": str(train_dir / f"checkpoint-{resolved_total:06d}"),
@@ -971,6 +972,7 @@ def run_matrix_benchmark(
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     force_fresh: bool = False,
+    pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
     """Execute 8-benchmark suite (6 full first + 2 deterministic 100-sample last) with dynamic batching."""
     ensure_hardware_memory_guards()
@@ -985,24 +987,11 @@ def run_matrix_benchmark(
     repo = (repo_id.strip() if repo_id and repo_id.strip() else None) or cfg["repo"]
     subfolder = cfg.get("subfolder", model_key)
 
-    resolved_total = total_steps if total_steps is not None else TOTAL_STEPS
-    if spec.encoder is None:
-        resolved_stage1 = resolved_total
-        resolved_stage2 = 0
-    else:
-        if stage1_steps is not None:
-            resolved_stage1 = stage1_steps
-        elif total_steps is None:
-            resolved_stage1 = STAGE1_STEPS
-        else:
-            resolved_stage1 = max(1, resolved_total // 2)
-        resolved_stage2 = (
-            STAGE2_STEPS
-            if total_steps is None and stage1_steps is None
-            else max(0, resolved_total - resolved_stage1)
-        )
+    contract = resolve_training_contract(spec, total_steps=total_steps, stage1_steps=stage1_steps,
+                                         pool_directory=pool_directory)
+    resolved_total, resolved_stage1, resolved_stage2 = (contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps"))
 
-    root = Path(output_root) / model_key / "train"
+    root = (Path(output_root) / model_key / "train").resolve()
     prefix = f"{subfolder}/{spec.name}/train"
 
     dashboard = (
@@ -1015,10 +1004,14 @@ def run_matrix_benchmark(
     bench_dir = root / "benchmarks"
     if force_fresh:
         if bench_dir.exists():
+            if bench_dir.is_symlink() or bench_dir.resolve().parent != root:
+                raise ValueError("Refusing to clear benchmarks outside the selected run directory.")
             shutil.rmtree(bench_dir, ignore_errors=True)
     elif upload and token:
         try:
             recover_remote_run(repo, root, prefix, token=token)
+        except ValueError:
+            raise
         except Exception as _rec_exc:
             logger.warning("Remote benchmark recovery skipped: %s", _rec_exc)
 
@@ -1026,11 +1019,10 @@ def run_matrix_benchmark(
         "format": "bifocalgemma_pipeline_v1",
         "version": "bifocalgemma_v3_swiglu_cross",
         "recipe_version": CLEAN_RECIPE_VERSION,
+        "training_semantics_sha256": source_fingerprints()["training_semantics_sha256"],
         "spec": spec.to_dict(),
         "policy": policy,
-        "dataset_repo": DATASET_REPO,
-        "dataset_revision": DATASET_REVISION,
-        "collection": COLLECTION,
+        **contract,
         "run_name": "train",
         "seed": 17,
         "total_steps": resolved_total,
@@ -1042,19 +1034,6 @@ def run_matrix_benchmark(
         "repo": repo,
         "subfolder": subfolder,
     }
-    ledger_file = root / "pipeline_state.json"
-    if ledger_file.is_file():
-        try:
-            from bifocalgemma.data.offline_sft import stable_fingerprint
-
-            existing_state = json.loads(ledger_file.read_text(encoding="utf-8"))
-            new_sig = stable_fingerprint(identity)
-            if existing_state.get("signature") != new_sig:
-                existing_state["identity"] = identity
-                existing_state["signature"] = new_sig
-                atomic_json(ledger_file, existing_state)
-        except Exception:
-            ledger_file.unlink(missing_ok=True)
     ledger = StageLedger(root, identity)
     if not ledger.path.exists():
         atomic_json(ledger.path, ledger.state)
@@ -1108,6 +1087,11 @@ def run_matrix_benchmark(
                     f"Checkpoint in {checkpoint_path} has legacy recipe_version {rec_ver!r} "
                     f"(expected {CLEAN_RECIPE_VERSION!r}). Training must be run with clean recipe."
                 )
+            compat = m_data.get("compatibility", {})
+            if (compat.get("model_spec") != spec.to_dict()
+                or compat.get("training_semantics_sha256") != identity["training_semantics_sha256"]
+                or m_data.get("global_step") != resolved_total):
+                raise ValueError("Benchmark checkpoint does not match the completed training protocol.")
         except json.JSONDecodeError:
             raise ValueError(f"Corrupt manifest in {manifest_file}.")
 
@@ -1126,21 +1110,6 @@ def run_matrix_benchmark(
             "snapshot": "trained",
         }
         dest = root / "benchmarks" / benchmark_directory_name(settings)
-        report_file = dest / "benchmark_report.json"
-        state_file = dest / "evaluation_state.json"
-        if report_file.is_file() and state_file.is_file():
-            try:
-                rep = json.loads(report_file.read_text(encoding="utf-8"))
-                if rep.get("status") == "COMPLETED" and rep.get("experiment") == spec.name:
-                    eval_state_data = json.loads(state_file.read_text(encoding="utf-8"))
-                    state_sig = eval_state_data.get("signature")
-                    rep_sig = rep.get("signature")
-                    if state_sig and rep_sig and state_sig != rep_sig:
-                        raise ValueError("Signature mismatch between benchmark state and report")
-                    reports.append(rep)
-                    continue
-            except Exception:
-                pass
         missing_jobs.append((item, settings, dest))
 
     if not missing_jobs:
@@ -1249,6 +1218,7 @@ def run_matrix_training_and_benchmark(
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     force_fresh: bool = False,
+    pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
     """Notebook entry point: execute matrix training curriculum, then run 8-benchmark suite."""
     training_res = run_matrix_training(
@@ -1264,6 +1234,7 @@ def run_matrix_training_and_benchmark(
         total_steps=total_steps,
         stage1_steps=stage1_steps,
         force_fresh=force_fresh,
+        pool_directory=pool_directory,
     )
     gc.collect()
     if torch.cuda.is_available():
@@ -1281,6 +1252,7 @@ def run_matrix_training_and_benchmark(
         total_steps=total_steps,
         stage1_steps=stage1_steps,
         force_fresh=force_fresh,
+        pool_directory=pool_directory,
     )
     return {
         "status": evaluation_res["status"],

@@ -171,11 +171,11 @@ def test_f4_reponiah_distractor_injection_and_retrieval():
 
 
 # ==============================================================================
-# F5: Training Compatibility Hash Sync
+# F5: Changed training semantics cannot inherit a legacy approval
 # ==============================================================================
 @pytest.mark.tier1
-def test_f5_training_compatibility_hash_sync(project_root: Path):
-    """F5: Verify configs/training_resume_compatibility.json matches live source semantic sha256."""
+def test_f5_training_semantics_change_rejects_legacy_approval(project_root: Path):
+    """A new schedule/objective must not be approved as old training merely to sync hashes."""
     from bifocalgemma.training.source_identity import source_fingerprints
 
     config_path = project_root / "configs/training_resume_compatibility.json"
@@ -201,20 +201,9 @@ def test_f5_training_compatibility_hash_sync(project_root: Path):
     live_fingerprints = source_fingerprints(src_dir)
     live_source_semantics = live_fingerprints["source_semantics_sha256"]
 
-    # Verify that the configuration matches the true live source tree fingerprint
-    assert approved_hash == live_source_semantics, (
-        f"Training compatibility hash desynchronized from live codebase:\n"
-        f"  Config approved hash: '{approved_hash}'\n"
-        f"  Live source semantics: '{live_source_semantics}'\n"
-        f"When source files change, configs/training_resume_compatibility.json must be synchronized."
-    )
-
-    # Verify that approved source semantics successfully activates baseline training compatibility
-    assert live_fingerprints["training_semantics_sha256"] == baseline_training_hash, (
-        f"Training semantics not restored to baseline:\n"
-        f"  Active training semantics: '{live_fingerprints['training_semantics_sha256']}'\n"
-        f"  Expected baseline:        '{baseline_training_hash}'"
-    )
+    assert approved_hash != live_source_semantics, "Do not auto-approve changed training as baseline-equivalent."
+    assert live_fingerprints["training_semantics_sha256"] == live_source_semantics
+    assert live_fingerprints["training_semantics_sha256"] != baseline_training_hash
 
 
 # ==============================================================================

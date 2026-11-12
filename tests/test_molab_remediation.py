@@ -1,7 +1,7 @@
 """Unit tests verifying all Molab remediation fixes:
-1. 256-token MCQ budget floor in benchmark runners (v3/benchmark.py and evaluation/context.py).
+1. Bounded MCQ generation in both benchmark runners, including orphan-journal rejection.
 2. PreTrainedModel Hub export with subfolder isolation, repo creation, and tokenizer assets.
-3. Clean recipe versioning and legacy checkpoint quarantine vs clean resume.
+3. Recipe versioning, fail-closed checkpoint validation and preservation of old artifacts.
 4. Standalone embedded runtime extraction from matrix notebooks and fast training notebook without network access.
 5. Fast pipeline auto-download, task-types, export_pretrained, and HF token wiring.
 6. Notebook determinism, syntax, and strict line count bounds (< 250 lines).
@@ -66,51 +66,16 @@ class FixtureGenerationModel(torch.nn.Module):
 
 
 def test_mcq_budget_floor_in_v3_benchmark_logic():
-    """Verify that rows with 'max_new_tokens': 32 get bumped to 256 tokens when max_new_tokens >= 256."""
-    decoder_limit = 8192
-    paired_prefix_size = 100
+    """Row requests restrict the executed suite allowance, including tiny tests."""
+    from bifocalgemma.evaluation.protocol import effective_generation_budget
 
-    # 1. MCQ row with hardcoded 32-token budget on real Molab run (max_new_tokens=2048)
-    row_mcq = {"task_type": "mcq", "max_new_tokens": 32}
-    max_new_tokens = 2048
-    row_budget = row_mcq.get("max_new_tokens", max_new_tokens)
-    task_type = row_mcq.get("task_type", "")
-    if (
-        isinstance(task_type, str)
-        and task_type.lower() in {"mcq", "qa", "retrieval"}
-        and max_new_tokens >= 256
-    ):
-        row_budget = max(row_budget, 256)
-    new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
-    assert new_tokens == 256
-
-    # 2. Retrieval row with 32 tokens
-    row_retrieval = {"task_type": "retrieval", "max_new_tokens": 32}
-    row_budget = row_retrieval.get("max_new_tokens", max_new_tokens)
-    retrieval_type = row_retrieval.get("task_type", "")
-    if (
-        isinstance(retrieval_type, str)
-        and retrieval_type.lower() in {"mcq", "qa", "retrieval"}
-        and max_new_tokens >= 256
-    ):
-        row_budget = max(row_budget, 256)
-    assert row_budget == 256
-
-    # 3. Fast unit test with tiny budget (e.g. max_new_tokens=8) is NOT bumped to 256
-    tiny_max_tokens = 8
-    row_budget = row_mcq.get("max_new_tokens", tiny_max_tokens)
-    if (
-        isinstance(task_type, str)
-        and task_type.lower() in {"mcq", "qa", "retrieval"}
-        and tiny_max_tokens >= 256
-    ):
-        row_budget = max(row_budget, 256)
-    new_tokens = min(row_budget, decoder_limit - paired_prefix_size)
-    assert new_tokens == 32 or new_tokens == 8
+    assert effective_generation_budget(2048, row_cap=32, paired_prefix_tokens=100) == 32
+    assert effective_generation_budget(8, row_cap=32, paired_prefix_tokens=100) == 8
+    assert effective_generation_budget(2048, row_cap=8192, paired_prefix_tokens=100) == 2048
 
 
 def test_context_benchmark_mcq_budget_floor_execution(tmp_path, monkeypatch):
-    """Verify that run_context_benchmark passes max_new_tokens=256 to greedy_decode for MCQ rows with 32 tokens."""
+    """The actual sequential runner respects a 32-token row request."""
     import bifocalgemma.data.tokenization as tokenization
     import bifocalgemma.evaluation.context as eval_ctx
 
@@ -167,14 +132,18 @@ def test_context_benchmark_mcq_budget_floor_execution(tmp_path, monkeypatch):
     )
 
     assert len(recorded_budgets) == 1
-    # Despite row having max_new_tokens=32, greedy_decode received at least 256!
-    assert recorded_budgets[0] is not None and recorded_budgets[0] >= 256
+    assert recorded_budgets == [32]
     assert report["total"] == 1
+    state = tmp_path / "eval_output/evaluation_state.json"
+    state.unlink()
+    with pytest.raises(ValueError, match="no protocol identity"):
+        run_context_benchmark(model, EXPERIMENT_SPECS[0], root, tmp_path / "eval_output", tmp_path, **settings)
+    assert not state.exists()
 
 
 def test_clean_recipe_version_and_constants():
     """Verify recipe version and default repo constants."""
-    assert CLEAN_RECIPE_VERSION == "bifocalgemma_clean_2026_11_07"
+    assert CLEAN_RECIPE_VERSION == "bifocalgemma_shared_schedule_2026_11_12"
     assert CLEAN_DEFAULT_HF_REPO == "daruokta/bifocalgemma-clean"
     assert CENTRALIZED_HF_REPO == "daruokta/bifocalgemma-2026-11-02"
 
@@ -280,7 +249,7 @@ def test_export_matrix_pretrained_model_with_subfolder_and_tokenizer(tmp_path, m
 
 
 def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypatch):
-    """Verify that legacy Nov-2 checkpoints are discarded while clean recipe checkpoints are preserved."""
+    """Reject old artifacts without deleting them and revalidate current completed runs."""
     # 1. Legacy Nov-2 checkpoint (missing recipe_version in training_report.json and ledger.json)
     output_legacy = tmp_path / "legacy_run"
     run_dir = output_legacy / "2base-2it" / "train"
@@ -317,21 +286,20 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
 
     monkeypatch.setattr("bifocalgemma.v3.matrix.recover_remote_run", lambda *a, **k: None)
 
-    # Calling run_matrix_training should detect legacy artifacts, wipe them, and log discarded_legacy_checkpoint
+    # Legacy artifacts must be rejected before model loading and remain available.
     monkeypatch.setattr(
         "bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
     )
 
-    with pytest.raises(StopIteration):
+    with pytest.raises(ValueError, match="Incompatible or corrupt"):
         run_matrix_training(
             "2base-2it", output_root=output_legacy, upload=False, token=None, monitor=MockMonitor()
         )
 
     stages = [e.get("stage") for e in logged_events if isinstance(e, dict)]
-    assert "discarded_legacy_checkpoint" in stages
-    # The stale training directory and legacy ledger were wiped!
-    assert not (run_dir / "training/training_report.json").exists()
-    assert not (run_dir / "ledger.json").exists()
+    assert "discarded_legacy_checkpoint" not in stages
+    assert (run_dir / "training/training_report.json").exists()
+    assert (run_dir / "ledger.json").exists()
 
     # 2. Clean checkpoint with recipe_version == CLEAN_RECIPE_VERSION
     output_clean = tmp_path / "clean_run"
@@ -360,16 +328,13 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
         encoding="utf-8",
     )
 
-    res = run_matrix_training(
-        "2base-2it",
-        output_root=output_clean,
-        total_steps=11102,
-        upload=False,
-        token=None,
-        monitor=MockMonitor(),
-    )
-    assert res["status"] == "COMPLETED"
-    assert res["message"] == "Full matrix training already completed."
+    # A current recipe label alone cannot authorize the completed-report shortcut.
+    # Validation still reaches model/data preparation before checkpoint/export reuse.
+    with pytest.raises(StopIteration):
+        run_matrix_training(
+            "2base-2it", output_root=output_clean, total_steps=11102,
+            upload=False, token=None, monitor=MockMonitor(),
+        )
 
 
 def test_clean_notebooks_have_no_embedded_b85_and_valid_runtime_archive(tmp_path):
@@ -515,7 +480,7 @@ def test_fast_training_pipeline_features_and_export(tmp_path, monkeypatch):
 
 
 def test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues(tmp_path, monkeypatch):
-    """Verify that corrupt checkpoints (missing manifest.json) are caught and quarantined cleanly."""
+    """Corrupt checkpoints must be rejected without clearing the selected run."""
     output_corrupt = tmp_path / "corrupt_run"
     run_dir = output_corrupt / "2base-2it" / "train"
     train_dir = run_dir / "training"
@@ -539,7 +504,7 @@ def test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues(tmp_path, monk
         "bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
     )
 
-    with pytest.raises(StopIteration):
+    with pytest.raises(ValueError, match="Incompatible or corrupt"):
         run_matrix_training(
             "2base-2it",
             output_root=output_corrupt,
@@ -549,8 +514,8 @@ def test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues(tmp_path, monk
         )
 
     stages = [e.get("stage") for e in logged_events if isinstance(e, dict)]
-    assert "discarded_legacy_checkpoint" in stages
-    assert not (run_dir / "training").exists()
+    assert "discarded_legacy_checkpoint" not in stages
+    assert (ckpt_dir / "READY.json").exists()
 
 
 def test_matrix_notebooks_strict_line_count_and_ast():

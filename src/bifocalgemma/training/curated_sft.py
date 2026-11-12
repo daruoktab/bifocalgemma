@@ -7,6 +7,7 @@ from typing import Any
 from bifocalgemma.data.offline_sft import load_curated_pool, stable_fingerprint
 from bifocalgemma.data.tokenization import load_verified_tokenizer
 from bifocalgemma.training.repository_sft import tokenize_repository_record
+from bifocalgemma.training.schedule import canonical_schedule_records
 
 
 def prepare_curated_training(
@@ -26,7 +27,11 @@ def prepare_curated_training(
         "limits": limits,
         "encoder_files": enc_manifest["files"] if enc_manifest else None,
         "decoder_files": dec_manifest["files"],
-        "prompt_recipe": "context_mixture_v1",
+        "prompt_recipe": "context_mixture_v2_grounded",
+        "prompt_sources": {
+            name: stable_fingerprint((Path(__file__).resolve().parents[1] / name).read_text(encoding="utf-8"))
+            for name in ("training/repository_sft.py", "data/context_tasks.py", "data/tokenization.py")
+        },
     }
 
     def tokenize(row):
@@ -73,12 +78,13 @@ def prepare_curated_training(
         )
         if identifiers != pool["record_ids"][split]:
             raise ValueError("Frozen cohort identity changed during tokenization.")
-    manifest = {
+    manifest: dict[str, Any] = {
         "format": "curated_full_pool_sft_v1",
         "pool_fingerprint": pool["fingerprint"],
         "experiment": spec.name,
         "limits": limits,
         "instances": pool["record_ids"],
+        "schedule_records": canonical_schedule_records(rows["train"]),
         "tokenizer_assets": {"encoder": enc_manifest, "decoder": dec_manifest},
         "pool_report": {
             key: pool["report"][key]
