@@ -127,9 +127,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-2026-11-02",
-        "filename": "runtime/runtime-a53c0fe0f2192362.zip",
-        "revision": "3350bd79ca6b44ffdac9d9835a1940d6d7d99742",
-        "sha256": "a53c0fe0f21923622a1ab63893ae1012a775358e43e07304487eeae5b3c6f8f4",
+        "filename": "runtime/runtime-d2010a35f5efb6fe.zip",
+        "revision": "b8f92415c71511ffaecf37b0d67c4840729678b3",
+        "sha256": "d2010a35f5efb6fe5b250e3999c4150027082c04a3fff889324c0c8796e18a3a",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],

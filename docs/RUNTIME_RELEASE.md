@@ -70,3 +70,26 @@ released loader/matrix-notebook suite passed 72 tests. The four project
 diagnostic tools passed. Details and adoption instructions are in
 [the dashboard repair report](DASHBOARD_WIDGET_LIFECYCLE.md); local receipts are
 under `outputs/dashboard_validation`.
+
+## Dependency guard correction, 2026-11-13
+
+- Immutable revision: `b8f92415c71511ffaecf37b0d67c4840729678b3`.
+- Archive: `runtime/runtime-d2010a35f5efb6fe.zip`, 371,463 bytes.
+- SHA-256: `d2010a35f5efb6fe5b250e3999c4150027082c04a3fff889324c0c8796e18a3a`.
+
+The preceding dashboard release's UI guard was too broad: installing an unrelated
+dependency could demand a restart solely because marimo was already loaded.
+The corrected guard compares loaded UI packages' installed versions before and
+after installation, including transitive widget dependencies. Unchanged UI no
+longer forces a restart for an ordinary install. Changed UI, explicit reinstalls
+and the existing native-module protections still require one when appropriate.
+
+Fifteen unchanged-UI regression cases failed before the fix. The corrected focused
+suite passed 83 tests, including the actual launcher and repeated setup. Model
+and widget source, training semantics, dataset and parameter settings are unchanged
+from the preceding dashboard release. Pending restart receipts from that release
+are not deleted automatically; see [the repair report](DASHBOARD_WIDGET_LIFECYCLE.md).
+The current loader/notebook release checks passed 43 tests; anonymous loading and
+all ten widget registrations in each baseline passed from an empty cache.
+Pyrefly, ty, Ruff and marimo strict checks passed, as did the generator's
+`--check --require-published` check.

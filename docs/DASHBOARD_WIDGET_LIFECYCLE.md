@@ -21,8 +21,11 @@ and later trait updates could not recreate the missing frontend state.
 - Dependency setup checks loaded UI-package versions before either READY shortcut.
   If a pinned UI package differs from its installed version, it requests a kernel
   restart instead of continuing with mixed widget implementations.
-- Installing dependencies while a selected UI stack is already loaded also
-  requires a restart. The existing receipt prevents reinstall loops afterward.
+- Setup records installed versions of loaded UI modules before installation,
+  including transitive widget dependencies. It requests a restart when those
+  versions change or an explicit reinstall replaces loaded UI code. Installing
+  another, previously unused dependency with unchanged UI versions can continue.
+  The existing protections for loaded native modules are retained.
 
 The UI-stack checks cover marimo, wigglystuff, ipywidgets, anywidget and traitlets.
 No model architecture, dataset, optimizer, training schedule or checkpoint format
@@ -30,11 +33,14 @@ changes are part of this repair.
 
 ## Verification
 
-The focused suite passed **61 tests**, including real marimo model notifications,
+The corrected focused suite passed **83 tests**, including real marimo model notifications,
 both baseline sizes, symmetric/asymmetric controls, retained widget registrations
 after garbage collection, buffered events, and mocked dependency installations.
 The tests never installed packages into the development environment.
-The released loader and matrix-notebook suite separately passed **72 tests**.
+The initial released loader and matrix-notebook suite separately passed **72 tests**.
+Additional startup regressions cover installation with unchanged, loaded UI
+versions, repeated Run All, the real matrix launcher, transitive UI changes,
+explicit reinstalls and a changed UI becoming ready after restart.
 
 A browser session rendered `e2b-it`, `e4b-it` and a bifocal control together with
 an empty token form and an unpressed Start button. No missing-model errors were
@@ -45,9 +51,9 @@ ten matrix notebooks passed in conda `ai`. The generator's
 `--check --require-published` check also passed.
 
 The updated runtime is published at immutable Hub revision
-`3350bd79ca6b44ffdac9d9835a1940d6d7d99742`, archive
-`runtime/runtime-a53c0fe0f2192362.zip` (371,262 bytes), SHA-256
-`a53c0fe0f21923622a1ab63893ae1012a775358e43e07304487eeae5b3c6f8f4`.
+`b8f92415c71511ffaecf37b0d67c4840729678b3`, archive
+`runtime/runtime-d2010a35f5efb6fe.zip` (371,463 bytes), SHA-256
+`d2010a35f5efb6fe5b250e3999c4150027082c04a3fff889324c0c8796e18a3a`.
 An anonymous download from an empty local archive/cache passed checksum
 verification using the baseline notebook's actual loader and a temporary
 marimo-style cell path. Imports resolved to the verified archive, and both
@@ -57,5 +63,16 @@ The training-semantics hash before and after this UI repair is identical:
 `79b2a4e2de7774c22d7bd331f3b0e549c2bb24c7050b26789a3604fa770da8ff`.
 Local receipts and written probes are in `outputs/dashboard_validation`.
 
-When adopting the updated runtime, reload the **baseline** notebook and restart
-that kernel once. An already running bifocal notebook can keep its pinned runtime.
+## Correction of the initial restart guard
+
+The initial `3350bd79...` runtime treated any loaded UI module as requiring a
+restart after any install. Since marimo is already loaded by notebook startup,
+this could also stop a newly uploaded bifocal notebook whose UI versions had
+not changed. Fifteen unchanged-UI cases reproduced that regression before the
+correction and passed afterward. The widget repair itself is retained.
+
+Use the latest notebook for new sessions. Already running bifocal notebooks can
+keep their pinned runtimes. A kernel already marked restart-required by the
+previous release still needs its own restart: pending receipts are preserved,
+because the older receipt does not record which loaded packages were replaced.
+The correction does not reset other kernels or delete setup/training artifacts.

@@ -1,6 +1,6 @@
 # Data and training protocol V4
 
-This document describes the implemented local protocol for the main ten-model matrix, version `bifocalgemma_shared_schedule_2026_11_12`. Local tests exercise all ten tiny model configurations, shared loaders, label masks, stage transitions, interruption/resume, partial-backward OOM recovery, effective benchmark settings, and trained-adapter export/reload. These checks do not establish pretrained model quality. The current source runtime is published at immutable Hub revision `3350bd79ca6b44ffdac9d9835a1940d6d7d99742`, including the dashboard repair without changing training semantics; see [runtime release verification](RUNTIME_RELEASE.md).
+This document describes the implemented local protocol for the main ten-model matrix, version `bifocalgemma_shared_schedule_2026_11_12`. Local tests exercise all ten tiny model configurations, shared loaders, label masks, stage transitions, interruption/resume, partial-backward OOM recovery, effective benchmark settings, and trained-adapter export/reload. These checks do not establish pretrained model quality. The current source runtime is published at immutable Hub revision `b8f92415c71511ffaecf37b0d67c4840729678b3`, including the dashboard repair and dependency-guard correction without changing training semantics; see [runtime release verification](RUNTIME_RELEASE.md).
 
 ## Training exposure
 

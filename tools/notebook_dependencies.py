@@ -173,14 +173,14 @@ def bootstrap_notebook_dependencies(
         session = uuid4().hex
         setattr(sys, "_bifocalgemma_dependency_session", session)
 
+    def installed_version(name):
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+
     def installed_versions():
-        versions: dict[str, str | None] = {}
-        for name in list(pins) + ["PyYAML", "psutil"]:
-            try:
-                versions[name] = importlib.metadata.version(name)
-            except importlib.metadata.PackageNotFoundError:
-                versions[name] = None
-        return versions
+        return {name: installed_version(name) for name in list(pins) + ["PyYAML", "psutil"]}
 
     def matches(versions: dict[str, str | None]):
         for name, expected in pins.items():
@@ -204,6 +204,15 @@ def bootstrap_notebook_dependencies(
         "anywidget": "anywidget",
         "traitlets": "traitlets",
     }
+    ui_versions_before = (
+        {
+            package: installed_version(package)
+            for package, module_name in ui_modules.items()
+            if module_name in sys.modules
+        }
+        if any(package in pins for package in ui_modules)
+        else {}
+    )
     for package, module_name in ui_modules.items():
         if package not in pins:
             continue
@@ -240,9 +249,6 @@ def bootstrap_notebook_dependencies(
             "pyarrow",
             "tokenizers",
         )
-    ) or (
-        any(package in pins for package in ui_modules)
-        and any(module in sys.modules for module in ui_modules.values())
     )
     uv = shutil.which("uv")
     if uv is None:
@@ -292,6 +298,18 @@ def bootstrap_notebook_dependencies(
         raise RuntimeError("Installed dependency versions differ from the notebook pins.")
     if versions["torch"] != pins["torch"] + "+cu132":
         raise RuntimeError("Expected the CUDA 13.0 Torch wheel; verify the installed build.")
+    # A running notebook always has marimo loaded. Installing an unrelated,
+    # previously unused package must not make that alone require a restart.
+    # Track transitive UI versions too; explicit reinstalls can replace loaded
+    # code even when its version number is unchanged.
+    critical_loaded = (
+        critical_loaded
+        or (reinstall and bool(ui_versions_before))
+        or any(
+            installed_version(package) != previous
+            for package, previous in ui_versions_before.items()
+        )
+    )
     root.mkdir(parents=True, exist_ok=True)
     temporary = receipt_path.with_suffix(f".{uuid4().hex}.tmp")
     temporary.write_text(

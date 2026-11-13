@@ -5,11 +5,13 @@ import json
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from tools.notebook_dependencies import bootstrap_notebook_dependencies
+from tools.notebook_launcher import prepare_runtime
 
 UI_MODULES = ("marimo", "wigglystuff", "ipywidgets", "anywidget", "traitlets")
 BASE_PINS = {"torch": "2.15.0", "torchvision": "0.29.2"}
@@ -65,18 +67,15 @@ def dependency_state(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("module_name", UI_MODULES)
-@pytest.mark.parametrize("changed_dependency", ["ui", "torch"])
 def test_install_with_preloaded_pinned_ui_module_requires_restart(
-    monkeypatch, tmp_path, dependency_state, module_name, changed_dependency
+    monkeypatch, tmp_path, dependency_state, module_name
 ):
     versions, calls = dependency_state
     # Initially loaded code agrees with disk. The install changes only disk,
     # so testing the versions before installation cannot establish readiness.
     pins = {**BASE_PINS, module_name: "0.2.0"}
-    loaded_version = "0.1.0" if changed_dependency == "ui" else pins[module_name]
+    loaded_version = "0.1.0"
     versions[module_name] = loaded_version
-    if changed_dependency == "torch":
-        versions["torch"] = "2.14.0+cu132"
     monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__=loaded_version))
     with pytest.raises(RuntimeError, match="Restart"):
         bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
@@ -85,6 +84,110 @@ def test_install_with_preloaded_pinned_ui_module_requires_restart(
     receipts = list(tmp_path.glob("*.json"))
     assert len(receipts) == 1
     assert json.loads(receipts[0].read_text(encoding="utf-8"))["restart_required"] is True
+
+
+@pytest.mark.parametrize("module_name", UI_MODULES)
+@pytest.mark.parametrize("missing_dependency", ["torch", "psutil", "pytest"])
+def test_unchanged_loaded_ui_does_not_require_restart_for_other_dependency_install(
+    monkeypatch, tmp_path, dependency_state, module_name, missing_dependency
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, module_name: "0.2.0", "pytest": "9.2.0", "psutil": "7.2.2"}
+    versions.update({module_name: "0.2.0", "pytest": "9.2.0"})
+    versions.pop(missing_dependency, None)
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.2.0"))
+    result = bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert result["status"] == "READY" and result["installed_now"] is True
+    assert len(calls) == 2
+    receipt = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    assert receipt["restart_required"] is False
+    # Run All again in the same kernel must neither reinstall nor demand restart.
+    again = bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert again["status"] == "READY" and again["installed_now"] is False
+    assert len(calls) == 2
+
+
+def test_matrix_launcher_upload_and_repeated_setup_with_preloaded_marimo(
+    monkeypatch, tmp_path, dependency_state
+):
+    versions, calls = dependency_state
+    # Exercise the actual standalone launcher and its runpy-loaded helper with
+    # full matrix pins, like an uploaded notebook whose marimo is already active.
+    versions.update(marimo="0.25.2", wigglystuff="0.5.36")
+    monkeypatch.setitem(sys.modules, "marimo", SimpleNamespace(__version__="0.25.2"))
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.chdir(tmp_path)
+    for name in list(sys.modules):
+        if name == "bifocalgemma" or name.startswith("bifocalgemma."):
+            monkeypatch.delitem(sys.modules, name)
+    root = Path(__file__).resolve().parents[1]
+    result = prepare_runtime(root)
+    assert result["status"] == "READY" and result["installed_now"] is True
+    again = prepare_runtime(root)
+    assert again["status"] == "READY" and again["installed_now"] is False
+    assert len(calls) == 2
+    receipt = next((tmp_path / "outputs/dependency_setup").glob("*.json"))
+    assert json.loads(receipt.read_text(encoding="utf-8"))["restart_required"] is False
+
+
+@pytest.mark.parametrize("module_name", UI_MODULES)
+def test_changed_ui_install_becomes_ready_after_restart_without_reinstall(
+    monkeypatch, tmp_path, dependency_state, module_name
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, module_name: "0.2.0"}
+    versions[module_name] = "0.1.0"
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.1.0"))
+    with pytest.raises(RuntimeError, match="Restart"):
+        bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert len(calls) == 2
+    monkeypatch.setattr(sys, "_bifocalgemma_dependency_session", "restarted-kernel")
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.2.0"))
+    result = bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert result["status"] == "READY" and result["installed_now"] is False
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("module_name", UI_MODULES)
+def test_explicit_reinstall_of_loaded_ui_requires_restart_even_at_same_version(
+    monkeypatch, tmp_path, dependency_state, module_name
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, module_name: "0.2.0"}
+    versions[module_name] = "0.2.0"
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.2.0"))
+    with pytest.raises(RuntimeError, match="Restart"):
+        bootstrap_notebook_dependencies(pins, reinstall=True, state_directory=str(tmp_path))
+    assert len(calls) == 2
+    assert all("--reinstall" in command for command in calls)
+
+
+@pytest.mark.parametrize("module_name", UI_MODULES[1:])
+def test_changed_transitive_loaded_ui_dependency_also_requires_restart(
+    monkeypatch, tmp_path, dependency_state, module_name
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, "marimo": "0.2.0", "pytest": "9.2.0"}
+    versions.update({"marimo": "0.2.0", module_name: "0.1.0"})
+    monkeypatch.setitem(sys.modules, "marimo", SimpleNamespace(__version__="0.2.0"))
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.1.0"))
+    install = subprocess.run
+
+    def install_with_transitive_upgrade(command, **kwargs):
+        result = install(command, **kwargs)
+        if "marimo==0.2.0" in command:
+            versions[module_name] = "0.2.0"
+        return result
+
+    monkeypatch.setattr(subprocess, "run", install_with_transitive_upgrade)
+    with pytest.raises(RuntimeError, match="Restart"):
+        bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert len(calls) == 2
+    monkeypatch.setattr(sys, "_bifocalgemma_dependency_session", "restarted-kernel")
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.2.0"))
+    result = bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert result["status"] == "READY" and result["installed_now"] is False
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("module_name", UI_MODULES)
