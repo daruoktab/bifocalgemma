@@ -156,6 +156,86 @@ def test_inherited_ui_without_local_metadata_can_install_the_same_loaded_version
     assert receipt["loaded_ui"][module_name]["version"] == "0.2.0"
 
 
+@pytest.mark.parametrize("host_metadata_available", [False, True])
+def test_matrix_launcher_preserves_reported_molab_host_widget_versions(
+    monkeypatch, tmp_path, dependency_state, host_metadata_available
+):
+    versions, calls = dependency_state
+    host_versions = {"ipywidgets": "8.1.8", "traitlets": "5.15.1"}
+    if host_metadata_available:
+        versions.update(host_versions)
+    monkeypatch.setitem(sys.modules, "marimo", marimo)
+    for name, version in host_versions.items():
+        monkeypatch.setitem(
+            sys.modules,
+            name,
+            SimpleNamespace(
+                __version__=version,
+                __file__=f"/usr/local/lib/python3.13/site-packages/{name}/__init__.py",
+            ),
+        )
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.chdir(tmp_path)
+    for name in list(sys.modules):
+        if name == "bifocalgemma" or name.startswith("bifocalgemma."):
+            monkeypatch.delitem(sys.modules, name)
+    installer = subprocess.run
+    observed_constraints = []
+
+    def install_with_ui_resolution(command, **kwargs):
+        constraints = {}
+        if "--constraint" in command:
+            path = Path(command[command.index("--constraint") + 1])
+            constraints = dict(line.split("==", 1) for line in path.read_text().splitlines())
+        observed_constraints.append(constraints)
+        result = installer(command, **kwargs)
+        if "wigglystuff==0.5.36" in command:
+            # This is the unconstrained result in the user's actual uv log.
+            for name, latest in {"ipywidgets": "8.1.9", "traitlets": "5.16.1"}.items():
+                versions[name] = constraints.get(name, latest)
+        return result
+
+    monkeypatch.setattr(subprocess, "run", install_with_ui_resolution)
+    root = Path(__file__).resolve().parents[1]
+    result = prepare_runtime(root)
+    assert result["status"] == "READY" and result["installed_now"] is True
+    assert observed_constraints == [host_versions, host_versions]
+    assert {name: versions[name] for name in host_versions} == host_versions
+    again = prepare_runtime(root)
+    assert again["status"] == "READY" and again["installed_now"] is False
+    assert len(calls) == 2
+    receipt = next((tmp_path / "outputs/dependency_setup").glob("*.json"))
+    saved = json.loads(receipt.read_text(encoding="utf-8"))
+    assert saved["identity"]["ui_constraints"] == host_versions
+    assert saved["restart_required"] is False
+
+
+def test_changed_ui_constraint_profile_cannot_bypass_pending_restart(
+    monkeypatch, tmp_path, dependency_state
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, "marimo": "0.25.2"}
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(__version__="2.15.0"))
+    with pytest.raises(RuntimeError, match="Restart"):
+        bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert len(calls) == 2
+    monkeypatch.delitem(sys.modules, "torch")
+    monkeypatch.setitem(sys.modules, "ipywidgets", SimpleNamespace(__version__="8.1.8"))
+    versions["ipywidgets"] = "8.1.8"
+    # A different constraint signature must not lose this kernel's pending barrier.
+    with pytest.raises(RuntimeError, match="Restart"):
+        bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert len(calls) == 2
+    monkeypatch.setattr(sys, "_bifocalgemma_dependency_session", "fresh-kernel")
+    assert (
+        bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))[
+            "status"
+        ]
+        == "READY"
+    )
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize("module_name", UI_MODULES)
 @pytest.mark.parametrize("loaded_version", ["0.1.0", None])
 def test_inherited_ui_with_different_or_unknown_version_requires_diagnostic_restart(
@@ -211,7 +291,7 @@ def test_explicit_reinstall_of_loaded_ui_requires_restart_even_at_same_version(
 
 
 @pytest.mark.parametrize("module_name", UI_MODULES[1:])
-def test_changed_transitive_loaded_ui_dependency_also_requires_restart(
+def test_transitive_ui_constraint_violation_is_rejected(
     monkeypatch, tmp_path, dependency_state, module_name
 ):
     versions, calls = dependency_state
@@ -228,7 +308,9 @@ def test_changed_transitive_loaded_ui_dependency_also_requires_restart(
         return result
 
     monkeypatch.setattr(subprocess, "run", install_with_transitive_upgrade)
-    with pytest.raises(RuntimeError, match="Restart"):
+    # Simulate a faulty installer ignoring the supplied constraint. It must
+    # never yield READY with a version that differs from the active host UI.
+    with pytest.raises(RuntimeError, match="host UI constraints"):
         bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
     assert len(calls) == 2
     monkeypatch.setattr(sys, "_bifocalgemma_dependency_session", "restarted-kernel")

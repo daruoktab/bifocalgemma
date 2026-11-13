@@ -129,6 +129,7 @@ def bootstrap_notebook_dependencies(
     import shutil
     import subprocess
     import sys
+    import tempfile
     import urllib.request
     from pathlib import Path
     from uuid import uuid4
@@ -150,53 +151,6 @@ def bootstrap_notebook_dependencies(
     if "torch" not in pins or not all(isinstance(v, str) and v for v in pins.values()):
         raise ValueError("Dependency pins must include an explicit Torch version.")
 
-    identity = {
-        "format": "bifocalgemma_dependency_setup_v1",
-        "python": str(Path(sys.executable).resolve()),
-        "python_version": list(sys.version_info[:2]),
-        "pins": dict(pins),
-        "extras": ["PyYAML>=6.0", "psutil>=7.0"],
-        "torch_index": "https://download.pytorch.org/whl/cu132",
-    }
-    signature = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
-    root = Path(state_directory)
-    receipt_path = root / f"{signature}.json"
-    receipt = None
-    if receipt_path.is_file():
-        try:
-            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            receipt = None
-
-    session = getattr(sys, "_bifocalgemma_dependency_session", None)
-    if session is None:
-        session = uuid4().hex
-        setattr(sys, "_bifocalgemma_dependency_session", session)
-
-    def installed_version(name):
-        try:
-            return importlib.metadata.version(name)
-        except importlib.metadata.PackageNotFoundError:
-            return None
-
-    def installed_versions():
-        return {name: installed_version(name) for name in list(pins) + ["PyYAML", "psutil"]}
-
-    def matches(versions: dict[str, str | None]):
-        for name, expected in pins.items():
-            actual = versions.get(name)
-            if actual is None or actual.split("+")[0] != expected:
-                return False
-        for name in ("torch", "torchvision"):
-            if name in pins and versions.get(name) != pins[name] + "+cu132":
-                return False
-        for name, minimum in (("PyYAML", 6), ("psutil", 7)):
-            actual = versions.get(name)
-            if actual is None or int(actual.split(".")[0]) < minimum:
-                return False
-        return True
-
-    versions = installed_versions()
     ui_modules = {
         "marimo": "marimo",
         "wigglystuff": "wigglystuff",
@@ -216,6 +170,89 @@ def bootstrap_notebook_dependencies(
         if any(package in pins for package in ui_modules)
         else {}
     )
+    ui_constraints = {
+        package: live["version"].split("+")[0]
+        for package, live in loaded_ui.items()
+        if package not in pins and isinstance(live["version"], str) and live["version"]
+    }
+    identity = {
+        "format": "bifocalgemma_dependency_setup_v1",
+        "python": str(Path(sys.executable).resolve()),
+        "python_version": list(sys.version_info[:2]),
+        "pins": dict(pins),
+        "ui_constraints": ui_constraints,
+        "extras": ["PyYAML>=6.0", "psutil>=7.0"],
+        "torch_index": "https://download.pytorch.org/whl/cu132",
+    }
+    signature = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    root = Path(state_directory)
+    receipt_path = root / f"{signature}.json"
+    receipt = None
+    if receipt_path.is_file():
+        try:
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            receipt = None
+
+    session = getattr(sys, "_bifocalgemma_dependency_session", None)
+    if session is None:
+        session = uuid4().hex
+        setattr(sys, "_bifocalgemma_dependency_session", session)
+
+    # Changing the host constraint profile must not erase a pending restart
+    # from this interpreter/session, including receipts from earlier runtimes.
+    for previous_path in root.glob("*.json"):
+        try:
+            previous = json.loads(previous_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if not isinstance(previous, dict):
+            continue
+        previous_identity = previous.get("identity")
+        if (
+            previous.get("restart_required")
+            and previous.get("session") == session
+            and isinstance(previous_identity, dict)
+            and previous_identity.get("python") == identity["python"]
+        ):
+            raise RuntimeError(
+                "Dependencies were reinstalled in this kernel. Restart the kernel now. "
+                + "; ".join(str(reason) for reason in previous.get("restart_reasons", []))
+            )
+
+    def installed_version(name):
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+
+    def installed_versions():
+        return {
+            name: installed_version(name)
+            for name in list(pins) + list(ui_constraints) + ["PyYAML", "psutil"]
+        }
+
+    def matches(versions: dict[str, str | None]):
+        for name, expected in pins.items():
+            actual = versions.get(name)
+            if actual is None or actual.split("+")[0] != expected:
+                return False
+        for name in ("torch", "torchvision"):
+            if name in pins and versions.get(name) != pins[name] + "+cu132":
+                return False
+        for name, minimum in (("PyYAML", 6), ("psutil", 7)):
+            actual = versions.get(name)
+            if actual is None or int(actual.split(".")[0]) < minimum:
+                return False
+        for name, expected in ui_constraints.items():
+            actual = versions.get(name)
+            # Constraints do not force an otherwise unused host UI package
+            # into the target venv. If present, its version must match.
+            if actual is not None and actual.split("+")[0] != expected:
+                return False
+        return True
+
+    versions = installed_versions()
     for package, module_name in ui_modules.items():
         if package not in pins:
             continue
@@ -282,27 +319,42 @@ def bootstrap_notebook_dependencies(
     print(f"Dependency setup targets the current kernel: {sys.executable}", flush=True)
     cuda_packages = [name for name in ("torch", "torchvision") if name in pins]
     print(
-        f"Reinstall={reinstall}; CUDA 13.0 packages: {', '.join(name + '==' + pins[name] for name in cuda_packages)}.",
+        f"Reinstall={reinstall}; CUDA 13.2 packages: {', '.join(name + '==' + pins[name] for name in cuda_packages)}.",
         flush=True,
     )
-    subprocess.run(
-        common
-        + [f"{name}=={pins[name]}" for name in cuda_packages]
-        + ["--index-url", identity["torch_index"]],
-        check=True,
-    )
-    subprocess.run(
-        common
-        + [f"{name}=={expected}" for name, expected in pins.items() if name not in cuda_packages]
-        + identity["extras"]
-        + ["--index-url", "https://pypi.org/simple"],
-        check=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="bifocalgemma-ui-") as constraint_directory:
+        if ui_constraints:
+            constraint_path = Path(constraint_directory) / "host-ui.txt"
+            constraint_path.write_text(
+                "".join(f"{name}=={version}\n" for name, version in sorted(ui_constraints.items())),
+                encoding="utf-8",
+            )
+            common += ["--constraint", str(constraint_path)]
+            print(f"Preserving loaded host UI versions: {ui_constraints}", flush=True)
+        subprocess.run(
+            common
+            + [f"{name}=={pins[name]}" for name in cuda_packages]
+            + ["--index-url", identity["torch_index"]],
+            check=True,
+        )
+        subprocess.run(
+            common
+            + [
+                f"{name}=={expected}"
+                for name, expected in pins.items()
+                if name not in cuda_packages
+            ]
+            + identity["extras"]
+            + ["--index-url", "https://pypi.org/simple"],
+            check=True,
+        )
     versions = installed_versions()
     if not matches(versions):
-        raise RuntimeError("Installed dependency versions differ from the notebook pins.")
+        raise RuntimeError(
+            "Installed dependency versions differ from the notebook pins or host UI constraints."
+        )
     if versions["torch"] != pins["torch"] + "+cu132":
-        raise RuntimeError("Expected the CUDA 13.0 Torch wheel; verify the installed build.")
+        raise RuntimeError("Expected the CUDA 13.2 Torch wheel; verify the installed build.")
     # A running notebook always has marimo loaded. Installing an unrelated,
     # previously unused package must not make that alone require a restart.
     # A host-provided UI may be loaded even though the selected venv has no
@@ -316,6 +368,8 @@ def bootstrap_notebook_dependencies(
     for package, live in loaded_ui.items():
         loaded_version = live["version"]
         installed = installed_version(package)
+        if package in ui_constraints and installed is None:
+            continue
         if (
             not isinstance(loaded_version, str)
             or not loaded_version

@@ -26,6 +26,9 @@ and later trait updates could not recreate the missing frontend state.
   differ from the running code or an explicit reinstall replaces loaded UI code. Installing
   another, previously unused dependency with unchanged UI versions can continue.
   The existing protections for loaded native modules are retained.
+- Known loaded UI versions that are not explicitly pinned are supplied as exact
+  resolver constraints to both installer calls. Explicit notebook pins retain
+  precedence, and incompatible requirements must fail resolution.
 
 The UI-stack checks cover marimo, wigglystuff, ipywidgets, anywidget and traitlets.
 No model architecture, dataset, optimizer, training schedule or checkpoint format
@@ -33,7 +36,7 @@ changes are part of this repair.
 
 ## Verification
 
-The corrected focused suite passed **99 tests**, including real marimo model notifications,
+The corrected focused suite passed **102 tests**, including real marimo model notifications,
 both baseline sizes, symmetric/asymmetric controls, retained widget registrations
 after garbage collection, buffered events, and mocked dependency installations.
 The tests never installed packages into the development environment.
@@ -44,6 +47,9 @@ explicit reinstalls and a changed UI becoming ready after restart.
 The launcher test uses the actual imported marimo module both with and without
 distribution metadata in the selected environment. Missing metadata does not
 mean that marimo is absent from the running host kernel.
+Nine additional widget tests passed using an isolated overlay with real
+ipywidgets 8.1.8, traitlets 5.15.1, wigglystuff 0.5.36 and anywidget 0.11.0.
+The conda `ai` package installation was not modified by that overlay.
 
 A browser session rendered `e2b-it`, `e4b-it` and a bifocal control together with
 an empty token form and an unpressed Start button. No missing-model errors were
@@ -54,9 +60,9 @@ ten matrix notebooks passed in conda `ai`. The generator's
 `--check --require-published` check also passed.
 
 The updated runtime is published at immutable Hub revision
-`f6f208e4ca09ce42cc4dce11a293e8a3460fb5d6`, archive
-`runtime/runtime-e89c07583861cfd8.zip` (371,742 bytes), SHA-256
-`e89c07583861cfd8a0564ecca7f2bb80b6e8be1bf36a7ac3cc826480cb4cc626`.
+`1a2dfe7c96a1f57db193fa803b663c64d963e929`, archive
+`runtime/runtime-918f3dd0d5c606fe.zip` (372,230 bytes), SHA-256
+`918f3dd0d5c606fe2cbbbbf90235382e08f04e3d559b232ce73e8890fd0953d5`.
 An anonymous download from an empty local archive/cache passed checksum
 verification using the baseline notebook's actual loader and a temporary
 marimo-style cell path. Imports resolved to the verified archive, and both
@@ -100,3 +106,27 @@ The user's remote log did not include loaded module versions or native-module
 state. The new tests cover the reproduced false-positive mechanism; they do not
 establish that every possible host-version mismatch is resolved without restart.
 The live Molab session was not accessible for direct verification.
+
+## Preserve the live host's compatible widget versions
+
+The next report supplied the missing live-version evidence: ipywidgets 8.1.8 and
+traitlets 5.15.1 were active from `/usr/local/lib/python3.13/site-packages`, while
+the installer selected 8.1.9 and 5.16.1 in the notebook venv. In that case the
+restart guard correctly detected a real change; the installer had unnecessarily
+introduced the incompatibility.
+
+The current installer constrains known, loaded, unpinned UI packages to their
+live versions. The temporary constraint file is passed to both CUDA and PyPI
+installer calls. These are additive [uv constraints](https://docs.astral.sh/uv/pip/compile/#adding-constraints),
+not dependency overrides, and do not force installation of an otherwise unused
+package. Constraint versions are bound into the receipt identity and checked
+against installed metadata when present. A same-session pending restart from any
+earlier constraint profile still blocks setup before either READY shortcut.
+
+Two launcher tests reproduced the exact reported 8.1.8/5.15.1 upgrade before the
+fix and now preserve both versions across setup and repeated Run All. A real uv
+compile for all Linux Python 3.13/cu132 notebook requirements resolved 100 packages
+with that exact host pair. This was a resolver check, not a model training run.
+Inputs and the resolved requirements are retained under
+`outputs/dashboard_validation/molab-linux*`; runtime UI-version receipts are in
+`host_widget_overlay_versions.json` and `host_widget_overlay.xml` there.

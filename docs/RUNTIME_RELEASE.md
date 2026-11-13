@@ -116,3 +116,25 @@ for validation boundaries and pending-receipt behavior.
 The 43 loader/notebook release checks and all four project diagnostic tools
 passed. Anonymous loading from an empty cache verified the current archive,
 imports and baseline widget registrations; the generator's published check passed.
+
+## Preserve loaded host widgets, 2026-11-13
+
+- Immutable revision: `1a2dfe7c96a1f57db193fa803b663c64d963e929`.
+- Archive: `runtime/runtime-918f3dd0d5c606fe.zip`, 372,230 bytes.
+- SHA-256: `918f3dd0d5c606fe2cbbbbf90235382e08f04e3d559b232ce73e8890fd0953d5`.
+
+The latest report established a real transitive UI upgrade: active ipywidgets
+8.1.8/traitlets 5.15.1 became installed 8.1.9/5.16.1. The installer now preserves
+known loaded UI versions that are not explicit notebook pins using constraints
+on both install calls. Constraint profiles are included in receipt identity and
+validation, and a profile change cannot bypass an existing same-kernel restart
+barrier. Actual incompatible versions and explicit replacements remain protected.
+
+The focused suite passed 102 tests, including the exact reported host-version
+pair and repeated setup. Nine additional widget lifecycle tests passed using
+real host-version packages in an isolated target overlay. A real Linux Python
+3.13/cu132 resolution selected 100 packages while retaining 8.1.8/5.15.1. No model,
+dataset, training parameter or checkpoint source changed. See the
+[dashboard report](DASHBOARD_WIDGET_LIFECYCLE.md) for source references and limits.
+The 43 loader/notebook tests, published generator check, anonymous empty-cache
+load and all four project diagnostic tools passed for this revision.
