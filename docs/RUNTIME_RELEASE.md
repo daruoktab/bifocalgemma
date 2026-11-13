@@ -54,3 +54,19 @@ The publication was explicitly approved by the user. Anonymous read-back and the
 actual rendered loader succeeded from an empty cache with a temporary marimo cell
 path. Imports resolved to the verified archive. All 62 focused bootstrap/notebook
 tests passed. Local receipts are under `outputs/runtime_release_validation`.
+
+## Dashboard update, 2026-11-13
+
+- Immutable revision: `3350bd79ca6b44ffdac9d9835a1940d6d7d99742`.
+- Archive: `runtime/runtime-a53c0fe0f2192362.zip`, 371,262 bytes.
+- SHA-256: `a53c0fe0f21923622a1ab63893ae1012a775358e43e07304487eeae5b3c6f8f4`.
+
+This release repairs widget initialization and loaded UI dependency checks;
+training semantics retain the previous release's identity. All ten notebooks
+are pinned to the new immutable revision. Anonymous loading from an empty cache
+verified the archive, project imports and all ten widget registrations for both
+baseline sizes. The focused dashboard/dependency suite passed 61 tests, and the
+released loader/matrix-notebook suite passed 72 tests. The four project
+diagnostic tools passed. Details and adoption instructions are in
+[the dashboard repair report](DASHBOARD_WIDGET_LIFECYCLE.md); local receipts are
+under `outputs/dashboard_validation`.

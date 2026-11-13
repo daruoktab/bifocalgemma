@@ -197,6 +197,27 @@ def bootstrap_notebook_dependencies(
         return True
 
     versions = installed_versions()
+    ui_modules = {
+        "marimo": "marimo",
+        "wigglystuff": "wigglystuff",
+        "ipywidgets": "ipywidgets",
+        "anywidget": "anywidget",
+        "traitlets": "traitlets",
+    }
+    for package, module_name in ui_modules.items():
+        if package not in pins:
+            continue
+        loaded_version = getattr(sys.modules.get(module_name), "__version__", None)
+        installed = versions.get(package)
+        if (
+            isinstance(loaded_version, str)
+            and isinstance(installed, str)
+            and loaded_version.split("+")[0] != installed.split("+")[0]
+        ):
+            raise RuntimeError(
+                f"Restart the kernel: loaded {package} {loaded_version} differs from installed {installed}. "
+                "The widget transport must be initialized with one consistent dependency version."
+            )
     valid_receipt = isinstance(receipt, dict) and receipt.get("identity") == identity
     if valid_receipt and receipt is not None and matches(versions):
         if receipt.get("restart_required") and receipt.get("session") == session:
@@ -219,6 +240,9 @@ def bootstrap_notebook_dependencies(
             "pyarrow",
             "tokenizers",
         )
+    ) or (
+        any(package in pins for package in ui_modules)
+        and any(module in sys.modules for module in ui_modules.values())
     )
     uv = shutil.which("uv")
     if uv is None:

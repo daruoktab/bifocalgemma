@@ -3,6 +3,7 @@
 import html
 import math
 import time
+from typing import Any
 
 from wigglystuff import (
     FloatingPanel,
@@ -66,6 +67,16 @@ class TrainingLossLog(ScatterLog):
 class WigglyDashboard(TrainingDashboard):
     def __init__(self, mo, *, experiment="", device=None, refresh_seconds=1.0):
         super().__init__(mo, experiment=experiment, device=device, refresh_seconds=refresh_seconds)
+        self.spans: list[dict] = []
+        self.plotted: set[tuple] = set()
+        self.breakdown_signature = None
+        self._layout_content = None
+        self._widget_views: dict[str, Any] = {}
+        self._floating_panel = None
+
+    def _create_widgets(self):
+        # Construct comm-backed models in the cell that actually displays them,
+        # after marimo has installed its widget transport for the current session.
         self.progress_bar = ProgressBar(max_value=1, height=18)
         self.phase_bar = ProgressBar(max_value=1, height=12, color="#f59e0b")
         self.cards = HTMLRefreshWidget(html="Menyiapkan training…")
@@ -82,38 +93,59 @@ class WigglyDashboard(TrainingDashboard):
         self.tasks = NestedTable(show_percent=False, initial_expand_depth=1)
         self.optimizer = HTMLRefreshWidget(html="Diagnostik optimizer muncul setiap 10 update.")
         self.trace = TraceView(title="Tahap sesi ini", height=220)
-        self.spans: list[dict] = []
-        self.plotted: set[tuple] = set()
-        self.breakdown_signature = None
 
     def layout(self):
+        if self._layout_content is not None:
+            return self._layout_content
         mo = self.mo
+        wrap = mo.ui.anywidget
+        self._create_widgets()
+        self._widget_views = {
+            name: wrap(getattr(self, name))
+            for name in (
+                "progress_bar",
+                "phase_bar",
+                "cards",
+                "loss",
+                "table",
+                "tasks",
+                "optimizer",
+                "trace",
+                "activity",
+                "pin",
+            )
+        }
+        views = self._widget_views
         pieces = [
             mo.md("### Monitor training · otomatis"),
-            mo.ui.anywidget(self.progress_bar),
-            mo.ui.anywidget(self.phase_bar),
-            mo.ui.anywidget(self.cards),
-            mo.ui.anywidget(self.loss),
+            views["progress_bar"],
+            views["phase_bar"],
+            views["cards"],
+            views["loss"],
             mo.accordion(
                 {
-                    "Validasi per sumber": mo.ui.anywidget(self.table),
-                    "Validasi per objective": mo.ui.anywidget(self.tasks),
-                    "Optimizer": mo.ui.anywidget(self.optimizer),
-                    "Timeline sesi": mo.ui.anywidget(self.trace),
-                    "Log terbaru": mo.ui.anywidget(self.activity),
+                    "Validasi per sumber": views["table"],
+                    "Validasi per objective": views["tasks"],
+                    "Optimizer": views["optimizer"],
+                    "Timeline sesi": views["trace"],
+                    "Log terbaru": views["activity"],
                 }
             ),
         ]
-        pin = mo.ui.anywidget(self.pin)
+        pin = views["pin"]
         panel_title = f"{self.state.get('experiment') or 'Monitor'} · status terakhir"
         if mo.running_in_notebook():
-            pieces.append(FloatingPanel(pin, title=panel_title, width=340))
+            self._floating_panel = FloatingPanel(pin, title=panel_title, width=340)
+            pieces.append(self._floating_panel)
         else:
             pieces.append(pin)
-        return mo.vstack(pieces)
+        self._layout_content = mo.vstack(pieces)
+        if self.recent:
+            self.update_widgets()
+        return self._layout_content
 
     def publish(self, content):
-        if self.ui_error is not None:
+        if self._layout_content is None or self.ui_error is not None:
             return
         try:
             self.update_widgets()
@@ -125,6 +157,8 @@ class WigglyDashboard(TrainingDashboard):
             )
 
     def update_widgets(self):
+        if self._layout_content is None:
+            return
         state = self.state
 
         def esc(value):

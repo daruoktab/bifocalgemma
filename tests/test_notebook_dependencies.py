@@ -35,6 +35,11 @@ def simulated_environment(monkeypatch):
         "transformers",
         "pyarrow",
         "tokenizers",
+        "marimo",
+        "wigglystuff",
+        "ipywidgets",
+        "anywidget",
+        "traitlets",
     ):
         monkeypatch.delitem(sys.modules, name, raising=False)
     monkeypatch.setattr(shutil, "which", lambda name: "uv-test")
