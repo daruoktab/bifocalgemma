@@ -21,9 +21,9 @@ and later trait updates could not recreate the missing frontend state.
 - Dependency setup checks loaded UI-package versions before either READY shortcut.
   If a pinned UI package differs from its installed version, it requests a kernel
   restart instead of continuing with mixed widget implementations.
-- Setup records installed versions of loaded UI modules before installation,
-  including transitive widget dependencies. It requests a restart when those
-  versions change or an explicit reinstall replaces loaded UI code. Installing
+- Setup records the running UI modules' versions and source origins, including
+  transitive widget dependencies. It requests a restart when installed versions
+  differ from the running code or an explicit reinstall replaces loaded UI code. Installing
   another, previously unused dependency with unchanged UI versions can continue.
   The existing protections for loaded native modules are retained.
 
@@ -33,7 +33,7 @@ changes are part of this repair.
 
 ## Verification
 
-The corrected focused suite passed **83 tests**, including real marimo model notifications,
+The corrected focused suite passed **99 tests**, including real marimo model notifications,
 both baseline sizes, symmetric/asymmetric controls, retained widget registrations
 after garbage collection, buffered events, and mocked dependency installations.
 The tests never installed packages into the development environment.
@@ -41,6 +41,9 @@ The initial released loader and matrix-notebook suite separately passed **72 tes
 Additional startup regressions cover installation with unchanged, loaded UI
 versions, repeated Run All, the real matrix launcher, transitive UI changes,
 explicit reinstalls and a changed UI becoming ready after restart.
+The launcher test uses the actual imported marimo module both with and without
+distribution metadata in the selected environment. Missing metadata does not
+mean that marimo is absent from the running host kernel.
 
 A browser session rendered `e2b-it`, `e4b-it` and a bifocal control together with
 an empty token form and an unpressed Start button. No missing-model errors were
@@ -51,9 +54,9 @@ ten matrix notebooks passed in conda `ai`. The generator's
 `--check --require-published` check also passed.
 
 The updated runtime is published at immutable Hub revision
-`b8f92415c71511ffaecf37b0d67c4840729678b3`, archive
-`runtime/runtime-d2010a35f5efb6fe.zip` (371,463 bytes), SHA-256
-`d2010a35f5efb6fe5b250e3999c4150027082c04a3fff889324c0c8796e18a3a`.
+`f6f208e4ca09ce42cc4dce11a293e8a3460fb5d6`, archive
+`runtime/runtime-e89c07583861cfd8.zip` (371,742 bytes), SHA-256
+`e89c07583861cfd8a0564ecca7f2bb80b6e8be1bf36a7ac3cc826480cb4cc626`.
 An anonymous download from an empty local archive/cache passed checksum
 verification using the baseline notebook's actual loader and a temporary
 marimo-style cell path. Imports resolved to the verified archive, and both
@@ -76,3 +79,24 @@ keep their pinned runtimes. A kernel already marked restart-required by the
 previous release still needs its own restart: pending receipts are preserved,
 because the older receipt does not record which loaded packages were replaced.
 The correction does not reset other kernels or delete setup/training artifacts.
+
+## Host UI without notebook-environment metadata
+
+A subsequent fresh-upload report for runtime `d2010a35...` showed `uv` adding
+marimo to `/tmp/uv-venv` while the notebook was already running marimo. The previous
+guard compared distribution metadata before and after installation. Host-loaded
+marimo with version `0.25.2` but no venv metadata was consequently interpreted as
+changing from `None` to `0.25.2`, even when the running UI code did not change.
+Six metadata-absent UI/launcher cases reproduced the failure before this correction.
+
+The guard now compares the loaded module's version to the installed version.
+Adding matching metadata is allowed. After installation, different or unknown UI
+versions, explicit reinstalls and loaded native modules still require a restart.
+Receipts and restart errors name the reasons, running versions and source origins.
+Existing READY fast paths retain their prior behavior for unknown UI versions;
+known stale UI versions are still rejected before either shortcut.
+
+The user's remote log did not include loaded module versions or native-module
+state. The new tests cover the reproduced false-positive mechanism; they do not
+establish that every possible host-version mismatch is resolved without restart.
+The live Molab session was not accessible for direct verification.

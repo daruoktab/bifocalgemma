@@ -93,3 +93,26 @@ The current loader/notebook release checks passed 43 tests; anonymous loading an
 all ten widget registrations in each baseline passed from an empty cache.
 Pyrefly, ty, Ruff and marimo strict checks passed, as did the generator's
 `--check --require-published` check.
+
+## Inherited host UI correction, 2026-11-13
+
+- Immutable revision: `f6f208e4ca09ce42cc4dce11a293e8a3460fb5d6`.
+- Archive: `runtime/runtime-e89c07583861cfd8.zip`, 371,742 bytes.
+- SHA-256: `e89c07583861cfd8a0564ecca7f2bb80b6e8be1bf36a7ac3cc826480cb4cc626`.
+
+The preceding correction still compared distribution metadata instead of the
+running UI version. On a host-provided marimo kernel, adding matching-version
+metadata to `/tmp/uv-venv` could therefore trigger a false restart. The current
+guard records loaded UI versions/origins and compares those versions to the
+installed distributions. Restart receipts and errors include specific reasons.
+Model, widget, dataset and training parameter source is unchanged.
+
+Six new metadata-absent regression cases failed before the fix; the focused
+startup/dependency/widget suite now passes 99 tests. The launcher regression uses
+the actual marimo module with absent target-environment metadata. Actual UI
+changes, unknown UI versions after installation, explicit reinstalls and loaded
+native modules retain their restart protection. See the [repair report](DASHBOARD_WIDGET_LIFECYCLE.md)
+for validation boundaries and pending-receipt behavior.
+The 43 loader/notebook release checks and all four project diagnostic tools
+passed. Anonymous loading from an empty cache verified the current archive,
+imports and baseline widget registrations; the generator's published check passed.

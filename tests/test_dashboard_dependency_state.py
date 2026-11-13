@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import marimo
 import pytest
 
 from tools.notebook_dependencies import bootstrap_notebook_dependencies
@@ -107,14 +108,20 @@ def test_unchanged_loaded_ui_does_not_require_restart_for_other_dependency_insta
     assert len(calls) == 2
 
 
+@pytest.mark.parametrize("marimo_metadata_available", [True, False])
 def test_matrix_launcher_upload_and_repeated_setup_with_preloaded_marimo(
-    monkeypatch, tmp_path, dependency_state
+    monkeypatch, tmp_path, dependency_state, marimo_metadata_available
 ):
     versions, calls = dependency_state
     # Exercise the actual standalone launcher and its runpy-loaded helper with
     # full matrix pins, like an uploaded notebook whose marimo is already active.
     versions.update(marimo="0.25.2", wigglystuff="0.5.36")
-    monkeypatch.setitem(sys.modules, "marimo", SimpleNamespace(__version__="0.25.2"))
+    if not marimo_metadata_available:
+        # Molab can inherit its live marimo module from the host while the
+        # selected /tmp/uv-venv has no marimo distribution metadata yet.
+        versions.pop("marimo")
+    assert marimo.__version__ == "0.25.2"
+    monkeypatch.setitem(sys.modules, "marimo", marimo)
     monkeypatch.setattr(sys, "path", list(sys.path))
     monkeypatch.chdir(tmp_path)
     for name in list(sys.modules):
@@ -128,6 +135,47 @@ def test_matrix_launcher_upload_and_repeated_setup_with_preloaded_marimo(
     assert len(calls) == 2
     receipt = next((tmp_path / "outputs/dependency_setup").glob("*.json"))
     assert json.loads(receipt.read_text(encoding="utf-8"))["restart_required"] is False
+
+
+@pytest.mark.parametrize("module_name", UI_MODULES)
+def test_inherited_ui_without_local_metadata_can_install_the_same_loaded_version(
+    monkeypatch, tmp_path, dependency_state, module_name
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, module_name: "0.2.0"}
+    assert module_name not in versions
+    monkeypatch.setitem(sys.modules, module_name, SimpleNamespace(__version__="0.2.0"))
+    result = bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert result["status"] == "READY" and result["installed_now"] is True
+    assert versions[module_name] == "0.2.0"
+    again = bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert again["status"] == "READY" and again["installed_now"] is False
+    assert len(calls) == 2
+    receipt = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    assert receipt["restart_required"] is False
+    assert receipt["loaded_ui"][module_name]["version"] == "0.2.0"
+
+
+@pytest.mark.parametrize("module_name", UI_MODULES)
+@pytest.mark.parametrize("loaded_version", ["0.1.0", None])
+def test_inherited_ui_with_different_or_unknown_version_requires_diagnostic_restart(
+    monkeypatch, tmp_path, dependency_state, module_name, loaded_version
+):
+    versions, calls = dependency_state
+    pins = {**BASE_PINS, module_name: "0.2.0"}
+    origin = f"/host/site-packages/{module_name}/__init__.py"
+    monkeypatch.setitem(
+        sys.modules, module_name, SimpleNamespace(__version__=loaded_version, __file__=origin)
+    )
+    with pytest.raises(RuntimeError, match="Restart") as error:
+        bootstrap_notebook_dependencies(pins, reinstall=False, state_directory=str(tmp_path))
+    assert f"{module_name}: loaded={loaded_version or 'unknown'}, installed=0.2.0" in str(
+        error.value
+    )
+    assert origin in str(error.value) and len(calls) == 2
+    receipt = json.loads(next(tmp_path.glob("*.json")).read_text(encoding="utf-8"))
+    assert receipt["restart_required"] is True and receipt["restart_reasons"]
+    assert receipt["loaded_ui"][module_name]["origin"] == origin
 
 
 @pytest.mark.parametrize("module_name", UI_MODULES)

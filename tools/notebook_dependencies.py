@@ -204,9 +204,12 @@ def bootstrap_notebook_dependencies(
         "anywidget": "anywidget",
         "traitlets": "traitlets",
     }
-    ui_versions_before = (
+    loaded_ui = (
         {
-            package: installed_version(package)
+            package: {
+                "version": getattr(sys.modules[module_name], "__version__", None),
+                "origin": getattr(sys.modules[module_name], "__file__", None),
+            }
             for package, module_name in ui_modules.items()
             if module_name in sys.modules
         }
@@ -231,15 +234,16 @@ def bootstrap_notebook_dependencies(
     if valid_receipt and receipt is not None and matches(versions):
         if receipt.get("restart_required") and receipt.get("session") == session:
             raise RuntimeError(
-                "Dependencies were reinstalled in this kernel. Restart the kernel now."
+                "Dependencies were reinstalled in this kernel. Restart the kernel now. "
+                + "; ".join(str(reason) for reason in receipt.get("restart_reasons", []))
             )
         return {"status": "READY", "installed_now": False, "versions": versions, **identity}
 
     if not reinstall and matches(versions):
         return {"status": "READY", "installed_now": False, "versions": versions, **identity}
 
-    critical_loaded = any(
-        name in sys.modules
+    native_loaded = [
+        name
         for name in (
             "torch",
             "torchvision",
@@ -249,7 +253,8 @@ def bootstrap_notebook_dependencies(
             "pyarrow",
             "tokenizers",
         )
-    )
+        if name in sys.modules
+    ]
     uv = shutil.which("uv")
     if uv is None:
         candidate = Path.home() / ".local/bin" / ("uv.exe" if os.name == "nt" else "uv")
@@ -300,16 +305,28 @@ def bootstrap_notebook_dependencies(
         raise RuntimeError("Expected the CUDA 13.0 Torch wheel; verify the installed build.")
     # A running notebook always has marimo loaded. Installing an unrelated,
     # previously unused package must not make that alone require a restart.
-    # Track transitive UI versions too; explicit reinstalls can replace loaded
-    # code even when its version number is unchanged.
-    critical_loaded = (
-        critical_loaded
-        or (reinstall and bool(ui_versions_before))
-        or any(
-            installed_version(package) != previous
-            for package, previous in ui_versions_before.items()
-        )
-    )
+    # A host-provided UI may be loaded even though the selected venv has no
+    # distribution metadata yet. Compare against the running module's version,
+    # rather than treating newly added metadata as a replacement of that code.
+    restart_reasons = []
+    if native_loaded:
+        restart_reasons.append("Native modules already loaded: " + ", ".join(native_loaded))
+    if reinstall and loaded_ui:
+        restart_reasons.append("Explicit reinstall with loaded UI modules")
+    for package, live in loaded_ui.items():
+        loaded_version = live["version"]
+        installed = installed_version(package)
+        if (
+            not isinstance(loaded_version, str)
+            or not loaded_version
+            or installed is None
+            or loaded_version.split("+")[0] != installed.split("+")[0]
+        ):
+            restart_reasons.append(
+                f"{package}: loaded={loaded_version or 'unknown'}, installed={installed or 'missing'}, "
+                f"origin={live['origin'] or 'unknown'}"
+            )
+    critical_loaded = bool(restart_reasons)
     root.mkdir(parents=True, exist_ok=True)
     temporary = receipt_path.with_suffix(f".{uuid4().hex}.tmp")
     temporary.write_text(
@@ -319,6 +336,8 @@ def bootstrap_notebook_dependencies(
                 "versions": versions,
                 "session": session,
                 "restart_required": critical_loaded,
+                "restart_reasons": restart_reasons,
+                "loaded_ui": loaded_ui,
             },
             indent=2,
         )
@@ -329,7 +348,7 @@ def bootstrap_notebook_dependencies(
     if critical_loaded:
         raise RuntimeError(
             "Dependencies installed. Restart the kernel before importing/training; "
-            "the matching receipt will skip reinstall after restart."
+            "the matching receipt will skip reinstall after restart. " + "; ".join(restart_reasons)
         )
     print("Dependency setup verified. Continue with the next cell.", flush=True)
     return {"status": "READY", "installed_now": True, "versions": versions, **identity}
