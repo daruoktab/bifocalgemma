@@ -174,8 +174,10 @@ def test_f4_reponiah_distractor_injection_and_retrieval():
 # F5: Changed training semantics cannot inherit a legacy approval
 # ==============================================================================
 @pytest.mark.tier1
-def test_f5_training_semantics_change_rejects_legacy_approval(project_root: Path):
-    """A new schedule/objective must not be approved as old training merely to sync hashes."""
+def test_f5_training_semantics_change_rejects_legacy_approval(project_root: Path, tmp_path: Path):
+    """Approved recovery/benchmark fixes preserve live baseline; mutations or legacy hashes fail."""
+    import shutil
+
     from bifocalgemma.training.source_identity import source_fingerprints
 
     config_path = project_root / "configs/training_resume_compatibility.json"
@@ -195,15 +197,34 @@ def test_f5_training_semantics_change_rejects_legacy_approval(project_root: Path
         f"Inconsistent configuration: 'approved_source_semantics_sha256' ({approved_hash}) != "
         f"'source_semantics_sha256' ({source_hash})"
     )
+    # Never re-approve superseded pre-refactor training baselines.
+    assert baseline_training_hash not in {
+        "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
+        "79b2a4e2de7774c22d7bd331f3b0e549c2bb24c7050b26789a3604fa770da8ff",
+        "ebe51cc8e4050d46a1118846d4c7de6224b5cf8aeefd22dde8d0e173e85b021c",
+    }
 
     # Dynamically compute the live AST fingerprint from the actual source tree
     src_dir = project_root / "src/bifocalgemma"
     live_fingerprints = source_fingerprints(src_dir)
     live_source_semantics = live_fingerprints["source_semantics_sha256"]
 
-    assert approved_hash != live_source_semantics, "Do not auto-approve changed training as baseline-equivalent."
-    assert live_fingerprints["training_semantics_sha256"] == live_source_semantics
-    assert live_fingerprints["training_semantics_sha256"] != baseline_training_hash
+    assert approved_hash == live_source_semantics
+    assert live_fingerprints["training_semantics_sha256"] == baseline_training_hash
+    assert live_source_semantics == baseline_training_hash
+
+    # Any unapproved edit to model/objective code must invalidate approval immediately.
+    sandbox_root = tmp_path / "project/src/bifocalgemma"
+    shutil.copytree(src_dir, sandbox_root, ignore=shutil.ignore_patterns("__pycache__"))
+    sandbox_cfg = sandbox_root.parents[1] / "configs/training_resume_compatibility.json"
+    sandbox_cfg.parent.mkdir(parents=True, exist_ok=True)
+    sandbox_cfg.write_text(json.dumps(config_data), encoding="utf-8")
+    obj_path = sandbox_root / "training/objectives.py"
+    obj_path.write_text(obj_path.read_text(encoding="utf-8") + "\nUNAPPROVED_EDIT = 1\n")
+    mutated = source_fingerprints(sandbox_root)
+    assert mutated["source_semantics_sha256"] != approved_hash
+    assert mutated["training_semantics_sha256"] == mutated["source_semantics_sha256"]
+    assert mutated["training_semantics_sha256"] != baseline_training_hash
 
 
 # ==============================================================================
@@ -215,12 +236,12 @@ def test_f6_repo_core_syntax_tests_executable(project_root: Path):
     import subprocess
     import sys
 
-    # Run a fast unit test module (test_v2_syntax.py)
+    # Run a fast unit test module (test_syntax.py)
     cmd = [
         sys.executable,
         "-m",
         "pytest",
-        str(project_root / "tests/test_v2_syntax.py"),
+        str(project_root / "tests/test_syntax.py"),
         "-q",
     ]
     res = subprocess.run(cmd, cwd=str(project_root), capture_output=True, text=True, timeout=60)

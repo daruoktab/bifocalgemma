@@ -29,7 +29,14 @@ def test_reset_archives_evaluation_once_without_changing_training(tmp_path):
 
 def test_remote_reset_is_scoped_and_receipt_hashes_match():
     prefix = "symmetric/BifocalGemma-E2B-E2B/run/base"
-    state = {"stages": {"training": {"status": "COMPLETED"}, "benchmark:a": {}, "final_upload": {}}}
+    state = {
+        "stages": {
+            "training": {"status": "COMPLETED"},
+            "benchmark:a": {},
+            "benchmark_longcodeqa": {},
+            "final_upload": {},
+        }
+    }
     names = [
         prefix + "/benchmarks/a/predictions.jsonl",
         prefix + "/training/weights.pt",
@@ -54,3 +61,28 @@ def test_remote_reset_is_scoped_and_receipt_hashes_match():
         ).hexdigest(),
     }
     assert state["stages"].get("benchmark:a") == {}
+
+
+def test_reset_archives_benchmark_underscore_keys_too(tmp_path):
+    ledger = StageLedger(tmp_path, {"model": "same-training"})
+    checkpoint = tmp_path / "training/weights"
+    checkpoint.parent.mkdir()
+    checkpoint.write_bytes(b"preserve")
+    ledger.finish("stage2_joint", [checkpoint])
+    legacy_pred = tmp_path / "benchmarks/legacy/predictions.jsonl"
+    legacy_pred.parent.mkdir(parents=True)
+    legacy_pred.write_text("legacy\n")
+    ledger.finish("benchmark:legacy", [legacy_pred])
+    prediction = tmp_path / "benchmarks/longcodeqa/predictions.jsonl"
+    prediction.parent.mkdir(parents=True)
+    prediction.write_text("old\n")
+    ledger.finish("benchmark_longcodeqa_gemma32k_dec8k_v1", [prediction])
+
+    reset_local_benchmarks(tmp_path, "reset-both")
+    restored = StageLedger(tmp_path, {"model": "same-training"})
+    assert restored.completed("stage2_joint")
+    assert not restored.completed("benchmark:legacy")
+    assert not restored.completed("benchmark_longcodeqa_gemma32k_dec8k_v1")
+    assert not legacy_pred.exists()
+    assert not prediction.exists()
+    assert checkpoint.read_bytes() == b"preserve"

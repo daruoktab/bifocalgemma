@@ -1,15 +1,36 @@
-"""V3 runtime guards, length temperature, and tokenization patch."""
+"""Runtime hardware memory guards, length temperature, and tokenization patch."""
 
 from __future__ import annotations
 
 import math
 import os
-from typing import Any
+import sys
+from typing import Any, cast
 
 
 def ensure_hardware_memory_guards() -> dict[str, Any]:
-    """Configure CUDA expandable segments and return active hardware guard settings."""
+    """Configure CUDA expandable segments, guard optional multimodal imports, and return active settings."""
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    if "torchvision" not in sys.modules or sys.modules["torchvision"] is not None:
+        try:
+            import torch
+            import torchvision
+
+            torchvision.ops.nms(
+                torch.empty((0, 4), dtype=torch.float32),
+                torch.empty((0,), dtype=torch.float32),
+                0.5,
+            )
+        except Exception:
+            cast(dict[str, Any], sys.modules)["torchvision"] = None
+            cast(dict[str, Any], sys.modules)["torchvision.transforms"] = None
+
+    if "torchaudio" not in sys.modules or sys.modules["torchaudio"] is not None:
+        try:
+            import torchaudio  # noqa: F401
+        except Exception:
+            cast(dict[str, Any], sys.modules)["torchaudio"] = None
+
     return {
         "pytorch_cuda_alloc_conf": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", ""),
         "sm86_head_dim256_tile_clamp": clamped_triton_kernel_options(256),
@@ -144,26 +165,19 @@ def patch_matrix_tokenization() -> None:
             target_text = row.get("target_text", row.get("target_patch"))
             if not isinstance(target_text, str) or not target_text:
                 raise ValueError("empty_sft_target")
-            full = decoder.apply_chat_template(
-                messages + [{"role": "assistant", "content": target_text}],
-                tokenize=False,
-                add_generation_prompt=False,
-                enable_thinking=False,
-            )
             prefix_ids = tuple(decoder.encode(prefix, add_special_tokens=False))
-            full_ids = tuple(decoder.encode(full.rstrip(), add_special_tokens=False))
-            if full_ids[: len(prefix_ids)] != prefix_ids:
-                raise ValueError("prefix_target_boundary")
-            target = full_ids[len(prefix_ids) :]
+            eot_token_id = ct_mod._resolve_eot_token_id(decoder)
+            target_body_ids = tuple(decoder.encode(target_text, add_special_tokens=False))
             if (
                 not prefix_ids
                 or prefix_ids[0] != decoder.bos_token_id
-                or not target
-                or target[-1] != decoder.convert_tokens_to_ids("<turn|>")
+                or eot_token_id is None
+                or not target_body_ids
                 or (enc and enc[0] != encoder.bos_token_id)
             ):
                 raise ValueError("context_task_special_tokens")
-            if len(enc) > encoder_limit or len(full_ids) - 1 > decoder_limit:
+            target = target_body_ids + (eot_token_id,)
+            if len(enc) > encoder_limit or len(prefix_ids) + len(target) - 1 > decoder_limit:
                 raise ValueError("context_task_token_overflow")
             return ct_mod.TokenizedRepairExample(
                 row["instance_id"],

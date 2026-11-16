@@ -153,7 +153,7 @@ def test_six_generation_paths_cache_assets_and_never_read_gold(spec, monkeypatch
 
 def test_bad_generation_budget_rejected_before_loading_weights(tmp_path, monkeypatch):
     import bifocalgemma.data.tokenization as assets
-    import bifocalgemma.models.v2.pretrained as pretrained
+    import bifocalgemma.models.checkpoint_transfer as pretrained
 
     spec = EXPERIMENT_SPECS[4]
     public, _, _ = gsm8k.make_records(fixture_rows(), [], shots=0)
@@ -214,3 +214,78 @@ def test_cli_rejects_prediction_from_another_prompt_protocol(tmp_path, monkeypat
     with pytest.raises(ValueError, match="protocol_mismatch"):
         gsm8k.main()
     assert not output.exists()
+
+
+def test_gsm8k_resilient_vs_strict_and_no_mcq_collision():
+    from bifocalgemma.evaluation.context import score_context_case
+    from bifocalgemma.evaluation.protocol import gsm8k_report_metrics, mcq_report_metrics
+
+    assert gsm8k.extract_release_answer("####7.5") is None
+    assert gsm8k.extract_resilient_answer("####7.5") == "7.5"
+    assert gsm8k.extract_resilient_answer("####\n80") == "80"
+    assert gsm8k.extract_resilient_answer("####$540") == "540"
+    assert gsm8k.extract_resilient_answer("#### -$540") == "-540"
+    assert gsm8k.extract_resilient_answer("#### $-540") == "-540"
+    assert gsm8k.extract_resilient_answer("####Answer: 540") == "540"
+    assert gsm8k.extract_resilient_answer(r"\boxed{\text{-$540}}") == "-540"
+    assert gsm8k.extract_resilient_answer(r"\boxed{\textbf{1,234.50}}") == "1234.50"
+    assert gsm8k.extract_resilient_answer("So the final answer is 42.") == "42"
+    assert gsm8k.extract_resilient_answer("The user has not provided a math problem.") is None
+    assert gsm8k.extract_resilient_answer("The final answer is not 42.") is None
+
+    three_rows = [
+        {"question": "What is 1 + 1?", "answer": "#### 2"},
+        {"question": "What is 2 + 2?", "answer": "#### 4"},
+        {"question": "What is 3 + 3?", "answer": "#### 6"},
+    ]
+    public, gold, _ = gsm8k.make_records(three_rows, [], shots=0)
+    report = gsm8k.score_gsm8k(
+        public,
+        gold,
+        [
+            {"instance_id": public[0]["instance_id"], "completion": "#### 2"},
+            {"instance_id": public[1]["instance_id"], "completion": "####$4"},
+            {
+                "instance_id": public[2]["instance_id"],
+                "completion": "The user has not provided a math problem.",
+            },
+        ],
+    )
+    assert report["strict_correct"] == 1 and report["resilient_correct"] == 2
+    assert report["strict_accuracy"] == pytest.approx(1 / 3)
+    assert report["accuracy"] == report["strict_accuracy"]
+    assert report["resilient_accuracy"] == pytest.approx(2 / 3)
+    assert report["resilient_metric_role"] == "diagnostic_only_same_predictions"
+    assert report["counts"]["invalid_answer"] == 2
+    assert report["resilient_counts"]["invalid_answer"] == 1
+    assert report["results"][1]["strict_parsed_answer"] is None
+    assert report["results"][1]["resilient_parsed_answer"] == "4"
+    assert report["results"][1]["resilient_status"] == "correct"
+
+    mcq_score = score_context_case(
+        {"task_type": "mcq"},
+        {"answer": "B"},
+        "B",
+        directory=None,
+        python_executable=None,
+        allow_execution=False,
+    )
+    gsm_score = score_context_case(
+        {"benchmark": "gsm8k"},
+        {"answer": "2"},
+        "####$2",
+        directory=None,
+        python_executable=None,
+        allow_execution=False,
+    )
+    assert gsm_score["primary_metric"] == "gsm8k_strict_accuracy"
+    assert mcq_report_metrics([gsm_score]) == {}
+    mcq_metrics = mcq_report_metrics([mcq_score, gsm_score])
+    assert mcq_metrics["primary_metric"] == "mcq_strict_accuracy"
+    assert mcq_metrics["mcq_scored_count"] == 1
+    assert mcq_metrics["strict_accuracy"] == 1.0
+    gsm_metrics = gsm8k_report_metrics([mcq_score, gsm_score])
+    assert gsm_metrics["primary_metric"] == "gsm8k_strict_accuracy"
+    assert gsm_metrics["gsm8k_scored_count"] == 1
+    assert gsm_metrics["strict_accuracy"] == 0.0
+    assert gsm_metrics["resilient_accuracy"] == 1.0

@@ -1,9 +1,10 @@
-"""V3 ten-model matrix training, evaluation, and notebook entry point."""
+"""Ten-model matrix training, evaluation, and notebook entry point."""
 
 from __future__ import annotations
 
 import copy
 import gc
+import hashlib
 import json
 import logging
 import random
@@ -15,53 +16,7 @@ from typing import Any
 import torch
 import torch.utils.checkpoint
 
-from bifocalgemma.config import CheckpointRef, ExperimentSpec
-from bifocalgemma.data.collator import RepairCollator
-from bifocalgemma.data.offline_sft import stable_fingerprint
-from bifocalgemma.data.releases import fetch_collection
-from bifocalgemma.evaluation.context import (
-    V2_EVALUATION_PROTOCOL,
-)
-from bifocalgemma.models.memory_efficient import (
-    configure_memory_efficient_training,
-)
-from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
-from bifocalgemma.training.curated_sft import prepare_curated_training
-from bifocalgemma.training.hub import (
-    RemoteHeartbeat,
-    benchmark_directory_name,
-    download_model,
-    recover_remote_run,
-    target_fingerprint,
-)
-from bifocalgemma.training.offline_sft import evaluate_sft_loss
-from bifocalgemma.training.policy import configure_policy_model, update_policy_learning_rates
-from bifocalgemma.training.recipes import unified_recipe
-from bifocalgemma.training.schedule import (
-    SharedSchedule,
-    build_shared_schedule,
-    persist_shared_schedule,
-)
-from bifocalgemma.training.source_identity import source_fingerprints
-from bifocalgemma.training.stages import (
-    StageLedger,
-    atomic_json,
-    latest_checkpoint,
-)
-from bifocalgemma.training.telemetry import TrainingDashboard
-from bifocalgemma.v3.attention import configure_full_rank_cross_attention
-from bifocalgemma.v3.benchmark import (
-    resolve_optimal_eval_batch_size,
-    run_batched_context_benchmark,
-)
-from bifocalgemma.v3.checkpoint import (
-    load_matrix_adapters_for_inference,
-    prune_matrix_checkpoints,
-    restore_matrix_checkpoint,
-    save_matrix_checkpoint,
-    synchronize_matrix_v3,
-)
-from bifocalgemma.v3.constants import (
+from bifocalgemma.config import (
     ACCUMULATION,
     BATCH_SIZE,
     BENCHMARKS,
@@ -72,37 +27,96 @@ from bifocalgemma.v3.constants import (
     DATASET_REVISION,
     MATRIX_MODELS,
     TOTAL_STEPS,
-    WARMUP_RATIO,
+    make_experiment_spec,
 )
-from bifocalgemma.v3.objectives import (
-    compute_v3_step_loss,
+from bifocalgemma.data.collator import RepairCollator
+from bifocalgemma.data.offline_sft import stable_fingerprint
+from bifocalgemma.data.releases import fetch_collection
+from bifocalgemma.evaluation.benchmark import (
+    resolve_optimal_eval_batch_size,
+    run_batched_context_benchmark,
+)
+from bifocalgemma.evaluation.context import V2_EVALUATION_PROTOCOL
+from bifocalgemma.evaluation.protocol import (
+    BENCHMARK_RESET_ID,
+    EFFECTIVE_BENCHMARK_PROTOCOL,
+    scorer_fingerprint,
+)
+from bifocalgemma.models.cross_attention import configure_full_rank_cross_attention
+from bifocalgemma.models.memory_efficient import (
+    configure_memory_efficient_training,
+)
+from bifocalgemma.training.benchmark_reset import reset_local_benchmarks
+from bifocalgemma.training.benchmark_upload import BenchmarkUploadQueue
+from bifocalgemma.training.checkpoint import (
+    load_matrix_adapters_for_inference,
+    prune_matrix_checkpoints,
+    restore_matrix_checkpoint,
+    save_matrix_checkpoint,
+    synchronize_matrix,
+)
+from bifocalgemma.training.curated_sft import prepare_curated_training
+from bifocalgemma.training.hub import (
+    RemoteHeartbeat,
+    benchmark_directory_name,
+    download_model,
+    recover_remote_run,
+    target_fingerprint,
+)
+from bifocalgemma.training.objectives import (
+    compute_step_loss,
     is_cross_bridge_parameter,
     resolve_diff_token_ids,
 )
-from bifocalgemma.v3.runtime import (
+from bifocalgemma.training.offline_sft import evaluate_sft_loss
+from bifocalgemma.training.policy import configure_policy_model, update_policy_learning_rates
+from bifocalgemma.training.recipes import unified_recipe
+from bifocalgemma.training.runtime import (
     ensure_hardware_memory_guards,
     patch_matrix_tokenization,
 )
-from bifocalgemma.v3.stage import configure_matrix_stage
+from bifocalgemma.training.schedule import (
+    ScheduleRecord,
+    SharedSchedule,
+    _digest,
+    build_shared_schedule,
+    persist_shared_schedule,
+)
+from bifocalgemma.training.source_identity import source_fingerprints
+from bifocalgemma.training.stage import configure_matrix_stage
+from bifocalgemma.training.stages import (
+    StageLedger,
+    atomic_json,
+    latest_checkpoint,
+)
+from bifocalgemma.training.telemetry import TrainingDashboard
 
 logger = logging.getLogger(__name__)
 
 
-def resolve_training_contract(spec, *, total_steps=None, stage1_steps=None, pool_directory=None) -> dict[str, Any]:
+def resolve_training_contract(
+    spec: Any, *, total_steps: int | None = None, stage1_steps: int | None = None, pool_directory: str | Path | None = None
+) -> dict[str, Any]:
     """Declare local supplements and pilots explicitly; never replace the pinned pool."""
     dataset = {"dataset_repo": DATASET_REPO, "dataset_revision": DATASET_REVISION, "collection": COLLECTION}
     updates = TOTAL_STEPS
     if pool_directory is not None:
         manifest = json.loads((Path(pool_directory) / "manifest.json").read_text(encoding="utf-8"))
-        if (manifest.get("format") != "bifocalgemma_curated_pool_v1"
-            or stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"}) != manifest.get("fingerprint")):
+        if (
+            manifest.get("format") != "bifocalgemma_curated_pool_v1"
+            or stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"})
+            != manifest.get("fingerprint")
+        ):
             raise ValueError("Local pool manifest integrity failed.")
         size = len(manifest["record_ids"]["train"])
         if size < 1:
             raise ValueError("Local training pool is empty.")
         updates = (size + BATCH_SIZE * ACCUMULATION - 1) // (BATCH_SIZE * ACCUMULATION)
-        dataset = {"dataset_repo": "local_curated_pool", "dataset_revision": manifest["fingerprint"],
-                   "collection": Path(pool_directory).name}
+        dataset = {
+            "dataset_repo": "local_curated_pool",
+            "dataset_revision": manifest["fingerprint"],
+            "collection": Path(pool_directory).name,
+        }
     total = updates if total_steps is None else total_steps
     if type(total) is not int or not 1 <= total <= updates:
         raise ValueError("total_steps must fit the positive one-pass training horizon.")
@@ -110,48 +124,6 @@ def resolve_training_contract(spec, *, total_steps=None, stage1_steps=None, pool
     if type(first) is not int or not 0 <= first <= total:
         raise ValueError("stage1_steps must fall within the total training horizon.")
     return {**dataset, "total_steps": total, "stage1_steps": first, "stage2_steps": total - first}
-
-
-def make_experiment_spec(model_key: str) -> ExperimentSpec:
-    if model_key not in MATRIX_MODELS:
-        raise ValueError(f"Unknown model_key {model_key!r}. Choose from {list(MATRIX_MODELS)}.")
-    cfg = MATRIX_MODELS[model_key]
-    decoder_ref = CheckpointRef(
-        model_id=cfg["decoder_id"],
-        revision=cfg["decoder_revision"],
-        size=cfg["decoder_size"],
-        role=cfg["decoder_role"],
-    )
-    if cfg["encoder_id"] is None:
-        return ExperimentSpec(
-            name=f"Baseline-{cfg['decoder_size']}-IT-{model_key}",
-            encoder=None,
-            decoder=decoder_ref,
-            attention_mode="causal",
-            tie_encoder_decoder_words=False,
-            training_recipe="direct_sft",
-            distillation=False,
-            share_ple=False,
-            architecture_version="normalized_merged_v2",
-        )
-    encoder_ref = CheckpointRef(
-        model_id=cfg["encoder_id"],
-        revision=cfg["encoder_revision"],
-        size=cfg["encoder_size"],
-        role=cfg["encoder_role"],
-    )
-    name = f"BifocalGemma-{cfg['encoder_size']}-{cfg['decoder_size']}-{model_key}"
-    return ExperimentSpec(
-        name=name,
-        encoder=encoder_ref,
-        decoder=decoder_ref,
-        attention_mode="merged",
-        tie_encoder_decoder_words=False,
-        training_recipe="direct_sft",
-        distillation=False,
-        share_ple=False,
-        architecture_version="normalized_merged_v2",
-    )
 
 
 def run_matrix_stage(
@@ -180,7 +152,7 @@ def run_matrix_stage(
     diff_token_ids: dict[str, tuple[int, ...]] | None = None,
     total_steps: int | None = None,
 ) -> dict[str, Any]:
-    """Execute one training stage (Stage 1 frozen or Stage 2 joint) with AdamW and batch=2."""
+    """Execute one training stage (Stage 1 frozen or Stage 2 joint) with continuous AdamW schedule."""
     ensure_hardware_memory_guards()
     run_dir = Path(run_dir).resolve()
     train_dir = run_dir / "training"
@@ -198,8 +170,13 @@ def run_matrix_stage(
     shared_schedule.validate_cursor(start_global_step + max_steps)
     persist_shared_schedule(train_dir / "shared_schedule.json", shared_schedule)
 
+    resolved_horizon = total_steps if total_steps is not None else (start_global_step + max_steps)
     groups, stage_summary = configure_matrix_stage(
-        model, policy, freeze_decoder=freeze_decoder, total_steps=max_steps
+        model,
+        policy,
+        freeze_decoder=freeze_decoder,
+        total_steps=resolved_horizon,
+        warmup_offset=start_global_step,
     )
     effective_freeze_decoder = stage_summary["freeze_decoder"]
     opt_cfg = policy.get("optimizer", {})
@@ -225,8 +202,11 @@ def run_matrix_stage(
 
     if resume_from_checkpoint is not None:
         restored = restore_matrix_checkpoint(
-            model, optimizer, Path(resume_from_checkpoint),
-            expected_compatibility=compatibility, expected_schedule=shared_schedule,
+            model,
+            optimizer,
+            Path(resume_from_checkpoint),
+            expected_compatibility=compatibility,
+            expected_schedule=shared_schedule,
             expected_stage=(stage_name, start_global_step, max_steps),
         )
         state = restored.get("training_state", {})
@@ -268,15 +248,19 @@ def run_matrix_stage(
             raise ValueError("Shared schedule window has no supervised target tokens.")
 
         active_diff_token_ids = getattr(model, "diff_token_ids", None) or diff_token_ids
-        def backward_window(batches):
+
+        def backward_window(batches: list[Any]) -> float:
             loss_value = 0.0
             for batch_cpu in batches:
                 batch = batch_cpu.to(device)
                 count = int((batch_cpu.labels != -100).sum())
                 scale = count / token_count
-                step_loss = compute_v3_step_loss(
-                    model, batch, stage_name=stage_name, diff_token_ids=active_diff_token_ids,
-                    token_weighting="uniform_target_v1",
+                step_loss = compute_step_loss(
+                    model,
+                    batch,
+                    stage_name=stage_name,
+                    diff_token_ids=active_diff_token_ids,
+                    token_weighting="diff_marker_v1",
                 )
                 if step_loss is None or not bool(torch.isfinite(step_loss)):
                     raise RuntimeError(f"Nonfinite loss at step {step + 1} (global {global_step})")
@@ -322,10 +306,17 @@ def run_matrix_stage(
         if not grads or not all(bool(torch.isfinite(g).all()) for g in grads):
             raise RuntimeError(f"Missing or nonfinite gradients at step {global_step}.")
 
-        grad_norm = float(
-            torch.nn.utils.clip_grad_norm_(trainable_params, clip_norm, foreach=False)
-        )
-        rates = update_policy_learning_rates(optimizer, step)
+        group_grad_norms: dict[str, float] = {}
+        for group in optimizer.param_groups:
+            group_params = [p for p in group["params"] if p.grad is not None]
+            if not group_params:
+                continue
+            group_name = str(group.get("name", "default"))
+            group_grad_norms[group_name] = float(
+                torch.nn.utils.clip_grad_norm_(group_params, clip_norm, foreach=False)
+            )
+        grad_norm = sum(v * v for v in group_grad_norms.values()) ** 0.5
+        rates = update_policy_learning_rates(optimizer, global_step - 1)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
 
@@ -342,6 +333,7 @@ def run_matrix_stage(
             "train_loss": mean_loss,
             "target_tokens": token_count,
             "gradient_norm": grad_norm,
+            "group_gradient_norms": group_grad_norms,
             "learning_rates": rates,
             "step_seconds": step_seconds,
             "batch_size": batch_size,
@@ -350,7 +342,11 @@ def run_matrix_stage(
             "schedule_signature": shared_schedule.signature,
             "example_cursor": shared_schedule.validate_cursor(global_step),
             "target_tokens_by_task": {
-                task: sum(len(item.target_ids) for item, record in zip(drawn_items, scheduled_records, strict=True) if record.task == task)
+                task: sum(
+                    len(item.target_ids)
+                    for item, record in zip(drawn_items, scheduled_records, strict=True)
+                    if record.task == task
+                )
                 for task in sorted({record.task for record in scheduled_records})
             },
             "examples_by_source": {
@@ -442,6 +438,305 @@ def run_matrix_stage(
     }
 
 
+def _schedule_signature_matches(train_dir: Path, expected_signature: Any) -> bool:
+    """Return True when the persisted schedule file matches and validates records against its signature."""
+    sched_file = train_dir / "shared_schedule.json"
+    if not isinstance(expected_signature, str) or not expected_signature or not sched_file.is_file():
+        return False
+    try:
+        sched_data = json.loads(sched_file.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(sched_data, dict):
+        return False
+    if sched_data.get("signature") != expected_signature:
+        return False
+    ordered_examples = sched_data.get("ordered_examples")
+    if not isinstance(ordered_examples, list) or not ordered_examples:
+        return False
+    if sched_data.get("total_examples") != len(ordered_examples):
+        return False
+    try:
+        for record in ordered_examples:
+            if not isinstance(record, dict):
+                return False
+            ScheduleRecord.from_mapping(record)
+        payload = {k: v for k, v in sched_data.items() if k != "signature"}
+        return _digest(payload) == expected_signature
+    except Exception:
+        return False
+
+
+def _latest_checkpoint_matches(
+    train_dir: Path,
+    *,
+    expected_step: int,
+    expected_signature: Any,
+    spec: Any,
+    model_key: str,
+    training_semantics_sha256: str,
+    resolved_total: int,
+    resolved_stage1: int,
+    resolved_stage2: int,
+) -> bool:
+    """Return True when the latest retained checkpoint matches the finished training identity."""
+    try:
+        ckpt = latest_checkpoint(train_dir)
+    except Exception:
+        return False
+    if not ckpt:
+        return False
+    manifest_path = Path(ckpt) / "manifest.json"
+    if not manifest_path.is_file():
+        return False
+    try:
+        meta = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    compat = meta.get("compatibility", {})
+    return (
+        meta.get("global_step") == expected_step
+        and compat.get("recipe_version") == CLEAN_RECIPE_VERSION
+        and compat.get("experiment") == spec.name
+        and compat.get("model_key") == model_key
+        and compat.get("model_spec") == spec.to_dict()
+        and compat.get("training_semantics_sha256") == training_semantics_sha256
+        and compat.get("schedule_signature") == expected_signature
+        and compat.get("total_steps") == resolved_total
+        and compat.get("stage1_steps") == resolved_stage1
+        and compat.get("stage2_steps") == resolved_stage2
+    )
+
+
+def _valid_safetensors_file(path: Path) -> bool:
+    """Return True when path is a non-empty readable safetensors file containing at least one tensor."""
+    if not path.is_file() or path.is_symlink():
+        return False
+    try:
+        if path.stat().st_size <= 0:
+            return False
+        from safetensors import safe_open
+
+        with safe_open(str(path), framework="pt", device="cpu") as handle:
+            return len(list(handle.keys())) > 0
+    except Exception:
+        return False
+
+
+def _local_standalone_export_valid(export_dir: Path) -> bool:
+    """Return True when export_dir contains valid config.json and safetensors weights or shards."""
+    config_path = export_dir / "config.json"
+    if not config_path.is_file() or config_path.is_symlink():
+        return False
+    try:
+        cfg_data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(cfg_data, dict) or not cfg_data:
+        return False
+    single_weights = export_dir / "model.safetensors"
+    if single_weights.exists():
+        return _valid_safetensors_file(single_weights)
+    index_path = export_dir / "model.safetensors.index.json"
+    if not index_path.is_file() or index_path.is_symlink():
+        return False
+    try:
+        index_data = json.loads(index_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    weight_map = index_data.get("weight_map") if isinstance(index_data, dict) else None
+    if not isinstance(weight_map, dict) or not weight_map:
+        return False
+    raw_shards = set(weight_map.values())
+    if not raw_shards or not all(isinstance(s, str) and s.strip() for s in raw_shards):
+        return False
+    resolved_root = export_dir.resolve()
+    for shard in sorted(raw_shards):
+        shard_path = (export_dir / shard).resolve()
+        if not shard_path.is_relative_to(resolved_root) or not _valid_safetensors_file(shard_path):
+            return False
+    return True
+
+
+def _standalone_export_exists(
+    export_dir: Path,
+    *,
+    upload: bool,
+    token: str | None,
+    repo: str,
+    subfolder: str,
+) -> bool:
+    """Require validated local weights and matching remote bytes when uploading.
+
+    A filename on the Hub cannot establish that an export is usable. Cold
+    recovery without local export evidence falls back to checkpoint restoration
+    and export instead of declaring the run complete from remote names alone.
+    """
+    local_valid = _local_standalone_export_valid(export_dir)
+    if not local_valid:
+        return False
+    if upload and token and repo:
+        try:
+            from huggingface_hub import HfApi
+
+            info = HfApi(token=token).model_info(repo, files_metadata=True)
+            remote_files = {entry.rfilename: entry for entry in info.siblings or []}
+            names = {"config.json"}
+            if (export_dir / "model.safetensors").is_file():
+                names.add("model.safetensors")
+            else:
+                names.add("model.safetensors.index.json")
+                index = json.loads((export_dir / "model.safetensors.index.json").read_text(encoding="utf-8"))
+                names.update(index["weight_map"].values())
+            for name in names:
+                path = export_dir / name
+                remote = remote_files.get(f"{subfolder}/pretrained_model/{name}")
+                if remote is None or remote.size != path.stat().st_size:
+                    return False
+                with path.open("rb") as stream:
+                    if remote.lfs is not None:
+                        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                        if digest != remote.lfs.sha256:
+                            return False
+                    else:
+                        # Non-LFS Hub metadata uses the Git blob object ID.
+                        blob = hashlib.sha1(usedforsecurity=False)
+                        blob.update(f"blob {remote.size}\0".encode("ascii"))
+                        while chunk := stream.read(1024 * 1024):
+                            blob.update(chunk)
+                        if blob.hexdigest() != remote.blob_id:
+                            return False
+            return True
+        except Exception:
+            return False
+    return True
+
+
+def _final_stage_info(spec: Any, resolved_stage2: int) -> tuple[str, str, str]:
+    """Return `(ledger_stage, checkpoint_stage, report_key)` for the run's final training stage."""
+    if spec.encoder is None:
+        return "full_decoder_sft", "full_decoder_sft", "stage1"
+    if resolved_stage2 > 0:
+        return "stage2_joint", "joint", "stage2"
+    return "stage1_frozen", "frozen_decoder", "stage1"
+
+
+def _backfill_final_stage(
+    ledger: StageLedger,
+    train_dir: Path,
+    *,
+    final_stage: str,
+    expected_ckpt_stage: str,
+    resolved_total: int,
+    stage_result: Any,
+) -> bool:
+    """Record a missing final stage receipt from an already-verified final checkpoint."""
+    try:
+        ckpt_path_str = latest_checkpoint(train_dir)
+    except Exception:
+        return False
+    if not ckpt_path_str:
+        return False
+    ckpt_dir = Path(ckpt_path_str)
+    manifest_path = ckpt_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return False
+    try:
+        ckpt_meta = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if ckpt_meta.get("global_step") != resolved_total or ckpt_meta.get("stage") != expected_ckpt_stage:
+        return False
+    ckpt_files = [p for p in ckpt_dir.glob("*") if p.is_file()]
+    if not ckpt_files:
+        return False
+    ledger.finish(final_stage, ckpt_files, stage_result)
+    return True
+
+
+def _reusable_training_report(
+    *,
+    root: Path,
+    train_dir: Path,
+    rep_file: Path,
+    ledger: StageLedger,
+    identity: dict[str, Any],
+    spec: Any,
+    model_key: str,
+    repo: str,
+    subfolder: str,
+    resolved_total: int,
+    resolved_stage1: int,
+    resolved_stage2: int,
+    force_fresh: bool,
+    standalone_repo_id: str | None,
+    upload: bool,
+    token: str | None,
+) -> dict[str, Any] | None:
+    """Return verified training_report.json payload when training + export are already complete."""
+    if force_fresh or (standalone_repo_id and standalone_repo_id.strip()):
+        return None
+    if not rep_file.is_file():
+        return None
+    final_stage, expected_ckpt_stage, report_stage_key = _final_stage_info(spec, resolved_stage2)
+    stage_completed = ledger.completed(final_stage)
+    stage_status = ledger.state.get("stages", {}).get(final_stage, {}).get("status")
+    if not stage_completed and stage_status == "FAILED":
+        return None
+    try:
+        report_meta = json.loads(rep_file.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(report_meta, dict):
+        return None
+    if (
+        report_meta.get("status") != "COMPLETED"
+        or report_meta.get("export_error") is not None
+        or report_meta.get("recipe_version") != CLEAN_RECIPE_VERSION
+        or report_meta.get("model_key") != model_key
+        or report_meta.get("spec") != spec.to_dict()
+        or report_meta.get("repo") != repo
+        or report_meta.get("subfolder") != subfolder
+        or report_meta.get("global_step") != resolved_total
+        or report_meta.get("training_semantics_sha256") != identity["training_semantics_sha256"]
+    ):
+        return None
+    schedule_sig = report_meta.get("schedule_signature")
+    if not _schedule_signature_matches(train_dir, schedule_sig):
+        return None
+    if not _latest_checkpoint_matches(
+        train_dir,
+        expected_step=resolved_total,
+        expected_signature=schedule_sig,
+        spec=spec,
+        model_key=model_key,
+        training_semantics_sha256=identity["training_semantics_sha256"],
+        resolved_total=resolved_total,
+        resolved_stage1=resolved_stage1,
+        resolved_stage2=resolved_stage2,
+    ):
+        return None
+    if not _standalone_export_exists(
+        root / "pretrained_model",
+        upload=upload,
+        token=token,
+        repo=repo,
+        subfolder=subfolder,
+    ):
+        return None
+    if not stage_completed:
+        if not _backfill_final_stage(
+            ledger,
+            train_dir,
+            final_stage=final_stage,
+            expected_ckpt_stage=expected_ckpt_stage,
+            resolved_total=resolved_total,
+            stage_result=report_meta.get(report_stage_key),
+        ):
+            return None
+    return report_meta
+
+
 def run_matrix_training(
     model_key: str,
     *,
@@ -466,8 +761,6 @@ def run_matrix_training(
     cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
     policy = unified_recipe(cfg["family"])
-    for grp_settings in policy.get("groups", {}).values():
-        grp_settings["warmup_ratio"] = WARMUP_RATIO
     repo = (
         (repo_id.strip() if repo_id and repo_id.strip() else None)
         or cfg.get("repo")
@@ -475,9 +768,12 @@ def run_matrix_training(
     )
     subfolder = cfg.get("subfolder", model_key)
 
-    contract = resolve_training_contract(spec, total_steps=total_steps, stage1_steps=stage1_steps,
-                                         pool_directory=pool_directory)
-    resolved_total, resolved_stage1, resolved_stage2 = (contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps"))
+    contract = resolve_training_contract(
+        spec, total_steps=total_steps, stage1_steps=stage1_steps, pool_directory=pool_directory
+    )
+    resolved_total, resolved_stage1, resolved_stage2 = (
+        contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps")
+    )
 
     root = (Path(output_root) / model_key / "train").resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -496,7 +792,7 @@ def run_matrix_training(
     legacy_ledger_file = root / "ledger.json"
     rep_file = train_dir / "training_report.json"
 
-    def wipe_stale_artifacts():
+    def wipe_stale_artifacts() -> None:
         for target in (train_dir, bench_dir):
             if target.is_symlink() or target.resolve().parent != root:
                 raise ValueError("Refusing to clear artifacts outside the selected run directory.")
@@ -571,7 +867,9 @@ def run_matrix_training(
             except Exception as _rec_exc:
                 logger.warning("Remote recovery skipped: %s", _rec_exc)
         if check_legacy_artifacts():
-            raise ValueError("Incompatible or corrupt training artifacts; choose a new output_root or explicitly force_fresh.")
+            raise ValueError(
+                "Incompatible or corrupt training artifacts; choose a new output_root or explicitly force_fresh."
+            )
 
     identity = {
         "format": "bifocalgemma_pipeline_v1",
@@ -606,7 +904,7 @@ def run_matrix_training(
         label="Checkpoint / results",
     )
 
-    def progress(event: dict[str, Any]):
+    def progress(event: dict[str, Any]) -> None:
         event = {
             **event,
             "upload_pending": queue.state.get("pending", False),
@@ -620,12 +918,12 @@ def run_matrix_training(
                 in {"training_completed", "benchmark_completed", "stage_completed"},
             )
 
-    def snapshot(*, final: bool = False):
+    def snapshot(*, final: bool = False) -> Any:
         if not upload or not token:
             return None
         queue.mark_pending()
         result = queue.attempt(
-            lambda: synchronize_matrix_v3(repo, root, prefix, token=token, require_checkpoint=True),
+            lambda: synchronize_matrix(repo, root, prefix, token=token, require_checkpoint=True),
             final=final,
         )
         if result and heartbeat:
@@ -654,6 +952,28 @@ def run_matrix_training(
         return result
 
     progress({"stage": "starting_training", "message": f"Starting {cfg['title']} ({model_key})"})
+
+    reusable_report = _reusable_training_report(
+        root=root,
+        train_dir=train_dir,
+        rep_file=rep_file,
+        ledger=ledger,
+        identity=identity,
+        spec=spec,
+        model_key=model_key,
+        repo=repo,
+        subfolder=subfolder,
+        resolved_total=resolved_total,
+        resolved_stage1=resolved_stage1,
+        resolved_stage2=resolved_stage2,
+        force_fresh=force_fresh,
+        standalone_repo_id=standalone_repo_id,
+        upload=upload,
+        token=token,
+    )
+    if reusable_report is not None:
+        progress({"stage": "training_completed", "step": resolved_total, "reused": True})
+        return reusable_report
 
     # Download model backbone
     model, provenance = download_model(spec, cache, token, progress)
@@ -687,10 +1007,13 @@ def run_matrix_training(
     shared_schedule = build_shared_schedule(
         manifest["schedule_records"],
         dataset_identity={
-            "repo": contract["dataset_repo"], "revision": contract["dataset_revision"],
-            "collection": contract["collection"], "pool_fingerprint": manifest["pool_fingerprint"],
+            "repo": contract["dataset_repo"],
+            "revision": contract["dataset_revision"],
+            "collection": contract["collection"],
+            "pool_fingerprint": manifest["pool_fingerprint"],
         },
-        seed=17, effective_batch=BATCH_SIZE * ACCUMULATION,
+        seed=17,
+        effective_batch=BATCH_SIZE * ACCUMULATION,
     )
     if resolved_total > shared_schedule.total_updates:
         raise ValueError("Training horizon exceeds the immutable one-pass schedule.")
@@ -731,7 +1054,7 @@ def run_matrix_training(
         "schedule_total_updates": shared_schedule.total_updates,
         "training_semantics_sha256": identity["training_semantics_sha256"],
         "sampling_policy": "shared_one_pass_without_replacement_v1",
-        "loss_policy": "uniform_target_v1",
+        "loss_policy": "diff_marker_v1",
         "training_policy": policy,
         "memory_policy": model.memory_policy,
         "total_steps": resolved_total,
@@ -756,7 +1079,12 @@ def run_matrix_training(
     if previous_report and previous_report.get("schedule_signature") != shared_schedule.signature:
         raise ValueError("Existing training report belongs to a different shared schedule.")
     stage1_report = previous_report.get("stage1")
+    if stage1_report is None:
+        stage1_key = "full_decoder_sft" if spec.encoder is None else "stage1_frozen"
+        stage1_report = ledger.state.get("stages", {}).get(stage1_key, {}).get("result")
     stage2_report = previous_report.get("stage2")
+    if stage2_report is None and spec.encoder is not None and resolved_stage2 > 0:
+        stage2_report = ledger.state.get("stages", {}).get("stage2_joint", {}).get("result")
     if spec.encoder is None:
         if current_global_step < resolved_total:
             progress(
@@ -881,9 +1209,28 @@ def run_matrix_training(
     if final_ckpt is not None:
         logger.info("Restoring latest trained checkpoint %s into model before export", final_ckpt)
         restore_matrix_checkpoint(
-            model=model, optimizer=None, checkpoint_dir=Path(final_ckpt),
-            expected_compatibility=compatibility, expected_schedule=shared_schedule,
+            model=model,
+            optimizer=None,
+            checkpoint_dir=Path(final_ckpt),
+            expected_compatibility=compatibility,
+            expected_schedule=shared_schedule,
         )
+        final_stage, expected_ckpt_stage, report_stage_key = _final_stage_info(
+            spec, resolved_stage2
+        )
+        if (
+            not ledger.completed(final_stage)
+            and ledger.state.get("stages", {}).get(final_stage, {}).get("status") != "FAILED"
+        ):
+            stage_payload = stage2_report if report_stage_key == "stage2" else stage1_report
+            _backfill_final_stage(
+                ledger,
+                train_dir,
+                final_stage=final_stage,
+                expected_ckpt_stage=expected_ckpt_stage,
+                resolved_total=resolved_total,
+                stage_result=stage_payload,
+            )
 
     # Export standalone Hugging Face PreTrainedModel artifact
     export_dir = root / "pretrained_model"
@@ -936,8 +1283,10 @@ def run_matrix_training(
         "schedule_total_examples": shared_schedule.total_examples,
         "schedule_total_updates": shared_schedule.total_updates,
         "realized_example_cursor": shared_schedule.validate_cursor(resolved_total),
-        "realized_id_order_sha256": stable_fingerprint(shared_schedule.ordered_ids[:shared_schedule.validate_cursor(resolved_total)]),
-        "loss_policy": "uniform_target_v1",
+        "realized_id_order_sha256": stable_fingerprint(
+            shared_schedule.ordered_ids[: shared_schedule.validate_cursor(resolved_total)]
+        ),
+        "loss_policy": "diff_marker_v1",
         "explicit_prefix_pilot": resolved_total < shared_schedule.total_updates,
         "training_semantics_sha256": identity["training_semantics_sha256"],
         "stage1": stage1_report,
@@ -982,14 +1331,19 @@ def run_matrix_benchmark(
     cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
     policy = unified_recipe(cfg["family"])
-    for grp_settings in policy.get("groups", {}).values():
-        grp_settings["warmup_ratio"] = WARMUP_RATIO
-    repo = (repo_id.strip() if repo_id and repo_id.strip() else None) or cfg["repo"]
+    repo = (
+        (repo_id.strip() if repo_id and repo_id.strip() else None)
+        or cfg.get("repo")
+        or CLEAN_DEFAULT_HF_REPO
+    )
     subfolder = cfg.get("subfolder", model_key)
 
-    contract = resolve_training_contract(spec, total_steps=total_steps, stage1_steps=stage1_steps,
-                                         pool_directory=pool_directory)
-    resolved_total, resolved_stage1, resolved_stage2 = (contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps"))
+    contract = resolve_training_contract(
+        spec, total_steps=total_steps, stage1_steps=stage1_steps, pool_directory=pool_directory
+    )
+    resolved_total, resolved_stage1, resolved_stage2 = (
+        contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps")
+    )
 
     root = (Path(output_root) / model_key / "train").resolve()
     prefix = f"{subfolder}/{spec.name}/train"
@@ -1014,6 +1368,8 @@ def run_matrix_benchmark(
             raise
         except Exception as _rec_exc:
             logger.warning("Remote benchmark recovery skipped: %s", _rec_exc)
+
+    reset_local_benchmarks(root, BENCHMARK_RESET_ID)
 
     identity = {
         "format": "bifocalgemma_pipeline_v1",
@@ -1047,17 +1403,17 @@ def run_matrix_benchmark(
         label="Benchmark upload",
     )
 
-    def progress(event: dict[str, Any]):
+    def progress(event: dict[str, Any]) -> None:
         dashboard(event)
         if heartbeat:
             heartbeat(event, force=event.get("stage") in {"benchmark_completed"})
 
-    def snapshot(*, final: bool = False):
+    def snapshot(*, final: bool = False) -> Any:
         if not upload or not token:
             return None
         queue.mark_pending()
         result = queue.attempt(
-            lambda: synchronize_matrix_v3(repo, root, prefix, token=token, require_checkpoint=True),
+            lambda: synchronize_matrix(repo, root, prefix, token=token, require_checkpoint=True),
             final=final,
         )
         if result and heartbeat:
@@ -1088,9 +1444,11 @@ def run_matrix_benchmark(
                     f"(expected {CLEAN_RECIPE_VERSION!r}). Training must be run with clean recipe."
                 )
             compat = m_data.get("compatibility", {})
-            if (compat.get("model_spec") != spec.to_dict()
+            if (
+                compat.get("model_spec") != spec.to_dict()
                 or compat.get("training_semantics_sha256") != identity["training_semantics_sha256"]
-                or m_data.get("global_step") != resolved_total):
+                or m_data.get("global_step") != resolved_total
+            ):
                 raise ValueError("Benchmark checkpoint does not match the completed training protocol.")
         except json.JSONDecodeError:
             raise ValueError(f"Corrupt manifest in {manifest_file}.")
@@ -1101,15 +1459,35 @@ def run_matrix_benchmark(
 
     reports = []
     missing_jobs = []
+    active_scorer_fp = scorer_fingerprint()
 
     for item in BENCHMARKS:
         settings = {
             "benchmark": item,
             "execution": True,
             "protocol": V2_EVALUATION_PROTOCOL,
+            "effective_protocol": EFFECTIVE_BENCHMARK_PROTOCOL,
+            "reset_id": BENCHMARK_RESET_ID,
+            "scorer_fingerprint": active_scorer_fp,
             "snapshot": "trained",
+            "checkpoint_identity": checkpoint_identity,
         }
         dest = root / "benchmarks" / benchmark_directory_name(settings)
+        stage_key = f"benchmark_{item['collection']}"
+        if not force_fresh and ledger.completed(stage_key, settings=settings):
+            report_file = dest / "benchmark_report.json"
+            if report_file.is_file():
+                try:
+                    reports.append(json.loads(report_file.read_text(encoding="utf-8")))
+                    logger.info("Skipping completed benchmark %s", item["collection"])
+                    continue
+                except Exception:
+                    pass
+            stage_result = ledger.state.get("stages", {}).get(stage_key, {}).get("result")
+            if isinstance(stage_result, dict):
+                reports.append(stage_result)
+                logger.info("Skipping completed benchmark %s via stage ledger", item["collection"])
+                continue
         missing_jobs.append((item, settings, dest))
 
     if not missing_jobs:
@@ -1122,7 +1500,7 @@ def run_matrix_benchmark(
             }
         )
         return {
-            "status": "COMPLETED",
+            "status": "COMPLETED" if not queue.state.get("pending") else "PENDING_UPLOAD",
             "model": spec.name,
             "repo": repo,
             "subfolder": subfolder,
@@ -1179,7 +1557,7 @@ def run_matrix_benchmark(
             report,
             settings=settings,
         )
-        snapshot(final=False)
+        snapshot(final=True)
 
     snapshot(final=True)
     progress(

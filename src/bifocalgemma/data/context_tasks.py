@@ -119,6 +119,19 @@ def task_prompt(row, *, paired):
     return prompt + row["instruction"] if paired else prompt + row["context"]
 
 
+def _resolve_eot_token_id(decoder) -> int | None:
+    """Resolve the closing turn delimiter (<turn|>), falling back to eos_token_id if absent."""
+    eot_token_id = decoder.convert_tokens_to_ids("<turn|>")
+    unk_token_id = getattr(decoder, "unk_token_id", None)
+    if (
+        not isinstance(eot_token_id, int)
+        or eot_token_id < 0
+        or (unk_token_id is not None and eot_token_id == unk_token_id)
+    ):
+        eot_token_id = getattr(decoder, "eos_token_id", None)
+    return eot_token_id if isinstance(eot_token_id, int) and eot_token_id >= 0 else None
+
+
 def tokenize_context_task(row, spec, encoder, decoder, *, encoder_limit, decoder_limit):
     context = row["context"]
     enc = tuple(encoder.encode(context, add_special_tokens=True)) if spec.encoder else ()
@@ -129,26 +142,21 @@ def tokenize_context_task(row, spec, encoder, decoder, *, encoder_limit, decoder
     target_text = row.get("target_text", row.get("target_patch"))
     if not isinstance(target_text, str) or not target_text:
         raise ValueError("empty_sft_target")
-    full = decoder.apply_chat_template(
-        messages + [{"role": "assistant", "content": target_text}],
-        tokenize=False,
-        add_generation_prompt=False,
-        enable_thinking=False,
-    )
     prefix_ids = tuple(decoder.encode(prefix, add_special_tokens=False))
-    full_ids = tuple(decoder.encode(full.rstrip(), add_special_tokens=False))
-    if full_ids[: len(prefix_ids)] != prefix_ids:
-        raise ValueError("prefix_target_boundary")
-    target = full_ids[len(prefix_ids) :]
+    eot_token_id = _resolve_eot_token_id(decoder)
+    # Encode target_text directly without apply_chat_template (which runs `| trim`) or
+    # `.rstrip()`, preserving leading indentation and trailing newlines verbatim.
+    target_body_ids = tuple(decoder.encode(target_text, add_special_tokens=False))
     if (
         not prefix_ids
         or prefix_ids[0] != decoder.bos_token_id
-        or not target
-        or target[-1] != decoder.convert_tokens_to_ids("<turn|>")
+        or eot_token_id is None
+        or not target_body_ids
         or (enc and enc[0] != encoder.bos_token_id)
     ):
         raise ValueError("context_task_special_tokens")
-    if len(enc) > encoder_limit or len(full_ids) - 1 > decoder_limit:
+    target = target_body_ids + (eot_token_id,)
+    if len(enc) > encoder_limit or len(prefix_ids) + len(target) - 1 > decoder_limit:
         raise ValueError("context_task_token_overflow")
     return TokenizedRepairExample(
         row["instance_id"],

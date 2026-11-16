@@ -1,13 +1,15 @@
-"""Shared model runtime plus the two architecture generations.
+"""Canonical BifocalGemma model modules.
 
 Layout:
-- `bifocalgemma.v3`            production V3 architecture and training stack.
-- `bifocalgemma.models.v2`     legacy V2 architecture (merged attention, linear bridge).
-- `memory_efficient.py`        tiling + gradient checkpointing shared by V2 and V3.
-- `inference_cache.py`         KV cache shared by V2 and V3.
+- `bridge.py`              SwiGLU dual-gate manifold bridge and normalized alignment.
+- `cross_attention.py`     Decoupled full-rank cross-attention and cached inference.
+- `embeddings.py`          Cross-component word embedding tying policy.
+- `memory_efficient.py`    Tiled attention, joint visibility, and gradient checkpointing.
+- `inference_cache.py`     Per-generation self KV and static cross KV cache.
+- `flex_attention.py`      Structured FlexAttention kernels.
+- `checkpoint_transfer.py` Text backbone weight transfer and local/adapter loaders.
 
-Keep this module free of architecture imports so that importing shared runtime
-never drags V2 or V3 into the process.
+Keep this module free of architecture imports so importing submodules stays lightweight.
 """
 
 __all__: list[str] = []

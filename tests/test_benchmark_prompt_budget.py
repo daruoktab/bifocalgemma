@@ -5,9 +5,8 @@ import json
 import pytest
 import torch
 
-from bifocalgemma.config import get_v2_experiment
+from bifocalgemma.config import MATRIX_MODELS, make_experiment_spec
 from bifocalgemma.evaluation.context import decoder_prompt, run_context_benchmark
-from bifocalgemma.training.v2 import MODELS
 
 
 class TextTokenizer:
@@ -24,7 +23,7 @@ class TextTokenizer:
         return "fixture"
 
 
-@pytest.mark.parametrize("key", list(MODELS))
+@pytest.mark.parametrize("key", list(MATRIX_MODELS))
 @pytest.mark.parametrize("task", ["repair", "completion", "mcq"])
 def test_shared_budget_uses_full_actual_prompt_without_architecture_specific_truncation(
     tmp_path, monkeypatch, key, task
@@ -63,7 +62,7 @@ def test_shared_budget_uses_full_actual_prompt_without_architecture_specific_tru
     monkeypatch.setattr(
         context, "score_context_case", lambda *a, **k: {"correct": True, "status": "SCORED"}
     )
-    spec = get_v2_experiment(MODELS[key][0])
+    spec = make_experiment_spec(key)
     report = run_context_benchmark(
         torch.nn.Linear(1, 1),
         spec,

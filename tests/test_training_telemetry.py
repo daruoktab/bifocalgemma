@@ -1,18 +1,40 @@
-import hashlib
-import io
 import json
-import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
+import marimo as mo
 import pytest
 import torch
+from marimo._ast.app import InternalApp
+from marimo._messaging.types import Stream
+from marimo._output.formatters.formatters import register_formatters
+from marimo._runtime.context import get_context, teardown_context
+from marimo._runtime.context.script_context import initialize_script_context
+from marimo._types.ids import CellId_t
 
 from bifocalgemma.training import timing
 from bifocalgemma.training.offline_sft import fit_offline_sft
 from bifocalgemma.training.source_identity import source_fingerprints
 from bifocalgemma.training.wiggly_dashboard import WigglyDashboard
 from tests.test_offline_sft_training import TinyLossModel, examples
-from tools.runtime_bootstrap import load_runtime
+
+
+class _SilentStream(Stream):
+    def write(self, data):
+        pass
+
+
+@contextmanager
+def _widget_runtime():
+    register_formatters()
+    initialize_script_context(InternalApp(mo.App()), _SilentStream(), __file__)
+    context = get_context()
+    try:
+        with context.with_cell_id(CellId_t("telemetry_view")):
+            yield
+    finally:
+        context.cell_lifecycle_registry.dispose(CellId_t("telemetry_view"), deletion=True)
+        teardown_context()
 
 
 def test_clock_counts_active_sessions_not_downtime_or_checkpoint_twice(tmp_path, monkeypatch):
@@ -106,66 +128,37 @@ def test_semantic_identity_allows_comments_and_ui_but_rejects_model_changes(tmp_
     )
 
 
-def test_widgets_update_in_place_and_restore_history_without_duplicate_points(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr("wigglystuff.html._in_notebook", lambda: True)
-    dashboard = WigglyDashboard(None, refresh_seconds=0)
-    dashboard(
-        {
-            "stage": "run_started",
-            "run_dir": str(tmp_path),
-            "max_steps": 10,
-            "history": [{"step": 1, "train_loss": 0.9}],
-        }
-    )
-    identities = tuple(id(w) for w in (dashboard.loss, dashboard.cards, dashboard.progress_bar))
-    dashboard({"stage": "optimizer_step_complete", "step": 2, "train_loss": 0.7})
-    dashboard(
-        {
-            "stage": "validation_complete",
-            "step": 2,
-            "dev_loss": 0.6,
-            "eval": {"by_source": {"fixture": {"loss": 0.6, "supervised_tokens": 5}}},
-        }
-    )
-    dashboard({"stage": "checkpoint_complete", "step": 2, "max_steps": 10})
-    assert identities == tuple(
-        id(w) for w in (dashboard.loss, dashboard.cards, dashboard.progress_bar)
-    )
-    assert len(dashboard.loss.data) == 3
-    assert dashboard.progress_bar.value == 2
-    assert dashboard.ui_error is None
-    json.dumps(dashboard.loss.spec, allow_nan=False)
-    assert dashboard.table.data["children"]
-    dashboard({"stage": "failed", "error": "<script>bad</script>", "error_type": "OOM"})
-    assert "<script>bad</script>" not in dashboard.activity.html
-    assert (tmp_path / "monitor.html").is_file()
-
-
-@pytest.mark.parametrize("entry", ["src/bifocalgemma/__init__.py", "../../escape.py"])
-def test_runtime_loader_pins_bytes_and_rejects_unsafe_paths(tmp_path, monkeypatch, entry):
-    monkeypatch.chdir(tmp_path)
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        archive.writestr(entry, "# fixture\n")
-    data = buffer.getvalue()
-    requests = []
-
-    def download(url, **kwargs):
-        requests.append(url)
-        return io.BytesIO(data)
-
-    monkeypatch.setattr("urllib.request.urlopen", download)
-    digest = hashlib.sha256(data).hexdigest()
-    if ".." in entry:
-        with pytest.raises(ValueError, match="unsafe path"):
-            load_runtime("fixture/assets", "runtime.zip", "a" * 40, digest)
-        assert not (tmp_path / "escape.py").exists()
-    else:
-        root = load_runtime("fixture/assets", "runtime.zip", "a" * 40, digest)
-        assert (root / entry).is_file() and "a" * 40 in requests[0]
-        load_runtime("fixture/assets", "runtime.zip", "a" * 40, digest)
-        assert len(requests) == 1
-    with pytest.raises(ValueError, match="checksum mismatch"):
-        load_runtime("fixture/assets", "runtime.zip", "a" * 40, "0" * 64)
+def test_widgets_update_in_place_and_restore_history_without_duplicate_points(tmp_path):
+    with _widget_runtime():
+        dashboard = WigglyDashboard(mo, refresh_seconds=0)
+        dashboard(
+            {
+                "stage": "run_started",
+                "run_dir": str(tmp_path),
+                "max_steps": 10,
+                "history": [{"step": 1, "train_loss": 0.9}],
+            }
+        )
+        dashboard.layout()
+        identities = tuple(id(w) for w in (dashboard.loss, dashboard.cards, dashboard.progress_bar))
+        dashboard({"stage": "optimizer_step_complete", "step": 2, "train_loss": 0.7})
+        dashboard(
+            {
+                "stage": "validation_complete",
+                "step": 2,
+                "dev_loss": 0.6,
+                "eval": {"by_source": {"fixture": {"loss": 0.6, "supervised_tokens": 5}}},
+            }
+        )
+        dashboard({"stage": "checkpoint_complete", "step": 2, "max_steps": 10})
+        assert identities == tuple(
+            id(w) for w in (dashboard.loss, dashboard.cards, dashboard.progress_bar)
+        )
+        assert len(dashboard.loss.data) == 3
+        assert dashboard.progress_bar.value == 2
+        assert dashboard.ui_error is None
+        json.dumps(dashboard.loss.spec, allow_nan=False)
+        assert dashboard.table.data["children"]
+        dashboard({"stage": "failed", "error": "<script>bad</script>", "error_type": "OOM"})
+        assert "<script>bad</script>" not in dashboard.activity.html
+        assert (tmp_path / "monitor.html").is_file()

@@ -1,15 +1,13 @@
-"""Two-stage optimizer, freezing, and warmup configuration."""
+"""Two-stage optimizer, freezing, and continuous cosine warmup configuration."""
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
+from bifocalgemma.config import WARMUP_RATIO
 from bifocalgemma.training.memory_probe import ProbeLoRALinear
-from bifocalgemma.v3.constants import (
-    WARMUP_RATIO,
-)
-from bifocalgemma.v3.objectives import (
+from bifocalgemma.training.objectives import (
     is_cross_bridge_parameter,
     is_zero_weight_decay_bridge_parameter,
 )
@@ -21,13 +19,19 @@ def configure_matrix_stage(
     *,
     freeze_decoder: bool,
     total_steps: int,
+    warmup_offset: int = 0,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Configure trainable groups for Stage 1 (frozen decoder on paired models) or Stage 2 (joint SFT).
 
-    Enforces V3 partitioned weight decay: 1e-4 on bridge linear weights, 0.0 on RMSNorm/calibration/cross-attn/LoRA.
+    Enforces partitioned weight decay: 1e-4 on bridge linear weights, 0.0 on RMSNorm/calibration/cross-attn/LoRA.
+    When `warmup_offset > 0` on a paired Stage 2 run, `encoder` and `alignment` continue their
+    cosine schedule from step 0 across `total_steps`, while the newly unfrozen `decoder` group
+    uses `warmup_offset` so its warmup and cosine decay span the Stage 2 horizon without an LR spike.
     """
     if total_steps < 1:
         raise ValueError("Stage horizon must be a positive integer.")
+    if warmup_offset < 0 or warmup_offset >= total_steps:
+        raise ValueError("warmup_offset must lie in [0, total_steps).")
     default_scaling = policy["alpha"] / policy["rank"]
     has_encoder = getattr(model, "encoder", None) is not None
     effective_freeze_decoder = freeze_decoder and has_encoder
@@ -79,10 +83,14 @@ def configure_matrix_stage(
         if not entries[group_name]:
             raise ValueError(f"Empty trainable group in matrix stage: {group_name}")
         settings = policy["groups"][group_name]
-        raw_warmup_ratio = settings.get("warmup_ratio", WARMUP_RATIO)
-        warmup_ratio = WARMUP_RATIO if raw_warmup_ratio == 0.03 else float(raw_warmup_ratio)
+        warmup_ratio = float(settings.get("warmup_ratio", WARMUP_RATIO))
+        group_offset = (
+            warmup_offset if (group_name == "decoder" and has_encoder and warmup_offset > 0) else 0
+        )
+        effective_horizon = max(1, total_steps - group_offset)
         warmup_steps = min(
-            total_steps, max(settings.get("warmup_steps", 0), math.ceil(total_steps * warmup_ratio))
+            effective_horizon,
+            max(settings.get("warmup_steps", 0), math.ceil(effective_horizon * warmup_ratio)),
         )
         if group_name == "alignment":
             bridge_decay_entries = [
@@ -110,6 +118,7 @@ def configure_matrix_stage(
                         "lr": settings["lr"],
                         "base_lr": settings["lr"],
                         "warmup_steps": warmup_steps,
+                        "warmup_offset": group_offset,
                         "scheduler": settings.get("scheduler", "cosine"),
                         "total_steps": total_steps,
                         "warmup_ratio": warmup_ratio,
@@ -126,6 +135,7 @@ def configure_matrix_stage(
                         "lr": settings["lr"],
                         "base_lr": settings["lr"],
                         "warmup_steps": warmup_steps,
+                        "warmup_offset": group_offset,
                         "scheduler": settings.get("scheduler", "cosine"),
                         "total_steps": total_steps,
                         "warmup_ratio": warmup_ratio,
@@ -142,6 +152,7 @@ def configure_matrix_stage(
                     "lr": settings["lr"],
                     "base_lr": settings["lr"],
                     "warmup_steps": warmup_steps,
+                    "warmup_offset": group_offset,
                     "scheduler": settings.get("scheduler", "cosine"),
                     "total_steps": total_steps,
                     "warmup_ratio": warmup_ratio,
@@ -162,3 +173,6 @@ def configure_matrix_stage(
         ),
     }
     return groups, summary
+
+
+configure_training_stage = configure_matrix_stage

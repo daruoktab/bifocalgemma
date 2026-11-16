@@ -21,8 +21,8 @@ if str(ROOT / "src") not in sys.path:
 
 from bifocalgemma.contracts import TokenizedRepairExample  # noqa: E402
 from bifocalgemma.inference.generation import greedy_decode  # noqa: E402
+from bifocalgemma.modeling_bifocalgemma import NativeTinyModel  # noqa: E402
 from bifocalgemma.models.memory_efficient import configure_memory_efficient_training  # noqa: E402
-from bifocalgemma.models.v2.native import NativeTinyModel  # noqa: E402
 from bifocalgemma.training.hub import checked_prefix  # noqa: E402
 from bifocalgemma.training.policy import configure_policy_model  # noqa: E402
 from bifocalgemma.training.recipes import unified_recipe  # noqa: E402
@@ -294,8 +294,14 @@ def test_embedded_bundle_can_be_extracted_and_contains_matrix_support(model_key)
         assert "LICENSE" in namelist
         assert "src/bifocalgemma/__init__.py" in namelist
         assert "src/bifocalgemma/config.py" in namelist
+        assert "src/bifocalgemma/models/bridge.py" in namelist
+        assert "src/bifocalgemma/models/cross_attention.py" in namelist
         assert "src/bifocalgemma/models/memory_efficient.py" in namelist
+        assert "src/bifocalgemma/training/matrix.py" in namelist
         assert "src/bifocalgemma/training/wiggly_dashboard.py" in namelist
+        assert "src/bifocalgemma/evaluation/benchmark.py" in namelist
+        assert not any(name.startswith("src/bifocalgemma/v3/") for name in namelist)
+        assert not any(name.startswith("src/bifocalgemma/models/v2/") for name in namelist)
 
 
 @pytest.mark.parametrize("model_key", ["2base-2it", "4base-2it", "2base-4it", "e2b-it"])
@@ -327,7 +333,8 @@ def test_configure_full_rank_cross_attention_v3_specs(model_key):
 
 def test_swiglu_dual_gate_bridge_symmetric_and_asymmetric_shapes_and_grads():
     sym_bridge = SwiGLUDualGateBridge(64, 64, init_rms_scale=1.25)
-    assert isinstance(sym_bridge.w_res, torch.nn.Identity)
+    assert isinstance(sym_bridge.w_res, torch.nn.Linear)
+    torch.testing.assert_close(sym_bridge.w_res.weight.detach(), torch.eye(64), atol=1e-6, rtol=0)
     assert sym_bridge.w_gate.out_features == 64  # d_mid == max(d_enc, d_dec)
     assert sym_bridge.gamma_calib.shape == (64,)  # 1D per-channel calibration gain vector
     x_sym = torch.randn(2, 16, 64, requires_grad=True)
@@ -357,7 +364,7 @@ def test_v3_critical_attention_beta_and_triton_tile_clamping():
     assert math.isclose(beta_32k, 0.1 * math.log(32768 / 2048) + 1.0, rel_tol=1e-6)
     assert beta_32k > 1.25
 
-    # Per-row critical attention temperature divides cross-queries by beta_N (softening, not sharpening)
+    # Per-row critical attention temperature multiplies cross-queries by beta_N
     q_cross = torch.ones((2, 4, 3, 8), dtype=torch.float32)
     enc_valid = torch.zeros((2, 4096), dtype=torch.bool)
     enc_valid[0, :4096] = True  # N_enc = 4096 -> beta > 1.0
@@ -365,7 +372,7 @@ def test_v3_critical_attention_beta_and_triton_tile_clamping():
     scaled_q = _compute_per_row_cross_query(q_cross, enc_valid, 4096)
     expected_beta_0 = critical_attention_beta(4096)
     assert torch.allclose(
-        scaled_q[0], torch.full_like(scaled_q[0], 1.0 / expected_beta_0), atol=1e-6
+        scaled_q[0], torch.full_like(scaled_q[0], expected_beta_0), atol=1e-6
     )
     assert torch.allclose(scaled_q[1], torch.ones_like(scaled_q[1]), atol=1e-6)
 
@@ -522,6 +529,39 @@ def test_prepare_sampled_benchmark_collection_deterministic_100_cases(tmp_path):
     assert len(rows_1) == 100
     assert [r["instance_id"] for r in rows_1] == [g["instance_id"] for g in gold_1]
     assert [r["instance_id"] for r in rows_1] == [r["instance_id"] for r in rows_2]
+
+    # Mutating source inputs or gold invalidates cached sampled JSONLs instead of serving stale data
+    target_id = rows_1[0]["instance_id"]
+    updated_inputs = [
+        {**row, "context": f"{row['context']}  # updated"}
+        if row["instance_id"] == target_id
+        else row
+        for row in (
+            json.loads(line)
+            for line in (src_dir / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+        )
+    ]
+    (src_dir / "inputs.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in updated_inputs) + "\n", encoding="utf-8"
+    )
+    refreshed = prepare_sampled_benchmark_collection(src_dir, sample_limit=100, sample_seed=17)
+    refreshed_rows = [
+        json.loads(line)
+        for line in (refreshed / "inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert refreshed_rows[0]["context"].endswith("# updated")
+
+    # Mutating cached sampled gold on disk also forces refresh
+    gold_lines = (refreshed / "hidden_gold.jsonl").read_text(encoding="utf-8").splitlines()
+    tampered_gold = json.loads(gold_lines[0])
+    tampered_gold["reference"] = "tampered"
+    gold_lines[0] = json.dumps(tampered_gold)
+    (refreshed / "hidden_gold.jsonl").write_text("\n".join(gold_lines) + "\n", encoding="utf-8")
+    repaired = prepare_sampled_benchmark_collection(src_dir, sample_limit=100, sample_seed=17)
+    repaired_gold_0 = json.loads(
+        (repaired / "hidden_gold.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert repaired_gold_0["reference"] != "tampered"
 
 
 def test_resolve_optimal_eval_batch_size_scales_with_model_and_benchmark_weight():
@@ -780,7 +820,7 @@ def test_cached_uncached_and_batched_greedy_decode_equivalence():
         assert base_batched[b_idx].token_ids == base_singles[b_idx].token_ids
 
 
-def test_synchronize_matrix_v3_retains_stage1_milestone_and_retries_412_contention(
+def test_synchronize_matrix_retains_stage1_milestone_and_retries_412_contention(
     tmp_path, monkeypatch
 ):
     from types import SimpleNamespace
@@ -788,7 +828,9 @@ def test_synchronize_matrix_v3_retains_stage1_milestone_and_retries_412_contenti
     import huggingface_hub
     from huggingface_hub.errors import HfHubHTTPError
 
-    from tools.molab_matrix_support import synchronize_matrix_v3
+    from tools.molab_matrix_support import synchronize_matrix, synchronize_matrix_v3
+
+    assert synchronize_matrix is synchronize_matrix_v3
 
     run_dir = tmp_path / "run"
     train_dir = run_dir / "training"
@@ -861,7 +903,7 @@ def test_synchronize_matrix_v3_retains_stage1_milestone_and_retries_412_contenti
     monkeypatch.setattr(huggingface_hub, "HfApi", FakeHfApi)
     monkeypatch.setattr(huggingface_hub, "hf_hub_download", fake_download)
 
-    res = synchronize_matrix_v3(
+    res = synchronize_matrix(
         CENTRALIZED_HF_REPO,
         run_dir,
         prefix,
@@ -1234,15 +1276,16 @@ def test_fast_training_config_and_pipeline_baseline_single_stage(tmp_path):
 
 
 def test_matrix_baseline_single_stage_resolution(tmp_path):
-    from bifocalgemma.training.recipes import unified_recipe
-    from bifocalgemma.training.stages import StageLedger
-    from bifocalgemma.v3.constants import (
+    from bifocalgemma.config import (
         CLEAN_RECIPE_VERSION,
+        MATRIX_MODELS,
         STAGE1_STEPS,
         STAGE2_STEPS,
         TOTAL_STEPS,
+        make_experiment_spec,
     )
-    from bifocalgemma.v3.matrix import MATRIX_MODELS, make_experiment_spec
+    from bifocalgemma.training.recipes import unified_recipe
+    from bifocalgemma.training.stages import StageLedger
 
     # 1. Baseline specs have encoder=None
     for base_key in ("e2b-it", "e4b-it"):

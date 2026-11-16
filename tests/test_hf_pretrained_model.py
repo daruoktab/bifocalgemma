@@ -1,34 +1,24 @@
-"""Tests for BifocalGemma HF PreTrainedModel V3 FP32 bridge & cross-attention invariants."""
+"""Tests for BifocalGemma HF PreTrainedModel FP32 bridge & cross-attention invariants."""
 
 from __future__ import annotations
 
-import importlib.metadata
+import json
 import math
+from pathlib import Path
 from typing import Any, cast
 
+import pytest
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-_real_version = importlib.metadata.version
-
-
-def _compat_version(distribution_name: str) -> str:
-    if distribution_name == "transformers":
-        return "5.22.1"
-    return _real_version(distribution_name)
-
-
-setattr(importlib.metadata, "version", _compat_version)
-
-import bifocalgemma.models.v2.native  # noqa: E402
-
-setattr(bifocalgemma.models.v2.native, "version", _compat_version)
-
-from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig  # noqa: E402
-from bifocalgemma.modeling_bifocalgemma import BifocalGemmaForCausalLM  # noqa: E402
-from bifocalgemma.training.memory_probe import ProbeLoRALinear  # noqa: E402
-from bifocalgemma.v3.attention import Bf16FullLinear, FullCrossTiledAttention  # noqa: E402
-from bifocalgemma.v3.bridge import SwiGLUDualGateBridge  # noqa: E402
-from bifocalgemma.v3.objectives import is_cross_bridge_parameter  # noqa: E402
+from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
+from bifocalgemma.contracts import Seq2SeqBatch
+from bifocalgemma.modeling_bifocalgemma import BifocalGemmaForCausalLM
+from bifocalgemma.models.bridge import SwiGLUDualGateBridge
+from bifocalgemma.models.cross_attention import Bf16FullLinear, FullCrossTiledAttention
+from bifocalgemma.training.memory_probe import ProbeLoRALinear
+from bifocalgemma.training.objectives import is_cross_bridge_parameter
 
 
 def test_model_to_bfloat16_preserves_fp32_master_weights():
@@ -90,7 +80,7 @@ def test_model_to_bfloat16_preserves_fp32_master_weights():
             torch.full_like(cross_gate, expected_gate_init),
             atol=1e-4,
         )
-        assert not bool(torch.all(cross_gate_proj == 0.0))
+        assert torch.all(cross_gate_proj == 0.0)
 
         if not attn.is_kv_shared_layer:
             cross_k_proj = cast(Bf16FullLinear, attn.cross_k_proj)
@@ -176,10 +166,18 @@ def test_bfloat16_forward_backward_gradient_flow_and_optimizer_step():
     assert bridge.gamma_calib.grad.dtype == torch.float32
     assert bridge.gamma_calib.grad.abs().sum().item() > 0.0
 
+    cross_gate_proj = cast(torch.Tensor, first_attn.cross_gate_proj)
+    assert cross_gate_proj.grad is not None
+    assert cross_gate_proj.grad.dtype == torch.float32
+    assert cross_gate_proj.grad.abs().sum().item() > 0.0
+
+    cross_gate_proj_before = cross_gate_proj.detach().clone()
+
     # Optimizer step produces parameter updates
     optimizer.step()
 
     assert not torch.equal(cross_gate, cross_gate_before)
+    assert not torch.equal(cross_gate_proj, cross_gate_proj_before)
     assert not torch.equal(cross_k_proj.weight, cross_k_weight_before)
     assert not torch.equal(bridge.gamma_calib, gamma_calib_before)
 
@@ -187,3 +185,149 @@ def test_bfloat16_forward_backward_gradient_flow_and_optimizer_step():
     assert cross_gate.dtype == torch.float32
     assert cross_k_proj.weight.dtype == torch.float32
     assert bridge.gamma_calib.dtype == torch.float32
+
+
+def test_bridge_init_preserved_across_post_init():
+    """SwiGLUDualGateBridge eye_/orthogonal_/w_down init and zeros cross_gate_proj survive post_init()."""
+    torch.manual_seed(7)
+    sym = BifocalGemmaForCausalLM(
+        BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    )
+    sym_bridge = cast(SwiGLUDualGateBridge, sym.encoder_projection)
+    assert isinstance(sym_bridge.w_res, nn.Linear)
+    torch.testing.assert_close(
+        sym_bridge.w_res.weight.detach(),
+        torch.eye(sym_bridge.d_enc, dtype=sym_bridge.w_res.weight.dtype),
+        atol=1e-6,
+        rtol=0,
+    )
+    expected_std = 0.05 / math.sqrt(sym_bridge.d_mid)
+    assert abs(sym_bridge.w_down.weight.std().item() - expected_std) < 0.005
+
+    asym = BifocalGemmaForCausalLM(
+        BifocalGemmaConfig(encoder_size="E4B", decoder_size="E2B", tiny=True)
+    )
+    asym_bridge = cast(SwiGLUDualGateBridge, asym.encoder_projection)
+    assert isinstance(asym_bridge.w_res, nn.Linear)
+    w = asym_bridge.w_res.weight.detach()
+    gram = w @ w.T if w.shape[0] <= w.shape[1] else w.T @ w
+    torch.testing.assert_close(gram, torch.eye(gram.shape[0], dtype=gram.dtype), atol=1e-5, rtol=0)
+    asym_expected_std = 0.05 / math.sqrt(asym_bridge.d_mid)
+    assert abs(asym_bridge.w_down.weight.std().item() - asym_expected_std) < 0.005
+    first_attn = cast(FullCrossTiledAttention, cast(Any, asym.decoder).layers[0].self_attn)
+    assert torch.all(cast(torch.Tensor, first_attn.cross_gate_proj) == 0.0)
+
+
+def test_from_pretrained_raises_file_not_found_when_weights_missing(tmp_path: Path):
+    cfg = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    empty_dir = tmp_path / "missing_weights"
+    empty_dir.mkdir()
+    cfg.to_json_file(empty_dir / "config.json")
+    with pytest.raises(FileNotFoundError):
+        BifocalGemmaForCausalLM.from_pretrained(empty_dir)
+
+    sharded_missing = tmp_path / "missing_shard"
+    sharded_missing.mkdir()
+    cfg.to_json_file(sharded_missing / "config.json")
+    (sharded_missing / "model.safetensors.index.json").write_text(
+        json.dumps({"weight_map": {"lm_head.weight": "model-00001-of-00001.safetensors"}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(FileNotFoundError):
+        BifocalGemmaForCausalLM.from_pretrained(sharded_missing)
+
+
+def test_forward_prompt_masked_labels_shift_and_noncontiguous_forward_loss():
+    torch.manual_seed(13)
+    cfg = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    model = BifocalGemmaForCausalLM(cfg).eval()
+    enc_ids = torch.randint(5, 50, (2, 4))
+    dec_ids = torch.randint(5, 50, (2, 5))
+    labels = dec_ids.clone()
+    labels[:, :2] = -100
+
+    out = model(input_ids=dec_ids, encoder_input_ids=enc_ids, labels=labels)
+    expected = F.cross_entropy(
+        out.logits[:, :-1].float().reshape(-1, cfg.vocab_size),
+        labels[:, 1:].reshape(-1),
+        ignore_index=-100,
+    )
+    torch.testing.assert_close(out.loss, expected, atol=1e-5, rtol=1e-5)
+
+    noncontig_labels = labels[:, 1:]
+    assert not noncontig_labels.is_contiguous()
+    batch = Seq2SeqBatch(
+        encoder_input_ids=enc_ids,
+        encoder_attention_mask=torch.ones_like(enc_ids, dtype=torch.bool),
+        decoder_input_ids=dec_ids[:, :-1],
+        decoder_attention_mask=torch.ones_like(dec_ids[:, :-1], dtype=torch.bool),
+        labels=noncontig_labels,
+    )
+    loss_out = model.forward_loss(batch)
+    torch.testing.assert_close(loss_out.loss, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_generate_multi_eos_per_row_stopping_and_cache_parity(monkeypatch: pytest.MonkeyPatch):
+    torch.manual_seed(29)
+    cfg = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    model = BifocalGemmaForCausalLM(cfg).eval()
+    enc_ids = torch.randint(5, 50, (2, 4))
+    input_ids = torch.tensor([[0, 0, 2, 10], [2, 11, 12, 13]])
+    attn_mask = torch.tensor([[False, False, True, True], [True, True, True, True]])
+
+    cached = model.generate(
+        input_ids=input_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=attn_mask,
+        max_new_tokens=5,
+        use_cache=True,
+    )
+    uncached = model.generate(
+        input_ids=input_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=attn_mask,
+        max_new_tokens=5,
+        use_cache=False,
+    )
+    assert torch.equal(cached, uncached)
+
+    step_counter = [0]
+    orig_forward = model.lm_head.forward
+
+    def scripted_head(hidden: torch.Tensor) -> torch.Tensor:
+        logits = orig_forward(hidden).zero_()
+        step = step_counter[0]
+        step_counter[0] += 1
+        if step == 0:
+            logits[0, -1, 106] = 10.0
+            logits[1, -1, 25] = 10.0
+        elif step == 1:
+            logits[0, -1, 99] = 10.0
+            logits[1, -1, 50] = 10.0
+        else:
+            logits[:, -1, 77] = 10.0
+        return logits
+
+    monkeypatch.setattr(model.lm_head, "forward", scripted_head)
+    gen_cached = model.generate(
+        input_ids=input_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=attn_mask,
+        max_new_tokens=5,
+        pad_token_id=0,
+        eos_token_id=[1, 106, 50],
+        use_cache=True,
+    )
+    assert gen_cached[:, 4:].tolist() == [[106, 0], [25, 50]]
+
+    step_counter[0] = 0
+    gen_uncached = model.generate(
+        input_ids=input_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=attn_mask,
+        max_new_tokens=5,
+        pad_token_id=0,
+        eos_token_id=[1, 106, 50],
+        use_cache=False,
+    )
+    assert torch.equal(gen_cached, gen_uncached)

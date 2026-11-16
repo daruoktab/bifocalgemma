@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 import torch
 
+from bifocalgemma.config import BENCHMARKS, MATRIX_MODELS, make_experiment_spec
 from bifocalgemma.evaluation.context import score_context_case
 from bifocalgemma.evaluation.protocol import (
     build_effective_benchmark_spec,
@@ -14,8 +15,6 @@ from bifocalgemma.evaluation.protocol import (
     mcq_report_metrics,
     scorer_fingerprint,
 )
-from bifocalgemma.v3.constants import BENCHMARKS, MATRIX_MODELS
-from bifocalgemma.v3.matrix import make_experiment_spec
 
 
 @pytest.mark.parametrize(
@@ -52,7 +51,7 @@ def test_suite_caps_and_ten_model_allowances():
     # Shared paired chat prefix reserves the same output allowance for all ten.
     for item in BENCHMARKS:
         if "qa_" in item["collection"] or "codeqa_" in item["collection"]:
-            assert item["max_new_tokens"] == 32
+            assert item["max_new_tokens"] == 256
         budgets = [
             effective_generation_budget(
                 item["max_new_tokens"], row_cap=8192, paired_prefix_tokens=119
@@ -119,7 +118,7 @@ def test_all_ten_batched_runners_execute_shared_allowance_and_reject_changed_gol
     tmp_path, monkeypatch
 ):
     import bifocalgemma.data.tokenization as tokenization
-    import bifocalgemma.v3.benchmark as benchmark
+    import bifocalgemma.evaluation.benchmark as benchmark
     from bifocalgemma.inference.generation import GreedyGeneration
 
     class Tokenizer:
@@ -214,3 +213,109 @@ def test_all_ten_batched_runners_execute_shared_allowance_and_reject_changed_gol
             tmp_path,
             **kwargs,
         )
+
+
+def test_prepare_sampled_benchmark_collection_invalidates_stale_cache(tmp_path, monkeypatch):
+    import bifocalgemma.evaluation.benchmark as benchmark
+
+    src_dir = tmp_path / "source_collection"
+    (src_dir / "eval_private").mkdir(parents=True)
+    (src_dir / "snapshots").mkdir()
+    (src_dir / "snapshots/repo.txt").write_text("snapshot-v1\n", encoding="utf-8")
+
+    public_rows = [
+        {
+            "instance_id": f"case-{i}",
+            "role": "eval",
+            "task_type": "mcq",
+            "instruction": "Choose A or B.",
+            "context": f"public-v1-{i}",
+        }
+        for i in range(5)
+    ]
+    gold_rows = [
+        {"instance_id": f"case-{i}", "answer": "A", "snapshot_file": "snapshots/repo.txt"}
+        for i in range(5)
+    ]
+
+    def write_source():
+        (src_dir / "eval_inputs.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in public_rows), encoding="utf-8"
+        )
+        (src_dir / "eval_private/specs.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in gold_rows), encoding="utf-8"
+        )
+
+    write_source()
+
+    writes = 0
+    orig_atomic_json = benchmark.atomic_json
+
+    def counted_atomic_json(path, payload):
+        nonlocal writes
+        writes += 1
+        return orig_atomic_json(path, payload)
+
+    monkeypatch.setattr(benchmark, "atomic_json", counted_atomic_json)
+    dest_dir = tmp_path / "sampled"
+
+    resolved = benchmark.prepare_sampled_benchmark_collection(
+        src_dir, sample_limit=3, sample_seed=17, output_dir=dest_dir
+    )
+    assert resolved == dest_dir.resolve()
+    assert writes == 1
+    manifest_1 = json.loads((dest_dir / "sample_manifest.json").read_text(encoding="utf-8"))
+    sampled_ids = manifest_1["sampled_instance_ids"]
+    assert len(sampled_ids) == 3
+
+    # Unchanged source hits cache cleanly.
+    benchmark.prepare_sampled_benchmark_collection(
+        src_dir, sample_limit=3, sample_seed=17, output_dir=dest_dir
+    )
+    assert writes == 1
+
+    # Public content change with identical sampled_instance_ids invalidates cache.
+    sampled_idx = int(sampled_ids[0].split("-")[1])
+    public_rows[sampled_idx]["context"] = "public-v2-mutated"
+    write_source()
+    benchmark.prepare_sampled_benchmark_collection(
+        src_dir, sample_limit=3, sample_seed=17, output_dir=dest_dir
+    )
+    assert writes == 2
+    manifest_2 = json.loads((dest_dir / "sample_manifest.json").read_text(encoding="utf-8"))
+    assert manifest_2["sampled_instance_ids"] == sampled_ids
+    assert manifest_2["inputs_sha256"] != manifest_1["inputs_sha256"]
+    assert manifest_2["gold_sha256"] == manifest_1["gold_sha256"]
+    cached_public = [
+        json.loads(line)
+        for line in (dest_dir / "eval_inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert cached_public[0]["context"] == "public-v2-mutated"
+
+    # Gold content change with identical sampled_instance_ids invalidates cache.
+    gold_rows[sampled_idx]["answer"] = "B"
+    write_source()
+    benchmark.prepare_sampled_benchmark_collection(
+        src_dir, sample_limit=3, sample_seed=17, output_dir=dest_dir
+    )
+    assert writes == 3
+    manifest_3 = json.loads((dest_dir / "sample_manifest.json").read_text(encoding="utf-8"))
+    assert manifest_3["sampled_instance_ids"] == sampled_ids
+    assert manifest_3["gold_sha256"] != manifest_2["gold_sha256"]
+    cached_gold = [
+        json.loads(line)
+        for line in (dest_dir / "eval_private/specs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert cached_gold[0]["answer"] == "B"
+
+    # On-disk tamper of cached JSONL without touching manifest also forces refresh.
+    (dest_dir / "eval_inputs.jsonl").write_text('{"instance_id":"tampered"}\n', encoding="utf-8")
+    benchmark.prepare_sampled_benchmark_collection(
+        src_dir, sample_limit=3, sample_seed=17, output_dir=dest_dir
+    )
+    assert writes == 4
+    refreshed_public = [
+        json.loads(line)
+        for line in (dest_dir / "eval_inputs.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert refreshed_public[0]["context"] == "public-v2-mutated"

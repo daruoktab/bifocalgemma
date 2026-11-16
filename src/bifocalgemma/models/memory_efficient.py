@@ -41,6 +41,31 @@ def mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window)
     return attention_mask[..., start:stop, :] if attention_mask is not None else None
 
 
+def build_joint_visibility(
+    encoder_valid: torch.Tensor,
+    decoder_valid: torch.Tensor,
+    self_window: int | None = None,
+) -> torch.Tensor:
+    """Keys are [decoder, encoder]; decoder causal/windowed, encoder globally visible."""
+    if encoder_valid.ndim != 2 or decoder_valid.ndim != 2:
+        raise ValueError("Validity masks must have [batch, sequence] shape.")
+    if encoder_valid.shape[0] != decoder_valid.shape[0]:
+        raise ValueError("Encoder and decoder batch sizes differ.")
+    if self_window is not None and self_window <= 0:
+        raise ValueError("Self-attention window must be positive.")
+    length = decoder_valid.shape[1]
+    positions = torch.arange(length, device=decoder_valid.device)
+    visibility = positions[None, :] <= positions[:, None]
+    if self_window is not None:
+        visibility &= positions[None, :] > positions[:, None] - self_window
+    self_visible = visibility[None] & decoder_valid.bool()[:, None, :]
+    cross_visible = encoder_valid.bool()[:, None, :].expand(-1, length, -1)
+    return (
+        torch.cat((self_visible, cross_visible), dim=-1)[:, None]
+        & decoder_valid.bool()[:, None, :, None]
+    )
+
+
 def joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window):
     positions = torch.arange(decoder_valid.shape[1], device=decoder_valid.device)
     queries = positions[start:stop, None]
@@ -327,7 +352,7 @@ class TiledMergedAttention(TiledEncoderAttention):
         if self.store_full_length_kv:
             shared_kv_states[self.layer_type] = (key, value)
         if getattr(self, "collect_encoder_mass", False):
-            from bifocalgemma.training.v2_diagnostics import sample_encoder_mass
+            from bifocalgemma.training.diagnostics import sample_encoder_mass
 
             sample_encoder_mass(self, query, key, encoder_valid, decoder_valid)
         result = tiled_attention(

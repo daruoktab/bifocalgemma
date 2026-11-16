@@ -9,13 +9,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from bifocalgemma.config import MATRIX_MODELS, make_experiment_spec
 from bifocalgemma.data.context_tasks import normalize_context_task
 from bifocalgemma.data.grounded_tasks import VERSION, generate_grounded_tasks
 from bifocalgemma.data.offline_sft import curated_pool_digest, load_curated_pool, stable_fingerprint
 from bifocalgemma.data.tokenization import load_verified_tokenizer
 from bifocalgemma.training.repository_sft import tokenize_repository_record
-from bifocalgemma.v3.constants import MATRIX_MODELS
-from bifocalgemma.v3.matrix import make_experiment_spec
 
 LIMITS = {"encoder": 32768, "pair_decoder": 8192, "baseline_decoder": 41472}
 

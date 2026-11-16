@@ -2,13 +2,13 @@
 
 import copy
 import math
-from pathlib import PurePosixPath
 
-from bifocalgemma.training.policy import default_training_profiles, validate_training_policy
+from bifocalgemma.config import WARMUP_RATIO
+from bifocalgemma.training.policy import default_training_profiles
 
 
 def unified_recipe(family):
-    """One AdamW policy for all v2 models, including paired alignment gains."""
+    """One AdamW policy for all matrix models, including paired alignment gains."""
     policy = default_training_profiles()[family]
     policy.update(
         version="unified_v2", train_alignment=family != "decoder_only", alignment_fp32=True
@@ -19,7 +19,7 @@ def unified_recipe(family):
         settings.update(
             lr=1e-4 if name == "alignment" else 2e-5,
             warmup_steps=0,
-            warmup_ratio=0.03,
+            warmup_ratio=WARMUP_RATIO,
             scheduler="cosine",
             min_lr_ratio=0.1,
         )
@@ -37,7 +37,7 @@ def comparison_recipes(family):
     policy["alignment_fp32"] = True
     for settings in policy["groups"].values():
         settings.update(
-            lr=2e-5, warmup_steps=0, warmup_ratio=0.03, scheduler="cosine", min_lr_ratio=0.1
+            lr=2e-5, warmup_steps=0, warmup_ratio=WARMUP_RATIO, scheduler="cosine", min_lr_ratio=0.1
         )
     baseline = copy.deepcopy(policy)
     baseline["optimizer"] = {
@@ -82,73 +82,3 @@ def resolve_training_cadence(
             explicit if explicit is not None else max(1, math.ceil(total_steps * fraction))
         )
     return result
-
-
-def run_recipe_comparison(*, recipes, experiments, run_name, resume_from=None, **settings):
-    """Train/upload every model/recipe before evaluating any, one resident model at a time."""
-    from bifocalgemma.training.sequential import run_sequential_pipeline
-
-    if not recipes or set(recipes) - {"base", "optimized"}:
-        raise ValueError("Choose base and/or optimized recipes.")
-    run_path = PurePosixPath(run_name)
-    if (
-        run_path.is_absolute()
-        or len(run_path.parts) != 1
-        or run_path.name in {".", ".."}
-        or "\\" in run_name
-    ):
-        raise ValueError("Comparison RUN_NAME must be a single path component.")
-    if not experiments or len(set(experiments)) != len(experiments):
-        raise ValueError("Choose unique experiments.")
-    if resume_from and len(recipes) * len(experiments) != 1:
-        raise ValueError(
-            "Use AUTO_RESUME for a comparison; explicit resume needs one model/recipe."
-        )
-    # Validate every recipe before launching the first GPU load.
-    for policy in recipes.values():
-        validate_training_policy(policy)
-        if policy["family"] != settings["family"]:
-            raise ValueError("Recipe family differs from notebook family.")
-    evaluate = settings.pop("run_benchmarks", True)
-    train = settings.pop("run_training", True)
-    jobs = [
-        (experiment, recipe, policy)
-        for experiment in experiments
-        for recipe, policy in recipes.items()
-    ]
-    results = []
-    # The first pass is a barrier: no benchmark downloads/inference until every
-    # training run and its requested training upload has returned successfully.
-    for phase in ["training", "benchmark"] if evaluate else ["training"]:
-        phase_results = []
-        print(f"Comparison phase: {phase}; {len(jobs)} model/recipe runs", flush=True)
-        phase_settings = dict(settings)
-        if phase == "benchmark":
-            # Reuse pass-one checkpoints even when the initial request was a fresh run.
-            phase_settings["auto_resume"] = True
-        for job_index, (experiment, recipe, policy) in enumerate(jobs, 1):
-            print(f"{phase} {job_index}/{len(jobs)}: {experiment}/{recipe}", flush=True)
-            outcome = run_sequential_pipeline(
-                experiments=(experiment,),
-                run_name=f"{run_name}/{recipe}",
-                training_policy=copy.deepcopy(policy),
-                resume_from=resume_from,
-                recipe_name=recipe,
-                run_training=train if phase == "training" else False,
-                run_benchmarks=phase == "benchmark",
-                finalize=phase == "benchmark" or not evaluate,
-                **phase_settings,
-            )
-            for row in outcome["models"]:
-                row["recipe"] = recipe
-                phase_results.append(row)
-        results = phase_results
-    return {
-        "status": "PENDING_UPLOAD"
-        if any(r["status"] == "PENDING_UPLOAD" for r in results)
-        else "COMPLETED",
-        "family": settings["family"],
-        "sequence": list(experiments),
-        "recipes": list(recipes),
-        "models": results,
-    }

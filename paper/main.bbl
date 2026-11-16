@@ -1,4 +1,4 @@
-\begin{thebibliography}{10}
+\begin{thebibliography}{1}
 
 \bibitem{llm2vec_2024}
 Parishad BehnamGhader, Vaibhav Adlakha, Marius Mosbach, Dzmitry Bahdanau,
@@ -12,16 +12,6 @@ Egor Bogomolov, Aleksandra Eliseeva, Timur Galimzyanov, Evgeniy Glukhov, Anton
   Deursen, Maliheh Izadi, and Timofey Bryksin.
 \newblock {LongCodeArena: A Set of Benchmarks for Long-Context Code Models}.
 \newblock {\em arXiv preprint arXiv:2406.11612}, 2024.
-
-\bibitem{t5gemma_2025}
-{Gemma Team, Google DeepMind}.
-\newblock {T5Gemma: Encoder-Decoder Adaptation of Gemma Language Models}.
-\newblock {\em arXiv preprint}, 2025.
-
-\bibitem{gemma4_2026}
-{Gemma Team, Google DeepMind}.
-\newblock {Gemma 4 Technical Report}.
-\newblock Technical report, Google DeepMind, 2026.
 
 \bibitem{lora_2022}
 Edward~J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean
@@ -48,11 +38,6 @@ Tianyang Liu, Canwen Xu, and Julian McAuley.
 Noam Shazeer.
 \newblock {GLU Variants Improve Transformer}.
 \newblock {\em arXiv preprint arXiv:2002.05202}, 2020.
-
-\bibitem{roformer_2024}
-Jianlin Su, Murtadha Ahmed, Yu~Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu.
-\newblock {RoFormer: Enhanced Transformer with Rotary Position Embedding}.
-\newblock {\em Neurocomputing}, 568:127063, 2024.
 
 \bibitem{rmsnorm_2019}
 Biao Zhang and Rico Sennrich.

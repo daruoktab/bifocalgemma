@@ -8,7 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -144,39 +143,6 @@ def test_cpu_wheel_invalidates_matching_receipt(monkeypatch, tmp_path):
     assert len(calls) == 4
 
 
-def test_marimo_setup_token_order_precedes_native_imports():
-    root = Path(__file__).resolve().parents[1]
-    for family in ("symmetric", "asymmetric", "baseline"):
-        text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(
-            encoding="utf-8"
-        )
-        cells = [node for node in ast.parse(text).body if isinstance(node, ast.FunctionDef)]
-        assert cells[0].args.args == []
-        first = ast.get_source_segment(text, cells[1])
-        assert first is not None and "FORCE_REINSTALL = True" in first
-        assert '"torch": "2.14.1"' in first
-        assert '"torchvision": "0.29.1"' in first
-        assert "bootstrap_notebook_dependencies(" in first
-        assert "dependency_runtime" in [arg.arg for arg in cells[2].args.args]
-        assert "dependency_runtime" in [arg.arg for arg in cells[3].args.args]
-        assert "HfApi" not in [arg.arg for arg in cells[3].args.args]
-        native = next(
-            node
-            for node in cells
-            if any(
-                isinstance(item, ast.Import) and any(a.name == "torch" for a in item.names)
-                for item in node.body
-            )
-        )
-        assert "dependency_runtime" in [arg.arg for arg in native.args.args]
-        assert cells.index(native) == 5
-        assert "auth_info" in [arg.arg for arg in native.args.args]
-        assert 'torch.__version__ == "2.14.1+cu130"' in text
-        assert '# requires-python = ">=3.12,<3.14"' in text
-        assert "import_native_gemma4" in [arg.arg for arg in native.args.args]
-        assert "_native_gemma4 = import_native_gemma4()" in text
-
-
 def test_native_import_diagnostic_preserves_original_dependency_failure(monkeypatch, capsys):
     def broken(name):
         raise RuntimeError("operator torchvision::nms does not exist")
@@ -241,62 +207,6 @@ def test_preloaded_torchvision_alone_requires_restart(monkeypatch, tmp_path):
         bootstrap_notebook_dependencies(PINS, state_directory=str(tmp_path))
 
 
-def test_notebook_never_declares_bundled_project_as_external_package():
-    root = Path(__file__).resolve().parents[1]
-    for family in ("symmetric", "asymmetric", "baseline"):
-        path = root / f"notebooks/legacy/bifocalgemma_train_{family}.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom):
-                assert not (node.module or "").startswith("bifocalgemma")
-            elif isinstance(node, ast.Import):
-                assert not any(alias.name.startswith("bifocalgemma") for alias in node.names)
-        first = [node for node in tree.body if isinstance(node, ast.FunctionDef)][1]
-        assert any(
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "activate_notebook_bundle"
-            for node in ast.walk(first)
-        )
-
-
-def test_one_uploaded_notebook_loads_source_without_repo_or_pythonpath(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    source = root / "notebooks/legacy/bifocalgemma_train_symmetric.py"
-    uploaded = tmp_path / "notebook.py"
-    shutil.copyfile(source, uploaded)
-    child = r"""
-import ast
-import importlib
-import pathlib
-import sys
-
-uploaded = pathlib.Path(sys.argv[1])
-tree = ast.parse(uploaded.read_text(encoding="utf-8"))
-cell = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and any(isinstance(child, ast.FunctionDef) and child.name == "activate_notebook_bundle" for child in n.body))
-helper = next(n for n in cell.body if isinstance(n, ast.FunctionDef) and n.name == "activate_notebook_bundle")
-namespace = {}
-exec(compile(ast.Module(body=[helper], type_ignores=[]), "uploaded-helper", "exec"), namespace)
-values = {n.targets[0].id: ast.literal_eval(n.value) for n in cell.body if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name) and n.targets[0].id in {"_payload", "_bundle_sha"}}
-bundle = namespace["activate_notebook_bundle"](values["_payload"], values["_bundle_sha"])
-project = importlib.import_module("bifocalgemma")
-assert pathlib.Path(project.__file__).resolve().is_relative_to(bundle)
-config = importlib.import_module("bifocalgemma.config")
-assert config.get_experiment("BifocalGemma-E2B-E2B").name == "BifocalGemma-E2B-E2B"
-assert not (uploaded.parent / "src").exists()
-print("ONE_FILE_BUNDLE_OK")
-"""
-    result = subprocess.run(
-        [sys.executable, "-I", "-c", child, str(uploaded)],
-        cwd=tmp_path,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "ONE_FILE_BUNDLE_OK" in result.stdout
-
-
 def test_source_bundle_checksum_failure_does_not_activate_source(tmp_path):
     import base64
 
@@ -305,65 +215,20 @@ def test_source_bundle_checksum_failure_does_not_activate_source(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_no_downstream_cell_can_run_before_authentication():
+def test_active_matrix_notebooks_pin_dependencies_and_gate_bifocalgemma_imports():
     root = Path(__file__).resolve().parents[1]
-    for family in ("symmetric", "asymmetric", "baseline"):
-        path = root / f"notebooks/legacy/bifocalgemma_train_{family}.py"
-        cells = [
-            node
-            for node in ast.parse(path.read_text(encoding="utf-8")).body
-            if isinstance(node, ast.FunctionDef)
-        ]
-        for cell in cells[4:]:
-            assert "auth_info" in [arg.arg for arg in cell.args.args]
-            assert isinstance(cell.body[0], ast.Assert)
-            gate = ast.Module(body=[cell.body[0]], type_ignores=[])
-            with pytest.raises(AssertionError, match="Apply a valid HF token"):
-                exec(compile(gate, "auth-gate", "exec"), {"auth_info": {"verified": False}})
-
-
-@pytest.mark.parametrize("form_value", [None, {"token": ""}, {"token": "hf_fixture_write"}])
-def test_apply_waits_for_submission_and_valid_token_without_native_imports(monkeypatch, form_value):
-    import huggingface_hub
-
-    monkeypatch.delenv("HF_TOKEN", raising=False)
-    calls = []
-
-    class FakeApi:
-        def __init__(self, *, token):
-            calls.append(token)
-
-        def whoami(self):
-            return {"name": "fixture", "auth": {"accessToken": {"role": "write"}}}
-
-    class WaitingForToken(Exception):
-        pass
-
-    def stop(condition, message):
-        if condition:
-            raise WaitingForToken(message)
-
-    monkeypatch.setattr(huggingface_hub, "HfApi", FakeApi)
-    path = Path(__file__).resolve().parents[1] / "notebooks/legacy/bifocalgemma_train_symmetric.py"
-    cells = [
-        node
-        for node in ast.parse(path.read_text(encoding="utf-8")).body
-        if isinstance(node, ast.FunctionDef)
-    ]
-    body = ast.Module(
-        body=[node for node in cells[3].body if not isinstance(node, ast.Return)], type_ignores=[]
-    )
-    namespace: dict[str, Any] = {
-        "dependency_runtime": {"status": "READY"},
-        "hf_token_form": SimpleNamespace(value=form_value),
-        "mo": SimpleNamespace(stop=stop, md=lambda value: value),
-    }
-    if not form_value or not form_value["token"]:
-        with pytest.raises(WaitingForToken):
-            exec(compile(body, "token-apply", "exec"), namespace)
-        assert calls == [] and "auth_info" not in namespace
-    else:
-        exec(compile(body, "token-apply", "exec"), namespace)
-        assert calls == ["hf_fixture_write"]
-        assert namespace["auth_info"]["verified"] is True
-        assert namespace["hf_download_token"] == "hf_fixture_write"
+    notebooks = sorted(p for p in (root / "notebooks").glob("train_*.py") if p.name != "train_bifocalgemma_fast.py")
+    assert len(notebooks) == 10
+    for path in notebooks:
+        text = path.read_text(encoding="utf-8")
+        assert '# requires-python = ">=3.12,<3.14"' in text
+        assert '"torch==2.15.0"' in text
+        assert '"transformers==5.22.1"' in text
+        assert 'launcher["prepare_runtime"](runtime_root)' in text
+        assert 'assert dependency_runtime["status"] == "READY"' in text
+        tree = ast.parse(text, filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert not (node.module or "").startswith("bifocalgemma"), path.name
+            elif isinstance(node, ast.Import):
+                assert not any(alias.name.startswith("bifocalgemma") for alias in node.names), path.name

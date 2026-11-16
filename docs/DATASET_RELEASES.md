@@ -90,7 +90,9 @@ Consumers reject moving revisions, wrong roles, unsafe paths and corrupt bytes.
 An existing cache must match the selected collection fingerprint. Eval caches can
 be reused after verifying all selected members; include_gold is opt-in.
 
-The three training notebooks consume the curated HF release and perform full SFT,
-upload, benchmark, upload and then the next model. They have no source-curation or
-sampling fallback. Full-run/upload flags default True and can be disabled by the
-user. See [sequential execution and checkpoint recovery](SEQUENTIAL_TRAINING.md).
+The ten standalone matrix notebooks consume the curated HF release and run
+training/resume, export/upload, and all eight configured benchmarks with no
+raw-source curation fallback. Upload flags default to True and can be disabled per
+run. See [the active notebook guide](TRAINING_NOTEBOOKS.md); the earlier three
+sequential family notebooks documented in
+[SEQUENTIAL_TRAINING.md](SEQUENTIAL_TRAINING.md) are retired.

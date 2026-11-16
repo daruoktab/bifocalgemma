@@ -4,23 +4,25 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 from dataclasses import asdict
 from typing import Any
 
 import pytest
 import torch
 
+from bifocalgemma.config import MATRIX_MODELS, make_experiment_spec
 from bifocalgemma.contracts import TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
+from bifocalgemma.modeling_bifocalgemma import NativeTinyModel
+from bifocalgemma.models.cross_attention import configure_full_rank_cross_attention
 from bifocalgemma.models.memory_efficient import configure_memory_efficient_training
-from bifocalgemma.models.v2.native import NativeTinyModel
-from bifocalgemma.training.policy import configure_policy_model
+from bifocalgemma.training.checkpoint import restore_matrix_checkpoint
+from bifocalgemma.training.matrix import run_matrix_stage
+from bifocalgemma.training.policy import configure_policy_model, update_policy_learning_rates
 from bifocalgemma.training.recipes import unified_recipe
 from bifocalgemma.training.schedule import build_shared_schedule, canonical_schedule_records
-from bifocalgemma.v3.attention import configure_full_rank_cross_attention
-from bifocalgemma.v3.checkpoint import restore_matrix_checkpoint
-from bifocalgemma.v3.constants import MATRIX_MODELS
-from bifocalgemma.v3.matrix import make_experiment_spec, run_matrix_stage
+from bifocalgemma.training.stage import configure_matrix_stage
 
 
 def fixture_data(key, count=12):
@@ -188,7 +190,7 @@ def test_interrupted_optimizer_boundary_resume_matches_uninterrupted(tmp_path):
 
 
 def test_partial_backward_oom_replays_entire_window_without_double_gradient(tmp_path, monkeypatch):
-    import bifocalgemma.v3.matrix as matrix
+    import bifocalgemma.training.matrix as matrix
 
     examples, schedule = fixture_data("e2b-it", 4)
     model, policy = fixture_model("e2b-it")
@@ -213,7 +215,7 @@ def test_partial_backward_oom_replays_entire_window_without_double_gradient(tmp_
     )
     expected = copy.deepcopy(model.state_dict())
     model.load_state_dict(initial)
-    original = matrix.compute_v3_step_loss
+    original = matrix.compute_step_loss
     calls = 0
 
     def fail_second_microbatch(*args, **kwargs):
@@ -225,7 +227,7 @@ def test_partial_backward_oom_replays_entire_window_without_double_gradient(tmp_
             raise torch.cuda.OutOfMemoryError("injected after partial backward")
         return loss
 
-    monkeypatch.setattr(matrix, "compute_v3_step_loss", fail_second_microbatch)
+    monkeypatch.setattr(matrix, "compute_step_loss", fail_second_microbatch)
     run_matrix_stage(
         model,
         examples,
@@ -321,7 +323,7 @@ def test_matrix_entrypoint_local_pool_completed_resume_exports_trained_weights(
 
     import bifocalgemma.data.tokenization as tokenization
     import bifocalgemma.modeling_bifocalgemma as pretrained
-    import bifocalgemma.v3.matrix as matrix
+    import bifocalgemma.training.matrix as matrix
     from bifocalgemma.data.offline_sft import stable_fingerprint
 
     key = "2base-2it"
@@ -408,3 +410,336 @@ def test_matrix_entrypoint_local_pool_completed_resume_exports_trained_weights(
         make_experiment_spec(key), pool_directory=pool, stage1_steps=0
     )
     assert contract["stage1_steps"] == 0 and contract["stage2_steps"] == 3
+
+
+def test_recovered_completed_training_and_benchmark_resume_skip_completed_work(
+    monkeypatch, tmp_path
+):
+    """Completed training (with HF export) and completed benchmarks are reused across resumes."""
+    import hashlib
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import huggingface_hub
+
+    import bifocalgemma.data.tokenization as tokenization
+    import bifocalgemma.modeling_bifocalgemma as pretrained
+    import bifocalgemma.training.matrix as matrix
+    from bifocalgemma.data.offline_sft import stable_fingerprint
+
+    key = "2base-2it"
+    examples, schedule = fixture_data(key)
+    pool = tmp_path / "local-supplement"
+    pool.mkdir()
+    pool_manifest: dict[str, Any] = {
+        "format": "bifocalgemma_curated_pool_v1",
+        "record_ids": {"train": [ex.instance_id for ex in examples]},
+    }
+    pool_manifest["fingerprint"] = stable_fingerprint(pool_manifest)
+    (pool / "manifest.json").write_text(json.dumps(pool_manifest))
+    by_id = {record.instance_id: asdict(record) for record in schedule.records}
+
+    monkeypatch.setattr(
+        matrix,
+        "prepare_curated_training",
+        lambda *a, **k: (
+            examples,
+            [],
+            {
+                "fingerprint": "tokenized-fixture",
+                "pool_fingerprint": pool_manifest["fingerprint"],
+                "schedule_records": [by_id[ex.instance_id] for ex in examples],
+            },
+        ),
+    )
+
+    def download(spec, *args, **kwargs):
+        torch.manual_seed(111)
+        return NativeTinyModel(spec, tiny=True), {"fixture": "fixed-initialization"}
+
+    monkeypatch.setattr(matrix, "download_model", download)
+    monkeypatch.setattr(
+        tokenization,
+        "load_verified_tokenizer",
+        lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("tiny fixture")),
+    )
+    orig_export = pretrained.export_matrix_pretrained_model
+
+    def local_export(**kw: Any) -> Any:
+        kw["tokenizer_cache"] = None
+        return orig_export(**kw)
+
+    monkeypatch.setattr(pretrained, "export_matrix_pretrained_model", local_export)
+
+    class Monitor:
+        run_dir = None
+
+        def __call__(self, event):
+            pass
+
+    output_root = tmp_path / "runs"
+    common: dict[str, Any] = dict(
+        pool_directory=pool,
+        output_root=output_root,
+        cache=tmp_path / "cache",
+        monitor=Monitor(),
+    )
+    first = matrix.run_matrix_training(key, upload=False, **common)
+    assert first["status"] == "COMPLETED"
+
+    # Reuse requires validated local export bytes matching the uploaded snapshot.
+    # Remote filenames alone must never stand in for export validation.
+    run_root = output_root / key / "train"
+    subfolder = first["subfolder"]
+    remote_siblings = []
+    for filename in ("config.json", "model.safetensors"):
+        content = (run_root / "pretrained_model" / filename).read_bytes()
+        remote_siblings.append(
+            SimpleNamespace(
+                rfilename=f"{subfolder}/pretrained_model/{filename}",
+                size=len(content),
+                lfs=SimpleNamespace(sha256=hashlib.sha256(content).hexdigest()),
+                blob_id=None,
+            )
+        )
+
+    class FakeHfApi:
+        def __init__(self, token=None):
+            pass
+
+        def repo_exists(self, repo_id):
+            return True
+
+        def model_info(self, repo_id, **kwargs):
+            return SimpleNamespace(sha="d" * 40, siblings=remote_siblings)
+
+        def list_repo_files(self, repo_id, revision=None):
+            return []
+
+        def create_repo(self, *args, **kwargs):
+            return None
+
+        def create_commit(self, *args, **kwargs):
+            return SimpleNamespace(oid="e" * 40)
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", FakeHfApi)
+    monkeypatch.setattr(matrix, "recover_remote_run", lambda *a, **k: None)
+    monkeypatch.setattr(
+        matrix,
+        "download_model",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("download_model must not run")),
+    )
+    monkeypatch.setattr(
+        matrix,
+        "prepare_curated_training",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("prepare_curated_training must not run")),
+    )
+    monkeypatch.setattr(
+        pretrained,
+        "export_matrix_pretrained_model",
+        lambda **kw: (_ for _ in ()).throw(AssertionError("export must not re-run")),
+    )
+
+    resumed_train = matrix.run_matrix_training(key, token="fixture-tok", upload=True, **common)
+    assert resumed_train["status"] == "COMPLETED"
+    assert resumed_train["stage1"] == first["stage1"]
+
+    # Now mark first 2 benchmarks completed and verify resume only runs the remaining 1 + final sync.
+    test_benchmarks = [
+        {"collection": "bench_one", "encoder_limit": 32, "decoder_limit": 32, "max_new_tokens": 8},
+        {"collection": "bench_two", "encoder_limit": 32, "decoder_limit": 32, "max_new_tokens": 8},
+        {"collection": "bench_three", "encoder_limit": 32, "decoder_limit": 32, "max_new_tokens": 8},
+    ]
+    monkeypatch.setattr(matrix, "BENCHMARKS", test_benchmarks)
+    monkeypatch.setattr(matrix, "download_model", download)
+    monkeypatch.setattr(matrix, "configure_policy_model", lambda *a, **k: None)
+    monkeypatch.setattr(matrix, "configure_memory_efficient_training", lambda *a, **k: None)
+    monkeypatch.setattr(matrix, "configure_full_rank_cross_attention", lambda *a, **k: None)
+    monkeypatch.setattr(matrix, "load_matrix_adapters_for_inference", lambda *a, **k: None)
+    monkeypatch.setattr(matrix, "fetch_collection", lambda *a, **k: None)
+    monkeypatch.setattr(matrix, "resolve_optimal_eval_batch_size", lambda *a, **k: 2)
+
+    sync_calls: list[str] = []
+
+    def fake_sync(repo, root, prefix, *, token, require_checkpoint=True):
+        sync_calls.append("sync")
+        return {"revision": f"rev-{len(sync_calls)}", "retained_checkpoints": []}
+
+    monkeypatch.setattr(matrix, "synchronize_matrix", fake_sync)
+
+    ran_collections: list[str] = []
+
+    def fake_run_bench(model, spec, collection_dir, destination, *args, **kwargs):
+        item = kwargs["benchmark_item"]
+        col = item["collection"]
+        ran_collections.append(col)
+        destination = Path(destination)
+        destination.mkdir(parents=True, exist_ok=True)
+        report = {"collection": col, "accuracy": 0.5, "total": 10}
+        (destination / "benchmark_report.json").write_text(json.dumps(report), encoding="utf-8")
+        (destination / "predictions.jsonl").write_text('{"id": 1}\n', encoding="utf-8")
+        (destination / "evaluation_state.json").write_text('{"done": true}\n', encoding="utf-8")
+        return report
+
+    monkeypatch.setattr(matrix, "run_batched_context_benchmark", fake_run_bench)
+
+    # First run completes only bench_one & bench_two by stopping before bench_three.
+    orig_bench = fake_run_bench
+
+    def stop_on_third(*args, **kwargs):
+        if kwargs["benchmark_item"]["collection"] == "bench_three":
+            raise RuntimeError("simulated preemption during bench_three")
+        return orig_bench(*args, **kwargs)
+
+    monkeypatch.setattr(matrix, "run_batched_context_benchmark", stop_on_third)
+    with pytest.raises(RuntimeError, match="simulated preemption"):
+        matrix.run_matrix_benchmark(key, token="fixture-tok", upload=True, **common)
+    assert ran_collections == ["bench_one", "bench_two"]
+    # Even with interval=1800, each completed benchmark triggered immediate final sync!
+    assert len(sync_calls) == 2
+
+    # Resume with all 3 allowed: bench_one and bench_two must be skipped!
+    ran_collections.clear()
+    sync_calls.clear()
+    monkeypatch.setattr(matrix, "run_batched_context_benchmark", fake_run_bench)
+    bench_res = matrix.run_matrix_benchmark(key, token="fixture-tok", upload=True, **common)
+    assert bench_res["status"] == "COMPLETED"
+    assert ran_collections == ["bench_three"]
+    assert [r["collection"] for r in bench_res["benchmarks"]] == [
+        "bench_one",
+        "bench_two",
+        "bench_three",
+    ]
+    # 1 final sync on bench_three + 1 end-of-suite sync; ensure immediate sync worked.
+    assert len(sync_calls) >= 1
+
+    # Third call when all 3 are already COMPLETED must not even download the model!
+    ran_collections.clear()
+    monkeypatch.setattr(
+        matrix,
+        "download_model",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("model must not load when all done")),
+    )
+    all_cached = matrix.run_matrix_benchmark(key, token="fixture-tok", upload=True, **common)
+    assert all_cached["status"] == "COMPLETED"
+    assert ran_collections == []
+    assert len(all_cached["benchmarks"]) == 3
+
+    # A different valid checkpoint at the same step must invalidate every receipt.
+    from safetensors.torch import load_file, save_file
+
+    from bifocalgemma.data.curation import file_digest
+
+    checkpoint_path = matrix.latest_checkpoint(run_root / "training")
+    assert checkpoint_path is not None
+    checkpoint = Path(checkpoint_path)
+    weights = load_file(str(checkpoint / "adapters.safetensors"))
+    first_key = next(iter(weights))
+    weights[first_key] = weights[first_key] + 1
+    save_file(weights, str(checkpoint / "adapters.safetensors"))
+    ready = json.loads((checkpoint / "READY.json").read_text(encoding="utf-8"))
+    ready["adapters.safetensors"] = file_digest(checkpoint / "adapters.safetensors")
+    (checkpoint / "READY.json").write_text(json.dumps(ready), encoding="utf-8")
+    monkeypatch.setattr(matrix, "download_model", download)
+    monkeypatch.setattr(matrix, "synchronize_matrix", fake_sync)
+    replaced = matrix.run_matrix_benchmark(key, token="fixture-tok", upload=True, **common)
+    assert replaced["status"] == "COMPLETED"
+    assert ran_collections == [item["collection"] for item in test_benchmarks]
+
+    # A cached suite is still pending until its final synchronization succeeds.
+    import httpx2
+
+    def failed_sync(*args, **kwargs):
+        raise httpx2.ConnectError("simulated final upload failure")
+
+    ran_collections.clear()
+    monkeypatch.setattr(matrix, "synchronize_matrix", failed_sync)
+    monkeypatch.setattr(
+        matrix,
+        "download_model",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("cached retry must not load model")),
+    )
+    pending = matrix.run_matrix_benchmark(key, token="fixture-tok", upload=True, **common)
+    assert pending["status"] == "PENDING_UPLOAD"
+    assert ran_collections == []
+
+
+def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_path):
+    """Stage 2 keeps encoder/alignment cosine decay continuous while decoder warms up via warmup_offset."""
+    key = "2base-2it"
+    model, base_policy = fixture_model(key)
+    policy = copy.deepcopy(base_policy)
+    for cfg in policy["groups"].values():
+        cfg["warmup_ratio"] = 0.03
+
+    # Verify warmup_ratio=0.03 is honored verbatim without silent override.
+    groups_s1, _ = configure_matrix_stage(model, policy, freeze_decoder=True, total_steps=100)
+    assert all(g["warmup_steps"] == 3 and g["warmup_offset"] == 0 for g in groups_s1)
+
+    groups_s2, _ = configure_matrix_stage(
+        model, policy, freeze_decoder=False, total_steps=100, warmup_offset=50
+    )
+    by_name = {g["name"]: g for g in groups_s2}
+    assert by_name["encoder"]["warmup_offset"] == 0
+    assert by_name["alignment_bridge_decay"]["warmup_offset"] == 0
+    assert by_name["alignment"]["warmup_offset"] == 0
+    assert by_name["decoder"]["warmup_offset"] == 50
+
+    opt1 = torch.optim.AdamW(groups_s1)
+    opt2 = torch.optim.AdamW(groups_s2)
+    r49 = update_policy_learning_rates(opt1, 49)
+    r50 = update_policy_learning_rates(opt2, 50)
+    r51 = update_policy_learning_rates(opt2, 51)
+    r99 = update_policy_learning_rates(opt2, 99)
+
+    assert r50["encoder"] < r49["encoder"]
+    assert r50["alignment"] < r49["alignment"]
+    assert 0.0 < r50["decoder"] < r51["decoder"]
+    assert r99["encoder"] == pytest.approx(by_name["encoder"]["base_lr"] * 0.1)
+    assert r99["decoder"] == pytest.approx(by_name["decoder"]["base_lr"] * 0.1)
+
+    # Verify real Stage 1 -> Stage 2 run_matrix_stage emits per-group clipped norms and continuous LRs.
+    examples, schedule = fixture_data(key, count=16)
+    fresh_model, fresh_policy = fixture_model(key)
+    trace: list[dict[str, Any]] = []
+    common: dict[str, Any] = dict(
+        policy=fresh_policy,
+        run_dir=tmp_path / "continuous",
+        compatibility={"model_key": key},
+        shared_schedule=schedule,
+        progress=trace.append,
+        total_steps=4,
+    )
+    first = run_matrix_stage(
+        fresh_model,
+        examples,
+        [],
+        "frozen_decoder",
+        max_steps=2,
+        freeze_decoder=True,
+        start_global_step=0,
+        **common,
+    )
+    run_matrix_stage(
+        fresh_model,
+        examples,
+        [],
+        "joint",
+        max_steps=2,
+        freeze_decoder=False,
+        start_global_step=2,
+        resume_from_checkpoint=first["last_checkpoint"],
+        **common,
+    )
+    assert [row["step"] for row in trace] == [1, 2, 3, 4]
+    for row in trace:
+        group_norms = row["group_gradient_norms"]
+        assert row["gradient_norm"] == pytest.approx(math.sqrt(sum(v * v for v in group_norms.values())))
+    assert set(trace[2]["group_gradient_norms"]) == {
+        "encoder",
+        "decoder",
+        "alignment_bridge_decay",
+        "alignment",
+    }
+    assert trace[2]["learning_rates"]["encoder"] < trace[1]["learning_rates"]["encoder"]
+    assert trace[2]["learning_rates"]["alignment"] < trace[1]["learning_rates"]["alignment"]

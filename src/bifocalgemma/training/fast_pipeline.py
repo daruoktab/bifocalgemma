@@ -20,15 +20,17 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 
 from bifocalgemma.assets import ensure_assets_on_disk
+from bifocalgemma.config import COLLECTION, DATASET_REPO, DATASET_REVISION
 from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
 from bifocalgemma.contracts import Seq2SeqBatch, TokenizedRepairExample
 from bifocalgemma.data.collator import RepairCollator
+from bifocalgemma.data.context_tasks import _resolve_eot_token_id
+from bifocalgemma.data.curriculum import build_anti_forgetting_curriculum
 from bifocalgemma.modeling_bifocalgemma import BifocalGemmaForCausalLM
 from bifocalgemma.training.memory_probe import ProbeLoRALinear, configure_probe_training
-from bifocalgemma.v3.curriculum import build_anti_forgetting_curriculum
-from bifocalgemma.v3.objectives import (
-    build_bifocalgemma_v3_optimizer,
-    compute_v3_step_loss,
+from bifocalgemma.training.objectives import (
+    build_bifocalgemma_optimizer,
+    compute_step_loss,
     is_cross_bridge_parameter,
 )
 
@@ -75,9 +77,9 @@ class FastTrainingConfig:
     hf_token: str | None = None
     auto_download_curated: bool = True
     resume_if_available: bool = True
-    collection: str = "mixed_context_enc32k_dec8k_v3"
-    dataset_repo: str = "daruokta/bifocalgemma-data"
-    dataset_revision: str = "7972f95d7c87f163c8b5af6a4acd308c0c1d0e23"
+    collection: str = COLLECTION
+    dataset_repo: str = DATASET_REPO
+    dataset_revision: str = DATASET_REVISION
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     seed: int = 42
     tiny: bool = False  # Set True for instant CI/smoke validation
@@ -217,15 +219,20 @@ class JSONLRepairDataset(Dataset):
                 prefix = tokenizer.apply_chat_template(
                     messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
                 )
-                full = tokenizer.apply_chat_template(
-                    messages + [{"role": "assistant", "content": target_patch}],
-                    tokenize=False,
-                    add_generation_prompt=False,
-                    enable_thinking=False,
-                )
                 prefix_ids = tuple(tokenizer.encode(prefix, add_special_tokens=False))
-                full_ids = tuple(tokenizer.encode(full.rstrip(), add_special_tokens=False))
-                target = full_ids[len(prefix_ids) :] if len(full_ids) >= len(prefix_ids) else (106,)
+                eot_id = (
+                    _resolve_eot_token_id(tokenizer)
+                    if hasattr(tokenizer, "convert_tokens_to_ids")
+                    else getattr(tokenizer, "eos_token_id", None)
+                )
+                if not isinstance(eot_id, int) or eot_id < 0:
+                    eot_id = 106
+                target_body_ids = (
+                    tuple(tokenizer.encode(target_patch, add_special_tokens=False))
+                    if target_patch
+                    else ()
+                )
+                target = (*target_body_ids, eot_id)
             except Exception:
                 prefix_ids = tuple(
                     tokenizer.encode(f"<user>\n{prompt}\n<assistant>\n", add_special_tokens=True)
@@ -411,21 +418,6 @@ class FastTrainingPipeline:
             )
 
         model.enable_memory_efficient_training(gradient_checkpointing=not self.cfg.tiny)
-        if model.decoder is not None and hasattr(model.decoder, "layers"):
-            for layer in model.decoder.layers:
-                attn = getattr(layer, "self_attn", None)
-                if attn is not None and hasattr(attn, "cross_v_norm"):
-                    if not hasattr(attn.cross_v_norm, "weight") or attn.cross_v_norm.weight is None:
-                        dev = (
-                            next(attn.parameters()).device
-                            if list(attn.parameters())
-                            else model.device
-                        )
-                        attn.cross_v_norm.weight = torch.nn.Parameter(
-                            torch.ones(
-                                getattr(attn, "head_dim", 32), dtype=torch.float32, device=dev
-                            )
-                        )
         return model
 
     def _prepare_dataloaders(
@@ -595,7 +587,7 @@ class FastTrainingPipeline:
             if hasattr(self.model, "lm_head") and hasattr(self.model.lm_head, "weight"):
                 self.model.lm_head.weight.requires_grad = False
 
-            return build_bifocalgemma_v3_optimizer(
+            return build_bifocalgemma_optimizer(
                 self.model,
                 lr_bridge=self.cfg.lr_bridge,
                 lr_cross=self.cfg.lr_cross,
@@ -618,7 +610,7 @@ class FastTrainingPipeline:
 
             self.model.lm_head.weight.requires_grad = False
 
-            return build_bifocalgemma_v3_optimizer(
+            return build_bifocalgemma_optimizer(
                 self.model,
                 lr_bridge=self.cfg.lr_bridge,
                 lr_cross=self.cfg.lr_cross,
@@ -648,7 +640,7 @@ class FastTrainingPipeline:
         if hasattr(self.model, "lm_head") and hasattr(self.model.lm_head, "weight"):
             self.model.lm_head.weight.requires_grad = False
 
-        return build_bifocalgemma_v3_optimizer(
+        return build_bifocalgemma_optimizer(
             self.model,
             lr_bridge=self.cfg.lr_bridge * 0.5,
             lr_cross=self.cfg.lr_cross * 0.5,
@@ -1008,7 +1000,7 @@ class FastTrainingPipeline:
         else:
             active_lambda_ptr = lambda_ptr
 
-        return compute_v3_step_loss(
+        return compute_step_loss(
             self.model,
             seq2seq_batch,
             stage_name=stage_name,
@@ -1123,12 +1115,11 @@ class FastTrainingPipeline:
         import gc
         import shutil
 
+        from bifocalgemma.config import BENCHMARKS, make_experiment_spec
         from bifocalgemma.data.releases import fetch_collection
+        from bifocalgemma.evaluation.benchmark import run_batched_context_benchmark
         from bifocalgemma.models import inference_cache as inference_cache_mod
-        from bifocalgemma.v3.attention import FullCrossCachedAttention
-        from bifocalgemma.v3.benchmark import run_batched_context_benchmark
-        from bifocalgemma.v3.constants import BENCHMARKS
-        from bifocalgemma.v3.matrix import make_experiment_spec
+        from bifocalgemma.models.cross_attention import FullCrossCachedAttention
 
         gc.collect()
         if torch.cuda.is_available():

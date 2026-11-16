@@ -3,7 +3,6 @@
 import contextlib
 import io
 import json
-import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +12,7 @@ import torch.nn as nn
 
 from bifocalgemma.__main__ import main
 from bifocalgemma.config import EXPERIMENT_SPECS, get_experiment, validate_experiment_matrix
+from bifocalgemma.configuration_bifocalgemma import native_config
 from bifocalgemma.contracts import (
     RepairExample,
     RepairPrediction,
@@ -23,9 +23,9 @@ from bifocalgemma.contracts import (
 from bifocalgemma.data.collator import RepairCollator
 from bifocalgemma.data.tokenization import format_encoder_context
 from bifocalgemma.evaluation.predictions import write_swebench_predictions
-from bifocalgemma.models.v2.embeddings import apply_word_embedding_policy
-from bifocalgemma.models.v2.merged_attention import ReferenceMergedAttention, build_joint_visibility
-from bifocalgemma.models.v2.reference import run_reference_smoke
+from bifocalgemma.modeling_bifocalgemma import NativeMergedAttention, run_native_smoke
+from bifocalgemma.models.embeddings import apply_word_embedding_policy
+from bifocalgemma.models.memory_efficient import build_joint_visibility
 from bifocalgemma.training.objectives import patch_cross_entropy
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -59,36 +59,80 @@ class TestWordEmbeddingPolicy(unittest.TestCase):
 
 
 class TestMergedAttentionReference(unittest.TestCase):
+    def _attention(self):
+        return NativeMergedAttention(native_config("E2B"), 0).eval()
+
     def test_joint_normalization_competes_across_self_and_encoder_keys(self):
-        model = ReferenceMergedAttention(2, 2, num_heads=1, num_kv_heads=1, head_dim=2)
+        model = self._attention()
         with torch.no_grad():
+            assert model.v_proj is not None
             model.q_proj.weight.zero_()
             model.k_proj.weight.zero_()
-            model.v_proj.weight.copy_(torch.eye(2))
-            model.out_proj.weight.copy_(torch.eye(2))
+            model.v_proj.weight.zero_()
+            model.v_proj.weight[:8, :8].copy_(torch.eye(8))
+            model.o_proj.weight.zero_()
+            model.o_proj.weight[:8, :8].copy_(torch.eye(8))
+        dec = torch.zeros(1, 1, 32)
+        enc = torch.zeros(1, 1, 32)
+        dec[0, 0, 0] = 1.0
+        enc[0, 0, 1] = 1.0
+        positions = (torch.ones(1, 1, 8), torch.zeros(1, 1, 8))
         output = model(
-            torch.tensor([[[1.0, 0.0]]]),
-            torch.tensor([[[0.0, 1.0]]]),
-            torch.ones(1, 1, dtype=torch.bool),
-            torch.ones(1, 1, dtype=torch.bool),
-        )
-        expected = torch.full((1, 1, 2), 1 / math.sqrt(2 + 4e-6))
-        torch.testing.assert_close(output, expected)
+            dec,
+            positions,
+            None,
+            {},
+            encoder_hidden_states=enc,
+            encoder_valid=torch.ones(1, 1, dtype=torch.bool),
+            decoder_valid=torch.ones(1, 1, dtype=torch.bool),
+        )[0]
+        # RMSNorm(with_scale=False) scales single unit entry by sqrt(head_dim=8), and
+        # uniform 2-key softmax yields 0.5 weight on self and encoder.
+        expected_head = torch.zeros(8)
+        expected_head[0] = 0.5 * (8**0.5)
+        expected_head[1] = 0.5 * (8**0.5)
+        torch.testing.assert_close(output[0, 0, :8], expected_head)
+        torch.testing.assert_close(output[0, 0, 8:], torch.zeros(24))
 
     def test_future_decoder_tokens_hidden_but_encoder_tokens_visible(self):
         torch.manual_seed(19)
-        model = ReferenceMergedAttention(6, 4, num_heads=4, num_kv_heads=2, head_dim=2)
-        decoder, encoder = torch.randn(1, 4, 4), torch.randn(1, 3, 6)
+        model = self._attention()
+        decoder, encoder = torch.randn(1, 4, 32), torch.randn(1, 3, 32)
         enc_valid = torch.ones(1, 3, dtype=torch.bool)
         dec_valid = torch.ones(1, 4, dtype=torch.bool)
-        original = model(decoder, encoder, enc_valid, dec_valid)
+        positions = (torch.ones(1, 4, 8), torch.zeros(1, 4, 8))
+        original = model(
+            decoder,
+            positions,
+            None,
+            {},
+            encoder_hidden_states=encoder,
+            encoder_valid=enc_valid,
+            decoder_valid=dec_valid,
+        )[0]
         changed_decoder = decoder.clone()
-        changed_decoder[:, -1] = torch.randn(1, 4) * 5
-        changed = model(changed_decoder, encoder, enc_valid, dec_valid)
+        changed_decoder[:, -1] = torch.randn(1, 32) * 5
+        changed = model(
+            changed_decoder,
+            positions,
+            None,
+            {},
+            encoder_hidden_states=encoder,
+            encoder_valid=enc_valid,
+            decoder_valid=dec_valid,
+        )[0]
         torch.testing.assert_close(original[:, :3], changed[:, :3])
         changed_encoder = encoder.clone()
-        changed_encoder[:, -1] = torch.randn(1, 6) * 5
-        encoded_change = model(decoder, changed_encoder, enc_valid, dec_valid)
+        changed_encoder[:, -1] = torch.randn(1, 32) * 5
+        encoded_change = model(
+            decoder,
+            positions,
+            None,
+            {},
+            encoder_hidden_states=changed_encoder,
+            encoder_valid=enc_valid,
+            decoder_valid=dec_valid,
+        )[0]
         self.assertGreater((original[:, 0] - encoded_change[:, 0]).abs().max().item(), 1e-5)
 
     def test_local_self_window_does_not_truncate_encoder_context(self):
@@ -98,11 +142,20 @@ class TestMergedAttentionReference(unittest.TestCase):
         self.assertEqual(mask[0, 0, 3].tolist(), [False, False, True, True, True, False])
 
     def test_fully_masked_queries_have_finite_zero_outputs_and_gradients(self):
-        model = ReferenceMergedAttention(4, 4, num_heads=2, num_kv_heads=1, head_dim=2)
-        decoder = torch.randn(1, 2, 4, requires_grad=True)
-        encoder = torch.randn(1, 2, 4, requires_grad=True)
+        model = self._attention()
+        decoder = torch.randn(1, 2, 32, requires_grad=True)
+        encoder = torch.randn(1, 2, 32, requires_grad=True)
         invalid = torch.zeros(1, 2, dtype=torch.bool)
-        output = model(decoder, encoder, invalid, invalid)
+        positions = (torch.ones(1, 2, 8), torch.zeros(1, 2, 8))
+        output = model(
+            decoder,
+            positions,
+            None,
+            {},
+            encoder_hidden_states=encoder,
+            encoder_valid=invalid,
+            decoder_valid=invalid,
+        )[0]
         torch.testing.assert_close(output, torch.zeros_like(output))
         output.sum().backward()
         assert decoder.grad is not None and encoder.grad is not None
@@ -184,20 +237,20 @@ class TestConstructionEntrypoints(unittest.TestCase):
             all(not spec.distillation and not spec.share_ple for spec in EXPERIMENT_SPECS)
         )
 
-    def test_reference_backward_matches_embedding_policy_for_all_four_pairs(self):
+    def test_native_backward_matches_embedding_policy_for_all_four_pairs(self):
         previous = torch.get_num_threads()
         torch.set_num_threads(min(previous, 4))
         try:
             for spec in EXPERIMENT_SPECS[:4]:
                 with self.subTest(experiment=spec.name):
-                    report = run_reference_smoke(spec)
+                    report = run_native_smoke(spec)
                     self.assertEqual(
                         report["word_embeddings_shared"], spec.tie_encoder_decoder_words
                     )
                     self.assertTrue(report["decoder_lm_head_shared"])
                     self.assertFalse(report["pretrained_weights_loaded"])
                     self.assertFalse(report["benchmark_executed"])
-                    self.assertLess(report["trainable_parameters"], 1_000_000)
+                    self.assertGreater(report["parameters_with_nonzero_gradient"], 0)
         finally:
             torch.set_num_threads(previous)
 

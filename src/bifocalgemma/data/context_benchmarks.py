@@ -80,6 +80,11 @@ def write_context_eval(directory, public, gold, protocol):
 
 
 def prepare_sweqa(cache, output):
+    """Prepare SWE-QA oracle/noisy_oracle cohorts without leaking answers in public IDs.
+
+    Hashes public ``question`` and ``options`` only; previously released ``v1`` artifacts
+    retain their legacy IDs.
+    """
     from huggingface_hub import hf_hub_download
 
     reports = {}
@@ -96,7 +101,8 @@ def prepare_sweqa(cache, output):
         public, gold = [], []
         seen = set()
         for row in read_source_rows(source):
-            key = stable_fingerprint([row["question"], row["options"], row["correct_answer"]])
+            # Exclude row["correct_answer"] so public instance_id hashes cannot be brute-forced over A/B/C/D.
+            key = stable_fingerprint([row["question"], row["options"]])
             if key in seen:
                 raise ValueError("duplicate_sweqa_question")
             seen.add(key)
@@ -123,7 +129,7 @@ def prepare_sweqa(cache, output):
                     "visible_paths": paths,
                     "task_scope": "conditional_code_comprehension",
                     "max_encoder_tokens": 8192,
-                    "max_new_tokens": 128,
+                    "max_new_tokens": 256,
                     "context_policy": "released_" + condition,
                     "official_protocol": False,
                     "dataset_license": "apache-2.0",
@@ -277,7 +283,7 @@ def prepare_longcodeqa(cache, output):
                 "context": row["prompt"],
                 "task_scope": "repository_comprehension",
                 "max_encoder_tokens": 32768,
-                "max_new_tokens": 128,
+                "max_new_tokens": 256,
                 "context_policy": "full_released_32k_prompt",
                 "official_protocol": False,
                 "dataset_license": "apache-2.0",
@@ -343,7 +349,7 @@ def matched_eval_cohort(source, output, tokenizer_cache, *, encoder_limit, decod
                 lengths[spec.name]["prefix"] for spec in EXPERIMENT_SPECS if spec.encoder
             )
             generation_budget = min(
-                128 if row["task_type"] == "mcq" else 8192, decoder_limit - paired_prefix
+                256 if row["task_type"] == "mcq" else 8192, decoder_limit - paired_prefix
             )
             if generation_budget < 1:
                 raise ValueError("decoder_prefix_exceeds_budget")

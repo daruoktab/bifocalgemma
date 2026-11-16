@@ -17,10 +17,67 @@ INSTRUCTION = (
 )
 
 
+_GSM8K_NUMBER_PATTERN = r"(?:-?(?:[0-9]+(?:,[0-9]+)*)(?:\.[0-9]+)?|-?\.[0-9]+)"
+_GSM8K_RESILIENT_HASH_RE = re.compile(
+    rf"####\s*(?:(?:the\s+)?(?:final\s+)?answer(?:\s+is)?\s*:?\s*)?(?:[*_`\(\[]+\s*)?"
+    rf"(?:(?P<neg>-)\s*\$|\$)?\s*(?P<num>{_GSM8K_NUMBER_PATTERN})",
+    re.IGNORECASE,
+)
+_GSM8K_BOXED_RE = re.compile(r"\\boxed\{((?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")
+_GSM8K_TERMINAL_ANSWER_RE = re.compile(
+    rf"(?:^|\n)\s*(?:[*_`]+\s*)?(?:therefore[,\s]+|so[,\s]+|thus[,\s]+)?(?:the\s+)?(?:final\s+)?answer(?:\s+is)?(?:\s*[*_`]+)?\s*:?\s*"
+    rf"(?!not\b)(?:[*_`\(\[]+\s*)?(?:(?P<neg>-)\s*\$|\$)?\s*(?P<num>{_GSM8K_NUMBER_PATTERN})"
+    rf"(?:\s*[*_`\]\)]*)?\s*[.!]?\s*\Z",
+    re.IGNORECASE,
+)
+
+
 def extract_release_answer(completion):
     """Match the release's first #### answer and comma removal; no numeric eval."""
+    if not isinstance(completion, str):
+        return None
     match = re.search(r"#### (\-?[0-9\.\,]+)", completion)
     return match.group(1).strip().replace(",", "") if match else None
+
+
+def _clean_extracted_number(neg: str | None, num: str | None) -> str | None:
+    if not num:
+        return None
+    cleaned = num.strip().replace(",", "")
+    if neg and not cleaned.startswith("-"):
+        cleaned = neg + cleaned
+    return cleaned
+
+
+def extract_resilient_answer(completion):
+    """Extract GSM8K final numeric string tolerating spacing, $, Answer:, and boxed forms."""
+    if not isinstance(completion, str) or not completion.strip():
+        return None
+    hash_match = _GSM8K_RESILIENT_HASH_RE.search(completion)
+    if hash_match:
+        return _clean_extracted_number(hash_match.group("neg"), hash_match.group("num"))
+    boxed_matches = _GSM8K_BOXED_RE.findall(completion)
+    if boxed_matches:
+        inner = boxed_matches[-1].strip()
+        inner = re.sub(r"^\\(?:text|textbf|mathrm)\{(.*)\}$", r"\1", inner).strip()
+        box_num = re.fullmatch(
+            rf"(?:(?P<neg>-)\s*\\?\$|\\?\$)?\s*(?P<num>{_GSM8K_NUMBER_PATTERN})\s*\.?",
+            inner,
+        )
+        if box_num:
+            return _clean_extracted_number(box_num.group("neg"), box_num.group("num"))
+    terminal_match = _GSM8K_TERMINAL_ANSWER_RE.search(completion)
+    if terminal_match:
+        return _clean_extracted_number(terminal_match.group("neg"), terminal_match.group("num"))
+    return None
+
+
+def extract_gsm8k_answer(completion, *, allow_fallback: bool = True):
+    """Extract GSM8K answer; strict release regex first, optional resilient extraction."""
+    strict = extract_release_answer(completion)
+    if strict is not None or not allow_fallback:
+        return strict
+    return extract_resilient_answer(completion)
 
 
 def verified_source_rows(directory, split):
@@ -186,35 +243,65 @@ def score_gsm8k(inputs, gold, predictions):
             raise ValueError("gsm8k_unknown_or_duplicate_prediction")
         by_id[identifier] = row
     counts = Counter()
+    resilient_counts = Counter()
     results = []
     for item, reference in zip(inputs, gold, strict=True):
         identifier = item["instance_id"]
         predicted = by_id.get(identifier)
         answer = None
+        resilient_answer = None
         if predicted is None:
             status = "missing_prediction"
+            resilient_status = "missing_prediction"
         elif predicted.get("status", "OK") != "OK":
             status = "generation_error"
+            resilient_status = "generation_error"
         else:
             completion = predicted.get("completion")
             if not isinstance(completion, str):
                 raise ValueError("gsm8k_completion_must_be_text")
             answer = extract_release_answer(completion)
+            resilient_answer = extract_resilient_answer(completion)
             status = (
                 "invalid_answer"
                 if answer is None
                 else ("correct" if answer == reference["answer"] else "incorrect")
             )
+            resilient_status = (
+                "invalid_answer"
+                if resilient_answer is None
+                else ("correct" if resilient_answer == reference["answer"] else "incorrect")
+            )
             if predicted.get("stop_reason") == "length_limit":
                 counts["generation_length_limit"] += 1
+                resilient_counts["generation_length_limit"] += 1
         counts[status] += 1
-        results.append({"instance_id": identifier, "status": status, "parsed_answer": answer})
+        resilient_counts[resilient_status] += 1
+        results.append(
+            {
+                "instance_id": identifier,
+                "status": status,
+                "parsed_answer": answer,
+                "strict_parsed_answer": answer,
+                "resilient_status": resilient_status,
+                "resilient_parsed_answer": resilient_answer,
+            }
+        )
+    strict_accuracy = counts["correct"] / len(inputs)
+    resilient_accuracy = resilient_counts["correct"] / len(inputs)
     return {
         "metric": "release_regex_string_accuracy",
+        "primary_metric": "release_regex_string_accuracy",
         "total": len(inputs),
         "correct": counts["correct"],
-        "accuracy": counts["correct"] / len(inputs),
+        "accuracy": strict_accuracy,
+        "strict_correct": counts["correct"],
+        "strict_accuracy": strict_accuracy,
+        "resilient_correct": resilient_counts["correct"],
+        "resilient_accuracy": resilient_accuracy,
+        "resilient_metric_role": "diagnostic_only_same_predictions",
         "counts": dict(counts),
+        "resilient_counts": dict(resilient_counts),
         "results": results,
     }
 
@@ -224,7 +311,8 @@ def gsm8k_prompt_ids(spec, row, encoder, decoder, *, max_encoder_tokens=2048):
     if not 1 <= max_encoder_tokens <= 131072:
         raise ValueError("gsm8k_invalid_encoder_budget")
     if row.get("role") != "eval" or any(
-        key in row for key in ("answer", "target_patch", "solution")
+        key in row
+        for key in ("answer", "target_patch", "solution", "gold_patch", "reference", "groundtruth")
     ):
         raise ValueError("gsm8k_target_in_input_or_wrong_role")
     enc = ()
@@ -234,9 +322,16 @@ def gsm8k_prompt_ids(spec, row, encoder, decoder, *, max_encoder_tokens=2048):
         enc = tuple(encoder.encode(row["context"], add_special_tokens=True))
         if len(enc) > max_encoder_tokens:
             raise ValueError("gsm8k_encoder_overflow")
-        prompt = row["instruction"]
+        question = row.get("question")
+        prompt = (
+            f"{row['instruction']}\n\nQuestion: {question}"
+            if isinstance(question, str) and question.strip()
+            else row["instruction"]
+        )
     else:
-        prompt = row["instruction"] + "\n\n" + row["context"]
+        context = row["context"]
+        instruction = row["instruction"]
+        prompt = context if context.startswith(instruction) else instruction + "\n\n" + context
     rendered = decoder.apply_chat_template(
         [{"role": "user", "content": prompt}],
         tokenize=False,
@@ -299,7 +394,7 @@ def generate_run(args):
     import torch
 
     from bifocalgemma.config import get_experiment
-    from bifocalgemma.models.v2.pretrained import (
+    from bifocalgemma.models.checkpoint_transfer import (
         load_local_native_model,
         load_sft_adapters_for_inference,
     )

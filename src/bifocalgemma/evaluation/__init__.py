@@ -1,4 +1,4 @@
-"""Reference score reporting for BifocalGemma; benchmark execution is not implemented."""
+"""Reference score reporting and evaluation runners for BifocalGemma."""
 
 from bifocalgemma.evaluation.eval_code import (
     EXPERIMENT_MODELS,

@@ -109,10 +109,10 @@ def validate_training_policy(policy, model=None):
             raise ValueError("Model architecture does not match policy family.")
         projection = model.encoder_projection
         if v2:
-            from bifocalgemma.models.v2.alignment import NormalizedAlignment
+            from bifocalgemma.models.bridge import NormalizedAlignment, SwiGLUDualGateBridge
 
             if model.spec.architecture_version != "normalized_merged_v2" or not isinstance(
-                projection, NormalizedAlignment
+                projection, (NormalizedAlignment, SwiGLUDualGateBridge)
             ):
                 raise ValueError("unified_v2 requires normalized_merged_v2 alignment.")
             return
@@ -249,17 +249,25 @@ def update_policy_learning_rates(optimizer, step):
         raise ValueError("Optimizer step must be nonnegative.")
     rates = {}
     for group in optimizer.param_groups:
-        warmup = group["warmup_steps"]
-        fraction = min(1.0, (step + 1) / warmup) if warmup else 1.0
-        if group.get("scheduler") == "cosine":
-            total = group["total_steps"]
-            if total is None:
-                raise ValueError("Cosine schedule needs a resolved training horizon.")
-            if step + 1 > warmup:
-                # First post-warmup update starts decay; final update reaches the floor.
-                progress = min(1.0, (step + 1 - warmup) / max(1, total - warmup))
-                floor = group["min_lr_ratio"]
-                fraction = floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * progress))
+        offset = int(group.get("warmup_offset", 0))
+        effective_step = step - offset
+        if effective_step < 0:
+            fraction = 0.0
+        else:
+            warmup = group["warmup_steps"]
+            fraction = min(1.0, (effective_step + 1) / warmup) if warmup else 1.0
+            if group.get("scheduler") == "cosine":
+                total = group["total_steps"]
+                if total is None:
+                    raise ValueError("Cosine schedule needs a resolved training horizon.")
+                effective_total = max(1, total - offset)
+                if effective_step + 1 > warmup:
+                    # First post-warmup update starts decay; final update reaches the floor.
+                    progress = min(
+                        1.0, (effective_step + 1 - warmup) / max(1, effective_total - warmup)
+                    )
+                    floor = group["min_lr_ratio"]
+                    fraction = floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * progress))
         group["lr"] = group["base_lr"] * fraction
         rates[group["name"]] = group["lr"]
     return rates

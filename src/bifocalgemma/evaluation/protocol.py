@@ -11,9 +11,10 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
-EFFECTIVE_BENCHMARK_PROTOCOL = "context_effective_v1_strict_mcq_bounded_generation"
+EFFECTIVE_BENCHMARK_PROTOCOL = "context_effective_v2_prompt_parity_resilient_scorers"
 GENERATION_BUDGET_POLICY = "min_suite_row_actual_paired_prefix_v1"
 MCQ_SCORER_MODE = "strict_primary_resilient_diagnostic_v1"
+BENCHMARK_RESET_ID = "2026-11-16-prompt-parity-resilient-scorers-v5"
 MAX_DECODER_TOKENS = 8192
 
 
@@ -62,14 +63,21 @@ def scorer_fingerprint() -> str:
     from bifocalgemma.evaluation import context, gsm8k
 
     functions = (
+        context.decoder_prompt,
+        context.prompt_ids,
         context.strict_letter,
         context.fallback_letter_regex,
         context._extract_match_letter,
         context.extract_mcq_letter,
+        context.normalize_completion_prediction,
         context.completion_metrics,
         context.score_context_case,
         context.score_repo_niah_case,
         gsm8k.extract_release_answer,
+        gsm8k.extract_resilient_answer,
+        gsm8k.extract_gsm8k_answer,
+        gsm8k.score_gsm8k,
+        gsm8k.gsm8k_prompt_ids,
     )
     return _fingerprint(
         {
@@ -148,6 +156,7 @@ def build_effective_benchmark_spec(
         raise ValueError("benchmark_runtime_model_spec_mismatch")
     return {
         "version": EFFECTIVE_BENCHMARK_PROTOCOL,
+        "reset_id": BENCHMARK_RESET_ID,
         "model_spec": spec.to_dict(),
         "runtime_model": runtime_identity,
         "collection": collection,
@@ -174,7 +183,12 @@ def build_effective_benchmark_spec(
 
 def mcq_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Expose both parsers on the same predictions with an unambiguous headline."""
-    mcq = [record for record in records if "strict_correct" in record]
+    mcq = [
+        record
+        for record in records
+        if "strict_correct" in record
+        and record.get("primary_metric", "mcq_strict_accuracy") == "mcq_strict_accuracy"
+    ]
     if not mcq:
         return {}
     strict = sum(bool(record["strict_correct"]) for record in mcq) / len(mcq)
@@ -190,4 +204,29 @@ def mcq_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
             record["resilient_parsed_answer"] is None for record in mcq
         ),
         "mcq_scored_count": len(mcq),
+    }
+
+
+def gsm8k_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Expose both strict release and resilient GSM8K parsers on the same predictions."""
+    gsm = [
+        record
+        for record in records
+        if record.get("primary_metric") == "gsm8k_strict_accuracy"
+    ]
+    if not gsm:
+        return {}
+    strict = sum(bool(record["strict_correct"]) for record in gsm) / len(gsm)
+    resilient = sum(bool(record["resilient_correct"]) for record in gsm) / len(gsm)
+    return {
+        "primary_metric": "gsm8k_strict_accuracy",
+        "accuracy_alias": "strict_accuracy",
+        "strict_accuracy": strict,
+        "resilient_accuracy": resilient,
+        "resilient_metric_role": "diagnostic_only_same_predictions",
+        "strict_invalid_outputs": sum(record["strict_parsed_answer"] is None for record in gsm),
+        "resilient_invalid_outputs": sum(
+            record["resilient_parsed_answer"] is None for record in gsm
+        ),
+        "gsm8k_scored_count": len(gsm),
     }

@@ -1,4 +1,4 @@
-"""V3 checkpointing, resume, pruning, and Hugging Face synchronization."""
+"""Matrix checkpointing, resume, pruning, and Hugging Face synchronization."""
 
 from __future__ import annotations
 
@@ -14,19 +14,18 @@ import torch
 import torch.utils.checkpoint
 from safetensors.torch import load_file, save_file
 
-from bifocalgemma.data.curation import file_digest
-from bifocalgemma.training.memory_probe import ProbeLoRALinear
-from bifocalgemma.training.stages import (
-    atomic_json,
-    validate_checkpoint_files,
-)
-from bifocalgemma.v3.constants import (
+from bifocalgemma.config import (
     CLEAN_RECIPE_VERSION,
     STAGE1_STEPS,
     TOTAL_STEPS,
 )
-from bifocalgemma.v3.objectives import (
-    is_cross_bridge_parameter,
+from bifocalgemma.data.curation import file_digest
+from bifocalgemma.training.memory_probe import ProbeLoRALinear
+from bifocalgemma.training.objectives import is_cross_bridge_parameter
+from bifocalgemma.training.stages import (
+    atomic_json,
+    retry_windows_file_operation,
+    validate_checkpoint_files,
 )
 
 
@@ -75,8 +74,6 @@ def save_matrix_checkpoint(
         for name in ("adapters.safetensors", "trainer_state.pt", "manifest.json")
     }
     (stage_dir / "READY.json").write_text(json.dumps(ready_marker, indent=2), encoding="utf-8")
-
-    from bifocalgemma.training.stages import retry_windows_file_operation
 
     retry_windows_file_operation(lambda: stage_dir.rename(checkpoint_dir))
     return checkpoint_dir
@@ -127,7 +124,8 @@ def restore_optimizer_state_by_name(
             checkpoint_name_to_state[checkpoint_id_to_name[lookup_pid]] = st
 
     # 2. Iterate through model.named_parameters() and map to active optimizer parameters
-    active_params = {p for g in optimizer.param_groups for p in g.get("params", [])}
+    param_to_group = {p: g for g in optimizer.param_groups for p in g.get("params", [])}
+    active_params = set(param_to_group)
 
     restored_count = 0
     skipped_shape = 0
@@ -149,6 +147,9 @@ def restore_optimizer_state_by_name(
             skipped_shape += 1
             continue
 
+        group = param_to_group[param]
+        step_on_param_device = bool(group.get("capturable") or group.get("fused"))
+
         # Build restored state dictionary with device and dtype matching
         new_state = {}
         for k, v in src_state.items():
@@ -156,7 +157,11 @@ def restore_optimizer_state_by_name(
                 if k in ("exp_avg", "exp_avg_sq", "max_exp_avg_sq"):
                     new_state[k] = v.to(device=param.device, dtype=param.dtype).clone()
                 elif k == "step":
-                    new_state[k] = v.to(device=param.device).clone()
+                    new_state[k] = (
+                        v.to(device=param.device).clone()
+                        if step_on_param_device
+                        else v.cpu().clone()
+                    )
                 else:
                     new_state[k] = v.to(device=param.device).clone()
             else:
@@ -251,7 +256,7 @@ def restore_matrix_checkpoint(
 
 
 def prune_matrix_checkpoints(train_dir: Path, keep_limit: int = 2) -> list[str]:
-    """Keep the milestone checkpoint-005551 and the last keep_limit checkpoints."""
+    """Keep milestone checkpoints and the last keep_limit checkpoints."""
     train_dir = Path(train_dir).resolve()
     candidates = sorted(
         [p for p in train_dir.glob("checkpoint-*") if (p / "READY.json").exists()],
@@ -275,7 +280,7 @@ def prune_matrix_checkpoints(train_dir: Path, keep_limit: int = 2) -> list[str]:
     return sorted(p.name for p in keep)
 
 
-def synchronize_matrix_v3(
+def synchronize_matrix(
     repo_id: str,
     root: Path | str,
     prefix: str,
@@ -420,7 +425,7 @@ def synchronize_matrix_v3(
     return {"revision": revision, "retained_checkpoints": sorted(keep), "verified_at": time.time()}
 
 
-synchronize_v2 = synchronize_matrix_v3
+synchronize_matrix_v3 = synchronize_matrix
 
 
 def load_matrix_adapters_for_inference(model: Any, checkpoint_dir: Path | str) -> dict[str, Any]:

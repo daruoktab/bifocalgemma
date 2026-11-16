@@ -5,10 +5,8 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from bifocalgemma.config import COMPREHENSION_MIX_RATIO
 from bifocalgemma.contracts import TokenizedRepairExample
-from bifocalgemma.v3.constants import (
-    COMPREHENSION_MIX_RATIO,
-)
 
 # ---------------------------------------------------------------------------
 # Anti-Catastrophic-Forgetting Dataset Curriculum (10-15% Comprehension / QA Mix)

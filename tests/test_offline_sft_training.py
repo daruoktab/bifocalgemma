@@ -1,6 +1,5 @@
 """Meaningful local checks for matched notebook data, accumulation and resume."""
 
-import ast
 import copy
 import json
 import os
@@ -18,7 +17,7 @@ from bifocalgemma.data.offline_sft import (
     prepare_editing_records,
     split_editing_records,
 )
-from bifocalgemma.models.v2.native import build_native_tiny_model
+from bifocalgemma.modeling_bifocalgemma import build_native_tiny_model
 from bifocalgemma.training.memory_probe import configure_probe_training
 from bifocalgemma.training.objectives import patch_cross_entropy
 from bifocalgemma.training.offline_sft import fit_offline_sft, restore_sft_checkpoint
@@ -229,55 +228,7 @@ class TestOfflineSFT(unittest.TestCase):
                 )
 
 
-class TestNotebookCellParity(unittest.TestCase):
-    def test_cell_count_order_and_contents_are_matched(self):
-        root = Path(__file__).resolve().parents[1]
-        texts = [
-            (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(encoding="utf-8")
-            for family in ("symmetric", "asymmetric", "baseline")
-        ]
-        cells = [
-            [
-                ast.get_source_segment(text, node)
-                for node in ast.parse(text).body
-                if isinstance(node, ast.FunctionDef)
-            ]
-            for text in texts
-        ]
-        self.assertEqual([len(items) for items in cells], [21, 21, 21])
-        self.assertEqual(
-            [i for i, group in enumerate(zip(*cells, strict=True)) if len(set(group)) != 1],
-            [4],
-        )
-
-    def test_hub_upload_controls_and_path(self):
-        root = Path(__file__).resolve().parents[1]
-        for family in ("symmetric", "asymmetric"):
-            text = (root / f"notebooks/legacy/bifocalgemma_train_{family}.py").read_text(
-                encoding="utf-8"
-            )
-            self.assertIn('HF_REPO_ID = "daruokta/bifocalgemma-sft"', text)
-            self.assertIn("HF_UPLOAD_ENABLED = True", text)
-            self.assertIn('path_in_repo = f"{FAMILY}/{EXPERIMENT}/{RUN_NAME}"', text)
-            self.assertIn("run_recipe_comparison", text)
-            self.assertIn("CHECKPOINT_UPLOAD_ENABLED = True", text)
-            self.assertIn("SAVE_TOTAL_LIMIT = 2", text)
-
-    def test_notebooks_marimo_graph_has_no_duplicate_definitions(self):
-        import importlib.util
-
-        root = Path(__file__).resolve().parents[1]
-        for family in ("symmetric", "asymmetric"):
-            path = root / f"notebooks/legacy/bifocalgemma_train_{family}.py"
-            spec = importlib.util.spec_from_file_location(f"notebook_{family}", path)
-            self.assertIsNotNone(spec)
-            assert spec is not None and spec.loader is not None
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            app = getattr(module, "app")
-            # Ensure marimo app initializes DAG without MultipleDefinitionError or cycles
-            app._maybe_initialize()
-
+class TestTokenRoleAndDataIdentity(unittest.TestCase):
     def test_token_role_detection_handles_classic_and_fine_grained_and_nulls(self):
         def parse_role(identity):
             access_token = (identity.get("auth") or {}).get("accessToken") or {}

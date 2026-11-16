@@ -14,7 +14,7 @@ def reset_state(state, reset_id):
     state["stages"] = {
         name: value
         for name, value in state["stages"].items()
-        if not name.startswith("benchmark:") and name != "final_upload"
+        if not name.startswith(("benchmark:", "benchmark_")) and name != "final_upload"
     }
     state["benchmark_reset_id"] = reset_id
     return state

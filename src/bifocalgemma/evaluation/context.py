@@ -14,15 +14,18 @@ from typing import Any
 from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.protocol import (
+    BENCHMARK_RESET_ID as BENCHMARK_RESET_ID,
+)
+from bifocalgemma.evaluation.protocol import (
     build_effective_benchmark_spec,
     effective_generation_budget,
+    gsm8k_report_metrics,
     mcq_report_metrics,
 )
 from bifocalgemma.training.stages import atomic_json
 
-EVALUATION_PROTOCOL = "greedy_no_cache_context_v3_strict_mcq_bounded_generation"
-V2_EVALUATION_PROTOCOL = "greedy_cached_context_v4_strict_mcq_bounded_generation"
-BENCHMARK_RESET_ID = "2026-11-12-strict-mcq-bounded-generation-v4"
+EVALUATION_PROTOCOL = "greedy_no_cache_context_v5_prompt_parity_resilient_scorers"
+V2_EVALUATION_PROTOCOL = "greedy_cached_context_v5_prompt_parity_resilient_scorers"
 
 
 def greedy_decode(*args, **kwargs):
@@ -31,47 +34,147 @@ def greedy_decode(*args, **kwargs):
     return generate(*args, **kwargs)
 
 
+_GOLD_INPUT_KEYS = (
+    "answer",
+    "canonical_solution",
+    "correct_answer",
+    "correct_letter",
+    "gold",
+    "gold_answer",
+    "gold_needle",
+    "gold_patch",
+    "groundtruth",
+    "is_hard",
+    "needle",
+    "reference",
+    "solution",
+    "target_patch",
+    "target_text",
+    "test_code",
+    "test_script",
+)
+_REPAIR_INSTRUCTION_PREFIX = "Return only a unified diff fulfilling the instruction."
+_FILE_HEADER_RE = re.compile(r"^### File:\s*([^\s(]+)", re.MULTILINE)
+_FORBIDDEN_PROMPT_PHRASES = (
+    "using the encoder context",
+    "use the supplied encoder context",
+    "encoder: object",
+    "manifold warping",
+    "cross-attention",
+    "bifocal",
+)
+
+
+def _single_repair_target_file(row: dict[str, Any]) -> str | None:
+    """Return the unique visible file path from public metadata/context without touching gold."""
+    paths: list[str] = []
+    seen: set[str] = set()
+    selection = row.get("context_selection")
+    if isinstance(selection, dict) and selection.get("gold_used") is not True:
+        for window in selection.get("windows", ()):
+            path = window.get("path") if isinstance(window, dict) else None
+            if isinstance(path, str) and path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+    context = row.get("context")
+    if not paths and isinstance(context, str):
+        for path in _FILE_HEADER_RE.findall(context):
+            if path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+    if len(paths) != 1:
+        return None
+    candidate = paths[0].strip()
+    if not candidate or candidate == context:
+        return None
+    lowered = candidate.lower()
+    if any(phrase in lowered for phrase in _FORBIDDEN_PROMPT_PHRASES):
+        return None
+    return candidate
+
+
+def _context_already_includes_instruction(context: str, instruction: str) -> bool:
+    if not instruction:
+        return False
+    if context.startswith(instruction):
+        return True
+    if "\nQuestion:\n" in instruction:
+        goal, _, question_part = instruction.partition("\nQuestion:\n")
+        if (
+            goal
+            and context.startswith(goal)
+            and f"Question:\n{question_part.strip()}" in context
+        ):
+            return True
+    return False
+
+
 def decoder_prompt(row, *, paired):
     """One prompt renderer for actual decoding and the shared output allowance."""
     instruction = row["instruction"]
-    if row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair":
-        instruction = "Return only a unified diff fulfilling the instruction.\n" + instruction
+    is_repair = (
+        row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
+    )
+    if is_repair:
+        if paired:
+            target_file = _single_repair_target_file(row)
+            if target_file:
+                return (
+                    f"{_REPAIR_INSTRUCTION_PREFIX}\n\nTarget file: {target_file}\n\n{instruction}"
+                )
+            return f"{_REPAIR_INSTRUCTION_PREFIX}\n\n{instruction}"
+        context = row["context"]
+        if context.startswith(_REPAIR_INSTRUCTION_PREFIX):
+            return context
+        if _context_already_includes_instruction(context, instruction) or context.startswith(
+            f"### Issue\n{instruction}"
+        ):
+            return f"{_REPAIR_INSTRUCTION_PREFIX}\n\n{context}"
+        return f"{_REPAIR_INSTRUCTION_PREFIX}\n\n{instruction}\n\n{context}"
+
     if paired:
+        if str(row.get("benchmark", "")).lower() == "gsm8k":
+            question = row.get("question")
+            if isinstance(question, str) and question.strip():
+                return f"{instruction}\n\nQuestion: {question}"
         return instruction
-    return instruction + "\n\n" + row["context"]
+
+    context = row["context"]
+    if _context_already_includes_instruction(context, instruction):
+        return context
+    return f"{instruction}\n\n{context}"
 
 
 def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
-    if row.get("role") != "eval" or any(
-        k in row
-        for k in (
-            "answer",
-            "correct_answer",
-            "correct_letter",
-            "gold_patch",
-            "reference",
-            "target_patch",
-            "test_script",
-            "test_code",
-            "target_text",
-            "groundtruth",
-            "is_hard",
-        )
+    selection = row.get("context_selection")
+    if (
+        row.get("role") != "eval"
+        or (isinstance(selection, dict) and selection.get("gold_used") is True)
+        or any(k in row for k in _GOLD_INPUT_KEYS)
     ):
         raise ValueError("benchmark_gold_in_model_input")
     context = row["context"]
     enc = ()
     if spec.encoder:
+        if encoder is None:
+            raise ValueError("benchmark_missing_encoder_tokenizer")
         enc = tuple(encoder.encode(context, add_special_tokens=True))
         if len(enc) > encoder_limit:
             raise ValueError("encoder_context_overflow")
     prompt = decoder_prompt(row, paired=spec.encoder is not None)
-    text = decoder.apply_chat_template(
-        [{"role": "user", "content": prompt}],
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
+    try:
+        text = decoder.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        text = decoder.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
     prefix = tuple(decoder.encode(text, add_special_tokens=False))
     if not prefix or prefix[0] != decoder.bos_token_id:
         raise ValueError("benchmark_bos_policy")
@@ -221,7 +324,86 @@ def extract_mcq_letter(text: str) -> str | None:
     return strict_letter(text, allow_fallback=True)
 
 
-def completion_metrics(prediction, reference):
+def _strip_fim_markers(text: str) -> str:
+    text = re.sub(r"^\s*###\s*MISSING CODE[ \t]*\r?\n?", "", text, count=1)
+    return re.split(r"(?:^|\r?\n)\s*###\s*SUFFIX\b", text, maxsplit=1)[0]
+
+
+def _strip_markdown_fences(text: str) -> str:
+    stripped = text.strip()
+    if not stripped:
+        return text
+    if stripped.startswith("```"):
+        closed_match = re.match(
+            r"```[A-Za-z0-9_+-]*[ \t]*\r?\n?(.*?)\r?\n?```[ \t]*(?:\r?\n.*)?\Z",
+            stripped,
+            re.DOTALL,
+        )
+        if closed_match:
+            return closed_match.group(1)
+        return re.sub(r"^```[A-Za-z0-9_+-]*[ \t]*\r?\n?", "", stripped, count=1)
+    preamble_guard = (
+        r"(?!(?:def|class|import|from|return|if|for|while|with|try|except)\b|@)"
+    )
+    preamble_match = re.match(
+        rf"{preamble_guard}[^\n`]{{0,160}}\r?\n\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n(.*?)\r?\n?```[ \t]*(?:\r?\n.*)?\Z",
+        stripped,
+        re.DOTALL,
+    )
+    if preamble_match:
+        return preamble_match.group(1)
+    unclosed_preamble_match = re.match(
+        rf"{preamble_guard}[^\n`]{{0,160}}\r?\n\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n(.*)\Z",
+        stripped,
+        re.DOTALL,
+    )
+    if unclosed_preamble_match:
+        return unclosed_preamble_match.group(1)
+    return text
+
+
+def _strip_echoed_suffix(text: str, suffix: str | None) -> str:
+    if not text or not suffix:
+        return text
+    norm_text = text.replace("\r\n", "\n")
+    norm_suffix = suffix.replace("\r\n", "\n")
+    if not norm_suffix.strip():
+        return text
+    trimmed_text = norm_text.rstrip()
+    candidates = [norm_suffix.rstrip()]
+    stripped_leading = norm_suffix.lstrip("\n").rstrip()
+    if stripped_leading and stripped_leading not in candidates:
+        candidates.append(stripped_leading)
+    for cand in candidates:
+        if not cand:
+            continue
+        if trimmed_text.endswith(cand):
+            return trimmed_text[: len(trimmed_text) - len(cand)].rstrip("\n")
+        lines = cand.splitlines()
+        for count in range(len(lines), 0, -1):
+            prefix = "\n".join(lines[:count])
+            if not prefix.strip():
+                continue
+            if len("".join(prefix.split())) < 8:
+                continue
+            if trimmed_text.endswith(prefix):
+                before_idx = len(trimmed_text) - len(prefix)
+                if before_idx == 0 or trimmed_text[before_idx - 1] == "\n" or not norm_suffix.startswith("\n"):
+                    return trimmed_text[:before_idx].rstrip("\n")
+    return text
+
+
+def normalize_completion_prediction(prediction: str, *, suffix: str | None = None) -> str:
+    """Strip markdown code fences and echoed FIM suffix markers/overlap from completions."""
+    if not prediction:
+        return prediction
+    text = _strip_fim_markers(prediction)
+    text = _strip_markdown_fences(text)
+    text = _strip_fim_markers(text)
+    return _strip_echoed_suffix(text, suffix)
+
+
+def _sequence_and_identifier_metrics(prediction: str, reference: str) -> tuple[bool, float, float]:
     clean_prediction = "".join(prediction.split())
     clean_reference = "".join(reference.split())
     raw_pred_ids = re.findall(r"\b[^\W\d]\w*\b", prediction)
@@ -234,11 +416,22 @@ def completion_metrics(prediction, reference):
     else:
         f1 = 1.0 if clean_prediction == clean_reference else 0.0
     seq_sim = SequenceMatcher(None, clean_prediction, clean_reference, autojunk=False).ratio()
+    return clean_prediction == clean_reference, seq_sim, f1
+
+
+def completion_metrics(prediction, reference, *, suffix: str | None = None):
+    raw_em, raw_sim, raw_f1 = _sequence_and_identifier_metrics(prediction, reference)
+    normalized_prediction = normalize_completion_prediction(prediction, suffix=suffix)
+    norm_em, norm_sim, norm_f1 = _sequence_and_identifier_metrics(normalized_prediction, reference)
     return {
-        "exact_match": clean_prediction == clean_reference,
-        "sequence_similarity": seq_sim,
-        "regex_identifier_set_f1": f1,
-        "regex_f1": f1,
+        "exact_match": raw_em,
+        "sequence_similarity": raw_sim,
+        "regex_identifier_set_f1": raw_f1,
+        "regex_f1": raw_f1,
+        "normalized_exact_match": norm_em,
+        "normalized_sequence_similarity": norm_sim,
+        "normalized_regex_identifier_set_f1": norm_f1,
+        "normalized_regex_f1": norm_f1,
     }
 
 
@@ -295,7 +488,20 @@ def score_context_case(
             "status": "INVALID_OUTPUT" if parsed is None else "SCORED",
         }
     if kind == "completion":
-        metrics = completion_metrics(completion, gold["reference"])
+        suffix = None
+        ctx = row.get("context")
+        if isinstance(ctx, str):
+            if "\n### SUFFIX\n" in ctx:
+                _, _, suffix = ctx.rpartition("\n### SUFFIX\n")
+            elif "\r\n### SUFFIX\r\n" in ctx:
+                _, _, suffix = ctx.rpartition("\r\n### SUFFIX\r\n")
+            elif "### SUFFIX" in ctx:
+                _, _, suffix = ctx.rpartition("### SUFFIX")
+                if suffix.startswith("\r\n"):
+                    suffix = suffix[2:]
+                elif suffix.startswith("\n"):
+                    suffix = suffix[1:]
+        metrics = completion_metrics(completion, gold["reference"], suffix=suffix)
         return {
             **metrics,
             "correct": metrics["exact_match"],
@@ -303,13 +509,23 @@ def score_context_case(
             "status": "SCORED",
         }
     if str(row.get("benchmark", "")).lower() == "gsm8k" or "question" in row and "answer" in gold:
-        from bifocalgemma.evaluation.gsm8k import extract_release_answer
+        from bifocalgemma.evaluation.gsm8k import (
+            extract_release_answer,
+            extract_resilient_answer,
+        )
 
         parsed = extract_release_answer(completion)
+        resilient = extract_resilient_answer(completion)
         return {
             "correct": parsed == gold["answer"],
             "parsed_answer": parsed,
+            "strict_correct": parsed == gold["answer"],
+            "strict_parsed_answer": parsed,
+            "resilient_correct": resilient == gold["answer"],
+            "resilient_parsed_answer": resilient,
+            "primary_metric": "gsm8k_strict_accuracy",
             "status": "INVALID_OUTPUT" if parsed is None else "SCORED",
+            "resilient_status": "INVALID_OUTPUT" if resilient is None else "SCORED",
         }
     if kind == "retrieval" or str(row.get("benchmark", "")).lower() == "reponiah":
         return score_repo_niah_case(row, gold, completion)
@@ -491,12 +707,19 @@ def run_context_benchmark(
         enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
         # Same output allowance for pairs and baselines: reserve the paired IT prefix.
         paired_prompt = decoder_prompt(row, paired=True)
-        paired_rendered = decoder.apply_chat_template(
-            [{"role": "user", "content": paired_prompt}],
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
-        )
+        try:
+            paired_rendered = decoder.apply_chat_template(
+                [{"role": "user", "content": paired_prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            paired_rendered = decoder.apply_chat_template(
+                [{"role": "user", "content": paired_prompt}],
+                tokenize=False,
+                add_generation_prompt=True,
+            )
         paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
         new_tokens = effective_generation_budget(
             max_new_tokens,
@@ -597,6 +820,7 @@ def run_context_benchmark(
         "timing": clock.summary(),
         "official_protocol": False,
         "protocol_version": protocol_version,
+        "reset_id": BENCHMARK_RESET_ID,
         "effective_protocol": effective_protocol,
         "primary_metric": "task_specific_accuracy",
         "accuracy_alias": "task_specific_accuracy",
@@ -605,11 +829,16 @@ def run_context_benchmark(
         "resources": resource_snapshot(next(model.parameters()).device),
     }
     report.update(mcq_report_metrics(completed))
+    report.update(gsm8k_report_metrics(completed))
     for key in (
         "exact_match",
         "sequence_similarity",
         "regex_identifier_set_f1",
         "regex_f1",
+        "normalized_exact_match",
+        "normalized_sequence_similarity",
+        "normalized_regex_identifier_set_f1",
+        "normalized_regex_f1",
         "primary_continuous_score",
     ):
         if completed and key in completed[0]:
@@ -635,10 +864,36 @@ def format_crosscodelong_summary(records: list[dict[str, Any]]) -> dict[str, flo
     seq_sim = sum(float(r.get("sequence_similarity", 0.0)) for r in records) / n
     f1 = sum(float(r.get("regex_f1", r.get("regex_identifier_set_f1", 0.0))) for r in records) / n
     em = sum(float(bool(r.get("exact_match", False))) for r in records) / n
+    norm_sim = (
+        sum(
+            float(r.get("normalized_sequence_similarity", r.get("sequence_similarity", 0.0)))
+            for r in records
+        )
+        / n
+    )
+    norm_f1 = (
+        sum(
+            float(
+                r.get(
+                    "normalized_regex_f1",
+                    r.get("normalized_regex_identifier_set_f1", r.get("regex_f1", 0.0)),
+                )
+            )
+            for r in records
+        )
+        / n
+    )
+    norm_em = (
+        sum(float(bool(r.get("normalized_exact_match", r.get("exact_match", False)))) for r in records)
+        / n
+    )
     return {
         "sequence_similarity": round(seq_sim, 4),
         "regex_f1": round(f1, 4),
         "exact_match": round(em, 4),
+        "normalized_sequence_similarity": round(norm_sim, 4),
+        "normalized_regex_f1": round(norm_f1, 4),
+        "normalized_exact_match": round(norm_em, 4),
     }
 
 

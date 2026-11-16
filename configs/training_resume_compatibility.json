@@ -1,58 +1,61 @@
 {
-  "version": "exact_source_training_equivalence_v1",
-  "reason": "Structural V2/V3 split, 256-token MCQ budget floor, PreTrainedModel Hub export with subfolder support, clean recipe versioning, robust checkpoint resume & upload interval, and standalone Molab runtime embedding. Model math, data, optimizer, schedules and checkpoint semantics are unchanged.",
-  "baseline_runtime_sha256": "2cc7b98cf02d97d226c8824df454fdd4e3b4adc2ac906ace6a6d7b8e030ece3a",
-  "baseline_training_semantics_sha256": "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
-  "approved_source_semantics_sha256": "a7749014d9c9fe59af1d2bd2e40474d3039410faa98d87f93494bbb3953883ef",
-  "source_semantics_sha256": "a7749014d9c9fe59af1d2bd2e40474d3039410faa98d87f93494bbb3953883ef",
+  "version": "clean_versionless_baseline_v1",
+  "reason": "Clean post-Phase-1/2 versionless baseline after V2/V3 unification, SwiGLUDualGateBridge/cross-attention math fixes, continuous Stage 1->2 schedule, diff_marker_v1 loss weighting, target whitespace-preserving tokenization, resilient GSM8K/CrossCodeLong scoring, 256-token MCQ generation floor, and sampled benchmark integrity. Pre-refactor checkpoints and schedules are intentionally incompatible. Final verification also binds benchmark reuse to exact checkpoint bytes, preserves pending upload status, and requires verified local export plus matching remote content metadata before completed-run reuse.",
+  "baseline_runtime_sha256": "4ae2fefaff41b315e229b59ab25537de7bf3296d88b95e37a5417c25b8af0216",
+  "baseline_training_semantics_sha256": "debedc3edc4bdab72238503e3f7d722e7ff72facadfbb9f86fa259d2fac9267b",
+  "approved_source_semantics_sha256": "debedc3edc4bdab72238503e3f7d722e7ff72facadfbb9f86fa259d2fac9267b",
+  "source_semantics_sha256": "debedc3edc4bdab72238503e3f7d722e7ff72facadfbb9f86fa259d2fac9267b",
   "reviewed_changed_files": {
-    "evaluation/context.py": {
-      "after": "68a455539690ce78514e036bfdd3dddcbae25acb34ac79689af746811db23fae"
+    "config.py": {
+      "after": "a28344be4026217c0d73c63074316bf6e2f6fe960c9886e740dd469ae38d497d"
     },
-    "evaluation/gsm8k.py": {
-      "after": "718907c162c67b65222f8cafb0ebe9bbb678c00974d3d3e370aa951691265b77"
+    "configuration_bifocalgemma.py": {
+      "after": "e61e21ebf545c8fd0fa635f586c0625d0df03bfeea75702c01d85c358ba1559f"
     },
-    "inference/generation.py": {
-      "after": "4dc0825738713fac69e7ddd6dd3623a95eec612a6ec8ce8f5f02d60f67f5ed56"
+    "modeling_bifocalgemma.py": {
+      "after": "b5a300e76504e74d9f271d4e922fe0ceff704c01f3a57f12fa8e620e72a3b239"
+    },
+    "models/bridge.py": {
+      "after": "789cc57317696ab7acc349d2d79ef366a6cdb6816bd68fcc6f1e563afc3df5cf"
+    },
+    "models/cross_attention.py": {
+      "after": "c6fc78f05cb9a2d04d29969ef96945549824e6971299a2b6eb5c5fdcb91bc8b7"
     },
     "data/context_tasks.py": {
-      "after": "cf47401492ab8a7d29b79c1fee629a6574ef1cc207f681b613bd8115ad907336"
+      "after": "99c66f879cb1a3e2bcbc363410eba4ab3b744b204e273753753c5c147e7aa2d0"
     },
     "data/context_benchmarks.py": {
-      "after": "d0358fadf903301e2038e1b04dbe058de648d4c3788c9329a44427958b4fff56"
+      "after": "fa9cd778e6e79447718de4f12d648ae38c5804789c39201ac4018ff75a7c45b5"
     },
-    "v3/attention.py": {
-      "after": "1032421497a60015e976803942c68b6a061fe5222398ec7abb9d3ebac35c0ae4"
+    "data/patches.py": {
+      "after": "895503ac18725ed2dbe13f0fa2595cd6db17cf9af1f060d7c8267bcb16c3aceb"
     },
-    "v3/benchmark.py": {
-      "after": "a624c3c5acdc3766c559b55475ad6dfee8674e27092b53844f22f914ee67db8d"
+    "evaluation/benchmark.py": {
+      "after": "a89d45173d9b50ecd0442489e18e122dce0f615aaadfe94495aebc5218285294"
     },
-    "v3/bridge.py": {
-      "after": "382aa4015a1a52fae303e564211c9c3bb7141827d1d9eb44834a8cc704f3c91c"
+    "evaluation/context.py": {
+      "after": "87dfdac939f0912f7dce55c8cedd75a4b8150461e56bc8ceca9cbdddcf92e9e6"
     },
-    "v3/curriculum.py": {
-      "after": "8c487a0e4e65afd53723fb534524dbedc9ae3fc7328edf914183a34d1d66f2ee"
+    "evaluation/gsm8k.py": {
+      "after": "6828bd961aeaa3105e7d2ca5c4dc99423bc2a84016ddf3825f8da0288c7a5a37"
     },
-    "v3/objectives.py": {
-      "after": "72d41831073b4e3a5674bf8fefd6ef190507c1009e732ea0e01fbd4a0bf8ea83"
-    },
-    "v3/matrix.py": {
-      "after": "4dce97f705bf71c3cdafff51a4127b23a8d73f51cd1c7bae30a8b4cd65c9d592"
-    },
-    "training/fast_pipeline.py": {
-      "after": "751fc965cecb8493cec6824da77b967427e68b763b5003ec64ba0f01b48323d0"
+    "evaluation/protocol.py": {
+      "after": "ded9ff7efc460da384fe0f91c573d31bccc6bddfefecbb744fbb114cc884b87b"
     },
     "training/hub.py": {
-      "after": "979d060fb6b02cb5ee1366eb7d4a096d6aae9e892a39fccf04ae9a858626b0cc"
+      "after": "3359ef06a966b0b888f0f9382cfa74a90819cf7a83b8e4bd8782a8cc966321b0"
     },
-    "training/stages.py": {
-      "after": "b95832712fe9266765b6e73c3ccf8938c3dc660bb225006ffb3e03fe9aee3188"
+    "training/matrix.py": {
+      "after": "61f705c33d54fb652de1e1cb17462f32607106309cb6438e1dc2894231bf2eea"
     },
-    "models/v2/native.py": {
-      "after": "3e866c3ad5271f5f7b95547e05adabf7fb079b0809ad71e383236ade8ffd9319"
+    "training/objectives.py": {
+      "after": "53a714c13886cd36aa83099d90c0665210d02ee7f40afd93c7ad687bf4aa7804"
     },
-    "models/v2/pretrained.py": {
-      "after": "adf2a5ca96c90b18c4bf166ffd9dca384ecbe34391dc8961271b055e52b34d78"
+    "training/runtime.py": {
+      "after": "75935ff698306091209f6ee090bb8e424936978e90de01bb52c22e4a18fa8670"
+    },
+    "training/stage.py": {
+      "after": "437e7c46252882031c77e830aea00a2ee65de5472f633463460e0cddb30bbb6f"
     }
   }
 }

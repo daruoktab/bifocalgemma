@@ -11,45 +11,32 @@ if str(_SRC_DIR) not in sys.path:
 
 import torch  # noqa: E402
 
-from bifocalgemma.models.v2.bridge import GatedCrossAttentionBridge  # noqa: E402
-from bifocalgemma.models.v2.code_graph_projector import ASTGraphProjector  # noqa: E402
-from bifocalgemma.models.v2.routing import RepoContextRouter  # noqa: E402
+from bifocalgemma.models.bridge import SwiGLUDualGateBridge  # noqa: E402
 
 
 class TestBifocalGemmaArchitecture(unittest.TestCase):
     def _run_bridge_test(self, enc_dim: int, dec_dim: int) -> None:
         batch_size = 2
-        dec_len = 16
         enc_len = 64
 
-        bridge = GatedCrossAttentionBridge(
-            decoder_dim=dec_dim,
-            encoder_dim=enc_dim,
-            num_heads=4,
-            head_dim=64,
-            initial_gate_val=0.05,
-            use_qk_norm=True,
-        )
+        bridge = SwiGLUDualGateBridge(d_enc=enc_dim, d_dec=dec_dim)
 
-        dec_states = torch.randn(batch_size, dec_len, dec_dim, requires_grad=True)
         enc_states = torch.randn(batch_size, enc_len, enc_dim, requires_grad=True)
-
-        out = bridge(dec_states, enc_states)
-        self.assertEqual(out.shape, (batch_size, dec_len, dec_dim))
+        out = bridge(enc_states)
+        self.assertEqual(out.shape, (batch_size, enc_len, dec_dim))
 
         loss = out.sum()
         loss.backward()
 
-        # Verify gradients flow back to both inputs
-        self.assertIsNotNone(dec_states.grad)
+        # Verify gradients flow back to encoder states and bridge parameters
         self.assertIsNotNone(enc_states.grad)
         assert enc_states.grad is not None
         self.assertGreater(torch.abs(enc_states.grad).sum().item(), 0.0)
 
-        # Verify gate parameter receives non-zero gradient (no gradient starvation)
-        self.assertIsNotNone(bridge.gate.grad)
-        assert bridge.gate.grad is not None
-        self.assertGreater(torch.abs(bridge.gate.grad).item(), 0.0)
+        for param in (bridge.w_res.weight, bridge.w_down.weight, bridge.gamma_calib):
+            self.assertIsNotNone(param.grad)
+            assert param.grad is not None
+            self.assertGreater(torch.abs(param.grad).sum().item(), 0.0)
 
     def test_symmetric_e2b_e2b(self):
         """Synthetic equal-width bridge with exact Gemma 4 E2B hidden dimension (1536)."""
@@ -68,31 +55,26 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
         self._run_bridge_test(enc_dim=1536, dec_dim=2560)
 
     def test_cuda_bridge_execution(self):
-        """Verify cross-attention bridge execution on GPU when CUDA is available."""
+        """Verify SwiGLU bridge execution on GPU when CUDA is available."""
         if not torch.cuda.is_available():
             self.skipTest("CUDA not available")
         device = torch.device("cuda:0")
-        bridge = GatedCrossAttentionBridge(
-            decoder_dim=2560,
-            encoder_dim=1536,
-            num_heads=8,
-            head_dim=256,
-        ).to(device)
-        dec_states = torch.randn(1, 16, 2560, device=device, requires_grad=True)
+        bridge = SwiGLUDualGateBridge(d_enc=1536, d_dec=2560).to(device)
         enc_states = torch.randn(1, 64, 1536, device=device, requires_grad=True)
-        out = bridge(dec_states, enc_states)
-        self.assertEqual(out.shape, (1, 16, 2560))
+        out = bridge(enc_states)
+        self.assertEqual(out.shape, (1, 64, 2560))
         loss = out.sum()
         loss.backward()
-        self.assertIsNotNone(dec_states.grad)
         self.assertIsNotNone(enc_states.grad)
-        self.assertIsNotNone(bridge.gate.grad)
+        self.assertIsNotNone(bridge.w_res.weight.grad)
+        self.assertIsNotNone(bridge.w_down.weight.grad)
+        self.assertIsNotNone(bridge.gamma_calib.grad)
 
     def test_gemma4_structural_integration(self):
         """Structural integration test using Gemma4TextModel with synthetic weights.
 
         Verifies that actual Gemma 4 model output hidden states with E2B and E4B
-        dimensions seamlessly pass through the bridge and backpropagate gradients.
+        dimensions seamlessly pass through SwiGLUDualGateBridge and backpropagate gradients.
         """
         try:
             from transformers import Gemma4TextConfig, Gemma4TextModel
@@ -130,12 +112,7 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
 
         enc_model = Gemma4TextModel(enc_config)
         dec_model = Gemma4TextModel(dec_config)
-        bridge = GatedCrossAttentionBridge(
-            decoder_dim=2560,
-            encoder_dim=1536,
-            num_heads=8,
-            head_dim=256,
-        )
+        bridge = SwiGLUDualGateBridge(d_enc=1536, d_dec=2560)
 
         input_enc = torch.randint(0, 1000, (1, 16))
         input_dec = torch.randint(0, 1000, (1, 8))
@@ -146,17 +123,19 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
         self.assertEqual(enc_hidden.shape, (1, 16, 1536))
         self.assertEqual(dec_hidden.shape, (1, 8, 2560))
 
-        bridged = bridge(dec_hidden, enc_hidden)
-        self.assertEqual(bridged.shape, (1, 8, 2560))
+        bridged = bridge(enc_hidden)
+        self.assertEqual(bridged.shape, (1, 16, 2560))
 
-        loss = bridged.sum()
+        loss = (dec_hidden @ bridged.transpose(-1, -2)).sum()
         loss.backward()
 
         enc_param = next(enc_model.parameters())
         dec_param = next(dec_model.parameters())
         self.assertIsNotNone(enc_param.grad)
         self.assertIsNotNone(dec_param.grad)
-        self.assertIsNotNone(bridge.gate.grad)
+        self.assertIsNotNone(bridge.w_res.weight.grad)
+        self.assertIsNotNone(bridge.w_down.weight.grad)
+        self.assertIsNotNone(bridge.gamma_calib.grad)
 
     def test_gemma4_bidirectional_attention_mechanism(self):
         """Verify that Gemma4TextModel with use_bidirectional_attention='all' allows
@@ -223,78 +202,6 @@ class TestBifocalGemmaArchitecture(unittest.TestCase):
             bidi_out_b = bidi_model(tokens_b).last_hidden_state
             bidi_token0_diff = (bidi_out_a[0, 0] - bidi_out_b[0, 0]).abs().sum().item()
             self.assertGreater(bidi_token0_diff, 1e-3)
-
-    def test_ast_graph_projector(self):
-        """Tests AST node type and syntax depth embedding projection."""
-        batch_size = 2
-        seq_len = 128
-        embed_dim = 256
-
-        projector = ASTGraphProjector(
-            num_node_types=100,
-            max_depth=32,
-            embed_dim=embed_dim,
-        )
-
-        dummy_node_types = torch.randint(0, 100, (batch_size, seq_len))
-        dummy_depths = torch.randint(0, 32, (batch_size, seq_len))
-
-        embeddings = projector(dummy_node_types, depths=dummy_depths)
-        self.assertEqual(embeddings.shape, (batch_size, seq_len, embed_dim))
-
-    def test_decoder_self_kv_savings(self):
-        """Check an illustrative uniform-layer self-KV calculation in MiB."""
-        savings = RepoContextRouter.calculate_decoder_self_kv_savings(
-            prompt_len=16384,
-            gen_len=512,
-            num_layers=32,
-            num_kv_heads=8,
-            head_dim=256,
-            bytes_per_param=2,
-        )
-        self.assertEqual(savings["decoder_only_self_kv_mb"], 4224.0)
-        self.assertEqual(savings["bifocalgemma_decoder_self_kv_mb"], 128.0)
-        self.assertEqual(savings["self_kv_saved_mb"], 4096.0)
-        self.assertAlmostEqual(savings["self_kv_reduction_percentage"], 100 * 32 / 33)
-
-    def test_self_kv_without_prompt(self):
-        savings = RepoContextRouter.calculate_decoder_self_kv_savings(prompt_len=0)
-        self.assertEqual(savings["decoder_only_self_kv_mb"], 128.0)
-        self.assertEqual(savings["bifocalgemma_decoder_self_kv_mb"], 128.0)
-        self.assertEqual(savings["self_kv_saved_mb"], 0.0)
-        self.assertEqual(savings["self_kv_reduction_percentage"], 0.0)
-
-    def test_self_kv_without_generation(self):
-        savings = RepoContextRouter.calculate_decoder_self_kv_savings(gen_len=0)
-        self.assertEqual(savings["decoder_only_self_kv_mb"], 4096.0)
-        self.assertEqual(savings["bifocalgemma_decoder_self_kv_mb"], 0.0)
-        self.assertEqual(savings["self_kv_saved_mb"], 4096.0)
-        self.assertEqual(savings["self_kv_reduction_percentage"], 100.0)
-
-    def test_empty_self_kv(self):
-        savings = RepoContextRouter.calculate_decoder_self_kv_savings(prompt_len=0, gen_len=0)
-        self.assertTrue(all(value == 0.0 for value in savings.values()))
-
-    def test_invalid_self_kv_inputs(self):
-        for inputs in (
-            {"prompt_len": -1},
-            {"gen_len": -1},
-            {"num_layers": 0},
-            {"num_kv_heads": 0},
-            {"head_dim": 0},
-            {"bytes_per_param": 0},
-        ):
-            with self.subTest(inputs=inputs), self.assertRaises(ValueError):
-                RepoContextRouter.calculate_decoder_self_kv_savings(**inputs)
-
-    def test_bidirectional_repo_mask(self):
-        """Check token validity only; this does not test backbone bidirectionality."""
-        mask = RepoContextRouter.create_bidirectional_repo_mask(
-            seq_len=2048,
-            device=torch.device("cpu"),
-        )
-        self.assertEqual(mask.shape, (1, 2048))
-        self.assertTrue(torch.all(mask))
 
 
 if __name__ == "__main__":

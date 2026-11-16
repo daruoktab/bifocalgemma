@@ -1,12 +1,7 @@
 """Manifest schema boundary exercised by the real standalone preparation function."""
 
-import ast
 import copy
 import hashlib
-from collections import Counter
-from dataclasses import asdict
-from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -21,9 +16,10 @@ from bifocalgemma.data.offline_sft import (
     repository_editing_record,
     stable_fingerprint,
 )
+from bifocalgemma.training import curated_sft
 
 
-def repository_row(index=0):
+def repository_row(index=0) -> dict[str, Any]:
     return {
         "record_type": "repository_patch_v1",
         "role": "train",
@@ -43,17 +39,8 @@ def repository_row(index=0):
         "after": "",
         "path": "repository_context",
         "pool_split": "train" if index == 0 else "dev",
+        "token_lengths": {"encoder": 16},
     }
-
-
-def notebook_function(name):
-    root = Path(__file__).resolve().parents[1]
-    tree = ast.parse(
-        (root / "notebooks/legacy/bifocalgemma_train_symmetric.py").read_text(encoding="utf-8")
-    )
-    return next(
-        node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == name
-    )
 
 
 def test_raw_repository_manifest_derives_hashes_without_mutation():
@@ -129,43 +116,52 @@ def test_legacy_paired_manifest_remains_byte_identical():
 
 
 @pytest.mark.parametrize("index", range(4))
-def test_generated_preparation_consumes_frozen_raw_repository_pool(tmp_path, index):
+def test_generated_preparation_consumes_frozen_raw_repository_pool(tmp_path, index, monkeypatch):
     records = [repository_row(0), repository_row(1)]
     root = tmp_path / "pool"
-    pool = export_pool(records, root, {"split": {"policy": "frozen_fixture_split"}})
+    limits = {"encoder": 8192, "pair_decoder": 2048, "baseline_decoder": 8192}
+    pool = export_pool(
+        records, root, {"split": {"policy": "frozen_fixture_split"}, "tokens": {"limits": limits}}
+    )
     original_bytes = {p.name: p.read_bytes() for p in root.iterdir()}
     spec = EXPERIMENT_SPECS[index]
-    # Tokenization is a separate tested block. Here the actual preparation function
-    # executes all loading/retention/manifest steps using lightweight token fixtures.
-    namespace: dict[str, Any] = {
-        "Counter": Counter,
-        "load_curated_pool": load_curated_pool,
-        "repository_editing_record": repository_editing_record,
-        "stable_fingerprint": stable_fingerprint,
-        "CHECKPOINTS": {
-            ref.size: {"encoder": asdict(ref), "decoder": asdict(ref)}
-            for ref in (spec.encoder, spec.decoder)
-            if ref is not None
-        },
-        "verified_assets": lambda *args: {"config.json": tmp_path / "config.json"},
-        "AutoTokenizer": SimpleNamespace(from_pretrained=lambda *args, **kwargs: object()),
-        "tokenize_editing_row": lambda row, *args: TokenizedRepairExample(
+    monkeypatch.setattr(
+        curated_sft, "load_verified_tokenizer", lambda ref, cache: (object(), {"files": {}})
+    )
+    monkeypatch.setattr(
+        curated_sft,
+        "tokenize_repository_record",
+        lambda row, *args, **kwargs: TokenizedRepairExample(
             row["instance_id"], (2, 3), (2, 4), (5, 106)
         ),
-    }
-    for name in ("editing_manifest", "prepare_training_data"):
-        exec(
-            compile(
-                ast.Module(body=[notebook_function(name)], type_ignores=[]),
-                "<generated-data-helper>",
-                "exec",
-            ),
-            namespace,
-        )
-    train, dev, manifest = namespace["prepare_training_data"](spec, root, tmp_path, 8192, 2048, 17)
+    )
+    train, dev, manifest = curated_sft.prepare_curated_training(spec, root, tmp_path)
     assert [row.instance_id for row in train] == pool["record_ids"]["train"]
     assert [row.instance_id for row in dev] == pool["record_ids"]["dev"]
-    assert manifest["curated_pool_fingerprint"] == pool["fingerprint"]
-    assert manifest["train"][0]["pair_hash"]
-    assert manifest["dev"][0]["instruction_hash"]
+    assert manifest["pool_fingerprint"] == pool["fingerprint"]
+    assert manifest["instances"] == pool["record_ids"]
+    expected_tokens = {
+        split: [(item.instance_id, item.encoder_ids, item.decoder_prefix_ids, item.target_ids) for item in items]
+        for split, items in (("train", train), ("dev", dev))
+    }
+    assert manifest["tokenized_fingerprint"] == stable_fingerprint(expected_tokens)
+    rows, loaded_pool = load_curated_pool(root)
+    assert loaded_pool["fingerprint"] == pool["fingerprint"]
+    for split, original in zip(("train", "dev"), records, strict=True):
+        assert rows[split] == [
+            {
+                **original,
+                "old_contents": original["before"],
+                "new_contents": original["after"],
+                "old_file": original["path"],
+                "new_file": original["path"],
+            }
+        ]
+        entry = editing_manifest(rows[split])[0]
+        assert entry["pair_hash"] == hashlib.sha256(
+            (original["snapshot_sha256"] + "\0" + original["target_patch"]).encode()
+        ).hexdigest()
+        assert entry["instruction_hash"] == hashlib.sha256(
+            original["instruction"].strip().encode()
+        ).hexdigest()
     assert {p.name: p.read_bytes() for p in root.iterdir()} == original_bytes

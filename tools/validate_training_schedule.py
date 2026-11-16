@@ -5,13 +5,13 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from bifocalgemma.config import COLLECTION, DATASET_REPO, DATASET_REVISION
 from bifocalgemma.data.offline_sft import load_curated_pool
 from bifocalgemma.training.schedule import (
     build_shared_schedule,
     canonical_schedule_records,
     persist_shared_schedule,
 )
-from bifocalgemma.v3.constants import COLLECTION, DATASET_REPO, DATASET_REVISION
 
 
 def main():

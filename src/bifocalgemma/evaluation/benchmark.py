@@ -1,4 +1,4 @@
-"""V3 batched evaluation and the eight-benchmark suite."""
+"""Batched evaluation and the eight-benchmark suite."""
 
 from __future__ import annotations
 
@@ -15,7 +15,12 @@ from typing import Any
 import torch
 import torch.utils.checkpoint
 
-from bifocalgemma.config import ExperimentSpec
+from bifocalgemma.config import (
+    BENCHMARK_SAMPLE_SEED,
+    BENCHMARK_TIER_CONFIG,
+    MODEL_EVAL_FOOTPRINT,
+    ExperimentSpec,
+)
 from bifocalgemma.data.curation import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.context import (
@@ -26,22 +31,20 @@ from bifocalgemma.evaluation.context import (
     score_context_case,
 )
 from bifocalgemma.evaluation.protocol import (
+    BENCHMARK_RESET_ID,
     build_effective_benchmark_spec,
     effective_generation_budget,
+    gsm8k_report_metrics,
     mcq_report_metrics,
 )
 from bifocalgemma.inference.generation import GreedyGeneration, greedy_decode
 from bifocalgemma.models import inference_cache as inference_cache_mod
-from bifocalgemma.training.stages import (
-    atomic_json,
+from bifocalgemma.models.cross_attention import (
+    FullCrossCachedAttention,
+    configure_full_rank_cross_attention,
 )
+from bifocalgemma.training.stages import atomic_json
 from bifocalgemma.training.telemetry import resource_snapshot
-from bifocalgemma.v3.attention import configure_full_rank_cross_attention
-from bifocalgemma.v3.constants import (
-    BENCHMARK_SAMPLE_SEED,
-    BENCHMARK_TIER_CONFIG,
-    MODEL_EVAL_FOOTPRINT,
-)
 
 
 def infer_benchmark_weight_tier(benchmark_item: dict[str, Any] | None) -> str:
@@ -124,7 +127,8 @@ def prepare_sampled_benchmark_collection(
 ) -> Path:
     """Create a deterministic sampled benchmark directory when `sample_limit` is set (e.g., 100 cases).
 
-    Guarantees identical sampled `instance_id` cohorts across all 10 models.
+    Guarantees identical sampled `instance_id` cohorts across all 10 models and invalidates cached
+    samples whenever public inputs or hidden gold contents change.
     """
     src_dir = Path(collection_dir).resolve()
     if sample_limit is None or sample_limit <= 0:
@@ -160,22 +164,26 @@ def prepare_sampled_benchmark_collection(
     sampled_public = [public_rows[i] for i in chosen_indices]
     sampled_gold = [gold_rows[i] for i in chosen_indices]
     sampled_ids = [r["instance_id"] for r in sampled_public]
+    expected_inputs_sha256 = stable_fingerprint(sampled_public)
+    expected_gold_sha256 = stable_fingerprint(sampled_gold)
 
-    if sample_manifest_path.is_file():
+    dest_inputs = dest_dir / inputs_name
+    dest_gold = dest_dir / gold_name
+    if sample_manifest_path.is_file() and dest_inputs.is_file() and dest_gold.is_file():
         try:
             existing_meta = json.loads(sample_manifest_path.read_text(encoding="utf-8"))
             if (
                 existing_meta.get("sampled_instance_ids") == sampled_ids
-                and (dest_dir / inputs_name).is_file()
-                and (dest_dir / gold_name).is_file()
+                and existing_meta.get("inputs_sha256") == expected_inputs_sha256
+                and existing_meta.get("gold_sha256") == expected_gold_sha256
+                and stable_fingerprint(list(read_source_rows(dest_inputs))) == expected_inputs_sha256
+                and stable_fingerprint(list(read_source_rows(dest_gold))) == expected_gold_sha256
             ):
                 return dest_dir
         except Exception:
             pass
 
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_inputs = dest_dir / inputs_name
-    dest_gold = dest_dir / gold_name
     dest_inputs.parent.mkdir(parents=True, exist_ok=True)
     dest_gold.parent.mkdir(parents=True, exist_ok=True)
 
@@ -192,7 +200,12 @@ def prepare_sampled_benchmark_collection(
         if snap_rel:
             src_snap = (src_dir / snap_rel).resolve()
             dst_snap = (dest_dir / snap_rel).resolve()
-            if src_snap.is_file() and not dst_snap.exists():
+            if (
+                src_snap.is_file()
+                and src_snap.is_relative_to(src_dir)
+                and dst_snap.is_relative_to(dest_dir)
+                and src_snap != dst_snap
+            ):
                 dst_snap.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_snap, dst_snap)
 
@@ -205,6 +218,8 @@ def prepare_sampled_benchmark_collection(
             "total_population": len(public_rows),
             "sampled_count": len(sampled_ids),
             "sampled_instance_ids": sampled_ids,
+            "inputs_sha256": expected_inputs_sha256,
+            "gold_sha256": expected_gold_sha256,
         },
     )
     return dest_dir
@@ -235,8 +250,6 @@ def batched_greedy_decode(
             getattr(inference_cache_mod.CachedAttention, "__name__", "")
             != "FullCrossCachedAttention"
         ):
-            from bifocalgemma.v3.attention import FullCrossCachedAttention
-
             if getattr(model, "encoder", None) is None or hasattr(
                 model.decoder.layers[0].self_attn, "cross_q_norm"
             ):
@@ -329,8 +342,6 @@ def batched_greedy_decode(
                 getattr(inference_cache_mod.CachedAttention, "__name__", "")
                 != "FullCrossCachedAttention"
             ):
-                from bifocalgemma.v3.attention import FullCrossCachedAttention
-
                 if getattr(model, "encoder", None) is None or hasattr(
                     model.decoder.layers[0].self_attn, "cross_q_norm"
                 ):
@@ -748,6 +759,7 @@ def run_batched_context_benchmark(
         "timing": clock.summary(),
         "official_protocol": False,
         "protocol_version": protocol_version,
+        "reset_id": BENCHMARK_RESET_ID,
         "effective_protocol": effective_protocol,
         "primary_metric": "task_specific_accuracy",
         "accuracy_alias": "task_specific_accuracy",
@@ -756,7 +768,18 @@ def run_batched_context_benchmark(
         "resources": resource_snapshot(device),
     }
     report.update(mcq_report_metrics(completed))
-    for key in ("exact_match", "sequence_similarity", "regex_identifier_set_f1"):
+    report.update(gsm8k_report_metrics(completed))
+    for key in (
+        "exact_match",
+        "sequence_similarity",
+        "regex_identifier_set_f1",
+        "regex_f1",
+        "normalized_exact_match",
+        "normalized_sequence_similarity",
+        "normalized_regex_identifier_set_f1",
+        "normalized_regex_f1",
+        "primary_continuous_score",
+    ):
         if completed and key in completed[0]:
             report[key] = sum(float(r[key]) for r in completed) / len(ids)
     if completed and "patch_applied" in completed[0]:

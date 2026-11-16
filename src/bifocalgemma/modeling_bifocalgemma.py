@@ -22,14 +22,31 @@ from transformers import (
     PreTrainedModel,
 )
 from transformers.modeling_outputs import CausalLMOutputWithPast
+from transformers.models.gemma4.modeling_gemma4 import (
+    Gemma4TextAttention,
+    Gemma4TextDecoderLayer,
+    apply_rotary_pos_emb,
+    repeat_kv,
+)
 
-from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
-from bifocalgemma.contracts import ModelOutput, Seq2SeqBatch
+from bifocalgemma.config import ExperimentSpec
+from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig, native_config
+from bifocalgemma.contracts import ModelOutput, Seq2SeqBatch, TokenizedRepairExample
+from bifocalgemma.data.collator import RepairCollator
+from bifocalgemma.models.bridge import NormalizedAlignment, SwiGLUDualGateBridge
 from bifocalgemma.models.checkpoint_transfer import transfer_text_checkpoint
+from bifocalgemma.models.cross_attention import (
+    FullCrossCachedAttention,
+    configure_full_rank_cross_attention,
+)
+from bifocalgemma.models.inference_cache import InferenceCache
+from bifocalgemma.models.memory_efficient import TiledEncoderAttention, build_joint_visibility
 from bifocalgemma.training.memory_probe import ProbeLoRALinear
-from bifocalgemma.v3.attention import configure_full_rank_cross_attention
-from bifocalgemma.v3.bridge import SwiGLUDualGateBridge
-from bifocalgemma.v3.objectives import is_cross_bridge_parameter
+from bifocalgemma.training.objectives import (
+    chunked_linear_cross_entropy,
+    is_cross_bridge_parameter,
+    patch_cross_entropy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +107,15 @@ class BifocalGemmaPreTrainedModel(PreTrainedModel):
         "Gemma4TextDecoderLayer",
         "SwiGLUDualGateBridge",
         "FullCrossTiledAttention",
+        "FullCrossCachedAttention",
+        "TiledEncoderAttention",
     ]
     _tied_weights_keys = {"lm_head.weight": "decoder.embed_tokens.weight"}
 
     def _init_weights(self, module: nn.Module) -> None:
+        if isinstance(module, SwiGLUDualGateBridge):
+            module._reset_parameters()
+            return
         std = getattr(self.config, "initializer_range", 0.02)
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(mean=0.0, std=std)
@@ -159,13 +181,55 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         if self.encoder is not None and config.tie_encoder_decoder_words and config.d_enc == config.d_dec:
             self._tied_weights_keys["encoder.embed_tokens.weight"] = "decoder.embed_tokens.weight"
 
-        # 4. Configure full-rank decoupled cross attention on decoder layers
-        configure_full_rank_cross_attention(self)
-
-        # 5. Tie embeddings
-        self._tie_words()
+        # 4. Run HF post_init BEFORE configuring bridge & cross-attention so _init_weights
+        #    cannot overwrite SwiGLUDualGateBridge eye/orthogonal w_res or scaled w_down weights.
         self.loss_chunk_size = 128
         self.post_init()
+
+        # 5. Configure full-rank decoupled cross attention on decoder layers and preserve bridge init
+        configure_full_rank_cross_attention(self)
+        if isinstance(self.encoder_projection, SwiGLUDualGateBridge):
+            self.encoder_projection._reset_parameters()
+            for sub in self.encoder_projection.modules():
+                setattr(sub, "_is_hf_initialized", True)
+
+        # 6. Configure structured tiled attention on encoder (and baseline decoder) to avoid 4D masks
+        self._configure_structured_self_attention(query_chunk_size=128)
+
+        # 7. Tie embeddings
+        self._tie_words()
+
+    def _configure_structured_self_attention(self, query_chunk_size: int = 128) -> None:
+        """Install structured tiled self-attention on encoder (and baseline decoder) so 1D valid masks work without 4D mask materialization."""
+        import copy
+
+        if self.encoder is not None:
+            for layer in self.encoder.layers:
+                attn = layer.self_attn
+                if not isinstance(attn, TiledEncoderAttention):
+                    tiled = copy.copy(attn)
+                    object.__setattr__(tiled, "__class__", TiledEncoderAttention)
+                    object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                    object.__setattr__(tiled, "structured_masks", True)
+                    layer.self_attn = cast(Any, tiled)
+                else:
+                    object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "structured_masks", True)
+
+        if self.decoder is not None and self.encoder is None:
+            for layer in self.decoder.layers:
+                attn = layer.self_attn
+                if not isinstance(attn, TiledEncoderAttention):
+                    tiled = copy.copy(attn)
+                    object.__setattr__(tiled, "__class__", TiledEncoderAttention)
+                    object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                    object.__setattr__(tiled, "structured_masks", True)
+                    layer.self_attn = cast(Any, tiled)
+                else:
+                    object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "structured_masks", True)
 
     def tie_weights(self, *args: Any, **kwargs: Any) -> None:
         """Tie weights cleanly, excluding encoder unless explicitly configured and dimensions match."""
@@ -325,10 +389,20 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         eff_mask = attention_mask if attention_mask is not None else encoder_attention_mask
         if eff_mask is None:
             eff_mask = torch.ones(input_ids.shape, dtype=torch.bool, device=input_ids.device)
+        else:
+            eff_mask = eff_mask.bool().to(input_ids.device)
         pos_ids = self._positions(eff_mask)
+        use_dict_mask = all(
+            getattr(layer.self_attn, "structured_masks", False)
+            or getattr(layer.self_attn, "full_rank_cross_attention", False)
+            for layer in self.encoder.layers
+        )
+        enc_attn_mask: Any = (
+            {"full_attention": None, "sliding_attention": None} if use_dict_mask else eff_mask
+        )
         encoder_outputs = self.encoder(
             input_ids=input_ids,
-            attention_mask=eff_mask,
+            attention_mask=enc_attn_mask,
             self_valid=eff_mask,
             position_ids=pos_ids,
             use_cache=False,
@@ -359,6 +433,8 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             decoder_attention_mask = torch.ones(
                 (batch, length), dtype=torch.bool, device=decoder_input_ids.device
             )
+        else:
+            decoder_attention_mask = decoder_attention_mask.bool().to(decoder_input_ids.device)
 
         kwargs: dict[str, Any] = {}
         if self.encoder is not None:
@@ -373,6 +449,8 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                     dtype=torch.bool,
                     device=decoder_input_ids.device,
                 )
+            else:
+                encoder_mask = encoder_mask.bool().to(decoder_input_ids.device)
             kwargs = dict(
                 encoder_hidden_states=encoder_states,
                 encoder_valid=encoder_mask,
@@ -380,9 +458,19 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             )
 
         pos_ids = self._positions(decoder_attention_mask)
+        use_dict_mask = all(
+            getattr(layer.self_attn, "structured_masks", False)
+            or getattr(layer.self_attn, "full_rank_cross_attention", False)
+            for layer in self.decoder.layers
+        )
+        dec_attn_mask: Any = (
+            {"full_attention": None, "sliding_attention": None}
+            if use_dict_mask
+            else decoder_attention_mask
+        )
         outputs = self.decoder(
             input_ids=decoder_input_ids,
-            attention_mask=decoder_attention_mask,
+            attention_mask=dec_attn_mask,
             self_valid=decoder_attention_mask,
             position_ids=pos_ids,
             use_cache=False,
@@ -422,6 +510,8 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         **kwargs: Any,
     ) -> CausalLMOutputWithPast | ModelOutput | tuple[Any, ...]:
         """Forward execution supporting Hugging Face standard kwargs and Seq2SeqBatch."""
+        is_seq2seq_batch = batch is not None or isinstance(input_ids, Seq2SeqBatch)
+        labels_are_shifted = kwargs.pop("labels_are_shifted", None)
         # Support Seq2SeqBatch input
         if batch is not None:
             input_ids = batch.decoder_input_ids
@@ -460,23 +550,27 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         if labels is not None:
             import torch.nn.functional as F
 
-            should_shift = (
-                shift_labels
-                if shift_labels is not None
-                else (labels.shape[1] > 1 and labels.shape == input_ids.shape and not (labels == -100).any())
-            )
+            if shift_labels is not None:
+                should_shift = shift_labels
+            elif labels_are_shifted is not None:
+                should_shift = not bool(labels_are_shifted)
+            elif is_seq2seq_batch:
+                should_shift = False
+            else:
+                should_shift = labels.shape[1] > 1 and labels.shape == input_ids.shape
+
             if not should_shift:
                 loss = F.cross_entropy(
-                    logits.float().view(-1, logits.size(-1)),
-                    labels.view(-1),
+                    logits.float().reshape(-1, logits.size(-1)),
+                    labels.reshape(-1),
                     ignore_index=-100,
                 )
             else:
-                shift_log = logits[..., :-1, :].contiguous()
-                shift_lab = labels[..., 1:].contiguous()
+                shift_log = logits[..., :-1, :]
+                shift_lab = labels[..., 1:]
                 loss = F.cross_entropy(
-                    shift_log.view(-1, shift_log.size(-1)),
-                    shift_lab.view(-1),
+                    shift_log.float().reshape(-1, shift_log.size(-1)),
+                    shift_lab.reshape(-1),
                     ignore_index=-100,
                 )
 
@@ -494,7 +588,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
 
     def forward_loss(self, batch: Any) -> ModelOutput:
         """Bridge compatibility helper for legacy training loops."""
-        result = self.forward(batch=batch)
+        result = self.forward(batch=batch, shift_labels=False)
         if isinstance(result, tuple):
             loss = result[0] if len(result) > 1 else None
             logits = result[1] if len(result) > 1 else result[0]
@@ -509,31 +603,181 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         encoder_attention_mask: torch.Tensor | None = None,
         max_new_tokens: int = 128,
         pad_token_id: int | None = None,
-        eos_token_id: int | None = None,
+        eos_token_id: int | list[int] | tuple[int, ...] | set[int] | None = None,
+        *,
+        attention_mask: torch.Tensor | None = None,
+        decoder_attention_mask: torch.Tensor | None = None,
+        encoder_hidden_states: torch.Tensor | None = None,
+        use_cache: bool = True,
         **kwargs: Any,
     ) -> torch.Tensor:
-        """Autoregressive greedy generation with pre-encoded context representation."""
+        """Autoregressive greedy generation with pre-encoded context and O(N_dec) KV cache."""
+        was_training = self.training
         self.eval()
-        eos_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
-        encoder_states = None
-        if encoder_input_ids is not None and self.encoder is not None:
-            encoder_states = self.encode_context(
-                encoder_input_ids, encoder_attention_mask=encoder_attention_mask
+        try:
+            if max_new_tokens <= 0:
+                return input_ids.clone()
+
+            bsz = input_ids.shape[0]
+            device = input_ids.device
+
+            raw_eos = eos_token_id
+            if raw_eos is None:
+                gen_cfg = getattr(self, "generation_config", None)
+                raw_eos = getattr(gen_cfg, "eos_token_id", None) if gen_cfg is not None else None
+            if raw_eos is None:
+                raw_eos = getattr(self.config, "eos_token_id", None)
+            if isinstance(raw_eos, int):
+                eos_list = [raw_eos]
+            elif isinstance(raw_eos, (list, tuple, set)):
+                eos_list = [int(x) for x in raw_eos if x is not None]
+            else:
+                eos_list = []
+            eos_tensor = (
+                torch.tensor(eos_list, dtype=input_ids.dtype, device=device) if eos_list else None
             )
 
-        current_ids = input_ids.clone()
-        for _ in range(max_new_tokens):
-            logits = self.decode_logits(
-                current_ids,
-                decoder_mask=None,
-                encoder_states=encoder_states,
-                encoder_mask=encoder_attention_mask,
+            resolved_pad_id = (
+                pad_token_id
+                if pad_token_id is not None
+                else (
+                    int(self.config.pad_token_id)
+                    if getattr(self.config, "pad_token_id", None) is not None
+                    else (eos_list[0] if eos_list else 0)
+                )
             )
-            next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
-            current_ids = torch.cat([current_ids, next_token], dim=1)
-            if eos_id is not None and bool((next_token == eos_id).all()):
-                break
-        return current_ids
+
+            raw_dec_mask = (
+                attention_mask if attention_mask is not None else decoder_attention_mask
+            )
+            if raw_dec_mask is None:
+                current_mask = torch.ones_like(input_ids, dtype=torch.bool)
+            else:
+                current_mask = raw_dec_mask.bool().to(device)
+
+            if self.encoder is not None:
+                if encoder_hidden_states is not None:
+                    encoder_states: torch.Tensor | None = encoder_hidden_states
+                    if encoder_attention_mask is not None:
+                        enc_mask: torch.Tensor | None = encoder_attention_mask.bool().to(device)
+                    else:
+                        enc_mask = torch.ones(
+                            encoder_hidden_states.shape[:2], dtype=torch.bool, device=device
+                        )
+                elif encoder_input_ids is not None and encoder_input_ids.shape[1] > 0:
+                    if encoder_attention_mask is not None:
+                        enc_mask = encoder_attention_mask.bool().to(device)
+                    else:
+                        enc_mask = torch.ones_like(encoder_input_ids, dtype=torch.bool)
+                    encoder_states = self.encode_context(
+                        encoder_input_ids, encoder_attention_mask=enc_mask
+                    )
+                else:
+                    encoder_states = self.decoder.embed_tokens.weight.new_empty(
+                        bsz, 0, self.decoder.config.hidden_size
+                    )
+                    enc_mask = current_mask.new_zeros((bsz, 0))
+            else:
+                encoder_states = None
+                enc_mask = None
+
+            current_ids = input_ids.clone()
+            finished = torch.zeros(bsz, dtype=torch.bool, device=device)
+
+            is_left_padded_or_full = bool(
+                current_ids.shape[1] > 0
+                and current_mask[:, -1].all()
+                and (
+                    current_mask.shape[1] == 1
+                    or (current_mask.int().diff(dim=-1) >= 0).all()
+                )
+            )
+            can_use_cached = use_cache and is_left_padded_or_full
+
+            if can_use_cached:
+                cache = InferenceCache()
+                original_cls = [layer.self_attn.__class__ for layer in self.decoder.layers]
+                try:
+                    for layer in self.decoder.layers:
+                        object.__setattr__(layer.self_attn, "__class__", FullCrossCachedAttention)
+                    for step_idx in range(max_new_tokens):
+                        if step_idx == 0:
+                            step_ids = current_ids
+                            step_valid = current_mask
+                            pos_ids = self._positions(current_mask)
+                        else:
+                            step_ids = current_ids[:, -1:]
+                            step_valid = torch.ones((bsz, 1), dtype=torch.bool, device=device)
+                            pos_ids = (current_mask.long().sum(dim=-1, keepdim=True) - 1).clamp_min(
+                                0
+                            )
+                        setattr(cache, "step_valid_mask", step_valid)
+                        dec_out = self.decoder(
+                            input_ids=step_ids,
+                            position_ids=pos_ids,
+                            attention_mask={"full_attention": None, "sliding_attention": None},
+                            use_cache=False,
+                            inference_cache=cache,
+                            encoder_hidden_states=encoder_states,
+                            encoder_valid=enc_mask,
+                        )
+                        hidden = (
+                            dec_out.last_hidden_state
+                            if hasattr(dec_out, "last_hidden_state")
+                            else dec_out[0]
+                        )[:, -1:]
+                        logits = self.lm_head(hidden)
+                        cap = getattr(self.decoder.config, "final_logit_softcapping", None)
+                        if cap is not None:
+                            logits = torch.tanh(logits / cap) * cap
+                        cache.offset += step_ids.shape[1]
+                        next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+                        if bool(finished.any()):
+                            fill_tok = torch.full_like(next_token, resolved_pad_id)
+                            next_token = torch.where(
+                                finished.unsqueeze(-1), fill_tok, next_token
+                            )
+                        if eos_tensor is not None:
+                            finished = finished | torch.isin(
+                                next_token.squeeze(-1), eos_tensor
+                            )
+                        current_ids = torch.cat([current_ids, next_token], dim=1)
+                        current_mask = torch.cat(
+                            [
+                                current_mask,
+                                torch.ones((bsz, 1), dtype=torch.bool, device=device),
+                            ],
+                            dim=1,
+                        )
+                        if bool(finished.all()):
+                            break
+                finally:
+                    for layer, cls in zip(self.decoder.layers, original_cls, strict=True):
+                        object.__setattr__(layer.self_attn, "__class__", cls)
+            else:
+                for _ in range(max_new_tokens):
+                    logits = self.decode_logits(
+                        current_ids,
+                        decoder_mask=current_mask,
+                        encoder_states=encoder_states,
+                        encoder_mask=enc_mask,
+                    )
+                    next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
+                    if bool(finished.any()):
+                        fill_tok = torch.full_like(next_token, resolved_pad_id)
+                        next_token = torch.where(finished.unsqueeze(-1), fill_tok, next_token)
+                    if eos_tensor is not None:
+                        finished = finished | torch.isin(next_token.squeeze(-1), eos_tensor)
+                    current_ids = torch.cat([current_ids, next_token], dim=1)
+                    current_mask = torch.cat(
+                        [current_mask, torch.ones((bsz, 1), dtype=torch.bool, device=device)],
+                        dim=1,
+                    )
+                    if bool(finished.all()):
+                        break
+            return current_ids
+        finally:
+            self.train(was_training)
 
     def save_pretrained(  # ty: ignore[incompatible-method-override]  # pyrefly: ignore [bad-override]  # type: ignore[override]
         self,
@@ -716,29 +960,72 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
 
         model = cls(config)
         weights_path = model_path / "model.safetensors"
-        if weights_path.exists():
+        safe_index_path = model_path / "model.safetensors.index.json"
+        bin_path = model_path / "pytorch_model.bin"
+        bin_index_path = model_path / "pytorch_model.bin.index.json"
+
+        state_dict: dict[str, Any]
+        if weights_path.is_file():
             state_dict = load_file(str(weights_path), device="cpu")
-            load_result = model.load_state_dict(state_dict, strict=strict)
-            if load_result.missing_keys:
-                logger.warning("from_pretrained: missing keys when loading state_dict: %s", load_result.missing_keys)
-                # Check for critical missing core layers
-                critical_missing = [k for k in load_result.missing_keys if "decoder.embed_tokens" in k or "decoder.layers.0." in k]
-                if critical_missing:
-                    raise ValueError(f"Checkpoint in {model_path} is missing critical backbone weights: {critical_missing}")
-            if load_result.unexpected_keys:
-                logger.warning("from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys)
+        elif safe_index_path.is_file():
+            index_data = json.loads(safe_index_path.read_text(encoding="utf-8"))
+            weight_map = index_data.get("weight_map") or {}
+            shard_files = sorted(set(weight_map.values()))
+            if not shard_files:
+                raise FileNotFoundError(
+                    f"Sharded safetensors index in {model_path} has empty weight_map."
+                )
+            state_dict = {}
+            for shard_name in shard_files:
+                shard_path = model_path / shard_name
+                if not shard_path.is_file():
+                    raise FileNotFoundError(
+                        f"Missing safetensors weight shard {shard_path} referenced by {safe_index_path}"
+                    )
+                state_dict.update(load_file(str(shard_path), device="cpu"))
+        elif bin_path.is_file():
+            state_dict = torch.load(str(bin_path), map_location="cpu")
+        elif bin_index_path.is_file():
+            index_data = json.loads(bin_index_path.read_text(encoding="utf-8"))
+            weight_map = index_data.get("weight_map") or {}
+            shard_files = sorted(set(weight_map.values()))
+            if not shard_files:
+                raise FileNotFoundError(
+                    f"Sharded pytorch_model.bin index in {model_path} has empty weight_map."
+                )
+            state_dict = {}
+            for shard_name in shard_files:
+                shard_path = model_path / shard_name
+                if not shard_path.is_file():
+                    raise FileNotFoundError(
+                        f"Missing binary weight shard {shard_path} referenced by {bin_index_path}"
+                    )
+                state_dict.update(torch.load(str(shard_path), map_location="cpu"))
         else:
-            bin_path = model_path / "pytorch_model.bin"
-            if bin_path.exists():
-                state_dict = torch.load(str(bin_path), map_location="cpu")
-                load_result = model.load_state_dict(state_dict, strict=strict)
-                if load_result.missing_keys:
-                    logger.warning("from_pretrained: missing keys when loading state_dict: %s", load_result.missing_keys)
-                    critical_missing = [k for k in load_result.missing_keys if "decoder.embed_tokens" in k or "decoder.layers.0." in k]
-                    if critical_missing:
-                        raise ValueError(f"Checkpoint in {model_path} is missing critical backbone weights: {critical_missing}")
-                if load_result.unexpected_keys:
-                    logger.warning("from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys)
+            raise FileNotFoundError(
+                f"No pretrained model weights (model.safetensors, model.safetensors.index.json, "
+                f"pytorch_model.bin, or pytorch_model.bin.index.json) found in {model_path}"
+            )
+
+        load_result = model.load_state_dict(state_dict, strict=strict)
+        if load_result.missing_keys:
+            logger.warning(
+                "from_pretrained: missing keys when loading state_dict: %s",
+                load_result.missing_keys,
+            )
+            critical_missing = [
+                k
+                for k in load_result.missing_keys
+                if "decoder.embed_tokens" in k or "decoder.layers.0." in k
+            ]
+            if critical_missing:
+                raise ValueError(
+                    f"Checkpoint in {model_path} is missing critical backbone weights: {critical_missing}"
+                )
+        if load_result.unexpected_keys:
+            logger.warning(
+                "from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys
+            )
 
         if torch_dtype is not None:
             if isinstance(torch_dtype, str) and hasattr(torch, torch_dtype):
@@ -845,11 +1132,13 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                         transfer_text_checkpoint(
                             model.encoder,
                             enc_file,
-                            skip_words=getattr(config, "tie_word_embeddings", True),
+                            skip_words=getattr(config, "tie_encoder_decoder_words", False),
                         )
                 configure_full_rank_cross_attention(model)
             except Exception as _exc:
                 logger.debug("Tiny backbone transfer skipped: %s", _exc)
+
+        model._configure_structured_self_attention(query_chunk_size=128)
 
         if torch_dtype is not None:
             if isinstance(torch_dtype, str) and hasattr(torch, torch_dtype):
@@ -1075,6 +1364,312 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
         )
 
     return export_path
+
+
+class NativeMergedAttention(Gemma4TextAttention):
+    """Preserve native parameter names and KV owners; concatenate after self RoPE."""
+
+    def forward(
+        self,
+        hidden_states,
+        position_embeddings,
+        attention_mask,
+        shared_kv_states,
+        past_key_values=None,
+        *,
+        encoder_hidden_states=None,
+        encoder_valid=None,
+        decoder_valid=None,
+        **kwargs,
+    ):
+        if past_key_values is not None:
+            raise ValueError("Native tiny merged attention does not support temporal cache.")
+        if encoder_hidden_states is None or encoder_valid is None or decoder_valid is None:
+            raise ValueError(
+                "Merged attention requires explicit encoder states and validity masks."
+            )
+        batch, length, _ = hidden_states.shape
+        shape = (batch, length, -1, self.head_dim)
+        cos, sin = position_embeddings
+        query = self.q_norm(self.q_proj(hidden_states).view(shape))
+        query = apply_rotary_pos_emb(query, cos, sin, unsqueeze_dim=2).transpose(1, 2)
+        if self.is_kv_shared_layer:
+            key, value = shared_kv_states[self.layer_type]
+        else:
+            assert self.v_proj is not None
+            key = self.k_norm(self.k_proj(hidden_states).view(shape))
+            key = apply_rotary_pos_emb(key, cos, sin, unsqueeze_dim=2).transpose(1, 2)
+            value = self.v_norm(self.v_proj(hidden_states).view(shape)).transpose(1, 2)
+            cross_shape = (
+                batch,
+                encoder_hidden_states.shape[1],
+                self.config.per_layer_config[self.layer_idx].num_key_value_heads,
+                self.head_dim,
+            )
+            cross_key = self.k_norm(self.k_proj(encoder_hidden_states).view(cross_shape))
+            cross_value = self.v_norm(self.v_proj(encoder_hidden_states).view(cross_shape))
+            key = torch.cat((key, cross_key.transpose(1, 2)), dim=2)
+            value = torch.cat((value, cross_value.transpose(1, 2)), dim=2)
+        if self.store_full_length_kv:
+            shared_kv_states[self.layer_type] = (key, value)
+        allowed = build_joint_visibility(encoder_valid, decoder_valid, self.sliding_window)
+        key = repeat_kv(key, self.num_key_value_groups)
+        value = repeat_kv(value, self.num_key_value_groups)
+        scores = torch.matmul(query, key.transpose(-1, -2)) * self.scaling
+        scores = scores.masked_fill(~allowed, float("-inf"))
+        scores = torch.where(allowed.any(-1, keepdim=True), scores, torch.zeros_like(scores))
+        probabilities = scores.softmax(-1, dtype=torch.float32).to(query.dtype)
+        probabilities = probabilities.masked_fill(~allowed, 0)
+        probabilities = nn.functional.dropout(
+            probabilities, p=float(self.attention_dropout or 0.0), training=self.training
+        )
+        result = (probabilities @ value).transpose(1, 2).contiguous().reshape(batch, length, -1)
+        return self.o_proj(result), None
+
+
+class NativeTinyModel(nn.Module):
+    """Native text stacks; tiny by default, full dimensions only with explicit opt-in."""
+
+    def __init__(self, spec: ExperimentSpec, *, tiny: bool = True):
+        super().__init__()
+        self.spec = spec
+        self.loss_chunk_size = None
+        self._stage_callback: Callable | None = None
+        self.decoder = Gemma4TextModel(native_config(spec.decoder.size, tiny=tiny))
+        self.encoder = (
+            Gemma4TextModel(native_config(spec.encoder.size, tiny=tiny, encoder=True))
+            if spec.encoder
+            else None
+        )
+        width = self.decoder.config.hidden_size
+        self.encoder_projection = None
+        if self.encoder is not None:
+            enc_width = self.encoder.config.hidden_size
+            self.encoder_projection = (
+                NormalizedAlignment(enc_width, width)
+                if spec.architecture_version == "normalized_merged_v2"
+                else nn.Identity()
+                if enc_width == width
+                else nn.Linear(enc_width, width, bias=False)
+            )
+            for index, layer in enumerate(self.decoder.layers):
+                layer = cast(Gemma4TextDecoderLayer, layer)
+                attention = NativeMergedAttention(self.decoder.config, index)
+                attention.load_state_dict(layer.self_attn.state_dict(), strict=True)
+                layer.self_attn = attention
+        self.lm_head = nn.Linear(width, self.decoder.config.vocab_size, bias=False)
+        self._tie_words()
+
+    def _tie_words(self):
+        self.lm_head.weight = self.decoder.embed_tokens.weight
+        if self.encoder is not None and self.spec.tie_encoder_decoder_words:
+            self.encoder.embed_tokens.weight = self.decoder.embed_tokens.weight
+
+    def _apply(self, fn, recurse=True):
+        super()._apply(fn, recurse=recurse)
+        self._tie_words()
+        return self
+
+    def load_state_dict(self, state_dict, strict=True, assign=False):
+        result = super().load_state_dict(state_dict, strict=strict, assign=assign)
+        self._tie_words()
+        return result
+
+    @staticmethod
+    def _positions(mask):
+        return (mask.long().cumsum(-1) - 1).clamp_min(0)
+
+    def encode_context(self, input_ids, attention_mask):
+        if self.encoder is None or self.encoder_projection is None:
+            raise ValueError("Decoder-only baseline has no encoder.")
+        if input_ids.shape[1] == 0:
+            return self.decoder.embed_tokens.weight.new_empty(
+                input_ids.shape[0], 0, self.decoder.config.hidden_size
+            )
+        if self._stage_callback is not None:
+            self._stage_callback({"stage": "encoder_forward"})
+        hidden = self.encoder(
+            input_ids=input_ids,
+            attention_mask=(
+                {"full_attention": None, "sliding_attention": None}
+                if hasattr(self, "memory_policy")
+                and self.spec.architecture_version == "normalized_merged_v2"
+                else attention_mask
+            ),
+            self_valid=attention_mask,
+            position_ids=self._positions(attention_mask),
+            use_cache=False,
+        ).last_hidden_state
+        # No padding states enter K/V, including batches with wholly masked context.
+        return self.encoder_projection(hidden).masked_fill(~attention_mask.bool()[..., None], 0)
+
+    def _decode_hidden(
+        self,
+        input_ids,
+        decoder_mask,
+        encoder_states=None,
+        encoder_mask=None,
+        *,
+        last_token_only=False,
+    ):
+        kwargs = {}
+        if self.encoder is not None:
+            if encoder_states is None:
+                encoder_states = self.decoder.embed_tokens.weight.new_empty(
+                    input_ids.shape[0], 0, self.decoder.config.hidden_size
+                )
+                encoder_mask = decoder_mask.new_zeros((input_ids.shape[0], 0))
+            if encoder_mask is None or encoder_mask.shape != encoder_states.shape[:2]:
+                raise ValueError("Encoder mask must match encoder states.")
+            kwargs = dict(
+                encoder_hidden_states=encoder_states,
+                encoder_valid=encoder_mask,
+                decoder_valid=decoder_mask,
+            )
+        elif encoder_states is not None or encoder_mask is not None:
+            raise ValueError("Decoder-only baseline cannot receive encoder states.")
+        if self._stage_callback is not None:
+            self._stage_callback({"stage": "decoder_forward"})
+        hidden = self.decoder(
+            input_ids=input_ids,
+            attention_mask=(
+                {"full_attention": None, "sliding_attention": None}
+                if hasattr(self, "memory_policy")
+                and self.spec.architecture_version == "normalized_merged_v2"
+                else decoder_mask
+            ),
+            self_valid=decoder_mask,
+            position_ids=self._positions(decoder_mask),
+            use_cache=False,
+            **kwargs,
+        ).last_hidden_state
+        if last_token_only:
+            hidden = hidden[:, -1:]
+        return hidden
+
+    def decode_logits(
+        self,
+        input_ids,
+        decoder_mask,
+        encoder_states=None,
+        encoder_mask=None,
+        *,
+        last_token_only=False,
+    ):
+        hidden = self._decode_hidden(
+            input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=last_token_only
+        )
+        logits = self.lm_head(hidden)
+        cap = self.decoder.config.final_logit_softcapping
+        if cap is not None:
+            logits = torch.tanh(logits / cap) * cap
+        return logits
+
+    def decode_next_logits(self, input_ids, decoder_mask, encoder_states=None, encoder_mask=None):
+        return self.decode_logits(
+            input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=True
+        )
+
+    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:  # nn.Module.forward is annotated Callable.
+        if self.encoder is None:
+            if batch.encoder_input_ids.shape[1] != 0:
+                raise ValueError("Baseline requires an empty encoder sequence.")
+            hidden, mask = None, None
+        else:
+            hidden = self.encode_context(batch.encoder_input_ids, batch.encoder_attention_mask)
+            mask = batch.encoder_attention_mask
+        if not return_logits and self.loss_chunk_size is not None:
+            decoder_hidden = self._decode_hidden(
+                batch.decoder_input_ids, batch.decoder_attention_mask, hidden, mask
+            )
+            if self._stage_callback is not None:
+                self._stage_callback({"stage": "loss_forward"})
+            loss = chunked_linear_cross_entropy(
+                decoder_hidden,
+                self.lm_head.weight,
+                batch.labels,
+                chunk_size=self.loss_chunk_size,
+                softcap=self.decoder.config.final_logit_softcapping,
+            )
+            return ModelOutput(None, loss)
+        logits = self.decode_logits(
+            batch.decoder_input_ids, batch.decoder_attention_mask, hidden, mask
+        )
+        return ModelOutput(logits, patch_cross_entropy(logits, batch.labels))
+
+    def forward_loss(self, batch: Seq2SeqBatch) -> ModelOutput:
+        return self.forward(batch, return_logits=False)
+
+
+def build_native_tiny_model(spec: ExperimentSpec) -> NativeTinyModel:
+    return NativeTinyModel(spec)
+
+
+def run_native_smoke(spec: ExperimentSpec, device: str = "cpu") -> dict[str, Any]:
+    torch.manual_seed(17)
+    cuda = torch.device(device).type == "cuda"
+    if cuda:
+        torch.cuda.reset_peak_memory_stats(device)
+    model = build_native_tiny_model(spec).to(device)
+    contexts = [(2, 12, 13, 14), (2, 15)] if spec.encoder else [(), ()]
+    batch = RepairCollator()(
+        [
+            TokenizedRepairExample("synthetic-1", contexts[0], (2, 105, 7), (18, 19, 106)),
+            TokenizedRepairExample("synthetic-2", contexts[1], (2, 105, 8), (20, 106)),
+        ]
+    ).to(device)
+    output = model(batch)
+    assert output.loss is not None
+    assert output.logits is not None
+    output.loss.backward()
+    parameters = list(model.parameters())
+    gradients = [p.grad for p in parameters if p.grad is not None]
+    finite = all(bool(torch.isfinite(g).all()) for g in gradients)
+    nonzero = sum(bool(g.abs().sum() > 0) for g in gradients)
+    if not torch.isfinite(output.logits).all() or not finite or not nonzero:
+        raise RuntimeError("Native smoke produced invalid logits or gradients.")
+    return dict(
+        experiment=spec.name,
+        mode="native_tiny_random",
+        device=device,
+        encoder_width=model.encoder.config.hidden_size if model.encoder else None,
+        decoder_width=model.decoder.config.hidden_size,
+        encoder_layers=len(model.encoder.layers) if model.encoder else 0,
+        decoder_layers=len(model.decoder.layers),
+        logits_shape=list(output.logits.shape),
+        parameters=sum(p.numel() for p in parameters),
+        synthetic_loss=output.loss.item(),
+        gradients_finite=finite,
+        parameters_with_nonzero_gradient=nonzero,
+        parameter_bytes=sum(p.numel() * p.element_size() for p in parameters),
+        gradient_bytes=sum(g.numel() * g.element_size() for g in gradients),
+        peak_cuda_allocated_bytes=torch.cuda.max_memory_allocated(device) if cuda else None,
+        peak_cuda_reserved_bytes=torch.cuda.max_memory_reserved(device) if cuda else None,
+        word_embeddings_shared=(
+            model.encoder is not None
+            and model.encoder.embed_tokens.weight is model.decoder.embed_tokens.weight
+        ),
+        decoder_lm_head_shared=model.lm_head.weight is model.decoder.embed_tokens.weight,
+        pretrained_weights_loaded=False,
+        benchmark_executed=False,
+    )
+
+
+def build_native_model(
+    spec: ExperimentSpec,
+    *,
+    tiny: bool = True,
+    device: str | torch.device = "cpu",
+    dtype: torch.dtype = torch.float32,
+) -> NativeTinyModel:
+    """Construct directly on destination; preserve native nonpersistent buffers."""
+    previous = torch.get_default_dtype()
+    try:
+        torch.set_default_dtype(dtype)
+        with torch.device(device):
+            return NativeTinyModel(spec, tiny=tiny)
+    finally:
+        torch.set_default_dtype(previous)
 
 
 # Direct alias

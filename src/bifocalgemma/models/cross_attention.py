@@ -1,5 +1,5 @@
 # mypy: disable-error-code="override"
-"""Decoupled full-rank cross-attention for the V3 decoder."""
+"""Decoupled full-rank cross-attention for the BifocalGemma decoder."""
 
 from __future__ import annotations
 
@@ -12,20 +12,16 @@ import torch.utils.checkpoint
 from torch.nn import functional as F
 from transformers.models.gemma4.modeling_gemma4 import apply_rotary_pos_emb
 
+from bifocalgemma.config import GATE_INIT_TANH
 from bifocalgemma.models import inference_cache as inference_cache_mod
+from bifocalgemma.models.bridge import SwiGLUDualGateBridge
 from bifocalgemma.models.memory_efficient import (
     TiledMergedAttention,
     attention_tile,
     tiled_attention,
 )
-from bifocalgemma.v3.bridge import SwiGLUDualGateBridge
-from bifocalgemma.v3.constants import (
-    GATE_INIT_TANH,
-)
-from bifocalgemma.v3.objectives import (
-    is_cross_bridge_parameter,
-)
-from bifocalgemma.v3.runtime import (
+from bifocalgemma.training.objectives import is_cross_bridge_parameter
+from bifocalgemma.training.runtime import (
     clamped_triton_kernel_options,
     critical_attention_beta,
     ensure_hardware_memory_guards,
@@ -37,7 +33,7 @@ def _compute_per_row_cross_query(
     encoder_valid: torch.Tensor,
     fallback_n_enc: int,
 ) -> torch.Tensor:
-    """Divide cross-queries by per-row critical attention length temperature beta_N (V3 §5.4 & §8.2)."""
+    """Multiply cross-queries by per-row critical attention length temperature beta_N."""
     bsz = query_cross.shape[0]
     valid_counts = encoder_valid.bool().sum(dim=-1).tolist()
     betas = [
@@ -46,12 +42,12 @@ def _compute_per_row_cross_query(
     ]
     if all(b == 1.0 for b in betas):
         return query_cross
-    inv_beta = torch.tensor(
-        [1.0 / b for b in betas],
+    beta_scale = torch.tensor(
+        [b for b in betas],
         dtype=torch.float32,
         device=query_cross.device,
     ).view(bsz, 1, 1, 1)
-    return (query_cross.float() * inv_beta).to(query_cross.dtype)
+    return (query_cross.float() * beta_scale).to(query_cross.dtype)
 
 
 if TYPE_CHECKING:
@@ -531,7 +527,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
         attn.cross_gate_proj = torch.nn.Parameter(
             torch.empty((num_heads, attn.head_dim), dtype=torch.float32, device=dev)
         )
-        torch.nn.init.normal_(attn.cross_gate_proj, mean=0.0, std=0.01)
+        torch.nn.init.zeros_(attn.cross_gate_proj)
         attn.cross_scale = torch.nn.Parameter(
             torch.ones((num_heads, 1, 1), dtype=torch.float32, device=dev)
         )
@@ -558,3 +554,6 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
         "total_decoder_layers": len(model.decoder.layers),
         "total_cross_bridge_parameters": total_cross_params,
     }
+
+
+configure_cross_attention = configure_full_rank_cross_attention

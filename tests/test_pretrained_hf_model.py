@@ -373,14 +373,14 @@ def test_fast_training_pipeline_with_jsonl_data_dir(tmp_path):
 
 
 def test_export_matrix_pretrained_model(tmp_path):
+    from bifocalgemma.config import make_experiment_spec
     from bifocalgemma.modeling_bifocalgemma import (
         BifocalGemmaForCausalLM,
+        build_native_tiny_model,
         export_matrix_pretrained_model,
     )
-    from bifocalgemma.models.v2.native import build_native_tiny_model
+    from bifocalgemma.models.cross_attention import configure_full_rank_cross_attention
     from bifocalgemma.training.memory_probe import configure_probe_training
-    from bifocalgemma.v3.attention import configure_full_rank_cross_attention
-    from bifocalgemma.v3.matrix import make_experiment_spec
 
     # Build NativeTinyModel matching matrix runner
     spec = make_experiment_spec("2base-2it")
@@ -421,13 +421,13 @@ def test_export_matrix_pretrained_model(tmp_path):
 
 
 def test_export_matrix_pretrained_model_baseline(tmp_path):
+    from bifocalgemma.config import make_experiment_spec
     from bifocalgemma.modeling_bifocalgemma import (
         BifocalGemmaForCausalLM,
+        build_native_tiny_model,
         export_matrix_pretrained_model,
     )
-    from bifocalgemma.models.v2.native import build_native_tiny_model
     from bifocalgemma.training.memory_probe import configure_probe_training
-    from bifocalgemma.v3.matrix import make_experiment_spec
 
     # Build NativeTinyModel for baseline (no encoder)
     spec = make_experiment_spec("e2b-it")

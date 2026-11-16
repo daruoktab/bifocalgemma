@@ -1,4 +1,4 @@
-"""Unit tests for FastTrainingPipeline v3 improvements.
+"""Unit tests for FastTrainingPipeline improvements.
 
 Covers:
 1. Stage 1 Encoder LoRA active + Decoder LoRA frozen (scaling == 0.0), Stage 2 both active (scaling == 2.0).
@@ -11,7 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-import importlib.metadata
 import json
 from pathlib import Path
 from typing import Any
@@ -19,25 +18,13 @@ from typing import Any
 import pytest
 import torch
 
-# Ensure transformers compatibility check passes in test environment
-_orig_version = importlib.metadata.version
-
-
-def _patched_version(distribution_name: str) -> str:
-    if distribution_name == "transformers":
-        return "5.22.1"
-    return _orig_version(distribution_name)
-
-
-setattr(importlib.metadata, "version", _patched_version)
-
-from bifocalgemma.training.fast_pipeline import (  # noqa: E402
+from bifocalgemma.training.fast_pipeline import (
     FastTrainingConfig,
     FastTrainingPipeline,
     JSONLRepairDataset,
 )
-from bifocalgemma.training.memory_probe import ProbeLoRALinear  # noqa: E402
-from bifocalgemma.v3.objectives import is_cross_bridge_parameter  # noqa: E402
+from bifocalgemma.training.memory_probe import ProbeLoRALinear
+from bifocalgemma.training.objectives import is_cross_bridge_parameter
 
 
 class DummyTrackingTokenizer:

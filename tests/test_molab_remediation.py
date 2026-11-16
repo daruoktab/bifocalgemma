@@ -18,19 +18,20 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from bifocalgemma.config import EXPERIMENT_SPECS
+from bifocalgemma.config import (
+    CENTRALIZED_HF_REPO,
+    CLEAN_DEFAULT_HF_REPO,
+    CLEAN_RECIPE_VERSION,
+    EXPERIMENT_SPECS,
+    make_experiment_spec,
+)
 from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
 from bifocalgemma.evaluation.context import run_context_benchmark
 from bifocalgemma.modeling_bifocalgemma import (
     BifocalGemmaForCausalLM,
     export_matrix_pretrained_model,
 )
-from bifocalgemma.v3.constants import (
-    CENTRALIZED_HF_REPO,
-    CLEAN_DEFAULT_HF_REPO,
-    CLEAN_RECIPE_VERSION,
-)
-from bifocalgemma.v3.matrix import make_experiment_spec, run_matrix_training
+from bifocalgemma.training.matrix import run_matrix_training
 from tools.generate_full_matrix_notebooks import ROOT
 
 
@@ -284,11 +285,11 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
         def __call__(self, event):
             logged_events.append(event)
 
-    monkeypatch.setattr("bifocalgemma.v3.matrix.recover_remote_run", lambda *a, **k: None)
+    monkeypatch.setattr("bifocalgemma.training.matrix.recover_remote_run", lambda *a, **k: None)
 
     # Legacy artifacts must be rejected before model loading and remain available.
     monkeypatch.setattr(
-        "bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
+        "bifocalgemma.training.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
     )
 
     with pytest.raises(ValueError, match="Incompatible or corrupt"):
@@ -499,9 +500,9 @@ def test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues(tmp_path, monk
         def __call__(self, event):
             logged_events.append(event)
 
-    monkeypatch.setattr("bifocalgemma.v3.matrix.recover_remote_run", lambda *a, **k: None)
+    monkeypatch.setattr("bifocalgemma.training.matrix.recover_remote_run", lambda *a, **k: None)
     monkeypatch.setattr(
-        "bifocalgemma.v3.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
+        "bifocalgemma.training.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
     )
 
     with pytest.raises(ValueError, match="Incompatible or corrupt"):

@@ -15,7 +15,7 @@ import torch
 from transformers import Gemma4TextConfig, Gemma4TextModel
 from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention, Gemma4TextMLP
 
-from bifocalgemma.models.v2 import GatedCrossAttentionBridge
+from bifocalgemma.models.bridge import SwiGLUDualGateBridge
 
 FIXTURES = Path(__file__).parent / "fixtures"
 PROFILES = {
@@ -165,22 +165,23 @@ class TestGemma4EdgeTopology(unittest.TestCase):
                     decoder_config = self.config(decoder_name, thin=True)
                     encoder = Gemma4TextModel(encoder_config)
                     decoder = Gemma4TextModel(decoder_config)
-                    bridge = GatedCrossAttentionBridge(
-                        encoder_dim=encoder_config.hidden_size,
-                        decoder_dim=decoder_config.hidden_size,
-                        num_heads=8,
-                        head_dim=8,
+                    bridge = SwiGLUDualGateBridge(
+                        d_enc=encoder_config.hidden_size,
+                        d_dec=decoder_config.hidden_size,
                     )
                     encoder_hidden = encoder(torch.tensor([[2, 3, 4, 5]])).last_hidden_state
                     decoder_hidden = decoder(torch.tensor([[2, 6, 7]])).last_hidden_state
-                    output = bridge(decoder_hidden, encoder_hidden)
-                    self.assertEqual(output.shape, (1, 3, decoder_config.hidden_size))
-                    self.assertTrue(torch.isfinite(output).all())
+                    bridged = bridge(encoder_hidden)
+                    self.assertEqual(bridged.shape, (1, 4, decoder_config.hidden_size))
+                    self.assertTrue(torch.isfinite(bridged).all())
+                    output = decoder_hidden @ bridged.transpose(-1, -2)
                     output.square().mean().backward()
                     for parameter in (
                         encoder.embed_tokens.weight,
                         decoder.embed_tokens.weight,
-                        bridge.gate,
+                        bridge.w_res.weight,
+                        bridge.w_down.weight,
+                        bridge.gamma_calib,
                     ):
                         gradient = parameter.grad
                         self.assertIsNotNone(gradient)

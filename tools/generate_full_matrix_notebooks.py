@@ -447,7 +447,7 @@ def main():
         "--check", action="store_true", help="Check existing files match generated code"
     )
     mode.add_argument(
-        "--publish", action="store_true", help="Publish immutable runtime bundle to Hugging Face"
+        "--publish", action="store_true", help="Publish an immutable runtime bundle without changing runtime/latest.zip"
     )
     parser.add_argument(
         "--require-published", action="store_true",
@@ -473,13 +473,7 @@ def main():
         filename = f"runtime/runtime-{bundle_sha[:16]}.zip"
         repo_id = CENTRALIZED_HF_REPO
         api = HfApi()
-        print(f"Publishing runtime bundle to {repo_id}:{filename} and runtime/latest.zip...")
-        api.upload_file(
-            repo_id=repo_id,
-            path_in_repo="runtime/latest.zip",
-            path_or_fileobj=payload,
-            commit_message="Update latest BifocalGemma notebook runtime",
-        )
+        print(f"Publishing immutable runtime bundle to {repo_id}:{filename}...")
         commit = api.upload_file(
             repo_id=repo_id,
             path_in_repo=filename,
@@ -496,11 +490,6 @@ def main():
             "revision": commit.oid,
             "sha256": bundle_sha,
         }
-        for old_zip in runtime_dir.glob("runtime-*.zip"):
-            try:
-                old_zip.unlink()
-            except OSError:
-                pass
         (runtime_dir / f"runtime-{bundle_sha[:16]}.zip").write_bytes(payload)
         manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         print(f"Updated {manifest_path}")

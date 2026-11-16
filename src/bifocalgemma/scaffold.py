@@ -13,7 +13,7 @@ class BuildBlock:
 
 BUILD_BLOCKS = (
     BuildBlock(
-        "C01", "implemented", "config.py", "Six-model specification and checkpoint provenance"
+        "C01", "implemented", "config.py", "Six-model and ten-model matrix registry"
     ),
     BuildBlock(
         "D01", "implemented", "contracts.py", "Repository, example, batch and prediction contracts"
@@ -34,41 +34,69 @@ BUILD_BLOCKS = (
     BuildBlock(
         "D06", "implemented", "data/swesmith.py", "Local SWE-smith patch-direction contract"
     ),
-    BuildBlock("M07", "native_tiny", "models/native.py", "Native random-weight merged integration"),
+    BuildBlock(
+        "M07",
+        "implemented",
+        "modeling_bifocalgemma.py",
+        "BifocalGemmaPreTrainedModel and native tiny integration",
+    ),
     BuildBlock(
         "M01",
-        "reference",
-        "models/merged_attention.py",
-        "Joint softmax, GQA and asymmetric projection",
+        "implemented",
+        "models/memory_efficient.py",
+        "Tiled attention, joint visibility, and gradient checkpointing",
     ),
     BuildBlock("M02", "implemented", "models/embeddings.py", "Symmetric word parameter sharing"),
-    BuildBlock("M03", "reference", "models/reference.py", "Tiny offline assembly and backward"),
     BuildBlock(
-        "M04", "placeholder", "models/initialization.py", "Base/IT weight mapping into Gemma layers"
+        "M03",
+        "implemented",
+        "models/bridge.py",
+        "SwiGLU dual-gate manifold bridge and normalized alignment",
     ),
     BuildBlock(
-        "M05", "placeholder", "models/model.py", "Full Gemma encoder/merged decoder integration"
+        "M04",
+        "implemented",
+        "models/checkpoint_transfer.py",
+        "Base/IT weight transfer and local/adapter loaders",
     ),
     BuildBlock(
-        "M06", "placeholder", "models/cache.py", "Production self/cross KV and repository cache"
+        "M05",
+        "implemented",
+        "models/cross_attention.py",
+        "Decoupled full-rank cross-attention decoder",
     ),
     BuildBlock(
-        "T01", "implemented", "training/objectives.py", "Patch-only supervised cross entropy"
+        "M06",
+        "implemented",
+        "models/inference_cache.py",
+        "Per-generation self KV and static cross KV cache",
     ),
     BuildBlock(
-        "T02", "placeholder", "training/trainer.py", "Profiled PEFT optimizer and training loop"
+        "T01", "implemented", "training/objectives.py", "Patch-only and differential cross entropy"
     ),
     BuildBlock(
-        "T03", "placeholder", "training/profiling.py", "Actual memory and latency measurements"
+        "T02",
+        "implemented",
+        "training/matrix.py",
+        "Two-stage PEFT optimizer, stage schedule, and training loop",
     ),
     BuildBlock(
-        "T04", "optional_placeholder", "training/distillation.py", "Optional later teacher losses"
+        "T03",
+        "implemented",
+        "training/memory_probe.py",
+        "Actual memory and latency measurements",
+    ),
+    BuildBlock(
+        "T04",
+        "implemented",
+        "training/fast_pipeline.py",
+        "Fast two-stage training pipeline",
     ),
     BuildBlock(
         "I01",
-        "reference",
+        "implemented",
         "inference/generation.py",
-        "Target-free greedy native decoding; temporal cache pending",
+        "Greedy and cached generation decoding",
     ),
     BuildBlock(
         "D07",
@@ -96,7 +124,10 @@ BUILD_BLOCKS = (
         "Tool parsing and bounded developer-agent loop",
     ),
     BuildBlock(
-        "E01", "optional_placeholder", "evaluation/harness.py", "Real Docker repair evaluation"
+        "E01",
+        "implemented",
+        "evaluation/benchmark.py",
+        "Batched context benchmark evaluation suite",
     ),
     BuildBlock(
         "E02",
@@ -104,7 +135,12 @@ BUILD_BLOCKS = (
         "evaluation/predictions.py",
         "SWE-bench prediction JSONL serialization",
     ),
-    BuildBlock("S01", "placeholder", "checkpointing.py", "Alias-safe checkpoint save/load"),
+    BuildBlock(
+        "S01",
+        "implemented",
+        "training/checkpoint.py",
+        "Alias-safe checkpoint save/load and Hub synchronization",
+    ),
 )
 BLOCKS_BY_ID = {block.id: block for block in BUILD_BLOCKS}
 

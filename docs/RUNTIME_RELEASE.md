@@ -31,7 +31,8 @@ conda run --no-capture-output -n ai python tools/generate_full_matrix_notebooks.
 conda run --no-capture-output -n ai python -m pytest tests/test_matrix_runtime_loader.py -q
 ```
 
-Publication uploads the immutable content-named ZIP and updates `runtime/latest.zip`.
+Publication uploads the immutable content-named ZIP while leaving `runtime/latest.zip`
+and prior runtime archives unchanged.
 The generator forces an anonymous read-back of the immutable ZIP, verifies its
 checksum, and pins all ten notebooks to the returned commit revision. The release
 check requires a full immutable revision, so a preview cannot pass it.
@@ -138,3 +139,20 @@ dataset, training parameter or checkpoint source changed. See the
 [dashboard report](DASHBOARD_WIDGET_LIFECYCLE.md) for source references and limits.
 The 43 loader/notebook tests, published generator check, anonymous empty-cache
 load and all four project diagnostic tools passed for this revision.
+
+## Versionless matrix baseline, 2026-11-16
+
+- Repository: `daruokta/bifocalgemma-2026-11-02` (public model repository).
+- Immutable revision: `8ffae5e550e290b6d60ff6f5530d340106b61d09`.
+- Archive: `runtime/runtime-877c2024af2a4fb4.zip`, 342,618 bytes (`104` entries).
+- SHA-256: `877c2024af2a4fb4e18c6b2223b801215da05ec2a3d9279f87b0c035f9268c7c`.
+
+This release unifies the legacy `v2/` and `v3/` implementations into canonical
+versionless modules under `src/bifocalgemma/` and updates
+[compatibility metadata](../configs/training_resume_compatibility.json) to
+`clean_versionless_baseline_v1`. Publication left `runtime/latest.zip` and all 26
+prior `runtime/*` archives unchanged, preserving running legacy Molab notebooks.
+Read-back download verification from revision `8ffae5e550e290b6d60ff6f5530d340106b61d09`,
+generator `--check --require-published`, strict Marimo checks across all 14 active
+notebooks, static diagnostics (`ruff`, `ty`, `pyrefly`), and offline pytest suites
+all passed.

@@ -1,19 +1,46 @@
-"""Offline construction entrypoints. See docs/BUILD_GUIDE.md."""
+"""Offline construction and training entrypoints."""
 
 import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 from bifocalgemma.config import (
     EXPERIMENT_NAMES,
     EXPERIMENT_SPECS,
     PROFILES,
+    ExperimentSpec,
     get_experiment,
     validate_experiment_matrix,
 )
-from bifocalgemma.models.v2.initialization import describe_initialization
 from bifocalgemma.scaffold import BUILD_BLOCKS, FeatureNotReadyError
+
+
+def _initialization_plan(spec: ExperimentSpec) -> dict[str, Any]:
+    encoder_source = spec.encoder.model_id if spec.encoder else None
+    decoder_source = spec.decoder.model_id
+    asymmetric = spec.encoder is not None and spec.encoder.size != spec.decoder.size
+    return {
+        "experiment": spec.name,
+        "encoder_body_source": encoder_source,
+        "encoder_words_source": decoder_source if spec.tie_encoder_decoder_words else encoder_source,
+        "encoder_ple_source": encoder_source,
+        "decoder_source": decoder_source,
+        "shared_word_anchor": decoder_source if spec.tie_encoder_decoder_words else None,
+        "encoder_projection": (
+            "not_applicable"
+            if spec.encoder is None
+            else (
+                "normalized_linear_rmsnorm"
+                if spec.architecture_version == "normalized_merged_v2"
+                else "new_learned_projection"
+                if asymmetric
+                else "identity"
+            )
+        ),
+        "attention_target": spec.attention_mode,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument("--experiment", choices=EXPERIMENT_NAMES, default=EXPERIMENT_NAMES[0])
     validate = sub.add_parser("validate-config", help="Validate the checked-in six-model matrix.")
     validate.add_argument("--config", type=Path, default=Path("configs/experiments.json"))
-    smoke = sub.add_parser("smoke", help="Tiny synthetic reference forward/backward only.")
+    smoke = sub.add_parser("smoke", help="Tiny native forward/backward smoke.")
     smoke.add_argument(
         "--experiment", choices=(*EXPERIMENT_NAMES[:4], "all"), default=EXPERIMENT_NAMES[0]
     )
@@ -91,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                             else None,
                             "decoder": asdict(PROFILES[spec.decoder.size]),
                         },
-                        "initialization_plan": asdict(describe_initialization(spec)),
+                        "initialization_plan": _initialization_plan(spec),
                         "blocks": [asdict(block) for block in BUILD_BLOCKS],
                         "pretrained_weights_loaded": False,
                     },
@@ -102,19 +129,22 @@ def main(argv: list[str] | None = None) -> int:
             specs = validate_experiment_matrix(args.config)
             print(json.dumps({"valid": True, "models": [spec.name for spec in specs]}))
         elif args.command == "smoke":
-            from bifocalgemma.models.v2.reference import run_reference_smoke
+            import torch
 
+            from bifocalgemma.modeling_bifocalgemma import run_native_smoke
+
+            torch.set_num_threads(min(4, torch.get_num_threads()))
             selected = (
                 EXPERIMENT_SPECS[:4]
                 if args.experiment == "all"
                 else (get_experiment(args.experiment),)
             )
             for spec in selected:
-                print(json.dumps(run_reference_smoke(spec, args.device)))
+                print(json.dumps(run_native_smoke(spec, args.device)))
         elif args.command == "smoke-native":
             import torch
 
-            from bifocalgemma.models.v2.native import run_native_smoke
+            from bifocalgemma.modeling_bifocalgemma import run_native_smoke
 
             torch.set_num_threads(min(4, torch.get_num_threads()))
             native_selected = (
@@ -123,13 +153,8 @@ def main(argv: list[str] | None = None) -> int:
             for spec in native_selected:
                 print(json.dumps(run_native_smoke(spec, args.device)))
         elif args.command == "train":
-            from bifocalgemma.training.trainer import SFTConfig, train_direct_sft
-
-            train_direct_sft(
-                get_experiment(args.experiment),
-                Path("data/manifest.jsonl"),
-                SFTConfig(),
-                Path("outputs"),
+            raise FeatureNotReadyError(
+                "T02", "Wire data, native model, PEFT, optimizer and checkpoint resume."
             )
         elif args.command == "train-fast":
             from bifocalgemma.training.fast_pipeline import FastTrainingConfig, FastTrainingPipeline
@@ -159,9 +184,9 @@ def main(argv: list[str] | None = None) -> int:
             summary = pipeline.run()
             print(json.dumps(summary, indent=2))
         elif args.command == "evaluate":
-            from bifocalgemma.evaluation.harness import SWEBenchHarness
-
-            SWEBenchHarness().evaluate(args.predictions, "unselected", "unselected")
+            raise FeatureNotReadyError(
+                "E01", "Docker harness execution and result normalization are not wired."
+            )
     except FeatureNotReadyError as error:
         parser.exit(2, f"{error}\n")
     except (ValueError, OSError) as error:

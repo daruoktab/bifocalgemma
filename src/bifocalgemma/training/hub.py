@@ -2,11 +2,17 @@
 
 import json
 import logging
+import os
 import re
 from pathlib import Path, PurePosixPath
+from uuid import uuid4
 
 from bifocalgemma.data.curation import file_digest
-from bifocalgemma.training.stages import atomic_json, validate_checkpoint_files
+from bifocalgemma.training.stages import (
+    atomic_json,
+    retry_windows_file_operation,
+    validate_checkpoint_files,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +142,8 @@ def _synchronize_once(repo_id, root, prefix, *, token, checkpoint_only=False):
 
 def recover_remote_run(repo_id, root, prefix, *, token):
     """Only recover this run, pinned to one remote revision; never download base weights."""
+    import shutil
+
     from huggingface_hub import HfApi, hf_hub_download
 
     root = Path(root).resolve()
@@ -149,17 +157,10 @@ def recover_remote_run(repo_id, root, prefix, *, token):
     names = api.list_repo_files(repo_id, revision=revision)
     if prefix + "/pipeline_state.json" not in names:
         return None
-    if root.exists() and any(root.iterdir()):
-        non_trivial = [
-            p
-            for p in root.iterdir()
-            if p.name not in {"monitor.html", ".gitkeep"}
-            and not (p.is_dir() and not any(p.iterdir()))
-        ]
-        if non_trivial:
-            raise ValueError(
-                "Local run has artifacts without a pipeline receipt; inspect before recovery."
-            )
+
+    remote_items = []
+    remote_relatives = set()
+    pipeline_state_item = None
     for name in names:
         if not name.startswith(prefix + "/"):
             continue
@@ -167,11 +168,79 @@ def recover_remote_run(repo_id, root, prefix, *, token):
         path = (root / relative).resolve()
         if not path.is_relative_to(root) or ".." in PurePosixPath(relative).parts:
             raise ValueError("Remote run path escaped recovery directory.")
-        source = hf_hub_download(repo_id, name, revision=revision, token=token)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        import shutil
+        item = (name, relative, path)
+        remote_relatives.add(relative)
+        if relative == "pipeline_state.json":
+            pipeline_state_item = item
+        else:
+            remote_items.append(item)
 
-        shutil.copyfile(source, path)
+    recovery_marker = root / ".recovery_in_progress.json"
+    in_progress = recovery_marker.exists()
+    recoverable_sidecars = {
+        "monitor.html",
+        ".gitkeep",
+        "last_seen.json",
+        "heartbeat_upload_status.json",
+        ".upload-backoff.json",
+        "benchmark_upload_status.json",
+        "benchmark_upload_events.jsonl",
+        ".recovery_in_progress.json",
+    }
+    temp_files = []
+    if root.exists():
+        local_files = []
+        for entry in root.rglob("*"):
+            if entry.is_symlink():
+                raise ValueError(
+                    "Local run has artifacts without a pipeline receipt; inspect before recovery."
+                )
+            if entry.is_file():
+                rel = entry.relative_to(root).as_posix()
+                if in_progress and (
+                    (entry.name.startswith(".recover-") and entry.name.endswith(".tmp"))
+                    or entry.name.startswith(".recovery_in_progress.json.")
+                ):
+                    temp_files.append(entry)
+                    continue
+                local_files.append((rel, entry))
+        unexpected = [
+            rel
+            for rel, _ in local_files
+            if rel not in recoverable_sidecars and rel not in remote_relatives
+        ]
+        if unexpected:
+            raise ValueError(
+                "Local run has artifacts without a pipeline receipt; inspect before recovery."
+            )
+        if not in_progress:
+            remote_lookup = {rel: name for name, rel, _path in remote_items}
+            for rel, entry in local_files:
+                if entry.name == "predictions.jsonl" and rel in remote_lookup:
+                    source = Path(
+                        hf_hub_download(repo_id, remote_lookup[rel], revision=revision, token=token)
+                    )
+                    if entry.stat().st_size > source.stat().st_size:
+                        raise ValueError(
+                            "Local run has artifacts without a pipeline receipt; inspect before recovery."
+                        )
+
+    for tmp_file in temp_files:
+        tmp_file.unlink(missing_ok=True)
+    atomic_json(recovery_marker, {"revision": revision, "prefix": prefix})
+
+    def _copy_atomic(name: str, path: Path) -> None:
+        source = Path(hf_hub_download(repo_id, name, revision=revision, token=token))
+        if path.is_file() and file_digest(path) == file_digest(source):
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.parent / f".recover-{uuid4().hex}.tmp"
+        shutil.copyfile(source, tmp_path)
+        retry_windows_file_operation(lambda: os.replace(tmp_path, path))
+
+    for name, _relative, path in remote_items:
+        _copy_atomic(name, path)
+
     for path in (root / "training").glob("checkpoint-*"):
         try:
             validate_checkpoint_files(path)
@@ -194,6 +263,11 @@ def recover_remote_run(repo_id, root, prefix, *, token):
                             digest,
                             actual_digest,
                         )
+
+    if pipeline_state_item is not None:
+        name, _relative, path = pipeline_state_item
+        _copy_atomic(name, path)
+    recovery_marker.unlink(missing_ok=True)
     return {"revision": revision, "prefix": prefix}
 
 
@@ -369,7 +443,7 @@ def download_model(spec, cache, token, progress):
 
     from bifocalgemma.assets import load_asset_json
     from bifocalgemma.data.tokenization import load_verified_tokenizer
-    from bifocalgemma.models.v2.pretrained import load_local_native_model
+    from bifocalgemma.models.checkpoint_transfer import load_local_native_model
 
     manifest = load_asset_json("tokenizer_manifest.json")
     weights = []
