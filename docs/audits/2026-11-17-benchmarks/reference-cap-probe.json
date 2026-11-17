@@ -1,0 +1,30 @@
+{
+  "checkpoint_tokenizer": "outputs\\context_tokenizers\\raw\\google__gemma-4-E2B-it",
+  "model_loaded": false,
+  "generation_performed": false,
+  "cap": 2048,
+  "sample_seed": 17,
+  "sample_limit": 100,
+  "cases": {
+    "crosscodelong_chunk_gemma32k_dec8k_v1": {
+      "eligible_count": 4713,
+      "max_reference_tokens": 410,
+      "references_above_2048": 0,
+      "sample_count": 100,
+      "sample_max_reference_tokens": 104,
+      "sample_references_above_2048": 0,
+      "sample_instance_id_sha256": "c891baa190fcb77289e8af4dcf615ec3745859091577e9fd1eab38d3e8c17647",
+      "gold_sha256": "da85c345445cc56a6c0751e28b025b3871bae1b7177a60a1170ea7e79374570f"
+    },
+    "crosscodelong_function_gemma32k_dec8k_v1": {
+      "eligible_count": 4834,
+      "max_reference_tokens": 935,
+      "references_above_2048": 0,
+      "sample_count": 100,
+      "sample_max_reference_tokens": 516,
+      "sample_references_above_2048": 0,
+      "sample_instance_id_sha256": "f46e15eb86d79cb4071d25a1c5d50043b6c7726d237f76ecb3e17ea528b1d755",
+      "gold_sha256": "ac1cb5141c2a7c7fee11e631c8d83718a5f46fd27552425aaa98515641853051"
+    }
+  }
+}

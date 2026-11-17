@@ -1,0 +1,16 @@
+{
+  "environment": "C:/Users/daru/miniconda3/envs/ai/python.exe; HF_HUB_OFFLINE=1; TRANSFORMERS_OFFLINE=1; PYTHONDONTWRITEBYTECODE=1; OMP_NUM_THREADS=2",
+  "model_loaded": false,
+  "hidden_test_execution": false,
+  "source_modified": false,
+  "probes": [
+    {"function":"completion_metrics", "prediction":"return \"ab\"", "reference":"return \"a b\"", "actual":{"exact_match":true,"sequence_similarity":1.0,"regex_identifier_set_f1":0.0}, "interpretation":"remove-all-whitespace semantic collision; adapted metric limitation"},
+    {"function":"completion_metrics", "prediction":"if ready:\n    run()\ncleanup()", "reference":"if ready:\n    run()\n    cleanup()", "actual":{"exact_match":true,"sequence_similarity":1.0,"regex_identifier_set_f1":1.0}, "interpretation":"indentation semantics erased by normalization"},
+    {"function":"extract_mcq_letter", "text":"A is correct? No, the final answer is B.", "actual":"A", "strict_letter":null, "interpretation":"resilient diagnostic priority bug; strict headline unaffected"},
+    {"text":"The answer is B.", "strict_letter":null,"extract_mcq_letter":"B"},
+    {"text":"#### 42", "extract_release_answer":"42", "extract_resilient_answer":"42"},
+    {"text":"The answer is 42.", "extract_release_answer":null, "extract_resilient_answer":"42"},
+    {"text":"\\boxed{42}", "extract_release_answer":null, "extract_resilient_answer":"42"},
+    {"text":"#### 42.", "extract_release_answer":"42.", "extract_resilient_answer":"42"}
+  ]
+}

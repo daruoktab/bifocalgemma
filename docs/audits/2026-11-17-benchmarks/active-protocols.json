@@ -1,0 +1,73 @@
+{
+  "audited_source_revision": "80522ad65c7c68452727a65b19ccc26a702977e2",
+  "audit_date": "2026-11-17",
+  "scope": "Local active suite; no model scores or generation",
+  "active_benchmarks": [
+    {
+      "collection": "longcodeqa_gemma32k_dec8k_v1",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 256,
+      "sample_limit": null,
+      "weight_tier": "medium_long"
+    },
+    {
+      "collection": "humanevalfix_python_v2",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 8192,
+      "sample_limit": null,
+      "weight_tier": "medium"
+    },
+    {
+      "collection": "sweqa_oracle_gemma32k_dec8k_v1",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 256,
+      "sample_limit": null,
+      "weight_tier": "medium_long"
+    },
+    {
+      "collection": "sweqa_noisy_oracle_gemma32k_dec8k_v1",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 256,
+      "sample_limit": null,
+      "weight_tier": "medium_long"
+    },
+    {
+      "collection": "gsm8k_zero_shot_v2",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 8192,
+      "sample_limit": null,
+      "weight_tier": "light"
+    },
+    {
+      "collection": "gsm8k_eight_shot_v2",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 8192,
+      "sample_limit": null,
+      "weight_tier": "light"
+    },
+    {
+      "collection": "crosscodelong_chunk_gemma32k_dec8k_v1",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 2048,
+      "sample_limit": 100,
+      "sample_seed": 17,
+      "weight_tier": "heavy"
+    },
+    {
+      "collection": "crosscodelong_function_gemma32k_dec8k_v1",
+      "encoder_limit": 32768,
+      "decoder_limit": 8192,
+      "max_new_tokens": 2048,
+      "sample_limit": 100,
+      "sample_seed": 17,
+      "weight_tier": "heavy"
+    }
+  ]
+}
