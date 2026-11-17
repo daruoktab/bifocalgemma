@@ -16,6 +16,7 @@ Matriks aktif berisi delapan pasangan encoder–decoder dan dua baseline decoder
 | [Audit arsitektur Astra, 16–17 November 2026](ASTRA_BIFOCAL_AUDIT_2026-11-16.md) | Putusan perubahan, probe reproduksi, masalah yang tersisa, dan eksperimen peningkatan |
 | [Audit benchmark resmi, 17 November 2026](OFFICIAL_BENCHMARK_PROTOCOL_AUDIT_2026-11-17.md) | Skor original Google yang tersedia, laporan pembuat benchmark, perbedaan protokol, dan bug diagnostik |
 | [Pembanding model di bawah 7B, 18 November 2026](SUB7B_BENCHMARK_REFERENCES_2026-11-18.md) | Skor terverifikasi SWE-QA, GSM8K, HumanEvalFix dan CrossCodeLongEval, dengan status checkpoint dan protokol |
+| [Lanjutan Qwen3.5 dan Gemma 4, 18 November 2026](QWEN35_GEMMA4_BENCHMARK_FOLLOWUP_2026-11-18.md) | Hasil GSM8K original checkpoint pada paper lain, full-test versus subset, dan status delapan kasus |
 | [Paper](../paper/main.tex) | Arsitektur, rancangan eksperimen, dan placeholder hasil |
 | [Dataset releases](DATASET_RELEASES.md) | Dataset privat, revision immutable, train/eval gold separation |
 | [Dashboard lifecycle](DASHBOARD_WIDGET_LIFECYCLE.md) | Dependency guard dan widget host |

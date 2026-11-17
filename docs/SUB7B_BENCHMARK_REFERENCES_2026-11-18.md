@@ -60,7 +60,7 @@ Perbedaan checkpoint/shot dapat menghasilkan angka yang sangat berbeda:
 - NVIDIA melaporkan **Nemotron-H-4B-Base-8K 69.6%**, **8-shot**, terpisah dari instruct-128K 88.93%. [Base card](https://huggingface.co/nvidia/Nemotron-H-4B-Base-8K).
 - Qwen melaporkan **Qwen3-4B-Base 87.79%**, tetapi **4-shot CoT**, sehingga tidak dimasukkan ke kelompok zero/eight-shot kita. [Qwen3 report, Table 7](https://arxiv.org/html/2505.09388v1#S3.T7).
 
-Tidak ditemukan angka 0/8-shot original Qwen3.5-4B yang cukup terverifikasi dalam sumber yang diperiksa. GSM8K-Platinum atau GSM8K Hard bukan pengganti test GSM8K 1319 kasus yang kita pilih.
+Pencarian awal belum menemukan angka 0/8-shot original Qwen3.5-4B dalam sumber yang diperiksa. **Pencarian lanjutan menemukan Qwen3.5-4B Native 89.39%, eight-shot CoT pada full 1319 soal**, serta baseline Gemma 4 E2B/E4B pada paper Google/Ulm. Lihat [koreksi dan sumber lengkap](QWEN35_GEMMA4_BENCHMARK_FOLLOWUP_2026-11-18.md). GSM8K-Platinum atau GSM8K Hard bukan pengganti test GSM8K yang kita pilih.
 
 ## CrossCodeLongEval: Qwen2.5-Coder kecil
 
