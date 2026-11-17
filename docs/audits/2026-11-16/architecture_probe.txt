@@ -1,0 +1,114 @@
+import copy
+import json
+import math
+from pathlib import Path
+
+import torch
+from transformers import Gemma4TextModel
+
+from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
+from bifocalgemma.modeling_bifocalgemma import BifocalGemmaForCausalLM
+from bifocalgemma.models.bridge import SwiGLUDualGateBridge
+from bifocalgemma.training.objectives import compute_diff_token_weights
+from bifocalgemma.training.runtime import critical_attention_beta
+
+torch.set_num_threads(2)
+torch.manual_seed(1701)
+out = {'seed': 1701, 'torch': torch.__version__}
+cfg = BifocalGemmaConfig(tiny=True)
+m = BifocalGemmaForCausalLM(cfg).eval()
+enc = torch.tensor([[2, 7, 9, 11, 13]])
+dec = torch.tensor([[2, 17, 19, 21]])
+ev = torch.ones_like(enc, dtype=torch.bool)
+dv = torch.ones_like(dec, dtype=torch.bool)
+enc_changed = enc.clone()
+enc_changed[:, -1] = 15
+dec_changed = dec.clone()
+dec_changed[:, -1] = 23
+with torch.no_grad():
+    z = m.encode_context(enc, encoder_attention_mask=ev)
+    z2 = m.encode_context(enc_changed, encoder_attention_mask=ev)
+    y = m.decode_logits(dec, dv, z, ev)
+    y2 = m.decode_logits(dec_changed, dv, z, ev)
+    out['mask_contract'] = {
+        'encoder_first_token_delta_after_last_token_change': (z[:, 0] - z2[:, 0]).abs().max().item(),
+        'decoder_prefix_delta_after_future_token_change': (y[:, :-1] - y2[:, :-1]).abs().max().item(),
+        'encoder_is_causal': sorted(set(a.self_attn.is_causal for a in m.encoder.layers)),
+        'decoder_is_causal': sorted(set(a.self_attn.is_causal for a in m.decoder.layers)),
+    }
+
+native = Gemma4TextModel(m.decoder.config).eval()
+native.load_state_dict({k: v for k, v in m.decoder.state_dict().items() if 'cross_' not in k}, strict=True)
+for layer in m.decoder.layers:
+    layer.self_attn.cross_gate.data.zero_()
+with torch.no_grad():
+    native_h = native(input_ids=dec, attention_mask=dv, position_ids=m._positions(dv), use_cache=False).last_hidden_state
+    zero_h = m._decode_hidden(dec, dv, z, ev)
+    out['zero_gate_native_hidden_max_delta'] = (native_h - zero_h).abs().max().item()
+
+gradient_rows = []
+for gate in (0.0, 0.05):
+    m.zero_grad(set_to_none=True)
+    for layer in m.decoder.layers:
+        layer.self_attn.cross_gate.data.fill_(math.atanh(gate))
+    loss = m(input_ids=dec, encoder_input_ids=enc, labels=dec).loss
+    loss.backward()
+    names = ('encoder_projection.w_res.weight', 'encoder_projection.w_gate.weight', 'encoder_projection.w_up.weight', 'encoder_projection.w_down.weight', 'encoder_projection.gamma_calib', 'decoder.layers.0.self_attn.cross_gate', 'decoder.layers.0.self_attn.cross_gate_proj', 'decoder.layers.0.self_attn.cross_k_proj.weight', 'decoder.layers.0.self_attn.cross_scale')
+    ps = dict(m.named_parameters())
+    gradient_rows.append({'gate': gate, 'loss': loss.item(), 'gradient_l2': {n: 0.0 if ps[n].grad is None else ps[n].grad.norm().item() for n in names}})
+out['initial_gradients'] = gradient_rows
+with torch.no_grad():
+    base = m.decode_logits(dec, dv, z, ev)
+    scaled = m.decode_logits(dec, dv, 3 * z, ev)
+    directions = torch.linspace(0.5, 1.5, z.shape[-1])
+    channel = m.decode_logits(dec, dv, z * directions, ev)
+    out['bridge_scale_after_cross_norm'] = {'uniform_x3_logit_max_delta': (base-scaled).abs().max().item(), 'channel_scale_logit_max_delta': (base-channel).abs().max().item()}
+
+bridge = SwiGLUDualGateBridge(128, 128)
+h = torch.randn(2, 9, 128)
+with torch.no_grad():
+    bz = bridge(h)
+    factors = torch.linspace(0.5, 2, 128)
+    bridge.post_norm.weight.mul_(factors)
+    bridge.gamma_calib.div_(factors)
+    out['gamma_postnorm_compensating_max_delta'] = (bz - bridge(h)).abs().max().item()
+    ht = bridge.pre_norm(h)
+    nonlinear = torch.nn.functional.linear(torch.nn.functional.silu(torch.nn.functional.linear(ht, bridge.w_gate.weight)) * torch.nn.functional.linear(ht, bridge.w_up.weight), bridge.w_down.weight)
+    out['new_bridge_nonlinear_over_residual_rms'] = (nonlinear.square().mean().sqrt() / ht.square().mean().sqrt()).item()
+
+beta = critical_attention_beta(32768)
+logits = torch.tensor([0., 1., 2.])
+oldp = torch.softmax(logits / beta, -1)
+newp = torch.softmax(logits * beta, -1)
+out['beta_counterexample'] = {'beta_32768': beta, 'old_probabilities': oldp.tolist(), 'new_probabilities': newp.tolist(), 'if_correct_token_is_index0_old_nll': -oldp[0].log().item(), 'if_correct_token_is_index0_new_nll': -newp[0].log().item()}
+labels = torch.tensor([[7, 8, 9, 10]])
+out['token_id_weighting_nonpatch_example'] = compute_diff_token_weights(labels, add_token_ids=(8,), del_token_ids=(), hdr_token_ids=()).tolist()
+
+cfgfalse = BifocalGemmaConfig(tiny=True, learnable_cross_scale=False)
+mf = BifocalGemmaForCausalLM(cfgfalse)
+out['learnable_cross_scale_false'] = {'parameter_present': hasattr(mf.decoder.layers[0].self_attn, 'cross_scale'), 'requires_grad': mf.decoder.layers[0].self_attn.cross_scale.requires_grad}
+from bifocalgemma.configuration_bifocalgemma import native_config
+scores = torch.ones(32768)
+scores[0] = 0
+scores[1] = 2
+old = torch.log_softmax(scores / beta, 0)
+new = torch.log_softmax(scores * beta, 0)
+out['beta_32768_counterexample'] = {'N': 32768, 'relevant_logit': 0, 'one_distractor_logit': 2, 'remaining_logits': 1, 'old_relevant_probability': old[0].exp().item(), 'new_relevant_probability': new[0].exp().item(), 'old_nll': -old[0].item(), 'new_nll': -new[0].item()}
+out['native_cross_cache_bytes_per_sample_N32768'] = {}
+for size in ('E2B', 'E4B'):
+    config = native_config(size, tiny=False)
+    owners = config.per_layer_config[:config.num_hidden_layers-config.num_kv_shared_layers]
+    out['native_cross_cache_bytes_per_sample_N32768'][size] = sum(2*32768*lc.num_key_value_heads*lc.head_dim*2 for lc in owners)
+torch.manual_seed(1702)
+b = SwiGLUDualGateBridge(128, 128)
+h = torch.randn(2, 32, 128).bfloat16()
+x = b.pre_norm(h.float()).bfloat16()
+r = torch.nn.functional.linear(x, b.w_res.weight.bfloat16())
+g = torch.nn.functional.silu(torch.nn.functional.linear(x, b.w_gate.weight.bfloat16())) * torch.nn.functional.linear(x, b.w_up.weight.bfloat16())
+w = b.w_down.weight.detach().clone()
+out['bf16_bridge_residual_rounding_probe'] = []
+for coeff in (.01, .05):
+    merged = r + torch.nn.functional.linear(g, (w*(coeff/.05)).bfloat16())
+    out['bf16_bridge_residual_rounding_probe'].append({'w_down_std_coefficient': coeff, 'unchanged_residual_fraction': float((merged == r).float().mean())})
+Path(__file__).with_name('architecture_probe_results.json').write_text(json.dumps(out, indent=2), encoding='utf-8')
+print(json.dumps(out, indent=2))

@@ -1,0 +1,53 @@
+{
+  "dataset": "outputs\\mixed_context_enc32k_dec8k_v3\\train.jsonl",
+  "task_counts": {
+    "repair": {
+      "rows": 41040,
+      "leading_whitespace": 0,
+      "leading_space_or_tab": 0,
+      "trailing_whitespace": 41040,
+      "trailing_newline": 41040,
+      "target_chars": 51842995
+    },
+    "localization": {
+      "rows": 1127,
+      "leading_whitespace": 0,
+      "leading_space_or_tab": 0,
+      "trailing_whitespace": 0,
+      "trailing_newline": 0,
+      "target_chars": 43876
+    },
+    "completion": {
+      "rows": 2241,
+      "leading_whitespace": 2241,
+      "leading_space_or_tab": 2241,
+      "trailing_whitespace": 2241,
+      "trailing_newline": 2241,
+      "target_chars": 2829261
+    }
+  },
+  "target_fields": {
+    "target_patch": 40501,
+    "target_text": 3907
+  },
+  "source_counts_top": [
+    [
+      "nuprl/EditPackFT",
+      15496
+    ],
+    [
+      "bigcode/commitpackft",
+      13672
+    ],
+    [
+      "microsoft/NextCoderDataset",
+      11333
+    ],
+    [
+      "nebius/SWE-rebench-V2",
+      3907
+    ]
+  ],
+  "elapsed_seconds": 3.015,
+  "interpretation": "Boundary-whitespace prevalence only; not a measurement of model quality or proof each old encoding changed."
+}

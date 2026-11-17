@@ -1,0 +1,104 @@
+{
+  "seed": 1701,
+  "torch": "2.15.0+cu132",
+  "mask_contract": {
+    "encoder_first_token_delta_after_last_token_change": 3.979947566986084,
+    "decoder_prefix_delta_after_future_token_change": 0.0,
+    "encoder_is_causal": [
+      false
+    ],
+    "decoder_is_causal": [
+      true
+    ]
+  },
+  "zero_gate_native_hidden_max_delta": 0.0,
+  "initial_gradients": [
+    {
+      "gate": 0.0,
+      "loss": 4.92165470123291,
+      "gradient_l2": {
+        "encoder_projection.w_res.weight": 0.0,
+        "encoder_projection.w_gate.weight": 0.0,
+        "encoder_projection.w_up.weight": 0.0,
+        "encoder_projection.w_down.weight": 0.0,
+        "encoder_projection.gamma_calib": 0.0,
+        "decoder.layers.0.self_attn.cross_gate": 0.26971808075904846,
+        "decoder.layers.0.self_attn.cross_gate_proj": 0.0,
+        "decoder.layers.0.self_attn.cross_k_proj.weight": 0.0,
+        "decoder.layers.0.self_attn.cross_scale": 0.0
+      }
+    },
+    {
+      "gate": 0.05,
+      "loss": 4.900575160980225,
+      "gradient_l2": {
+        "encoder_projection.w_res.weight": 0.09875991195440292,
+        "encoder_projection.w_gate.weight": 0.001500601414591074,
+        "encoder_projection.w_up.weight": 0.0015962509205564857,
+        "encoder_projection.w_down.weight": 0.014654860831797123,
+        "encoder_projection.gamma_calib": 0.017560316249728203,
+        "decoder.layers.0.self_attn.cross_gate": 0.17097000777721405,
+        "decoder.layers.0.self_attn.cross_gate_proj": 0.02147122099995613,
+        "decoder.layers.0.self_attn.cross_k_proj.weight": 0.5518902540206909,
+        "decoder.layers.0.self_attn.cross_scale": 0.0038109549786895514
+      }
+    }
+  ],
+  "bridge_scale_after_cross_norm": {
+    "uniform_x3_logit_max_delta": 8.128583431243896e-06,
+    "channel_scale_logit_max_delta": 0.06423988938331604
+  },
+  "gamma_postnorm_compensating_max_delta": 2.384185791015625e-07,
+  "new_bridge_nonlinear_over_residual_rms": 0.006885566748678684,
+  "beta_counterexample": {
+    "beta_32768": 1.2772588722239782,
+    "old_probabilities": [
+      0.12539778649806976,
+      0.2743535339832306,
+      0.6002487540245056
+    ],
+    "new_probabilities": [
+      0.0573003888130188,
+      0.20552471280097961,
+      0.7371748685836792
+    ],
+    "if_correct_token_is_index0_old_nll": 2.0762643814086914,
+    "if_correct_token_is_index0_new_nll": 2.859447956085205
+  },
+  "token_id_weighting_nonpatch_example": [
+    [
+      0.8421052694320679,
+      1.4736841917037964,
+      0.8421052694320679,
+      0.8421052694320679
+    ]
+  ],
+  "learnable_cross_scale_false": {
+    "parameter_present": true,
+    "requires_grad": true
+  },
+  "beta_32768_counterexample": {
+    "N": 32768,
+    "relevant_logit": 0,
+    "one_distractor_logit": 2,
+    "remaining_logits": 1,
+    "old_relevant_probability": 1.3947980733064469e-05,
+    "new_relevant_probability": 8.507743586960714e-06,
+    "old_nll": 11.18017578125,
+    "new_nll": 11.67453384399414
+  },
+  "native_cross_cache_bytes_per_sample_N32768": {
+    "E2B": 603979776,
+    "E4B": 1879048192
+  },
+  "bf16_bridge_residual_rounding_probe": [
+    {
+      "w_down_std_coefficient": 0.01,
+      "unchanged_residual_fraction": 0.710693359375
+    },
+    {
+      "w_down_std_coefficient": 0.05,
+      "unchanged_residual_fraction": 0.2552490234375
+    }
+  ]
+}

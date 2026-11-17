@@ -1,0 +1,66 @@
+{
+  "source_local_path": "outputs/mixed_context_enc32k_dec8k_v3/manifest.json",
+  "format": "bifocalgemma_curated_pool_v1",
+  "fingerprint": "6af7686d768519d8292b08e77bbbb82ca4c1042f5d0a42c446e546b00faab916",
+  "split_counts": {
+    "train": 44408,
+    "dev": 4934
+  },
+  "task_counts": {
+    "repair": 45572,
+    "localization": 1285,
+    "completion": 2485
+  },
+  "training_plan": {
+    "epochs": 1,
+    "batch_size": 1,
+    "accumulation": 4,
+    "updates_full_epoch": 11102,
+    "supervised_train_tokens": 16681401
+  },
+  "limits": {
+    "encoder": 32768,
+    "pair_decoder": 8192,
+    "baseline_decoder": 41472
+  },
+  "foundation_profile_quantiles": {
+    "encoder": {
+      "p50": 323,
+      "p95": 1058,
+      "p99": 1541,
+      "max": 6309
+    },
+    "pair_decoder": {
+      "p50": 276,
+      "p95": 1334,
+      "p99": 1844,
+      "max": 2048
+    },
+    "target": {
+      "p50": 238,
+      "p95": 1171,
+      "p99": 1692,
+      "max": 1935
+    },
+    "baseline_decoder": {
+      "p50": 564,
+      "p95": 2130,
+      "p99": 2741,
+      "max": 7400
+    },
+    "encoder_E2B": {
+      "p50": 323,
+      "p95": 1058,
+      "p99": 1541,
+      "max": 6309
+    },
+    "encoder_E4B": {
+      "p50": 323,
+      "p95": 1058,
+      "p99": 1541,
+      "max": 6309
+    }
+  },
+  "foundation_profiled": 44956,
+  "limitations": "Recorded local manifest profile, not fresh tokenization of all rows or proof of byte-identical remote contents."
+}

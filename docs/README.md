@@ -13,6 +13,7 @@ Matriks aktif berisi delapan pasangan encoder–decoder dan dua baseline decoder
 | [Peta modul](REPO_LAYOUT.md) | Lokasi implementasi dan entry point |
 | [Notebook training](TRAINING_NOTEBOOKS.md) | Satu konfigurasi per notebook, schedule, benchmark, resume |
 | [Rilis runtime](RUNTIME_RELEASE.md) | ZIP immutable, checksum, publikasi tanpa mengubah runtime lama |
+| [Audit arsitektur Astra, 16–17 November 2026](ASTRA_BIFOCAL_AUDIT_2026-11-16.md) | Putusan perubahan, probe reproduksi, masalah yang tersisa, dan eksperimen peningkatan |
 | [Paper](../paper/main.tex) | Arsitektur, rancangan eksperimen, dan placeholder hasil |
 | [Dataset releases](DATASET_RELEASES.md) | Dataset privat, revision immutable, train/eval gold separation |
 | [Dashboard lifecycle](DASHBOARD_WIDGET_LIFECYCLE.md) | Dependency guard dan widget host |

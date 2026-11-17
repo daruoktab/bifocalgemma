@@ -1,0 +1,90 @@
+{
+  "probe": "actual tiny native model -> policy -> memory-efficient config -> full-cross config -> decoder stack training/backward",
+  "results": [
+    {
+      "checkpointing": false,
+      "decoder_tokens": 64,
+      "encoder_tokens": 512,
+      "query_tile": 32,
+      "layers": 35,
+      "saved_forward_unique_storage_bytes": 93668588,
+      "cross_score_saved_unique_storage_bytes": 73695232,
+      "cross_score_saved_logical_bytes": 84410368,
+      "saved_tensor_count": 3585,
+      "encoder_gradient_finite": true,
+      "encoder_gradient_norm": 1.982720876370081e-09,
+      "loss": 1.0
+    },
+    {
+      "checkpointing": false,
+      "decoder_tokens": 128,
+      "encoder_tokens": 512,
+      "query_tile": 32,
+      "layers": 35,
+      "saved_forward_unique_storage_bytes": 181876652,
+      "cross_score_saved_unique_storage_bytes": 147095552,
+      "cross_score_saved_logical_bytes": 168820736,
+      "saved_tensor_count": 4145,
+      "encoder_gradient_finite": true,
+      "encoder_gradient_norm": 2.4507451623634324e-09,
+      "loss": 1.0
+    },
+    {
+      "checkpointing": false,
+      "decoder_tokens": 256,
+      "encoder_tokens": 512,
+      "query_tile": 32,
+      "layers": 35,
+      "saved_forward_unique_storage_bytes": 358292780,
+      "cross_score_saved_unique_storage_bytes": 293896192,
+      "cross_score_saved_logical_bytes": 337641472,
+      "saved_tensor_count": 5265,
+      "encoder_gradient_finite": true,
+      "encoder_gradient_norm": 1.6877439446005837e-09,
+      "loss": 1.0
+    },
+    {
+      "checkpointing": true,
+      "decoder_tokens": 64,
+      "encoder_tokens": 512,
+      "query_tile": 32,
+      "layers": 35,
+      "saved_forward_unique_storage_bytes": 411280,
+      "cross_score_saved_unique_storage_bytes": 0,
+      "cross_score_saved_logical_bytes": 0,
+      "saved_tensor_count": 82,
+      "encoder_gradient_finite": true,
+      "encoder_gradient_norm": 1.982720876370081e-09,
+      "loss": 1.0
+    },
+    {
+      "checkpointing": true,
+      "decoder_tokens": 128,
+      "encoder_tokens": 512,
+      "query_tile": 32,
+      "layers": 35,
+      "saved_forward_unique_storage_bytes": 804496,
+      "cross_score_saved_unique_storage_bytes": 0,
+      "cross_score_saved_logical_bytes": 0,
+      "saved_tensor_count": 82,
+      "encoder_gradient_finite": true,
+      "encoder_gradient_norm": 2.4507451623634324e-09,
+      "loss": 1.0
+    },
+    {
+      "checkpointing": true,
+      "decoder_tokens": 256,
+      "encoder_tokens": 512,
+      "query_tile": 32,
+      "layers": 35,
+      "saved_forward_unique_storage_bytes": 1590928,
+      "cross_score_saved_unique_storage_bytes": 0,
+      "cross_score_saved_logical_bytes": 0,
+      "saved_tensor_count": 82,
+      "encoder_gradient_finite": true,
+      "encoder_gradient_norm": 1.6877439446005837e-09,
+      "loss": 1.0
+    }
+  ],
+  "limitations": "CPU small native configurations; hooks measure graph-retained forward storage, not peak transient backward memory or full-model VRAM. Inputs/parameter storages can be counted. No optimizer or production edits."
+}

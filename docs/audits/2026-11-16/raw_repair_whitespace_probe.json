@@ -1,0 +1,14 @@
+{
+  "source": "microsoft/NextCoderDataset",
+  "record_type": null,
+  "original_chars": 6658,
+  "decoded_chars": 6657,
+  "original_ends_newline": true,
+  "decoded_ends_newline": false,
+  "exact": false,
+  "equals_stripped_target": true,
+  "eot_id": 106,
+  "active_matrix_patch": true,
+  "tokenizer": "cached Gemma-4-E2B-it",
+  "production_source_modified": false
+}
