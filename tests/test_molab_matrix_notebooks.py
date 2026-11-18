@@ -77,7 +77,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "2it-2it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -86,7 +86,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "4base-4it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -95,7 +95,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "4it-4it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -104,7 +104,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "4base-2it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -113,7 +113,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "4it-2it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -122,7 +122,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "2base-4it": {
         "encoder_id": "google/gemma-4-E2B",
@@ -131,7 +131,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "2it-4it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -140,7 +140,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "e2b-it": {
         "encoder_id": None,
@@ -149,7 +149,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "decoder_only",
         "repo": "daruokta/bifocalgemma-e2b-it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
     "e4b-it": {
         "encoder_id": None,
@@ -158,7 +158,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "decoder_only",
         "repo": "daruokta/bifocalgemma-e4b-it",
-        "subfolder": "latest",
+        "subfolder": "versionless-repair-v1",
     },
 }
 
@@ -586,13 +586,20 @@ def test_resolve_optimal_eval_batch_size_scales_with_model_and_benchmark_weight(
     assert resolve_optimal_eval_batch_size("4base-4it", ccl_item, free_vram_gib=4.0) == 1
 
 
-def test_configure_matrix_stage_parameter_freezing_paired_and_baseline():
+@pytest.mark.parametrize("learnable_cross_scale", [True, False])
+def test_configure_matrix_stage_parameter_freezing_paired_and_baseline(learnable_cross_scale):
+    from types import SimpleNamespace
+
     spec = make_experiment_spec("4base-2it")
     policy = unified_recipe("asymmetric")
     model = NativeTinyModel(spec, tiny=True)
+    cast(Any, model).config = SimpleNamespace(learnable_cross_scale=learnable_cross_scale)
     configure_policy_model(model, policy)
     configure_memory_efficient_training(model)
     configure_full_rank_cross_attention(model)
+    scales = [param for name, param in model.named_parameters() if name.endswith(".cross_scale")]
+    assert scales
+    assert all(param.requires_grad == learnable_cross_scale for param in scales)
 
     # Stage 1: Frozen decoder on paired model
     groups1, summary1 = configure_matrix_stage(model, policy, freeze_decoder=True, total_steps=5551)
@@ -601,6 +608,7 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline():
     assert [g["name"] for g in groups1] == ["encoder", "alignment_bridge_decay", "alignment"]
     assert all(g["warmup_ratio"] == 0.05 and g["warmup_steps"] == 278 for g in groups1)
     assert summary1["decoder_trainable_tensors"] == 0
+    assert all(param.requires_grad == learnable_cross_scale for param in scales)
     for name, param in model.named_parameters():
         if name.startswith("decoder.") and not is_cross_bridge_parameter(name):
             assert not param.requires_grad
@@ -618,6 +626,7 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline():
         "alignment",
     ]
     assert summary2["decoder_trainable_tensors"] > 0
+    assert all(param.requires_grad == learnable_cross_scale for param in scales)
 
     # Baseline decoder-only model (`e2b-it`) keeps decoder LoRA active in both stages
     spec_base = make_experiment_spec("e2b-it")

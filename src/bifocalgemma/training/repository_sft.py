@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from bifocalgemma.config import EXPERIMENT_SPECS
-from bifocalgemma.contracts import TokenizedRepairExample
 from bifocalgemma.data.offline_sft import (
     prepare_editing_records,
     split_editing_records,
@@ -16,48 +15,17 @@ from bifocalgemma.data.tokenization import load_verified_tokenizer
 def tokenize_repository_record(
     row, spec, encoder, decoder, *, encoder_limit=4096, decoder_limit=8192
 ):
-    if row.get("record_type") in {"context_sft_v1", "grounded_context_sft_v1"}:
-        from bifocalgemma.data.context_tasks import tokenize_context_task
+    from bifocalgemma.data.context_tasks import tokenize_context_task
 
-        return tokenize_context_task(
-            row, spec, encoder, decoder, encoder_limit=encoder_limit, decoder_limit=decoder_limit
-        )
     if row.get("role") != "train":
         raise ValueError("evaluation_records_are_not_training_data")
-    context = row["context"]
-    encoder_ids = tuple(encoder.encode(context, add_special_tokens=True)) if spec.encoder else ()
-    if spec.encoder:
-        prompt = "Return only a unified diff fulfilling the instruction.\n\n" + row["instruction"]
-    else:
-        prompt = "Return only a unified diff fulfilling the instruction.\n\n" + context
-    messages = [{"role": "user", "content": prompt}]
-    prefix = decoder.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
-    )
-    full = decoder.apply_chat_template(
-        messages + [{"role": "assistant", "content": row["target_patch"]}],
-        tokenize=False,
-        add_generation_prompt=False,
-        enable_thinking=False,
-    )
-    prefix_ids = tuple(decoder.encode(prefix, add_special_tokens=False))
-    full_ids = tuple(decoder.encode(full.rstrip(), add_special_tokens=False))
-    if full_ids[: len(prefix_ids)] != prefix_ids:
-        raise ValueError("prefix_target_boundary")
-    target = full_ids[len(prefix_ids) :]
-    if not prefix_ids or prefix_ids[0] != 2 or not target or target[-1] != 106:
-        raise ValueError("repository_special_token_policy")
-    if len(encoder_ids) > encoder_limit or len(full_ids) - 1 > decoder_limit:
-        raise ValueError("repository_token_overflow")
-    return TokenizedRepairExample(
-        row["instance_id"],
-        encoder_ids,
-        prefix_ids,
-        target,
-        metadata={
-            "source": row.get("source", "unknown"),
-            "task_type": row.get("task_type", "repair"),
-        },
+    if row.get("record_type") not in {"context_sft_v1", "grounded_context_sft_v1"}:
+        # Raw repository rows always supervise a unified diff. Use the same
+        # whitespace-preserving target encoder as the context SFT path.
+        row = {**row, "target_text": row["target_patch"], "task_type": "repair"}
+        row.setdefault("source", "unknown")
+    return tokenize_context_task(
+        row, spec, encoder, decoder, encoder_limit=encoder_limit, decoder_limit=decoder_limit
     )
 
 

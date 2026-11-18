@@ -33,7 +33,7 @@ def _():
         # BifocalGemma · 2Base → 2IT (Symmetric)
 
         Pelatihan dan evaluasi terpadu Molab: SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
-        - **Model:** `2base-2it` (Symmetric (2B -> 2B): 1536 -> 1536) · **HF:** [daruokta/bifocalgemma-2base-2it](https://huggingface.co/daruokta/bifocalgemma-2base-2it) (`latest/`)
+        - **Model:** `2base-2it` (Symmetric (2B -> 2B): 1536 -> 1536) · **HF:** [daruokta/bifocalgemma-2base-2it](https://huggingface.co/daruokta/bifocalgemma-2base-2it) (`versionless-repair-v1/`)
         - **Backbones:** Encoder `google/gemma-4-E2B` (rev `d29ff6b45f081a49ee2733a859c9c9c2d95d1a6f`) | Decoder `google/gemma-4-E2B-it` (rev `3e22461f65e89153144f8adb70e3b8c2cc9845a7`)
         - **Kurikulum:** Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps (Batch=2, Accum=2)
         - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)
@@ -127,9 +127,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-2026-11-02",
-        "filename": "runtime/runtime-877c2024af2a4fb4.zip",
-        "revision": "8ffae5e550e290b6d60ff6f5530d340106b61d09",
-        "sha256": "877c2024af2a4fb4e18c6b2223b801215da05ec2a3d9279f87b0c035f9268c7c",
+        "filename": "runtime/runtime-2e2b092886558ffe.zip",
+        "revision": "c4a13de26e25e85c2ea457dc6af5ed958c5c87af",
+        "sha256": "2e2b092886558ffe42e67e78235c1f281a1b714e85106962d9b6565e0370bc3a",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],
@@ -151,7 +151,7 @@ def _(dependency_runtime, mo, runtime_root):
     assert dependency_runtime["status"] == "READY"
     MODEL_KEY = "2base-2it"
     HF_REPO_ID = "daruokta/bifocalgemma-2base-2it"
-    HF_SUBFOLDER = "latest"
+    HF_SUBFOLDER = "versionless-repair-v1"
     token_form = mo.ui.dictionary(
         {
             "token": mo.ui.text(

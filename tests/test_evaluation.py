@@ -81,6 +81,14 @@ class TestEvaluationReporting(unittest.TestCase):
             print_repair_experiment_table({"T5Gemma-2-4B-4B": {"swe_bench_lite": 10.0}})
 
 
+def test_resilient_mcq_uses_terminal_final_answer_after_questioned_candidate():
+    from bifocalgemma.evaluation.context import extract_mcq_letter, strict_letter
+
+    response = "A is correct? No, the final answer is B."
+    assert extract_mcq_letter(response) == "B"
+    assert strict_letter(response) is None
+
+
 def test_crosscodelong_normalize_completion_prediction_strips_fences_and_suffix_overlap():
     from bifocalgemma.evaluation.context import (
         completion_metrics,

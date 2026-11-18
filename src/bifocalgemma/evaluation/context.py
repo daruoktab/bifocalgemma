@@ -225,6 +225,14 @@ def fallback_letter_regex(text: str) -> str | None:
     if not text:
         return None
 
+    final = re.search(
+        rf"\bfinal\s+answer(?:\s+is)?\s*:?\s*{OPT_ADVERBS}{LETTER_TOKEN}\s*\.?\s*\Z",
+        text,
+        re.I,
+    )
+    if final:
+        return _extract_match_letter(final)
+
     # Ambiguity check: e.g. "A or B", "A and B", "A vs B", "between option A and option D"
     has_ambiguity = bool(
         re.search(

@@ -313,11 +313,13 @@ def test_patch_matrix_tokenization_preserves_target_whitespace_and_collator_alig
     cached_it = (
         Path(__file__).resolve().parents[1] / "outputs/context_tokenizers/raw/google__gemma-4-E2B-it"
     )
+    decoder = tok
     if cached_it.is_dir():
         from transformers import AutoTokenizer
 
         real_it = AutoTokenizer.from_pretrained(cached_it, local_files_only=True)
         assert real_it is not None
+        decoder = real_it
         for spec in (EXPERIMENT_SPECS[1], EXPERIMENT_SPECS[4]):
             ex = ct_mod.tokenize_context_task(
                 row,
@@ -335,6 +337,24 @@ def test_patch_matrix_tokenization_preserves_target_whitespace_and_collator_alig
             supervised = tuple(batch.labels[0, len(ex.decoder_prefix_ids) - 1 :].tolist())
             assert supervised == ex.target_ids
             assert real_it.decode(list(supervised), skip_special_tokens=True) == target
+
+    raw_patch = "diff --git a/test.py b/test.py\n--- a/test.py\n+++ b/test.py\n@@ -1 +1 @@\n-a = 1\n+a = 2\n"
+    raw_row = {
+        "record_type": "repository_patch_v1",
+        "role": "train",
+        "instance_id": "raw-patch",
+        "context": "a = 1\n",
+        "instruction": "Set a to two",
+        "target_patch": raw_patch,
+    }
+    for spec in (EXPERIMENT_SPECS[1], EXPERIMENT_SPECS[4]):
+        ex = rs_mod.tokenize_repository_record(
+            raw_row, spec, decoder if spec.encoder else None, decoder
+        )
+        batch = collator([ex])
+        supervised = batch.labels[0, len(ex.decoder_prefix_ids) - 1 :].tolist()
+        assert supervised[-1] == 106
+        assert decoder.decode(supervised[:-1], skip_special_tokens=True) == raw_patch
 
 
 def test_prepare_sweqa_instance_id_ignores_correct_answer(tmp_path, monkeypatch):

@@ -529,7 +529,8 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
         )
         torch.nn.init.zeros_(attn.cross_gate_proj)
         attn.cross_scale = torch.nn.Parameter(
-            torch.ones((num_heads, 1, 1), dtype=torch.float32, device=dev)
+            torch.ones((num_heads, 1, 1), dtype=torch.float32, device=dev),
+            requires_grad=bool(getattr(cfg, "learnable_cross_scale", True)),
         )
         if not attn.is_kv_shared_layer:
             attn.cross_k_proj = Bf16FullLinear(attn.k_proj).to(dev)

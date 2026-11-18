@@ -14,7 +14,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+if str(ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(ROOT / "src"))
 
+from bifocalgemma.config import MATRIX_RUN_NAMESPACE  # noqa: E402
 from tools.notebook_bundle import source_bundle_bytes  # noqa: E402
 
 CENTRALIZED_HF_REPO = "daruokta/bifocalgemma-2026-11-02"
@@ -30,7 +33,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "2it-2it": {
         "title": "BifocalGemma · 2IT → 2IT (Symmetric)",
@@ -42,7 +45,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "4base-4it": {
         "title": "BifocalGemma · 4Base → 4IT (Symmetric)",
@@ -54,7 +57,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "4it-4it": {
         "title": "BifocalGemma · 4IT → 4IT (Symmetric)",
@@ -66,7 +69,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "4base-2it": {
         "title": "BifocalGemma · 4Base → 2IT (Asymmetric)",
@@ -78,7 +81,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "4it-2it": {
         "title": "BifocalGemma · 4IT → 2IT (Asymmetric)",
@@ -90,7 +93,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "2base-4it": {
         "title": "BifocalGemma · 2Base → 4IT (Asymmetric)",
@@ -102,7 +105,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "2it-4it": {
         "title": "BifocalGemma · 2IT → 4IT (Asymmetric)",
@@ -114,7 +117,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "e2b-it": {
         "title": "BifocalGemma · Baseline E2B-IT (Decoder-Only)",
@@ -126,7 +129,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 0,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-e2b-it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
     "e4b-it": {
         "title": "BifocalGemma · Baseline E4B-IT (Decoder-Only)",
@@ -138,7 +141,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 0,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-e4b-it",
-        "subfolder": "latest",
+        "subfolder": MATRIX_RUN_NAMESPACE,
     },
 }
 
@@ -509,11 +512,6 @@ def main():
             )
     else:
         filename = f"runtime/runtime-{bundle_sha[:16]}.zip"
-        for old_zip in runtime_dir.glob("runtime-*.zip"):
-            try:
-                old_zip.unlink()
-            except OSError:
-                pass
         (runtime_dir / f"runtime-{bundle_sha[:16]}.zip").write_bytes(payload)
         existing_rev = "LOCAL-PREVIEW"
         if manifest_path.is_file():

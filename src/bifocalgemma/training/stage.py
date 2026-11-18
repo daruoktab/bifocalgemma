@@ -35,6 +35,7 @@ def configure_matrix_stage(
     default_scaling = policy["alpha"] / policy["rank"]
     has_encoder = getattr(model, "encoder", None) is not None
     effective_freeze_decoder = freeze_decoder and has_encoder
+    learnable_cross_scale = getattr(getattr(model, "config", None), "learnable_cross_scale", True)
 
     for name, module in model.named_modules():
         if isinstance(module, ProbeLoRALinear):
@@ -45,7 +46,7 @@ def configure_matrix_stage(
 
     for name, param in model.named_parameters():
         if has_encoder and is_cross_bridge_parameter(name):
-            param.requires_grad_(True)
+            param.requires_grad_(learnable_cross_scale or not name.endswith(".cross_scale"))
         elif has_encoder and name.startswith("encoder.") and name.endswith((".lora_A", ".lora_B")):
             param.requires_grad_(True)
         elif name.startswith("decoder.") and name.endswith((".lora_A", ".lora_B")):
