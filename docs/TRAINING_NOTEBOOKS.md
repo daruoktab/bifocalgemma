@@ -72,7 +72,7 @@ Publikasi hanya menambah ZIP immutable dan tidak mengganti `runtime/latest.zip`.
 
 ## Lokasi run matrix baru
 
-Konfigurasi matrix memakai folder HF `versionless-repair-v1/` dan root lokal `outputs/matrix/versionless-repair-v1/`. Resume mencari checkpoint di lokasi yang sesuai dengan konfigurasi run. Run V3 lama pada `latest/` perlu dilanjutkan dengan notebook, ZIP dan konfigurasi asli. Untuk E4B V3 di step 7.462, notebook yang menunjuk ZIP kompatibel ada pada [commit 071b331](https://github.com/daruoktab/bifocalgemma/blob/071b331/notebooks/train_e4b_it.py).
+Konfigurasi matrix memakai folder HF `latest/` dan root lokal `outputs/matrix/versionless-repair-v1/`. Hasil lama disimpan di folder `archive/YYYY-MM-DD/` pada masing-masing repo model. Resume mencari checkpoint di lokasi yang sesuai dengan konfigurasi run. Run V3 lama memerlukan notebook, ZIP dan konfigurasi asli serta lokasi checkpoint yang sesuai. Untuk E4B V3 di step 7.462, notebook yang menunjuk ZIP kompatibel ada pada [commit 071b331](https://github.com/daruoktab/bifocalgemma/blob/071b331/notebooks/train_e4b_it.py).
 
 Runtime baru mempertahankan whitespace target unified diff saat menyusun label training. `learnable_cross_scale=False` membekukan skala cross-attention pada inisialisasi dan di kedua tahap training. Hash semantik run baru berbeda dari V3 dan dari rilis versionless sebelumnya.
 

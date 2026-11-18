@@ -33,7 +33,7 @@ def _():
         # BifocalGemma · Baseline E4B-IT (Decoder-Only)
 
         Pelatihan dan evaluasi terpadu Molab: Baseline Decoder-Only Causal LM (Full Decoder SFT).
-        - **Model:** `e4b-it` (Baseline Decoder-Only (4B): Decoder `2560`) · **HF:** [daruokta/bifocalgemma-e4b-it](https://huggingface.co/daruokta/bifocalgemma-e4b-it) (`versionless-repair-v1/`)
+        - **Model:** `e4b-it` (Baseline Decoder-Only (4B): Decoder `2560`) · **HF:** [daruokta/bifocalgemma-e4b-it](https://huggingface.co/daruokta/bifocalgemma-e4b-it) (`latest/`)
         - **Backbone:** Decoder `google/gemma-4-E4B-it` (rev `ee0ef6023621cff504d758262d4e04895a5af4a2`)
         - **Kurikulum:** Full Decoder SFT = 11,102 steps terbuka penuh dari awal tanpa pembagian tahap (Batch=2, Accum=2)
         - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)
@@ -127,9 +127,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-2026-11-02",
-        "filename": "runtime/runtime-2e2b092886558ffe.zip",
-        "revision": "c4a13de26e25e85c2ea457dc6af5ed958c5c87af",
-        "sha256": "2e2b092886558ffe42e67e78235c1f281a1b714e85106962d9b6565e0370bc3a",
+        "filename": "runtime/runtime-188056bb8841bb32.zip",
+        "revision": "a73969733e72bd0acc5fd2676f165583eb58c09c",
+        "sha256": "188056bb8841bb3212a3c5d0298e5822588412e394b2d3b13a848290430c1efd",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],
@@ -149,7 +149,7 @@ def _(dependency_runtime, mo, runtime_root):
     assert dependency_runtime["status"] == "READY"
     MODEL_KEY = "e4b-it"
     HF_REPO_ID = "daruokta/bifocalgemma-e4b-it"
-    HF_SUBFOLDER = "versionless-repair-v1"
+    HF_SUBFOLDER = "latest"
     token_form = mo.ui.dictionary(
         {
             "token": mo.ui.text(

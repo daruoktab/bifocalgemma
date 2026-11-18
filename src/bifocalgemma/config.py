@@ -184,7 +184,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "2it-2it": {
         "title": "BifocalGemma · 2IT → 2IT (Symmetric)",
@@ -198,7 +198,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "4base-4it": {
         "title": "BifocalGemma · 4Base → 4IT (Symmetric)",
@@ -212,7 +212,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "4it-4it": {
         "title": "BifocalGemma · 4IT → 4IT (Symmetric)",
@@ -226,7 +226,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "4base-2it": {
         "title": "BifocalGemma · 4Base → 2IT (Asymmetric)",
@@ -240,7 +240,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "4it-2it": {
         "title": "BifocalGemma · 4IT → 2IT (Asymmetric)",
@@ -254,7 +254,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "2base-4it": {
         "title": "BifocalGemma · 2Base → 4IT (Asymmetric)",
@@ -268,7 +268,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "2it-4it": {
         "title": "BifocalGemma · 2IT → 4IT (Asymmetric)",
@@ -282,7 +282,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "e2b-it": {
         "title": "BifocalGemma · Baseline E2B-IT (Decoder-Only)",
@@ -296,7 +296,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-e2b-it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
     "e4b-it": {
         "title": "BifocalGemma · Baseline E4B-IT (Decoder-Only)",
@@ -310,7 +310,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-e4b-it",
-        "subfolder": MATRIX_RUN_NAMESPACE,
+        "subfolder": "latest",
     },
 }
 

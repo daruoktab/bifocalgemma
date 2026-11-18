@@ -77,7 +77,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "2it-2it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -86,7 +86,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "4base-4it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -95,7 +95,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "4it-4it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -104,7 +104,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "4base-2it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -113,7 +113,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "4it-2it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -122,7 +122,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "2base-4it": {
         "encoder_id": "google/gemma-4-E2B",
@@ -131,7 +131,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "2it-4it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -140,7 +140,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "e2b-it": {
         "encoder_id": None,
@@ -149,7 +149,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "decoder_only",
         "repo": "daruokta/bifocalgemma-e2b-it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
     "e4b-it": {
         "encoder_id": None,
@@ -158,7 +158,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "decoder_only",
         "repo": "daruokta/bifocalgemma-e4b-it",
-        "subfolder": "versionless-repair-v1",
+        "subfolder": "latest",
     },
 }
 
