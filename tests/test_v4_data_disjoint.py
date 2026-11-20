@@ -606,3 +606,324 @@ def test_multi_epoch_and_stratified_balanced_schedule(tmp_path):
     for bad_epochs in (0, -1, True, float("nan"), float("inf")):
         with pytest.raises(ValueError, match="num_epochs"):
             build_shared_schedule(records, dataset_identity=identity, num_epochs=bad_epochs)
+
+
+def test_compound_spdx_license_and_crosscodelong_no_duplicate_missing_code():
+    from bifocalgemma.data.offline_sft import validate_context_license_record
+
+    mod = _load_prepare_module()
+    for spdx in ("MIT OR Apache-2.0", "MIT AND BSD-3-Clause", "(MIT OR Apache-2.0)", "Apache_2.0"):
+        rec = mod.adapt_v4_row(
+            "fim_midtraining",
+            {
+                "prefix": "def f(x):\n",
+                "suffix": "    return y",
+                "middle": "    y = x + 1\n",
+                "metadata": {
+                    "repository_url": "https://github.com/ok/repo",
+                    "license": spdx,
+                    "file_path": "a.py",
+                },
+            },
+        )
+        validate_context_license_record(rec)
+
+    with pytest.raises(ValueError, match="non_permissive_license"):
+        mod.adapt_v4_row(
+            "fim_midtraining",
+            {
+                "prefix": "def f(x):\n",
+                "suffix": "    return y",
+                "middle": "    y = x + 1\n",
+                "metadata": {
+                    "repository_url": "https://github.com/ok/repo",
+                    "license": "MIT OR GPL-3.0",
+                    "file_path": "a.py",
+                },
+            },
+        )
+
+    # Bug #6a: already-normalized # <MISSING_CODE> must not be emitted twice
+    for marker in ("# <MISSING_CODE>", "5: # <MISSING_CODE>", "### MISSING CODE"):
+        ccl_row = {
+            "task_type": "completion",
+            "instruction": "Complete code.",
+            "context": (
+                "### CROSS-FILE CONTEXT\ndef helper(): return 1\n\n"
+                "### PREFIX\n"
+                + "\n".join(f"pre_{i} = {i}" for i in range(1, 5))
+                + f"\n{marker}\n"
+                + "### SUFFIX\n"
+                + "\n".join(f"suf_{i} = {i}" for i in range(1, 5))
+            ),
+        }
+        split = split_disjoint_context(ccl_row, local_window_lines=32)
+        assert split.decoder_local_context.count("# <MISSING_CODE>") == 1
+        assert split.full_context.count("# <MISSING_CODE>") == 1
+        assert "# <MISSING_CODE>" not in split.encoder_context
+
+
+def _write_mock_curated_pool(directory: Path, rows: list[dict[str, Any]]) -> None:
+    mod = _load_prepare_module()
+    normalized_rows = []
+    for r in rows:
+        before_val = r.get("before", r.get("context", ""))
+        item = {
+            "path": r.get("path", "repository_context"),
+            "before": before_val,
+            "after": r.get("after", ""),
+            "role": "train",
+            "source_revision": r.get("source_revision", "a" * 40),
+            "before_signature": r.get("before_signature", mod.code_signature(before_val)),
+            "normalized_pair_hash": r.get("normalized_pair_hash", "0" * 64),
+            **r,
+        }
+        normalized_rows.append(item)
+    mod.export_pool(normalized_rows, directory, {"benchmark_quarantine": {}})
+
+
+def test_mixed_pool_v4_admits_foundation_before_patch_and_quarantines_context_pool(
+    tmp_path: Path, monkeypatch
+):
+    mod = _load_prepare_module()
+    leaked_fn = "def leaked_eval_helper(x):\n    alpha = x + 10\n    beta = alpha * 2\n    return beta - 3\n"
+    leaked_gsm8k = "Natalia sold clips to 48 of her friends in April, and then she sold half as many clips in May."
+
+    # 1. Foundation pool with EditPackFT + CommitPackFT (using before & target_patch) + NextCoder (must drop)
+    foundation_dir = tmp_path / "foundation"
+    foundation_rows = [
+        {
+            "instance_id": f"ed-{i}",
+            "group": f"grp-ed-{i}",
+            "path": "pkg/mod.py",
+            "before": f"def add_{i}(x):\n    return x\n",
+            "after": f"def add_{i}(x):\n    return x + 1\n",
+            "instruction": f"Increment return value in add_{i}.",
+            "target_patch": f"--- a/pkg/mod.py\n+++ b/pkg/mod.py\n@@ -1,2 +1,2 @@\n def add_{i}(x):\n-    return x\n+    return x + 1\n",
+            "source": "nuprl/EditPackFT" if i < 2 else "bigcode/commitpackft",
+            "commit": f"{i:040x}",
+            "repos": f"ok/found_{i}",
+            "license": "MIT OR Apache-2.0",
+            "token_lengths": {"encoder": 64, "target": 16},
+            "pool_split": "train" if i < 3 else "dev",
+        }
+        for i in range(4)
+    ]
+    foundation_rows.append(
+        {
+            "instance_id": "nc-drop",
+            "group": "grp-nc",
+            "path": "a.py",
+            "before": "x = 1\n",
+            "after": "x = 2\n",
+            "instruction": "Drop me",
+            "target_patch": "-x=1\n+x=2\n",
+            "source": "microsoft/NextCoderDataset",
+            "commit": "f" * 40,
+            "repos": "ok/nc",
+            "license": "mit",
+            "pool_split": "train",
+        }
+    )
+    _write_mock_curated_pool(foundation_dir, foundation_rows)
+
+    # 2. Context pool with clean rows + blocked repo + leaked benchmark code
+    context_dir = tmp_path / "context"
+    lic_sha = "a" * 64
+    context_rows = [
+        {
+            "instance_id": "ctx-ok-1",
+            "record_type": "context_sft_v1",
+            "role": "train",
+            "task_type": "repair",
+            "group": "ok/ctx_repo_1",
+            "canonical_repos": ["ok/ctx_repo_1"],
+            "repos": "ok/ctx_repo_1",
+            "instruction": "Fix ok helper",
+            "context": "### File: ok.py\ndef ok_fn():\n    return 1\n",
+            "target_text": "return 2",
+            "source": "nebius/SWE-rebench-V2",
+            "source_key": "swe_rebench_v2",
+            "source_revision": "a" * 40,
+            "snapshot_sha256": "1" * 64,
+            "commit": "2" * 40,
+            "license": "mit",
+            "context_selection": {"gold_used": False, "windows": [{"path": "ok.py"}]},
+            "context_source_code_license_evidence": [
+                {"path": "ok.py", "licenses": [{"license": "mit", "sha256": lic_sha}]}
+            ],
+            "token_lengths": {"encoder": 9000, "target": 16},
+            "pool_split": "train",
+        },
+        {
+            "instance_id": "ctx-ok-dev",
+            "record_type": "context_sft_v1",
+            "role": "train",
+            "task_type": "repair",
+            "group": "ok/ctx_repo_dev",
+            "canonical_repos": ["ok/ctx_repo_dev"],
+            "repos": "ok/ctx_repo_dev",
+            "instruction": "Fix ok dev helper",
+            "context": "### File: ok_dev.py\ndef ok_dev():\n    return 3\n",
+            "target_text": "return 4",
+            "source": "nebius/SWE-rebench-V2",
+            "source_key": "swe_rebench_v2",
+            "source_revision": "a" * 40,
+            "snapshot_sha256": "1" * 64,
+            "commit": "2" * 40,
+            "license": "mit",
+            "context_selection": {"gold_used": False, "windows": [{"path": "ok_dev.py"}]},
+            "context_source_code_license_evidence": [
+                {"path": "ok_dev.py", "licenses": [{"license": "mit", "sha256": lic_sha}]}
+            ],
+            "token_lengths": {"encoder": 9000, "target": 16},
+            "pool_split": "dev",
+        },
+        {
+            "instance_id": "ctx-blocked-repo",
+            "record_type": "context_sft_v1",
+            "role": "train",
+            "task_type": "repair",
+            "group": "blocked/bench-repo",
+            "canonical_repos": ["blocked/bench-repo"],
+            "repos": "blocked/bench-repo",
+            "instruction": "Blocked repo",
+            "context": "### File: br.py\ndef br(): return 1\n",
+            "target_text": "return 2",
+            "source": "nebius/SWE-rebench-V2",
+            "source_key": "swe_rebench_v2",
+            "source_revision": "a" * 40,
+            "snapshot_sha256": "1" * 64,
+            "commit": "2" * 40,
+            "license": "mit",
+            "context_selection": {"gold_used": False, "windows": [{"path": "br.py"}]},
+            "context_source_code_license_evidence": [
+                {"path": "br.py", "licenses": [{"license": "mit", "sha256": lic_sha}]}
+            ],
+            "token_lengths": {"encoder": 512, "target": 16},
+            "pool_split": "train",
+        },
+        {
+            "instance_id": "ctx-leaked-code",
+            "record_type": "context_sft_v1",
+            "role": "train",
+            "task_type": "repair",
+            "group": "ok/ctx_repo_3",
+            "canonical_repos": ["ok/ctx_repo_3"],
+            "repos": "ok/ctx_repo_3",
+            "instruction": "Leaked code",
+            "context": f"### Instruction\nLeaked code\n\n### File: leak.py\n{leaked_fn}",
+            "target_text": "return 0",
+            "source": "nebius/SWE-rebench-V2",
+            "source_key": "swe_rebench_v2",
+            "source_revision": "a" * 40,
+            "snapshot_sha256": "1" * 64,
+            "commit": "2" * 40,
+            "license": "mit",
+            "context_selection": {"gold_used": False, "windows": [{"path": "leak.py"}]},
+            "context_source_code_license_evidence": [
+                {"path": "leak.py", "licenses": [{"license": "mit", "sha256": lic_sha}]}
+            ],
+            "token_lengths": {"encoder": 512, "target": 16},
+            "pool_split": "train",
+        },
+    ]
+    _write_mock_curated_pool(context_dir, context_rows)
+
+    # 3. Synthetic benchmark_root with quarantine JSON, CrossCodeLong specs, and GSM8K inputs
+    bench_root = tmp_path / "benchmarks"
+    (bench_root / "crosscodelong_chunk_source_v1/eval_private").mkdir(parents=True)
+    (bench_root / "crosscodelong_chunk_source_v1/eval_private/specs.jsonl").write_text(
+        json.dumps({"instance_id": "ccl-1", "reference": leaked_fn}) + "\n", encoding="utf-8"
+    )
+    (bench_root / "gsm8k_zero_shot_v2").mkdir(parents=True)
+    (bench_root / "gsm8k_zero_shot_v2/eval_inputs.jsonl").write_text(
+        json.dumps({"instance_id": "gsm-1", "benchmark": "gsm8k", "question": leaked_gsm8k}) + "\n",
+        encoding="utf-8",
+    )
+    (bench_root / "benchmark_quarantine.json").write_text(
+        json.dumps({"repositories": ["blocked/bench-repo"], "slugs": []}),
+        encoding="utf-8",
+    )
+
+    auto_sigs, auto_gsm = mod._collect_benchmark_quarantine_assets(bench_root)
+    assert mod.code_signature(leaked_fn) in auto_sigs
+    assert leaked_gsm8k in auto_gsm
+
+    v4_sources = {
+        "smoltalk_metamathqa": [
+            {"instance_id": "mm-leak", "instruction": leaked_gsm8k, "output": "#### 24"},
+            {"instance_id": "mm-ok", "instruction": "Compute 10 + 15.", "output": "#### 25"},
+        ],
+        "longalign": [
+            {
+                "instance_id": "la-ok",
+                "instruction": "Summarize module",
+                "context": "Document\n" + ("alpha beta\n" * 10),
+                "output": "Summary.",
+                "encoder_tokens": 12000,
+            }
+        ],
+    }
+
+    out_dir = tmp_path / "mixed_v4_out"
+    manifest = mod.mixed_pool_v4(
+        v4_sources,
+        bench_root,
+        out_dir,
+        foundation=foundation_dir,
+        context=context_dir,
+        code_signatures=auto_sigs,
+        gsm8k_questions=auto_gsm,
+        grounded_max_parents=0,
+        min_long_context_ratio=0.0,
+        seed=17,
+    )
+    loaded, _ = load_curated_pool(out_dir)
+    all_ids = {r["instance_id"] for r in loaded["train"] + loaded["dev"]}
+    # All 4 foundation EditPackFT/CommitPackFT rows admitted!
+    for i in range(4):
+        assert f"ed-{i}" in all_ids
+    assert "nc-drop" not in all_ids
+    # Clean context rows admitted; quarantined context rows dropped!
+    assert "ctx-ok-1" in all_ids
+    assert "ctx-ok-dev" in all_ids
+    assert "ctx-blocked-repo" not in all_ids
+    assert "ctx-leaked-code" not in all_ids
+    # GSM8K overlap rejected; non-overlapping row kept
+    assert "mm-leak" not in all_ids
+    assert "mm-ok" in all_ids
+    assert manifest["report"]["rejections"]["benchmark_repository_quarantine"] >= 1
+    assert manifest["report"]["rejections"]["benchmark_code_overlap"] >= 1
+    assert manifest["report"]["rejections"]["gsm8k_test_overlap"] >= 1
+
+    # Also verify BLOCKED_V4_DATASETS enforcement on context pool rows directly
+    orig_loader = mod.load_curated_pool
+    blocked_ds_row = {
+        **context_rows[0],
+        "instance_id": "ctx-blocked-ds",
+        "source": "KodCode/KodCode-V1",
+        "source_key": "kodcode",
+    }
+    monkeypatch.setattr(
+        mod,
+        "load_curated_pool",
+        lambda d: (
+            ({"train": [context_rows[0], blocked_ds_row], "dev": [context_rows[1]]}, {})
+            if Path(d) == context_dir
+            else orig_loader(d)
+        ),
+    )
+    out_dir_2 = tmp_path / "mixed_v4_out_2"
+    manifest_2 = mod.mixed_pool_v4(
+        v4_sources,
+        bench_root,
+        out_dir_2,
+        context=context_dir,
+        grounded_max_parents=0,
+        min_long_context_ratio=0.0,
+        seed=17,
+    )
+    loaded_2, _ = orig_loader(out_dir_2)
+    assert "ctx-blocked-ds" not in {r["instance_id"] for r in loaded_2["train"] + loaded_2["dev"]}
+    assert manifest_2["report"]["rejections"]["blocked_v4_dataset"] >= 1

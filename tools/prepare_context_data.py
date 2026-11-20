@@ -844,10 +844,13 @@ def _extract_row_license(raw: dict[str, Any], source_key: str) -> str:
 def _extract_repo_from_v4_row(raw: dict[str, Any]) -> str:
     raw_meta = raw.get("metadata")
     meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
+    canonical = raw.get("canonical_repos")
+    first_canonical = canonical[0] if isinstance(canonical, list) and canonical else ""
     for val in (
         raw.get("repo"),
         raw.get("repo_name"),
         raw.get("repos"),
+        first_canonical,
         meta.get("repository_url"),
         meta.get("repo"),
     ):
@@ -862,6 +865,54 @@ def _extract_repo_from_v4_row(raw: dict[str, Any]) -> str:
 
 def _estimate_tokens(text: str) -> int:
     return max(1, (len(text) + 3) // 4)
+
+
+def _all_code_fragment_signatures(text: str) -> set[str]:
+    if not text:
+        return set()
+    sigs = set(code_fragment_signatures(text))
+    for section in re.split(
+        r"^### (?:File: [^\n]+|CROSS-FILE CONTEXT|Cross-File Context|PREFIX|SUFFIX|Target File Prefix[^\n]*|Target File Suffix[^\n]*|Local Cursor[^\n]*)\n",
+        text,
+        flags=re.M,
+    )[1:]:
+        sigs.update(code_fragment_signatures(section))
+    return sigs
+
+
+def _resolve_v4_license_evidence(
+    raw_license: str,
+    *,
+    code_only: bool,
+) -> tuple[str, list[str], str]:
+    """Normalize compound SPDX OR/AND/comma expressions into valid code evidence licenses."""
+    from bifocalgemma.data.context_tasks import (
+        PERMITTED_V4_CODE_LICENSES,
+        PERMITTED_V4_DATASET_LICENSES,
+    )
+
+    normalized = raw_license.strip().lower().replace("_", "-")
+    allowed = PERMITTED_V4_CODE_LICENSES if code_only else PERMITTED_V4_DATASET_LICENSES
+    or_branches = [b.strip("() \t") for b in re.split(r"\s+or\s+", normalized) if b.strip("() \t")]
+    chosen_parts: list[str] = []
+    for branch in or_branches:
+        parts = [p.strip("() \t") for p in re.split(r"\s+and\s+|,", branch) if p.strip("() \t")]
+        if parts and all(part in allowed for part in parts):
+            chosen_parts = parts
+            break
+    if not chosen_parts:
+        chosen_parts = [
+            p.strip("() \t")
+            for p in re.split(r"\s+and\s+|\s+or\s+|,", normalized)
+            if p.strip("() \t")
+        ]
+    code_parts = list(
+        dict.fromkeys(part for part in chosen_parts if part in PERMITTED_V4_CODE_LICENSES)
+    )
+    if not code_parts and not code_only:
+        code_parts = ["apache-2.0"]
+    evidence_lic = " and ".join(code_parts) if code_parts else normalized
+    return evidence_lic, code_parts, normalized
 
 
 def _conversation_to_instruction_context_target(raw: dict[str, Any]) -> tuple[str, str, str]:
@@ -894,9 +945,16 @@ def _conversation_to_instruction_context_target(raw: dict[str, Any]) -> tuple[st
         or raw.get("input")
         or ""
     ).strip()
-    ctx = str(raw.get("context") or raw.get("input") or instr).strip()
+    ctx = str(
+        raw.get("context")
+        or raw.get("before")
+        or raw.get("old_contents")
+        or raw.get("input")
+        or instr
+    ).strip()
     target = str(
         raw.get("target_text")
+        or raw.get("target_patch")
         or raw.get("patch")
         or raw.get("model_patch")
         or raw.get("output")
@@ -935,13 +993,9 @@ def adapt_v4_row(
     code_only = bool(entry.get("requires_row_license_check", False))
     if not is_permissive_license(raw_license, code_only=code_only):
         raise ValueError(f"non_permissive_license:{raw_license}")
-    normalized_lic = raw_license.split(",")[0].strip()
-    if normalized_lic not in {"mit", "apache-2.0", "bsd-2-clause", "bsd-3-clause", "isc", "cc0-1.0", "unlicense"}:
-        # For CC-BY-4.0 / ODC-BY non-code or wrapped datasets, preserve valid code evidence license marker
-        # while recording the true dataset license separately.
-        evidence_lic = "apache-2.0" if not code_only else normalized_lic
-    else:
-        evidence_lic = normalized_lic
+    evidence_lic, evidence_code_licenses, normalized_lic = _resolve_v4_license_evidence(
+        raw_license, code_only=code_only
+    )
 
     if "min_test_score" in entry:
         score = raw.get("average_test_score")
@@ -1004,11 +1058,22 @@ def adapt_v4_row(
             raise ValueError("gsm8k_test_overlap")
 
     if code_signatures:
-        if (code_fragment_signatures(target) | code_fragment_signatures(context)) & code_signatures:
+        row_sigs = (
+            _all_code_fragment_signatures(target)
+            | _all_code_fragment_signatures(context)
+            | _all_code_fragment_signatures(str(raw.get("after") or raw.get("new_contents") or ""))
+        )
+        if row_sigs & code_signatures:
             raise ValueError("benchmark_code_overlap")
 
     token_limit = int(entry.get("max_tokens") or max_encoder_tokens)
-    est_enc_tokens = int(raw.get("encoder_tokens") or _estimate_tokens(context))
+    raw_token_lengths = raw.get("token_lengths")
+    raw_tl_enc = (
+        raw_token_lengths.get("encoder")
+        if isinstance(raw_token_lengths, dict) and isinstance(raw_token_lengths.get("encoder"), int)
+        else None
+    )
+    est_enc_tokens = int(raw.get("encoder_tokens") or raw_tl_enc or _estimate_tokens(context))
     if est_enc_tokens > token_limit:
         raise ValueError("v4_context_exceeds_max_tokens")
 
@@ -1044,7 +1109,10 @@ def adapt_v4_row(
             "windows": [{"path": p} for p in dict.fromkeys(visible_paths)],
         },
         "context_source_code_license_evidence": [
-            {"path": p, "licenses": [{"license": evidence_lic, "sha256": lic_sha}]}
+            {
+                "path": p,
+                "licenses": [{"license": lic, "sha256": lic_sha} for lic in evidence_code_licenses],
+            }
             for p in dict.fromkeys(visible_paths)
         ],
         "token_lengths": {
@@ -1056,6 +1124,143 @@ def adapt_v4_row(
     normalized["before_signature"] = code_signature(context)
     normalized["normalized_pair_hash"] = normalized["pair_hash"]
     return normalized
+
+
+def _row_repo_candidates(
+    row: dict[str, Any], repo_aliases: dict[str, str] | None = None
+) -> set[str]:
+    candidates: set[str] = set()
+    raw_vals: list[Any] = [row.get("repos"), row.get("repo"), row.get("repo_name")]
+    canonical_list = row.get("canonical_repos")
+    if isinstance(canonical_list, list):
+        raw_vals.extend(canonical_list)
+    for val in raw_vals:
+        if isinstance(val, str) and val.strip():
+            cleaned = (
+                val.strip()
+                .removeprefix("https://github.com/")
+                .removeprefix("http://github.com/")
+                .removesuffix(".git")
+                .strip("/")
+            )
+            if "/" in cleaned:
+                owner, name = cleaned.split("/", 1)
+                repo_slug = f"{owner}/{name}".lower()
+                try:
+                    candidates.add(repo_identity(repo_slug, repo_aliases))
+                except ValueError:
+                    candidates.add(repo_slug)
+            else:
+                candidates.add(cleaned.lower())
+    return candidates
+
+
+def _is_quarantined_repo(
+    candidates: set[str],
+    blocked: set[str],
+    slugs: set[str],
+) -> bool:
+    for canonical_repo in candidates:
+        slug_prefix = canonical_repo.replace("/", "-")
+        if (
+            canonical_repo in blocked
+            or slug_prefix in slugs
+            or any(s.startswith(slug_prefix + "-") for s in slugs)
+        ):
+            return True
+    return False
+
+
+def _collect_benchmark_quarantine_assets(
+    benchmark_root: Path | None,
+    *,
+    cache_hf: Path | None = None,
+    gsm8k_dir: Path | None = None,
+) -> tuple[set[str], list[str]]:
+    """Collect code fragment signatures and GSM8K test questions locally without network access."""
+    import zipfile
+
+    signatures: set[str] = set()
+    gsm8k_questions: list[str] = []
+
+    if benchmark_root is not None and Path(benchmark_root).is_dir():
+        root_dir = Path(benchmark_root)
+        for directory in sorted(root_dir.iterdir()):
+            if not directory.is_dir():
+                continue
+            for spec_path in (
+                directory / "eval_private/specs.jsonl",
+                directory / "hidden_gold.jsonl",
+            ):
+                if spec_path.is_file():
+                    for row in read_source_rows(spec_path):
+                        for field in ("reference", "test_script", "canonical_solution"):
+                            val = row.get(field)
+                            if isinstance(val, str) and val.strip():
+                                signatures.update(_all_code_fragment_signatures(val))
+            for inp_path in (directory / "eval_inputs.jsonl", directory / "inputs.jsonl"):
+                if inp_path.is_file():
+                    for row in read_source_rows(inp_path):
+                        if "gsm8k" in directory.name.lower() or str(row.get("benchmark") or "").lower() == "gsm8k":
+                            q = row.get("question")
+                            if isinstance(q, str) and q.strip():
+                                gsm8k_questions.append(q)
+                        elif isinstance(row.get("context"), str) and row["context"].strip():
+                            signatures.update(_all_code_fragment_signatures(row["context"]))
+
+    eff_gsm_dir = gsm8k_dir if gsm8k_dir is not None else (ROOT / "outputs/gsm8k_sources")
+    gsm_test = eff_gsm_dir / "test.jsonl"
+    if gsm_test.is_file():
+        for row in read_source_rows(gsm_test):
+            q = row.get("question")
+            if isinstance(q, str) and q.strip():
+                gsm8k_questions.append(q)
+
+    if cache_hf is not None and Path(cache_hf).is_dir():
+        try:
+            from huggingface_hub import hf_hub_download
+
+            from bifocalgemma.data.context_benchmarks import LONGCODE_REVISION, SWEQA_REVISION
+
+            try:
+                sweqa = hf_hub_download(
+                    "lailaelkoussy/swe-qa",
+                    "data/oracle-00000-of-00001.parquet",
+                    repo_type="dataset",
+                    revision=SWEQA_REVISION,
+                    cache_dir=cache_hf,
+                    local_files_only=True,
+                )
+                for row in read_source_rows(sweqa):
+                    for chunk in row.get("chunks", []):
+                        content = chunk.get("content") if isinstance(chunk, dict) else None
+                        if isinstance(content, str) and content.strip():
+                            signatures.update(_all_code_fragment_signatures(content))
+            except Exception:
+                pass
+            try:
+                longcode = hf_hub_download(
+                    "Steefano/LCB",
+                    "LongCodeQA.zip",
+                    repo_type="dataset",
+                    revision=LONGCODE_REVISION,
+                    cache_dir=cache_hf,
+                    local_files_only=True,
+                )
+                with zipfile.ZipFile(longcode) as archive:
+                    for row in json.loads(archive.read("LQA/32K.json")):
+                        for code in re.findall(
+                            r"\[start of [^\n]+\.py\]\n(.*?)\n\[end of [^\n]+\.py\]",
+                            row.get("repo_text", ""),
+                            re.S,
+                        ):
+                            signatures.update(code_fragment_signatures(code))
+            except Exception:
+                pass
+        except ImportError:
+            pass
+
+    return signatures, list(dict.fromkeys(gsm8k_questions))
 
 
 def mixed_pool_v4(
@@ -1079,14 +1284,23 @@ def mixed_pool_v4(
     blocked = set(blocked_repos or ())
     slugs = set(blocked_slugs or ())
     sigs = set(code_signatures or ())
-    if benchmark_root is not None and (Path(benchmark_root) / "benchmark_quarantine.json").is_file():
-        quarantine = json.loads(
-            (Path(benchmark_root) / "benchmark_quarantine.json").read_text(encoding="utf-8")
-        )
-        blocked |= set(quarantine.get("repositories", []))
-        slugs |= set(quarantine.get("slugs", []))
+    eff_gsm_questions = list(gsm8k_questions)
+    if benchmark_root is not None:
+        bench_path = Path(benchmark_root)
+        if (bench_path / "benchmark_quarantine.json").is_file():
+            quarantine = json.loads(
+                (bench_path / "benchmark_quarantine.json").read_text(encoding="utf-8")
+            )
+            blocked |= set(quarantine.get("repositories", []))
+            slugs |= set(quarantine.get("slugs", []))
+        if code_signatures is None or not eff_gsm_questions:
+            auto_sigs, auto_gsm = _collect_benchmark_quarantine_assets(bench_path)
+            if code_signatures is None:
+                sigs |= auto_sigs
+            if not eff_gsm_questions:
+                eff_gsm_questions = auto_gsm
 
-    gsm8k_fps = build_gsm8k_fingerprints(gsm8k_questions)
+    gsm8k_fps = build_gsm8k_fingerprints(eff_gsm_questions)
     admitted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     rejection_counts: Counter[str] = Counter()
@@ -1098,13 +1312,18 @@ def mixed_pool_v4(
         cap_counts: Counter[str] = Counter()
         for row in old_rows["train"] + old_rows["dev"]:
             src = str(row.get("source") or "")
-            if src == "microsoft/NextCoderDataset" or src in BLOCKED_V4_DATASETS:
+            src_lower = src.lower()
+            if src == "microsoft/NextCoderDataset" or src_lower == "nextcoder" or src in BLOCKED_V4_DATASETS:
                 rejection_counts["dropped_nextcoder_or_blocked"] += 1
                 continue
             if cap_counts[src] >= foundation_edit_cap:
                 rejection_counts["foundation_edit_capped"] += 1
                 continue
-            src_key = "editpackft" if "EditPackFT" in src else ("commitpackft" if "commitpackft" in src else "")
+            src_key = (
+                "editpackft"
+                if "editpackft" in src_lower
+                else ("commitpackft" if "commitpackft" in src_lower else "")
+            )
             if not src_key:
                 continue
             try:
@@ -1116,7 +1335,11 @@ def mixed_pool_v4(
                     code_signatures=sigs,
                 )
             except ValueError as err:
-                rejection_counts[str(err).split(":")[0]] += 1
+                reason = str(err)
+                rejection_counts[reason.split(":")[0]] += 1
+                rejected.append(
+                    {"source_key": f"foundation:{src_key}", "instance_id": row.get("instance_id"), "reason": reason}
+                )
                 continue
             if adapted["instance_id"] not in seen_ids:
                 seen_ids.add(adapted["instance_id"])
@@ -1126,7 +1349,54 @@ def mixed_pool_v4(
     if context is not None:
         ctx_rows, _ = load_curated_pool(context)
         for row in ctx_rows["train"] + ctx_rows["dev"]:
+            src = str(row.get("source") or "")
+            src_key = str(row.get("source_key") or "")
+            if (
+                src in BLOCKED_V4_DATASETS
+                or src.lower() == "nextcoder"
+                or src_key == "nextcoder"
+            ):
+                rejection_counts["blocked_v4_dataset"] += 1
+                rejected.append(
+                    {"source_key": f"context:{src_key or src}", "instance_id": row.get("instance_id"), "reason": "blocked_v4_dataset"}
+                )
+                continue
+            if _is_quarantined_repo(_row_repo_candidates(row), blocked, slugs):
+                rejection_counts["benchmark_repository_quarantine"] += 1
+                rejected.append(
+                    {"source_key": f"context:{src_key or src}", "instance_id": row.get("instance_id"), "reason": "benchmark_repository_quarantine"}
+                )
+                continue
+            if sigs:
+                ctx_sigs = (
+                    _all_code_fragment_signatures(str(row.get("target_text") or row.get("target_patch") or ""))
+                    | _all_code_fragment_signatures(str(row.get("before") or ""))
+                    | _all_code_fragment_signatures(str(row.get("after") or ""))
+                    | _all_code_fragment_signatures(str(row.get("context") or ""))
+                )
+                if ctx_sigs & sigs:
+                    rejection_counts["benchmark_code_overlap"] += 1
+                    rejected.append(
+                        {"source_key": f"context:{src_key or src}", "instance_id": row.get("instance_id"), "reason": "benchmark_code_overlap"}
+                    )
+                    continue
             enriched: dict[str, Any] = {**row, "context_format": "v4", "disjoint_context": True}
+            before_val = str(enriched.get("before") or enriched.get("context") or "")
+            enriched.setdefault("before", before_val)
+            enriched.setdefault("after", "")
+            enriched.setdefault("path", "repository_context")
+            enriched.setdefault("before_signature", code_signature(before_val))
+            enriched.setdefault(
+                "normalized_pair_hash",
+                enriched.get("pair_hash")
+                or hashlib.sha256(
+                    (
+                        str(enriched.get("context") or "")
+                        + "\0"
+                        + str(enriched.get("target_text") or enriched.get("target_patch") or "")
+                    ).encode("utf-8")
+                ).hexdigest(),
+            )
             inst_id = str(enriched["instance_id"])
             if inst_id not in seen_ids:
                 seen_ids.add(inst_id)
@@ -1282,12 +1552,17 @@ def main():
             disjoint_context=True,
         )
     elif args.stage == "mix-v4":
+        code_sigs, gsm8k_qs = _collect_benchmark_quarantine_assets(
+            output, cache_hf=cache / "hf"
+        )
         mixed_pool_v4(
             {},
             output,
             ROOT / "outputs/mixed_context_enc32k_dec8k_v4",
             foundation=ROOT / "outputs/instruction_enc8k_dec2k_v2_ready",
             context=ROOT / "outputs/context_sft_enc32k_dec8k_v1",
+            code_signatures=code_sigs,
+            gsm8k_questions=gsm8k_qs,
         )
     else:
         mixed_pool(

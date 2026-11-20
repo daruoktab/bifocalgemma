@@ -141,30 +141,52 @@ def _parse_fim_sections(context: str) -> tuple[str, str, str] | None:
     return cross_text, prefix_clean, suffix_raw.rstrip("\r\n")
 
 
-def _parse_file_sections(context: str) -> tuple[str, list[tuple[str, str]]] | None:
-    """Split context into (preamble, [(path, body), ...]) when ### File: blocks exist."""
+def _parse_file_sections_with_offsets(
+    context: str,
+) -> tuple[str, list[tuple[str, int, str]]] | None:
+    """Split context into (preamble, [(path, start_line, body), ...]) when ### File: blocks exist."""
     if not _FILE_HEADER_RE.search(context):
         return None
     chunks = _FILE_SECTION_SPLIT_RE.split(context)
     preamble = ""
-    files: list[tuple[str, str]] = []
+    files: list[tuple[str, int, str]] = []
+    header_re = re.compile(
+        r"^### File:\s*([^\n(]+?)(?:\s*\((?:lines\s+(\d+)-(\d+)[^)]*|[^)]*)\))?[ \t]*\r?\n?(.*)$",
+        re.DOTALL,
+    )
     for chunk in chunks:
         if not chunk.strip():
             continue
-        match = re.match(r"^### File:\s*([^\s(]+)(?:[^\n]*)\r?\n?(.*)$", chunk, re.DOTALL)
+        match = header_re.match(chunk)
         if match:
-            files.append((match.group(1).strip(), match.group(2).rstrip("\r\n")))
+            start_line = int(match.group(2)) if match.group(2) else 1
+            files.append((match.group(1).strip(), start_line, match.group(4).rstrip("\r\n")))
         elif not files:
             preamble = (preamble + "\n\n" + chunk.strip()).strip() if preamble else chunk.strip()
     return (preamble, files) if files else None
 
 
+def _parse_file_sections(context: str) -> tuple[str, list[tuple[str, str]]] | None:
+    """Split context into (preamble, [(path, body), ...]) when ### File: blocks exist."""
+    parsed = _parse_file_sections_with_offsets(context)
+    if parsed is None:
+        return None
+    preamble, files = parsed
+    return preamble, [(path, body) for path, _, body in files]
+
+
 def _target_window_bounds(
-    row: dict[str, Any], target_path: str, total_lines: int, local_window_lines: int
+    row: dict[str, Any],
+    target_path: str,
+    total_lines: int,
+    local_window_lines: int,
+    *,
+    base_start: int = 1,
 ) -> tuple[int, int]:
-    """Return inclusive 1-based [start, end] line bounds for the decoder's local window."""
+    """Return inclusive snippet-relative 1-based [start, end] line bounds for a local window."""
     if total_lines <= 0:
         return 1, 0
+    sec_end = base_start + total_lines - 1
     selection = row.get("context_selection")
     if isinstance(selection, dict) and selection.get("gold_used") is not True:
         matched = [
@@ -172,15 +194,18 @@ def _target_window_bounds(
             for w in selection.get("windows", ())
             if isinstance(w, dict)
             and w.get("path") == target_path
-            and isinstance(w.get("start_line"), int)
-            and isinstance(w.get("end_line"), int)
+            and type(w.get("start_line")) is int
+            and type(w.get("end_line")) is int
+            and w["end_line"] >= base_start
+            and w["start_line"] <= sec_end
         ]
         if matched:
             center_start = min(w["start_line"] for w in matched)
             center_end = max(w["end_line"] for w in matched)
-            w_start = max(1, center_start - local_window_lines)
-            w_end = min(total_lines, center_end + local_window_lines)
-            return w_start, w_end
+            rel_start = max(1, (center_start - base_start + 1) - local_window_lines)
+            rel_end = min(total_lines, (center_end - base_start + 1) + local_window_lines)
+            if rel_start <= rel_end:
+                return rel_start, rel_end
     return 1, min(total_lines, 2 * local_window_lines)
 
 
@@ -259,120 +284,61 @@ def split_context_for_mode(
             if eff_repair_mode == "full_function"
             else _REPAIR_INSTRUCTION_PREFIX
         )
+        clean_ctx = context
+        for pfx in (_REPAIR_INSTRUCTION_PREFIX, _FULL_FUNCTION_REPAIR_PREFIX):
+            if clean_ctx.startswith(pfx):
+                clean_ctx = clean_ctx[len(pfx) :].lstrip("\r\n")
+                break
+        split_row = {
+            **row,
+            "task_type": "repair",
+            "instruction": instruction,
+            "context": clean_ctx,
+        }
+        split = split_disjoint_context(split_row, local_window_lines=local_window_lines)
+        target_file = _single_repair_target_file(row) or split.cursor_path
         if context_mode == "full":
-            body = context
-            if body.startswith(_REPAIR_INSTRUCTION_PREFIX) and repair_prefix != _REPAIR_INSTRUCTION_PREFIX:
-                body = repair_prefix + body[len(_REPAIR_INSTRUCTION_PREFIX) :]
-            if body.startswith(repair_prefix):
-                return body, ""
-            if _context_already_includes_instruction(body, instruction) or body.startswith(
-                f"### Issue\n{instruction}"
-            ):
-                return f"{repair_prefix}\n\n{body}", ""
-            return f"{repair_prefix}\n\n{instruction}\n\n{body}", ""
-
-        target_file = _single_repair_target_file(row)
-        file_sections = _parse_file_sections(context)
-        if file_sections is not None:
-            preamble, files = file_sections
-            target_idx = 0
-            if target_file is not None:
-                for idx, (path, _) in enumerate(files):
-                    if path == target_file:
-                        target_idx = idx
-                        break
-            tpath, tbody = files[target_idx]
-            lines = tbody.splitlines()
-            w_start, w_end = _target_window_bounds(row, tpath, len(lines), local_window_lines)
-            local_lines = lines[w_start - 1 : w_end] if w_end >= w_start else []
-            local_block = (
-                f"### File: {tpath} (lines {w_start}-{w_end})\n{_number_lines(local_lines, w_start)}"
-                if local_lines
-                else f"### File: {tpath}"
-            )
-            header = f"{repair_prefix}\n\nTarget file: {tpath}\n\n{instruction}"
-            dec_text = f"{header}\n\n{local_block}"
-            if context_mode == "local_only":
-                return dec_text, ""
-            enc_parts: list[str] = []
-            if preamble:
-                enc_parts.append(preamble)
-            before_lines = lines[: w_start - 1]
-            after_lines = lines[w_end:]
-            if before_lines:
-                enc_parts.append(
-                    f"### File: {tpath} (lines 1-{w_start - 1})\n{_number_lines(before_lines, 1)}"
-                )
-            if after_lines:
-                enc_parts.append(
-                    f"### File: {tpath} (lines {w_end + 1}-{len(lines)})\n"
-                    f"{_number_lines(after_lines, w_end + 1)}"
-                )
-            for idx, (opath, obody) in enumerate(files):
-                if idx == target_idx:
-                    continue
-                olines = obody.splitlines()
-                numbered_other = _number_lines(olines, 1)
-                enc_parts.append(
-                    f"### File: {opath}\n{numbered_other}" if numbered_other else f"### File: {opath}"
-                )
-            enc_text = "\n\n".join(part for part in enc_parts if part)
-            if not enc_text:
-                enc_text = f"### Issue\n{instruction}"
-            return dec_text, enc_text
-
-        lines = context.splitlines()
-        w_end = min(len(lines), 2 * local_window_lines)
-        local_lines = lines[:w_end]
-        remote_lines = lines[w_end:]
-        target_banner = f"Target file: {target_file}\n\n" if target_file else ""
-        local_block = f"\n\n{_number_lines(local_lines, 1)}" if local_lines else ""
-        dec_text = f"{repair_prefix}\n\n{target_banner}{instruction}{local_block}"
+            header = f"{repair_prefix}\n\n{instruction}"
+            dec_text = f"{header}\n\n{split.full_context}" if split.full_context else header
+            return dec_text, ""
+        banner = f"Target file: {target_file}\n\n" if target_file else ""
+        header = f"{repair_prefix}\n\n{banner}{instruction}"
+        dec_text = (
+            f"{header}\n\n{split.decoder_local_context}"
+            if split.decoder_local_context
+            else header
+        )
         if context_mode == "local_only":
             return dec_text, ""
-        enc_text = (
-            _number_lines(remote_lines, w_end + 1)
-            if remote_lines
-            else f"### Issue\n{instruction}"
-        )
+        enc_text = split.encoder_context or f"### Issue\n{instruction}"
         return dec_text, enc_text
 
-    fim_sections = _parse_fim_sections(context)
-    if fim_sections is not None:
-        cross_text, prefix_text, suffix_text = fim_sections
+    has_structured_context = (
+        _parse_fim_sections(context) is not None
+        or _parse_file_sections(context) is not None
+        or "### Numbered source\n" in context
+        or "[start of " in context
+    )
+    if has_structured_context:
+        task_type = str(row.get("task_type") or "completion")
+        split_row = {
+            **row,
+            "task_type": task_type,
+            "instruction": instruction,
+            "context": context,
+        }
+        split = split_disjoint_context(split_row, local_window_lines=local_window_lines)
         if context_mode == "full":
-            if _context_already_includes_instruction(context, instruction):
-                return context, ""
-            return f"{instruction}\n\n{context}", ""
-        prefix_lines = prefix_text.splitlines()
-        suffix_lines = suffix_text.splitlines()
-        p_start = max(1, len(prefix_lines) - local_window_lines + 1)
-        local_prefix = prefix_lines[p_start - 1 :]
-        local_suffix = suffix_lines[:local_window_lines]
-        local_parts = [instruction, "", "### PREFIX"]
-        if local_prefix:
-            local_parts.append(_number_lines(local_prefix, p_start))
-        local_parts.append("# <MISSING_CODE>")
-        local_parts.append("### SUFFIX")
-        if local_suffix:
-            local_parts.append(_number_lines(local_suffix, 1))
-        dec_text = "\n".join(local_parts)
+            dec_text = f"{instruction}\n\n{split.full_context}" if split.full_context else instruction
+            return dec_text, ""
+        dec_text = (
+            f"{instruction}\n\n{split.decoder_local_context}"
+            if split.decoder_local_context
+            else instruction
+        )
         if context_mode == "local_only":
             return dec_text, ""
-        enc_parts = []
-        if cross_text.strip():
-            enc_parts.append(
-                "### CROSS-FILE CONTEXT\n" + _number_lines(cross_text.splitlines(), 1)
-            )
-        distant_prefix = prefix_lines[: p_start - 1]
-        distant_suffix = suffix_lines[local_window_lines:]
-        if distant_prefix:
-            enc_parts.append("### DISTANT PREFIX\n" + _number_lines(distant_prefix, 1))
-        if distant_suffix:
-            enc_parts.append(
-                "### DISTANT SUFFIX\n" + _number_lines(distant_suffix, local_window_lines + 1)
-            )
-        enc_text = "\n\n".join(enc_parts) if enc_parts else instruction
+        enc_text = split.encoder_context or instruction
         return dec_text, enc_text
 
     if context_mode == "full":
@@ -393,6 +359,15 @@ def split_context_for_mode(
     return dec_text, context
 
 
+def _has_disjoint_structured_context(raw_context: str) -> bool:
+    return (
+        _parse_fim_sections(raw_context) is not None
+        or _parse_file_sections(raw_context) is not None
+        or "### Numbered source\n" in raw_context
+        or "[start of " in raw_context
+    )
+
+
 def encoder_context(
     row: dict[str, Any],
     *,
@@ -410,7 +385,7 @@ def encoder_context(
     raw_context = _deduplicate_longcodeqa_headers(
         _normalize_fim_cursor_marker(str(row.get("context") or ""))
     )
-    if _parse_fim_sections(raw_context) is not None or _parse_file_sections(raw_context) is not None:
+    if _has_disjoint_structured_context(raw_context):
         return split_context_for_mode(
             row, context_mode="disjoint", repair_mode=repair_mode
         )[1]
@@ -437,7 +412,7 @@ def decoder_prompt(
     raw_context = _deduplicate_longcodeqa_headers(
         _normalize_fim_cursor_marker(str(row.get("context") or ""))
     )
-    if _parse_fim_sections(raw_context) is not None or _parse_file_sections(raw_context) is not None:
+    if _has_disjoint_structured_context(raw_context):
         return split_context_for_mode(
             row, context_mode="disjoint", repair_mode=repair_mode
         )[0]
@@ -1535,43 +1510,108 @@ def make_distractor_python_chunk(index: int) -> str:
 """
 
 
+def _count_niah_tokens(text: str, tokenizer) -> int:
+    if tokenizer is None:
+        return max(1, len(text) // 4)
+    return len(tokenizer.encode(text, add_special_tokens=False))
+
+
+def _encoded_context_tokens(text: str, tokenizer) -> int:
+    if tokenizer is None:
+        return max(1, len(text) // 4)
+    enc = tuple(tokenizer.encode(text, add_special_tokens=True))
+    bos = getattr(tokenizer, "bos_token_id", None)
+    if enc and bos is not None and enc[0] != bos:
+        return len(enc) + 1
+    return len(enc)
+
+
+def _render_niah_prompt_tokens(
+    instruction: str,
+    haystack: str,
+    tokenizer,
+    *,
+    enable_thinking: bool | None = False,
+) -> int:
+    user_content = f"{instruction}\n\n{haystack}" if haystack else f"{instruction}\n\n"
+    if tokenizer is None:
+        return max(1, len(user_content) // 4)
+    rendered = user_content
+    has_template = getattr(tokenizer, "chat_template", None) is not None
+    if has_template or callable(getattr(tokenizer, "apply_chat_template", None)):
+        kwargs: dict[str, Any] = {"tokenize": False, "add_generation_prompt": True}
+        if enable_thinking is not None:
+            kwargs["enable_thinking"] = enable_thinking
+        try:
+            rendered = tokenizer.apply_chat_template(
+                [{"role": "user", "content": user_content}], **kwargs
+            )
+        except TypeError:
+            kwargs.pop("enable_thinking", None)
+            rendered = tokenizer.apply_chat_template(
+                [{"role": "user", "content": user_content}], **kwargs
+            )
+        except ValueError:
+            rendered = user_content
+    return len(tokenizer.encode(rendered, add_special_tokens=False))
+
+
 def generate_repo_niah_haystack(
     target_tokens: int,
     needle_line: str,
     depth_ratio: float,
     tokenizer=None,
+    *,
+    reserved_tokens: int = 0,
 ) -> str:
-    """Construct a synthetic repository haystack of target_tokens with needle embedded at depth_ratio."""
+    """Construct a synthetic repository haystack <= target_tokens with needle embedded at depth_ratio."""
+    needle_block = f"\n# --- System Security Configuration ---\n{needle_line}\n# ---------------------------------------\n"
+    needle_tokens = _count_niah_tokens(needle_block, tokenizer)
+    special_overhead = len(tokenizer.encode("", add_special_tokens=True)) if tokenizer is not None else 0
+    if tokenizer is not None and getattr(tokenizer, "bos_token_id", None) is not None:
+        special_overhead = max(special_overhead, 1)
+    eff_reserved = max(0, int(reserved_tokens))
+    distractor_budget = max(0, int(target_tokens) - needle_tokens - special_overhead - eff_reserved)
+    sep_tokens = max(1, _count_niah_tokens("\n", tokenizer)) if tokenizer is not None else 1
+
     blocks: list[tuple[str, int]] = []
     current_tokens = 0
     idx = 0
-    while current_tokens < target_tokens:
+    while True:
         block = make_distractor_python_chunk(idx)
-        tok_count = (
-            len(tokenizer.encode(block, add_special_tokens=False))
-            if tokenizer
-            else max(1, len(block) // 4)
-        )
+        tok_count = _count_niah_tokens(block, tokenizer)
+        sep = sep_tokens if blocks else 0
+        if current_tokens + sep + tok_count > distractor_budget:
+            break
         blocks.append((block, tok_count))
-        current_tokens += tok_count
+        current_tokens += sep + tok_count
         idx += 1
 
     total_tok = sum(tc for _, tc in blocks)
     target_needle_pos = int(depth_ratio * total_tok)
 
     accum = 0
-    insert_idx = len(blocks) // 2
+    insert_idx = len(blocks)
     for i, (_, tc) in enumerate(blocks):
         if accum + tc >= target_needle_pos:
             insert_idx = i
             break
         accum += tc
 
-    needle_block = f"\n# --- System Security Configuration ---\n{needle_line}\n# ---------------------------------------\n"
-    text_blocks = (
-        [b[0] for b in blocks[:insert_idx]] + [needle_block] + [b[0] for b in blocks[insert_idx:]]
-    )
-    return "\n".join(text_blocks)
+    left_blocks = [b[0] for b in blocks[:insert_idx]]
+    right_blocks = [b[0] for b in blocks[insert_idx:]]
+    haystack = "\n".join([*left_blocks, needle_block, *right_blocks])
+
+    if tokenizer is not None:
+        while (left_blocks or right_blocks) and (
+            _encoded_context_tokens(haystack, tokenizer) + eff_reserved > target_tokens
+        ):
+            if len(right_blocks) > len(left_blocks) or not left_blocks:
+                right_blocks.pop()
+            else:
+                left_blocks.pop(0)
+            haystack = "\n".join([*left_blocks, needle_block, *right_blocks])
+    return haystack
 
 
 def build_repo_niah_case(
@@ -1582,15 +1622,55 @@ def build_repo_niah_case(
     key_name: str = "SECRET_KEY",
     needle_value: str | None = None,
     tokenizer=None,
+    reserved_tokens: int | None = None,
+    max_prompt_tokens: int | None = None,
+    enable_thinking: bool | None = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Build a single RepoNIAH benchmark case (public input row, hidden gold spec)."""
     if needle_value is None:
         needle_value = f"alpha_bravo_{seed}_{hashlib.sha256(str(seed).encode()).hexdigest()[:8]}"
     needle_line = f'{key_name} = "{needle_value}"'
     instruction = f"What is the value of {key_name} in the codebase? Return only the value."
-    haystack = generate_repo_niah_haystack(
-        context_tokens, needle_line, depth_ratio, tokenizer=tokenizer
+    eff_target = (
+        min(int(context_tokens), int(max_prompt_tokens))
+        if max_prompt_tokens is not None
+        else int(context_tokens)
     )
+    if reserved_tokens is None:
+        if tokenizer is not None:
+            prompt_overhead = _render_niah_prompt_tokens(
+                instruction, "", tokenizer, enable_thinking=enable_thinking
+            )
+            eff_reserved = prompt_overhead + 4
+        else:
+            eff_reserved = max(16, len(instruction) // 3)
+    else:
+        eff_reserved = max(0, int(reserved_tokens))
+
+    haystack = generate_repo_niah_haystack(
+        eff_target,
+        needle_line,
+        depth_ratio,
+        tokenizer=tokenizer,
+        reserved_tokens=eff_reserved,
+    )
+    if tokenizer is not None:
+        for _ in range(4):
+            prompt_toks = _render_niah_prompt_tokens(
+                instruction, haystack, tokenizer, enable_thinking=enable_thinking
+            )
+            enc_toks = _encoded_context_tokens(haystack, tokenizer)
+            overflow = max(prompt_toks - eff_target, enc_toks - int(context_tokens))
+            if overflow <= 0:
+                break
+            eff_reserved += overflow + 4
+            haystack = generate_repo_niah_haystack(
+                eff_target,
+                needle_line,
+                depth_ratio,
+                tokenizer=tokenizer,
+                reserved_tokens=eff_reserved,
+            )
     instance_id = f"reponiah_{context_tokens}_{int(depth_ratio * 100)}_{seed}"
     public = {
         "instance_id": instance_id,

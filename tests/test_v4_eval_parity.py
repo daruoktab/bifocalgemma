@@ -278,14 +278,22 @@ def test_three_way_control_modes_longcodeqa_dedup_and_fim_marker():
     assert "cross_helper" in enc_disjoint
     assert "cross_helper" not in dec_disjoint
     assert "cross_helper" not in dec_local
-    # Strict disjointness: lines 1..12 of prefix are only in encoder, lines 13..60 only in decoder.
+    # Strict disjointness & continuous train/eval numbering parity:
+    # lines 1..12 of prefix + lines 110..121 of suffix in encoder; lines 13..109 in decoder.
     assert "13: pref_line_13 = 13" in dec_disjoint
     assert "pref_line_13" not in enc_disjoint
     assert "1: pref_line_1 = 1" in enc_disjoint
     assert "pref_line_1 =" not in dec_disjoint
-    assert "1: suff_line_1 = 1" in dec_disjoint
-    assert "49: suff_line_49 = 49" in enc_disjoint
+    assert "62: suff_line_1 = 1" in dec_disjoint
+    assert "110: suff_line_49 = 49" in enc_disjoint
     assert "suff_line_49" not in dec_disjoint
+    assert "### Target File Prefix (lines 1-12)" in enc_disjoint
+    assert "### Target File Suffix (lines 110-121)" in enc_disjoint
+    assert "### Local Cursor (lines 13-109)" in dec_disjoint
+    assert enc_disjoint in dec_full
+    assert "### Local Cursor (lines 13-109)" in dec_full
+    assert "62: suff_line_1 = 1" in dec_full
+    assert "110: suff_line_49 = 49" in dec_full
 
     # 2. Multi-file repair 3-way split
     repair_row = {
@@ -517,3 +525,162 @@ def test_eval_external_baselines_cli_dry_run(capsys):
     eval_code.print_v4_parity_comparison_table(
         {"qwen3-4b-instruct-2507 (full)": {"longcodeqa": 75.0, "gsm8k_resilient": 88.0}}
     )
+
+
+class _ProportionalTokenizer:
+    """Deterministic ~4 chars/token tokenizer with realistic chat template overhead."""
+
+    def __init__(self, *, bos_token_id: int | None, has_system_chat_template: bool = False):
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = 151645 if bos_token_id is None else 1
+        self.pad_token_id = 151643 if bos_token_id is None else 0
+        self.unk_token_id = None
+        self.chat_template = "chatml" if has_system_chat_template else "gemma"
+        self.all_special_tokens = ("<|im_end|>", "<|endoftext|>") if bos_token_id is None else ("<eos>",)
+
+    def get_vocab(self):
+        return (
+            {"<|im_end|>": 151645, "<|endoftext|>": 151643}
+            if self.bos_token_id is None
+            else {"<eos>": 1}
+        )
+
+    def convert_tokens_to_ids(self, tok: str):
+        return self.get_vocab().get(tok, 999)
+
+    def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, **kwargs):
+        sys_banner = (
+            "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n"
+            if self.chat_template == "chatml"
+            else "<bos><|turn>user\n"
+        )
+        suffix = "<|im_end|>\n<|im_start|>assistant\n" if self.chat_template == "chatml" else "<turn|>\n<|turn>model\n"
+        return f"{sys_banner}<|im_start|>user\n{messages[0]['content']}{suffix}"
+
+    def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+        has_bos = False
+        if text.startswith("<bos>"):
+            text = text.removeprefix("<bos>")
+            has_bos = True
+        n = max(1, (len(text) + 3) // 4) if text else 0
+        ids = [7] * n
+        if (has_bos or add_special_tokens) and self.bos_token_id is not None:
+            ids = [self.bos_token_id, *ids]
+        return ids
+
+    def decode(self, ids, skip_special_tokens: bool = True) -> str:
+        return "alpha_bravo_42"
+
+
+def test_reponiah_32k_zero_overflow_for_bifocalgemma_and_qwen25(tmp_path: Path):
+    from bifocalgemma.evaluation.context import build_repo_niah_case, generate_repo_niah_haystack
+
+    gemma_tok = _ProportionalTokenizer(bos_token_id=2, has_system_chat_template=False)
+    qwen_tok = _ProportionalTokenizer(bos_token_id=None, has_system_chat_template=True)
+
+    # 1. Raw haystack never exceeds target_tokens=32768
+    haystack = generate_repo_niah_haystack(
+        32768, 'SECRET_KEY = "alpha_bravo_42"', 0.5, tokenizer=gemma_tok
+    )
+    assert len(gemma_tok.encode(haystack, add_special_tokens=True)) <= 32768
+    assert 'SECRET_KEY = "alpha_bravo_42"' in haystack
+
+    # 2. BifocalGemma encoder_limit=32768 across all depth ratios never raises encoder_context_overflow
+    paired_spec = config.make_experiment_spec("2it-2it")
+    for ratio in (0.1, 0.25, 0.5, 0.75, 0.9):
+        pub, gold = build_repo_niah_case(32768, ratio, seed=42, tokenizer=gemma_tok)
+        assert gold["needle"] in pub["context"]
+        enc, pref = _prompt_ids_impl(pub, paired_spec, gemma_tok, gemma_tok, encoder_limit=32768)
+        assert len(enc) <= 32768
+        assert len(pref) <= 512
+
+    # 3. External Qwen2.5-Coder (max_position_embeddings=32768) passes depth=32768 with full 128-token budget
+    reponiah_32k = {
+        **config.V4_BENCHMARKS[1],
+        "depths": (32768,),
+        "depth_ratios": (0.1, 0.9),
+        "cases_per_depth": 1,
+    }
+    mock_model = MockCausalLM(generated_suffix=[42, 151645])
+    report = external_runner.run_external_benchmark(
+        "qwen2.5-coder-3b-instruct",
+        reponiah_32k,
+        tmp_path,
+        tmp_path / "reponiah_qwen25",
+        context_mode="full",
+        model=mock_model,
+        tokenizer=qwen_tok,
+    )
+    assert report["status"] == "COMPLETED"
+    assert report["total"] == 2
+    preds = [
+        json.loads(line)
+        for line in (tmp_path / "reponiah_qwen25/predictions.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    for pred in preds:
+        assert pred["decoder_prefix_tokens"] + pred["generation_max_new_tokens"] <= 32768
+        assert pred["generation_max_new_tokens"] == 128
+
+
+def test_windowed_file_section_disjoint_split_and_train_eval_parity():
+    from bifocalgemma.data.context_tasks import split_disjoint_context
+
+    # Windowed repair file starting at line 500 with context_selection in [502, 503]
+    small_window_row = {
+        "instance_id": "win-1",
+        "role": "eval",
+        "task_type": "repair",
+        "instruction": "Fix bug in foo.py",
+        "context": (
+            "### Issue\nFix bug in foo.py\n\n"
+            "### File: foo.py (lines 500-505)\n"
+            + "\n".join(f"line_{i} = {i}" for i in range(500, 506))
+        ),
+        "context_selection": {
+            "gold_used": False,
+            "windows": [{"path": "foo.py", "start_line": 502, "end_line": 503}],
+        },
+    }
+    dec_full, enc_full = split_context_for_mode(small_window_row, context_mode="full")
+    dec_disjoint, enc_disjoint = split_context_for_mode(small_window_row, context_mode="disjoint")
+    dec_local, enc_local = split_context_for_mode(small_window_row, context_mode="local_only")
+    assert enc_full == "" and enc_local == ""
+    assert dec_disjoint == dec_local
+    assert "### Local Cursor: foo.py (lines 500-505)" in dec_disjoint
+    assert "500: line_500 = 500" in dec_disjoint
+    assert "505: line_505 = 505" in dec_disjoint
+    assert "1: line_500" not in dec_disjoint
+    assert "### Local Cursor: foo.py (lines 500-505)" in dec_full
+    assert "500: line_500 = 500" in dec_full
+
+    # Larger windowed file (lines 500-700) with window at 600-605 and local_window_lines=10
+    big_window_row = {
+        "instance_id": "win-2",
+        "role": "eval",
+        "task_type": "repair",
+        "instruction": "Fix bug in foo.py",
+        "context": (
+            "### Issue\nFix bug in foo.py\n\n"
+            "### File: foo.py (lines 500-700)\n"
+            + "\n".join(f"line_{i} = {i}" for i in range(500, 701))
+        ),
+        "context_selection": {
+            "gold_used": False,
+            "windows": [{"path": "foo.py", "start_line": 600, "end_line": 605}],
+        },
+    }
+    b_full, _ = split_context_for_mode(big_window_row, context_mode="full", local_window_lines=10)
+    b_dec, b_enc = split_context_for_mode(big_window_row, context_mode="disjoint", local_window_lines=10)
+    train_split = split_disjoint_context(big_window_row, local_window_lines=10)
+
+    assert b_enc == train_split.encoder_context
+    assert train_split.decoder_local_context in b_dec
+    assert train_split.full_context in b_full
+    assert "### File: foo.py (lines 500-589)" in b_enc
+    assert "500: line_500 = 500" in b_enc
+    assert "### File: foo.py (lines 616-700)" in b_enc
+    assert "700: line_700 = 700" in b_enc
+    assert "### Local Cursor: foo.py (lines 590-615)" in b_dec
+    assert "600: line_600 = 600" in b_dec
+    assert "600: line_600 = 600" not in b_enc
+    assert "500: line_500 = 500" not in b_dec

@@ -261,14 +261,23 @@ def is_permissive_license(license_name: str | None, *, code_only: bool = True) -
         for bad in ("-nc", "noncommercial", "non-commercial", "-nd", "gpl", "agpl", "proprietary", "unknown", "sspl")
     ):
         return False
-    parts = [p.strip() for p in re.split(r"\s+and\s+|\s+or\s+|,", normalized) if p.strip()]
+    parts = [
+        p.strip("() \t")
+        for p in re.split(r"\s+and\s+|\s+or\s+|,", normalized)
+        if p.strip("() \t")
+    ]
     allowed = PERMITTED_V4_CODE_LICENSES if code_only else PERMITTED_V4_DATASET_LICENSES
     return bool(parts) and all(part in allowed for part in parts)
 
 
 _NUMBERED_LINE_RE = re.compile(r"^(\d+):\s?(.*)$")
 _FILE_SECTION_HEADER_RE = re.compile(
-    r"^### File:\s*([^\n(]+?)(?:\s*\(lines\s+(\d+)-(\d+)\))?\s*$", re.MULTILINE
+    r"^### File:\s*([^\n(]+?)(?:\s*\((?:lines\s+(\d+)-(\d+)[^)]*|[^)]*)\))?[ \t]*$",
+    re.MULTILINE,
+)
+_FIM_CURSOR_MARKER_RE = re.compile(
+    r"^[ \t]*(?:\d+:\s*)?(?:###\s*MISSING CODE|#\s*<MISSING_CODE>)[ \t]*$",
+    re.MULTILINE,
 )
 
 
@@ -363,14 +372,16 @@ def _split_crosscodelong_context(
     suffix_text = ""
     if "### PREFIX\n" in rest:
         _, _, after_pre = rest.partition("### PREFIX\n")
-        if "\n### MISSING CODE" in after_pre:
-            prefix_text, _, after_missing = after_pre.partition("\n### MISSING CODE")
-            if "### SUFFIX\n" in after_missing:
-                _, _, suffix_text = after_missing.partition("### SUFFIX\n")
+        if "\n### SUFFIX\n" in after_pre:
+            prefix_raw, _, suffix_text = after_pre.partition("\n### SUFFIX\n")
+        elif after_pre.startswith("### SUFFIX\n"):
+            prefix_raw, suffix_text = "", after_pre[len("### SUFFIX\n") :]
         elif "### SUFFIX\n" in after_pre:
-            prefix_text, _, suffix_text = after_pre.partition("### SUFFIX\n")
+            prefix_raw, _, suffix_text = after_pre.partition("### SUFFIX\n")
         else:
-            prefix_text = after_pre
+            prefix_raw, suffix_text = after_pre, ""
+        prefix_text = _FIM_CURSOR_MARKER_RE.sub("", prefix_raw).rstrip("\n")
+        suffix_text = _FIM_CURSOR_MARKER_RE.sub("", suffix_text).rstrip("\n")
 
     pre_lines = prefix_text.splitlines()
     suf_lines = suffix_text.splitlines()
@@ -475,8 +486,8 @@ def split_disjoint_context(
         raise ValueError("local_window_lines must be a positive integer")
 
     task_type = str(row.get("task_type") or "repair")
-    instruction = str(row.get("instruction") or "")
-    raw_context = str(row.get("context") or "")
+    instruction = str(row.get("instruction") or "").replace("\r\n", "\n")
+    raw_context = str(row.get("context") or "").replace("\r\n", "\n")
     body = _strip_leading_instruction(raw_context, instruction)
 
     # 1. Grounded tasks (`### Numbered source`)
@@ -528,7 +539,9 @@ def split_disjoint_context(
         )
 
     # 2. CrossCodeLongEval FIM layout (`### PREFIX` / `### SUFFIX`)
-    if "### PREFIX\n" in body and ("### SUFFIX\n" in body or "### MISSING CODE" in body):
+    if "### PREFIX\n" in body and (
+        "### SUFFIX\n" in body or "### MISSING CODE" in body or "# <MISSING_CODE>" in body
+    ):
         return _split_crosscodelong_context(body, task_type, local_window_lines)
 
     # 3. Retention / pure instruction tasks without code context
@@ -600,25 +613,73 @@ def split_disjoint_context(
         if cursor_entry_idx is not None:
             break
 
+    local_entries: list[tuple[int, str]] = []
+    distant_before: list[tuple[int, str]] = []
+    distant_after: list[tuple[int, str]] = []
+
+    selection = row.get("context_selection")
+    sel_windows = (
+        [w for w in selection.get("windows", ()) if isinstance(w, dict) and isinstance(w.get("path"), str)]
+        if isinstance(selection, dict) and selection.get("gold_used") is not True
+        else []
+    )
+
     if cursor_entry_idx is None:
-        # Never touch gold/target fields! Match path or instruction keywords only.
-        hint_path = row.get("path")
-        if isinstance(hint_path, str) and hint_path and hint_path != "repository_context":
-            for sec_idx, (path, _) in enumerate(section_entries):
-                if path == hint_path:
-                    cursor_sec_idx = sec_idx
-                    break
+        # Check non-gold selection windows with explicit line bounds first (preserving windowed file offsets).
+        best_window_match: tuple[int, int, int] | None = None
+        for sec_idx, (path, entries) in enumerate(section_entries):
+            if not entries:
+                continue
+            sec_min, sec_max = entries[0][0], entries[-1][0]
+            overlapping = [
+                w
+                for w in sel_windows
+                if w.get("path") == path
+                and type(w.get("start_line")) is int
+                and type(w.get("end_line")) is int
+                and w["end_line"] >= sec_min
+                and w["start_line"] <= sec_max
+            ]
+            if overlapping:
+                best_window_match = (
+                    sec_idx,
+                    min(w["start_line"] for w in overlapping),
+                    max(w["end_line"] for w in overlapping),
+                )
+                break
+
+        if best_window_match is not None:
+            cursor_sec_idx, center_start, center_end = best_window_match
+            cursor_path, cursor_entries = section_entries[cursor_sec_idx]
+            g_start = center_start - local_window_lines
+            g_end = center_end + local_window_lines
+            distant_before = [(num, txt) for num, txt in cursor_entries if num < g_start]
+            local_entries = [(num, txt) for num, txt in cursor_entries if g_start <= num <= g_end]
+            distant_after = [(num, txt) for num, txt in cursor_entries if num > g_end]
         else:
-            lowered_instr = instruction.lower()
-            for sec_idx, (path, _) in enumerate(section_entries):
-                if path.lower() in lowered_instr or path.rsplit("/", 1)[-1].lower() in lowered_instr:
-                    cursor_sec_idx = sec_idx
-                    break
-        _, target_entries = section_entries[cursor_sec_idx]
-        cursor_entry_idx = _anchor_index_for_repair(target_entries, instruction)
+            # Never touch gold/target fields! Match path, non-gold window path, or instruction keywords only.
+            hint_path = row.get("path")
+            if (not isinstance(hint_path, str) or not hint_path or hint_path == "repository_context") and len(
+                {w["path"] for w in sel_windows}
+            ) == 1:
+                hint_path = sel_windows[0]["path"]
+            if isinstance(hint_path, str) and hint_path and hint_path != "repository_context":
+                for sec_idx, (path, _) in enumerate(section_entries):
+                    if path == hint_path:
+                        cursor_sec_idx = sec_idx
+                        break
+            else:
+                lowered_instr = instruction.lower()
+                for sec_idx, (path, _) in enumerate(section_entries):
+                    if path.lower() in lowered_instr or path.rsplit("/", 1)[-1].lower() in lowered_instr:
+                        cursor_sec_idx = sec_idx
+                        break
+            _, target_entries = section_entries[cursor_sec_idx]
+            cursor_entry_idx = _anchor_index_for_repair(target_entries, instruction)
 
     cursor_path, cursor_entries = section_entries[cursor_sec_idx]
-    if cursor_entries:
+    if cursor_entries and not local_entries:
+        assert cursor_entry_idx is not None
         if "# <MISSING_CODE>" in cursor_entries[cursor_entry_idx][1]:
             local_start = max(0, cursor_entry_idx - local_window_lines)
             local_end = min(len(cursor_entries), cursor_entry_idx + local_window_lines + 1)
@@ -626,15 +687,13 @@ def split_disjoint_context(
             # For repair/localization anchored at file header or matched line
             if cursor_entry_idx == 0:
                 local_start = 0
-                local_end = min(len(cursor_entries), local_window_lines)
+                local_end = min(len(cursor_entries), 2 * local_window_lines)
             else:
                 local_start = max(0, cursor_entry_idx - local_window_lines)
                 local_end = min(len(cursor_entries), cursor_entry_idx + local_window_lines + 1)
         local_entries = cursor_entries[local_start:local_end]
         distant_before = cursor_entries[:local_start]
         distant_after = cursor_entries[local_end:]
-    else:
-        local_entries, distant_before, distant_after = [], [], []
 
     enc_parts = []
     if preamble.strip():

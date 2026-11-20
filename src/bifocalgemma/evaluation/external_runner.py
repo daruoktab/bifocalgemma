@@ -282,18 +282,34 @@ def load_hf_external_model_and_tokenizer(
 def _build_reponiah_cohort(
     benchmark_item: dict[str, Any],
     tokenizer: Any = None,
+    *,
+    max_position_embeddings: int | None = None,
+    enable_thinking: bool | None = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     depths = tuple(benchmark_item.get("depths", REPONIAH_DEFAULT_DEPTHS))
     depth_ratios = tuple(benchmark_item.get("depth_ratios", REPONIAH_DEFAULT_DEPTH_RATIOS))
     cases_per_depth = int(benchmark_item.get("cases_per_depth", 5))
     seed = int(benchmark_item.get("seed", 42))
+    suite_cap = int(benchmark_item.get("max_new_tokens", 128))
+    max_prompt_tokens = (
+        max(1, int(max_position_embeddings) - suite_cap)
+        if max_position_embeddings is not None
+        else None
+    )
     public: list[dict[str, Any]] = []
     gold: list[dict[str, Any]] = []
     for d in depths:
         for r in depth_ratios:
             for s in range(cases_per_depth):
                 case_seed = seed + s * 100 + int(r * 1000)
-                pub, g = build_repo_niah_case(d, r, seed=case_seed, tokenizer=tokenizer)
+                pub, g = build_repo_niah_case(
+                    d,
+                    r,
+                    seed=case_seed,
+                    tokenizer=tokenizer,
+                    max_prompt_tokens=max_prompt_tokens,
+                    enable_thinking=enable_thinking,
+                )
                 public.append(pub)
                 gold.append(g)
     return public, gold
@@ -305,10 +321,17 @@ def _load_benchmark_cohort(
     *,
     tokenizer: Any = None,
     max_samples: int | None = None,
+    max_position_embeddings: int | None = None,
+    enable_thinking: bool | None = False,
 ) -> tuple[Path, list[dict[str, Any]], list[dict[str, Any]]]:
     collection = str(benchmark_item["collection"])
     if "reponiah" in collection.lower():
-        public, gold = _build_reponiah_cohort(benchmark_item, tokenizer=tokenizer)
+        public, gold = _build_reponiah_cohort(
+            benchmark_item,
+            tokenizer=tokenizer,
+            max_position_embeddings=max_position_embeddings,
+            enable_thinking=enable_thinking,
+        )
         if max_samples is not None and max_samples > 0:
             public = public[:max_samples]
             gold = gold[:max_samples]
@@ -404,18 +427,23 @@ def run_external_benchmark(
         tokenizer = tokenizer or loaded_tok
 
     eos_ids = resolve_external_eos_ids(tokenizer, model)
+    suite_cap = int(benchmark_item.get("max_new_tokens", 2048))
+    max_pos = int(model_cfg.get("max_position_embeddings", 32768))
+    decoder_limit = min(int(benchmark_item.get("decoder_limit", MAX_DECODER_TOKENS)), max_pos)
+    enable_thinking = model_cfg.get("enable_thinking", False)
+
     eff_dir, public, hidden = _load_benchmark_cohort(
-        benchmark_item, root_path, tokenizer=tokenizer, max_samples=max_samples
+        benchmark_item,
+        root_path,
+        tokenizer=tokenizer,
+        max_samples=max_samples,
+        max_position_embeddings=max_pos,
+        enable_thinking=enable_thinking,
     )
     ids = [r["instance_id"] for r in public]
     if not ids or len(set(ids)) != len(ids) or ids != [r["instance_id"] for r in hidden]:
         raise ValueError("benchmark_public_gold_cohort_mismatch")
     gold_by_id = {r["instance_id"]: r for r in hidden}
-
-    suite_cap = int(benchmark_item.get("max_new_tokens", 2048))
-    max_pos = int(model_cfg.get("max_position_embeddings", 32768))
-    decoder_limit = min(int(benchmark_item.get("decoder_limit", MAX_DECODER_TOKENS)), max_pos)
-    enable_thinking = model_cfg.get("enable_thinking", False)
 
     out_path.mkdir(parents=True, exist_ok=True)
     predictions_path = out_path / "predictions.jsonl"
