@@ -12,42 +12,90 @@ import torch.utils.checkpoint
 from torch.nn import functional as F
 from transformers.models.gemma4.modeling_gemma4 import apply_rotary_pos_emb
 
-from bifocalgemma.config import GATE_INIT_TANH
+import bifocalgemma.config as _config_mod
 from bifocalgemma.models import inference_cache as inference_cache_mod
 from bifocalgemma.models.bridge import SwiGLUDualGateBridge
 from bifocalgemma.models.memory_efficient import (
     TiledMergedAttention,
-    attention_tile,
+    sdpa_cross_attention,
     tiled_attention,
 )
 from bifocalgemma.training.objectives import is_cross_bridge_parameter
 from bifocalgemma.training.runtime import (
     clamped_triton_kernel_options,
-    critical_attention_beta,
     ensure_hardware_memory_guards,
 )
+
+_CRITICAL_ATTENTION_N0 = 2048
+_V4_DEFAULT_GATE_INIT_TANH = 0.15
 
 
 def _compute_per_row_cross_query(
     query_cross: torch.Tensor,
     encoder_valid: torch.Tensor,
     fallback_n_enc: int,
+    n_0: int = _CRITICAL_ATTENTION_N0,
 ) -> torch.Tensor:
-    """Multiply cross-queries by per-row critical attention length temperature beta_N."""
-    bsz = query_cross.shape[0]
-    valid_counts = encoder_valid.bool().sum(dim=-1).tolist()
-    betas = [
-        critical_attention_beta(int(cnt) if int(cnt) > 0 else fallback_n_enc)
-        for cnt in valid_counts
-    ]
-    if all(b == 1.0 for b in betas):
+    """Multiply cross-queries by per-row critical attention length temperature beta_N on-device."""
+    if n_0 <= 0:
         return query_cross
-    beta_scale = torch.tensor(
-        [b for b in betas],
-        dtype=torch.float32,
-        device=query_cross.device,
-    ).view(bsz, 1, 1, 1)
+    # Fast host-only shape check avoids device-to-host sync whenever N_enc <= n_0.
+    if max(int(encoder_valid.shape[-1]), int(fallback_n_enc)) <= n_0:
+        return query_cross
+    bsz = query_cross.shape[0]
+    counts = encoder_valid.to(device=query_cross.device).bool().sum(dim=-1)
+    effective_counts = torch.where(
+        counts > 0,
+        counts,
+        counts.new_full((), int(fallback_n_enc)),
+    ).to(dtype=torch.float32)
+    ratio = (effective_counts / float(n_0)).clamp_min(1.0)
+    beta_scale = (0.1 * torch.log(ratio) + 1.0).view(bsz, 1, 1, 1)
     return (query_cross.float() * beta_scale).to(query_cross.dtype)
+
+
+def _owns_cross_kv(attn: Any) -> bool:
+    """Return True if this attention layer owns independent cross-KV projections."""
+    return (
+        bool(getattr(attn, "owns_cross_kv", not getattr(attn, "is_kv_shared_layer", False)))
+        and hasattr(attn, "cross_k_proj")
+        and hasattr(attn, "cross_v_proj")
+    )
+
+
+def _project_cross_kv(
+    attn: Any,
+    encoder_hidden_states: torch.Tensor,
+    target_dtype: torch.dtype,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Project encoder hidden states into stationary unrotated cross-attention K/V tensors."""
+    batch = encoder_hidden_states.shape[0]
+    enc_len = encoder_hidden_states.shape[1]
+    cross_shape = (
+        batch,
+        enc_len,
+        attn.config.per_layer_config[attn.layer_idx].num_key_value_heads,
+        attn.head_dim,
+    )
+    cross_k = (
+        attn.cross_k_norm(
+            attn.cross_k_proj(encoder_hidden_states)
+            .view(cross_shape)
+            .to(_norm_weight_dtype(attn.cross_k_norm, target_dtype))
+        )
+        .to(target_dtype)
+        .transpose(1, 2)
+    )
+    cross_v = (
+        attn.cross_v_norm(
+            attn.cross_v_proj(encoder_hidden_states)
+            .view(cross_shape)
+            .to(_norm_weight_dtype(attn.cross_v_norm, target_dtype))
+        )
+        .to(target_dtype)
+        .transpose(1, 2)
+    )
+    return cross_k, cross_v
 
 
 if TYPE_CHECKING:
@@ -137,9 +185,22 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
         if cache is None:
             raise ValueError("Explicit inference cache required.")
         positions = torch.arange(cache.offset, cache.offset + length, device=query_self.device)
+        owns_cross_kv = has_full_cross and _owns_cross_kv(self)
         if self.is_kv_shared_layer:
-            key_self, value_self, cross, key_valid = shared_kv_states[self.layer_type]
+            key_self, value_self, shared_cross, key_valid = shared_kv_states[self.layer_type]
             key_positions, self_length = cache.shared_positions[self.layer_type]
+            if owns_cross_kv:
+                previous = cache.layers.get(self.layer_idx)
+                cross = previous[3] if previous is not None else None
+                if (
+                    encoder_hidden_states is not None
+                    and encoder_hidden_states.shape[1] > 0
+                    and cross is None
+                ):
+                    cross = _project_cross_kv(self, encoder_hidden_states, query_self.dtype)
+                    cache.layers[self.layer_idx] = (None, None, None, cross, None)
+            else:
+                cross = shared_cross
         else:
             raw_key = self.k_proj(hidden_states).view(shape)
             raw_value = (
@@ -168,33 +229,12 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
             stored_valid = key_valid[:, -keep:] if key_valid is not None else None
             cross = previous[3] if previous is not None else None
             if (
-                has_full_cross
+                owns_cross_kv
                 and encoder_hidden_states is not None
                 and encoder_hidden_states.shape[1] > 0
                 and cross is None
             ):
-                cross_shape = (
-                    batch,
-                    encoder_hidden_states.shape[1],
-                    self.config.per_layer_config[self.layer_idx].num_key_value_heads,
-                    self.head_dim,
-                )
-                cross = (
-                    self.cross_k_norm(
-                        self.cross_k_proj(encoder_hidden_states)
-                        .view(cross_shape)
-                        .to(_norm_weight_dtype(self.cross_k_norm, query_self.dtype))
-                    )
-                    .to(query_self.dtype)
-                    .transpose(1, 2),
-                    self.cross_v_norm(
-                        self.cross_v_proj(encoder_hidden_states)
-                        .view(cross_shape)
-                        .to(_norm_weight_dtype(self.cross_v_norm, query_self.dtype))
-                    )
-                    .to(query_self.dtype)
-                    .transpose(1, 2),
-                )
+                cross = _project_cross_kv(self, encoder_hidden_states, query_self.dtype)
             cache.layers[self.layer_idx] = (
                 stored_key,
                 stored_value,
@@ -248,7 +288,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
             and query_cross is not None
             and cross is not None
             and encoder_valid is not None
-            and bool(encoder_valid.any())
+            and encoder_valid.shape[1] > 0
         ):
             n_enc = int(cross[0].shape[2])
             scaled_query_cross = _compute_per_row_cross_query(query_cross, encoder_valid, n_enc)
@@ -257,26 +297,16 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                     self.cross_scale.to(scaled_query_cross.dtype), min=0.1, max=5.0
                 )
             cross_scale = float(self.scaling)
-            cross_pieces = []
-            for start in range(0, length, 128):
-                stop = min(length, start + 128)
-                cross_mask = (
-                    encoder_valid[:, None, None, :].bool().expand(batch, 1, stop - start, -1)
-                )
-                if step_valid is not None:
-                    cross_mask = cross_mask & step_valid[:, None, start:stop, None].bool()
-                cross_pieces.append(
-                    attention_tile(
-                        scaled_query_cross[:, :, start:stop],
-                        cross[0],
-                        cross[1],
-                        cross_mask,
-                        cross_scale,
-                        0.0,
-                        True,
-                    )
-                )
-            cross_out = torch.cat(cross_pieces, dim=2)
+            cross_out = sdpa_cross_attention(
+                scaled_query_cross,
+                cross[0],
+                cross[1],
+                encoder_valid,
+                step_valid,
+                cross_scale,
+                chunk_size=getattr(self, "query_chunk_size", 128),
+                use_sdpa=not getattr(self, "_force_eager_cross", False),
+            )
             gate_logits = torch.einsum(
                 "bhtd,hd->bht", query_cross.float(), self.cross_gate_proj.float()
             ) * (4.0 * (self.head_dim**-0.5))
@@ -372,39 +402,30 @@ class FullCrossTiledAttention(TiledMergedAttention):
             .transpose(1, 2)
         )
 
-        has_encoder_tokens = encoder_hidden_states.shape[1] > 0 and bool(encoder_valid.any())
+        has_encoder_tokens = encoder_hidden_states.shape[1] > 0
+        owns_cross_kv = _owns_cross_kv(self)
         if self.is_kv_shared_layer:
-            key_self, value_self, cross_key, cross_value = shared_kv_states[self.layer_type]
+            key_self, value_self, shared_cross_key, shared_cross_value = shared_kv_states[
+                self.layer_type
+            ]
+            if owns_cross_kv:
+                if has_encoder_tokens:
+                    cross_key, cross_value = _project_cross_kv(
+                        self, encoder_hidden_states, query_self.dtype
+                    )
+                else:
+                    cross_key, cross_value = None, None
+            else:
+                cross_key, cross_value = shared_cross_key, shared_cross_value
         else:
             if self.v_proj is None:
                 raise ValueError("Merged branch requires separate value projection.")
             key_self = self.k_norm(self.k_proj(hidden_states).view(shape))
             key_self = apply_rotary_pos_emb(key_self, cos, sin, unsqueeze_dim=2).transpose(1, 2)
             value_self = self.v_norm(self.v_proj(hidden_states).view(shape)).transpose(1, 2)
-            if has_encoder_tokens:
-                cross_shape = (
-                    batch,
-                    encoder_hidden_states.shape[1],
-                    self.config.per_layer_config[self.layer_idx].num_key_value_heads,
-                    self.head_dim,
-                )
-                cross_key = (
-                    self.cross_k_norm(
-                        self.cross_k_proj(encoder_hidden_states)
-                        .view(cross_shape)
-                        .to(_norm_weight_dtype(self.cross_k_norm, query_self.dtype))
-                    )
-                    .to(query_self.dtype)
-                    .transpose(1, 2)
-                )
-                cross_value = (
-                    self.cross_v_norm(
-                        self.cross_v_proj(encoder_hidden_states)
-                        .view(cross_shape)
-                        .to(_norm_weight_dtype(self.cross_v_norm, query_self.dtype))
-                    )
-                    .to(query_self.dtype)
-                    .transpose(1, 2)
+            if has_encoder_tokens and owns_cross_kv:
+                cross_key, cross_value = _project_cross_kv(
+                    self, encoder_hidden_states, query_self.dtype
                 )
             else:
                 cross_key, cross_value = None, None
@@ -418,6 +439,13 @@ class FullCrossTiledAttention(TiledMergedAttention):
 
         chunk_sz = getattr(self, "query_chunk_size", 128)
         backend_name = getattr(self, "attention_backend", "tiled_eager_fp32")
+        if (
+            backend_name == "tiled_eager_fp32"
+            and not self.training
+            and not torch.is_grad_enabled()
+            and not getattr(self, "_force_eager_eval", False)
+        ):
+            backend_name = "sdpa"
         self_mask = {"valid": decoder_valid, "bidirectional": False}
         self_out = tiled_attention(
             query_self,
@@ -439,25 +467,16 @@ class FullCrossTiledAttention(TiledMergedAttention):
                     self.cross_scale.to(scaled_query_cross.dtype), min=0.1, max=5.0
                 )
             cross_scale = float(self.scaling)
-            pieces = []
-            for start in range(0, length, chunk_sz):
-                stop = min(length, start + chunk_sz)
-                cross_mask = (
-                    encoder_valid[:, None, None, :].bool()
-                    & decoder_valid[:, None, start:stop, None].bool()
-                )
-                pieces.append(
-                    attention_tile(
-                        scaled_query_cross[:, :, start:stop],
-                        cross_key,
-                        cross_value,
-                        cross_mask,
-                        cross_scale,
-                        0.0,
-                        True,
-                    )
-                )
-            cross_out = torch.cat(pieces, dim=2)
+            cross_out = sdpa_cross_attention(
+                scaled_query_cross,
+                cross_key,
+                cross_value,
+                encoder_valid,
+                decoder_valid,
+                cross_scale,
+                chunk_size=chunk_sz,
+                use_sdpa=not getattr(self, "_force_eager_cross", False),
+            )
             gate_logits = torch.einsum(
                 "bhtd,hd->bht", query_cross.float(), self.cross_gate_proj.float()
             ) * (4.0 * (self.head_dim**-0.5))
@@ -472,8 +491,34 @@ class FullCrossTiledAttention(TiledMergedAttention):
         return self.o_proj(result), None
 
 
-def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
-    """Attach SwiGLUDualGateBridge, full-rank BF16 cross-attention projections, unrotated cross-query norm, and atanh(0.05) gates."""
+def _resolve_gate_init_tanh(model: Any, explicit: float | None = None) -> float:
+    """Resolve gate_init_tanh from explicit kwarg, model config, v4 fallback (0.15), or config.GATE_INIT_TANH."""
+    if explicit is not None:
+        return float(explicit)
+    cfg = getattr(model, "config", None)
+    cfg_val = getattr(cfg, "gate_init_tanh", None) if cfg is not None else None
+    if cfg_val is not None:
+        return float(cfg_val)
+    spec = getattr(model, "spec", None)
+    arch_ver = str(getattr(spec, "architecture_version", "") or "").lower()
+    v4_enabled = bool(
+        getattr(cfg, "v4_enabled", False)
+        or getattr(_config_mod, "V4_ENABLED", False)
+        or "v4" in arch_ver
+    )
+    if v4_enabled:
+        return float(getattr(_config_mod, "V4_GATE_INIT_TANH", _V4_DEFAULT_GATE_INIT_TANH))
+    return float(getattr(_config_mod, "GATE_INIT_TANH", _V4_DEFAULT_GATE_INIT_TANH))
+
+
+def configure_full_rank_cross_attention(
+    model: Any,
+    *,
+    decouple_full_attn_cross_kv: bool | None = None,
+    learnable_cross_scale: bool | None = None,
+    gate_init_tanh: float | None = None,
+) -> dict[str, Any]:
+    """Attach SwiGLUDualGateBridge, full-rank BF16 cross-attention projections, decoupled upper full-attn cross-KV, and gated cross-attn."""
     ensure_hardware_memory_guards()
     setattr(inference_cache_mod, "CachedAttention", FullCrossCachedAttention)
 
@@ -482,6 +527,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
             "mode": "decoder_only_causal_v3",
             "bridge_type": None,
             "kv_owner_layers": 0,
+            "decoupled_full_attn_cross_kv_layers": 0,
             "total_decoder_layers": len(model.decoder.layers),
             "total_cross_bridge_parameters": 0,
         }
@@ -491,6 +537,7 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
     dec_dim = int(model.decoder.config.hidden_size)
     dev = next(model.decoder.parameters()).device
     cfg = getattr(model, "config", None)
+    spec = getattr(model, "spec", None)
     d_mid = getattr(cfg, "d_mid", None)
     init_rms = getattr(cfg, "init_rms_scale", 1.0)
     existing_proj = getattr(model, "encoder_projection", None)
@@ -508,13 +555,32 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
             init_rms_scale=init_rms,
         ).to(dev)
 
-    raw_gate_init = getattr(getattr(model, "config", None), "gate_init_tanh", GATE_INIT_TANH)
-    gate_init_tanh = float(raw_gate_init if raw_gate_init is not None else GATE_INIT_TANH)
-    gate_init_tanh = max(-0.999, min(0.999, gate_init_tanh))
-    gate_init_atanh = math.atanh(gate_init_tanh)
+    resolved_gate_init_tanh = _resolve_gate_init_tanh(model, explicit=gate_init_tanh)
+    resolved_gate_init_tanh = max(-0.999, min(0.999, resolved_gate_init_tanh))
+    gate_init_atanh = math.atanh(resolved_gate_init_tanh)
+
+    if decouple_full_attn_cross_kv is not None:
+        resolved_decouple_full_attn = bool(decouple_full_attn_cross_kv)
+    elif cfg is not None and hasattr(cfg, "decouple_full_attn_cross_kv"):
+        resolved_decouple_full_attn = bool(getattr(cfg, "decouple_full_attn_cross_kv"))
+    elif spec is not None and hasattr(spec, "decouple_full_attn_cross_kv"):
+        resolved_decouple_full_attn = bool(getattr(spec, "decouple_full_attn_cross_kv"))
+    else:
+        resolved_decouple_full_attn = bool(
+            getattr(_config_mod, "DECOUPLE_FULL_ATTN_CROSS_KV", True)
+        )
+
+    if learnable_cross_scale is not None:
+        resolved_learnable_scale = bool(learnable_cross_scale)
+    elif cfg is not None and hasattr(cfg, "learnable_cross_scale"):
+        resolved_learnable_scale = bool(getattr(cfg, "learnable_cross_scale"))
+    else:
+        resolved_learnable_scale = bool(getattr(_config_mod, "LEARNABLE_CROSS_SCALE", False))
 
     kv_owner_layers = 0
+    decoupled_full_attn_layers = 0
     total_cross_params = 0
+    full_attn_kv_owner: Any = None
     for layer in model.decoder.layers:
         attn = layer.self_attn
         q_base = getattr(attn.q_proj, "base", attn.q_proj)
@@ -530,14 +596,37 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
         torch.nn.init.zeros_(attn.cross_gate_proj)
         attn.cross_scale = torch.nn.Parameter(
             torch.ones((num_heads, 1, 1), dtype=torch.float32, device=dev),
-            requires_grad=bool(getattr(cfg, "learnable_cross_scale", True)),
+            requires_grad=resolved_learnable_scale,
         )
+        is_full_attn = getattr(attn, "layer_type", None) == "full_attention"
         if not attn.is_kv_shared_layer:
+            if is_full_attn:
+                full_attn_kv_owner = attn
+            v_source = attn.v_proj if getattr(attn, "v_proj", None) is not None else attn.k_proj
             attn.cross_k_proj = Bf16FullLinear(attn.k_proj).to(dev)
-            attn.cross_v_proj = Bf16FullLinear(attn.v_proj).to(dev)
+            attn.cross_v_proj = Bf16FullLinear(v_source).to(dev)
             attn.cross_k_norm = copy.deepcopy(attn.k_norm).float().to(dev)
             attn.cross_v_norm = copy.deepcopy(attn.v_norm).float().to(dev)
+            attn.owns_cross_kv = True
             kv_owner_layers += 1
+        elif resolved_decouple_full_attn and is_full_attn and full_attn_kv_owner is not None:
+            v_source = (
+                full_attn_kv_owner.v_proj
+                if getattr(full_attn_kv_owner, "v_proj", None) is not None
+                else full_attn_kv_owner.k_proj
+            )
+            attn.cross_k_proj = Bf16FullLinear(full_attn_kv_owner.k_proj).to(dev)
+            attn.cross_v_proj = Bf16FullLinear(v_source).to(dev)
+            attn.cross_k_norm = copy.deepcopy(full_attn_kv_owner.k_norm).float().to(dev)
+            attn.cross_v_norm = copy.deepcopy(full_attn_kv_owner.v_norm).float().to(dev)
+            attn.owns_cross_kv = True
+            kv_owner_layers += 1
+            decoupled_full_attn_layers += 1
+        else:
+            attn.owns_cross_kv = False
+            for stale_attr in ("cross_k_proj", "cross_v_proj", "cross_k_norm", "cross_v_norm"):
+                if hasattr(attn, stale_attr):
+                    delattr(attn, stale_attr)
         attn.query_chunk_size = getattr(attn, "query_chunk_size", 128)
         attn.attention_backend = getattr(attn, "attention_backend", "tiled_eager_fp32")
         attn.triton_kernel_options = clamped_triton_kernel_options(attn.head_dim)
@@ -550,8 +639,11 @@ def configure_full_rank_cross_attention(model: Any) -> dict[str, Any]:
     return {
         "mode": "full_rank_cross_bf16",
         "bridge_type": "SwiGLUDualGateBridge",
-        "gate_init_tanh": gate_init_tanh,
+        "gate_init_tanh": resolved_gate_init_tanh,
         "kv_owner_layers": kv_owner_layers,
+        "decoupled_full_attn_cross_kv_layers": decoupled_full_attn_layers,
+        "decouple_full_attn_cross_kv": resolved_decouple_full_attn,
+        "learnable_cross_scale": resolved_learnable_scale,
         "total_decoder_layers": len(model.decoder.layers),
         "total_cross_bridge_parameters": total_cross_params,
     }

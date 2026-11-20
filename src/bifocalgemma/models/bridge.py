@@ -71,11 +71,40 @@ class SwiGLUDualGateBridge(torch.nn.Module):
         self.w_down = torch.nn.Linear(self.d_mid, self.d_dec, bias=False)
         self.w_res = torch.nn.Linear(self.d_enc, self.d_dec, bias=False)
 
-        self.post_norm = torch.nn.RMSNorm(self.d_dec, eps=eps)
+        self.post_norm = torch.nn.RMSNorm(self.d_dec, eps=eps, elementwise_affine=False)
         self.gamma_calib = torch.nn.Parameter(
             torch.full((self.d_dec,), float(init_rms_scale), dtype=torch.float32)
         )
         self._reset_parameters()
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        prefix: str,
+        local_metadata: dict[str, Any],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        # Backward-compat: fold legacy v3 post_norm.weight into the single gamma_calib gain.
+        post_norm_key = f"{prefix}post_norm.weight"
+        gamma_key = f"{prefix}gamma_calib"
+        if post_norm_key in state_dict:
+            post_norm_w = state_dict.pop(post_norm_key)
+            if gamma_key in state_dict:
+                state_dict[gamma_key] = state_dict[gamma_key].float() * post_norm_w.float()
+            else:
+                state_dict[gamma_key] = post_norm_w.float()
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     def _reset_parameters(self) -> None:
         if self.w_res.weight.is_meta:
@@ -113,8 +142,8 @@ class SwiGLUDualGateBridge(torch.nn.Module):
         warped = F.linear(gated, self.w_down.weight.to(compute_dtype))
         res = F.linear(h_tilde, self.w_res.weight.to(compute_dtype))
         z = res + warped
-        normed = self.post_norm(z.to(self.post_norm.weight.dtype)).to(orig_dtype)
-        return normed * self.gamma_calib.to(orig_dtype)
+        normed = self.post_norm(z.float())
+        return (normed * self.gamma_calib.float()).to(orig_dtype)
 
 
 __all__ = ["NormalizedAlignment", "SwiGLUDualGateBridge"]

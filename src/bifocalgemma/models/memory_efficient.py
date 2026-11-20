@@ -7,6 +7,7 @@ Eager remains the reference. Recompute trades throughput for activation memory.
 import copy
 
 import torch
+from torch.nn import functional as F
 from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention, apply_rotary_pos_emb
 
 DEFAULT_MEMORY_POLICY = {
@@ -216,6 +217,283 @@ class _TiledAttention(torch.autograd.Function):
         return dq, dk, dv, None, None, None, None, None, None
 
 
+def _sdpa_supported(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor) -> bool:
+    """Return True when F.scaled_dot_product_attention can safely execute this Q/K/V layout."""
+    if not hasattr(F, "scaled_dot_product_attention"):
+        return False
+    if query.dtype == torch.float64 or key.dtype == torch.float64 or value.dtype == torch.float64:
+        return False
+    heads = query.shape[1]
+    kv_heads = key.shape[1]
+    return kv_heads > 0 and (heads % kv_heads == 0)
+
+
+def sdpa_cross_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    encoder_valid: torch.Tensor,
+    query_valid: torch.Tensor | None,
+    scaling: float,
+    *,
+    chunk_size: int = 128,
+    dropout: float = 0.0,
+    use_sdpa: bool = True,
+) -> torch.Tensor:
+    """Fused SDPA cross-attention with broadcast encoder mask and safe eager fallback.
+
+    Preserves exact mask semantics (including wholly masked encoder/query rows)
+    without materializing a dense [B, 1, T_dec, N_enc] mask tensor.
+    """
+    batch, _, length, width = query.shape
+    eff_chunk = max(1, int(chunk_size))
+    enc_mask_bool = encoder_valid.to(device=query.device, dtype=torch.bool)
+    q_valid_bool = (
+        query_valid.to(device=query.device, dtype=torch.bool) if query_valid is not None else None
+    )
+
+    if use_sdpa and _sdpa_supported(query, key, value):
+        try:
+            k_cast = key.to(query.dtype)
+            v_cast = value.to(query.dtype)
+            enc_mask = enc_mask_bool[:, None, None, :]
+            has_enc = enc_mask.any(dim=-1, keepdim=True)
+            safe_enc_mask = enc_mask | ~has_enc
+            enable_gqa = query.shape[1] != k_cast.shape[1]
+            # Single-shot when short or Flash/MemEfficient-eligible (head_dim <= 256 on CUDA);
+            # tile over query length otherwise to keep transient workspace bounded for head_dim=512.
+            if length <= eff_chunk or (query.device.type == "cuda" and width <= 256):
+                out = F.scaled_dot_product_attention(
+                    query,
+                    k_cast,
+                    v_cast,
+                    attn_mask=safe_enc_mask,
+                    dropout_p=dropout,
+                    scale=scaling,
+                    enable_gqa=enable_gqa,
+                )
+            else:
+                pieces = []
+                for start in range(0, length, eff_chunk):
+                    stop = min(length, start + eff_chunk)
+                    pieces.append(
+                        F.scaled_dot_product_attention(
+                            query[:, :, start:stop],
+                            k_cast,
+                            v_cast,
+                            attn_mask=safe_enc_mask,
+                            dropout_p=dropout,
+                            scale=scaling,
+                            enable_gqa=enable_gqa,
+                        )
+                    )
+                out = torch.cat(pieces, dim=2)
+            out_valid = has_enc
+            if q_valid_bool is not None:
+                out_valid = out_valid & q_valid_bool[:, None, :, None]
+            return out.masked_fill(~out_valid, 0.0)
+        except (RuntimeError, NotImplementedError, TypeError):
+            pass
+
+    pieces = []
+    for start in range(0, length, eff_chunk):
+        stop = min(length, start + eff_chunk)
+        cross_mask = enc_mask_bool[:, None, None, :].expand(batch, 1, stop - start, -1)
+        if q_valid_bool is not None:
+            cross_mask = cross_mask & q_valid_bool[:, None, start:stop, None]
+        pieces.append(
+            attention_tile(
+                query[:, :, start:stop],
+                key,
+                value,
+                cross_mask,
+                scaling,
+                dropout,
+                True,
+            )
+        )
+    return torch.cat(pieces, dim=2)
+
+
+def sdpa_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    *,
+    chunk_size: int = 128,
+    scaling: float = 1.0,
+    dropout: float = 0.0,
+    attention_mask=None,
+    encoder_valid=None,
+    decoder_valid=None,
+    window=None,
+) -> torch.Tensor:
+    """SDPA / FlashAttention fast path with window-sliced KV tiles and safe eager fallback."""
+    if not _sdpa_supported(query, key, value):
+        return _TiledAttention.apply(
+            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+        )
+    # Non-boolean custom float additive masks fall back cleanly to tiled eager FP32.
+    if isinstance(attention_mask, torch.Tensor) and attention_mask.dtype != torch.bool:
+        return _TiledAttention.apply(
+            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+        )
+
+    batch, heads, q_len, width = query.shape
+    k_len = key.shape[2]
+    k_cast = key.to(query.dtype)
+    v_cast = value.to(query.dtype)
+    enable_gqa = heads != k_cast.shape[1]
+    eff_chunk = max(int(chunk_size), 256) if not torch.is_grad_enabled() else max(1, int(chunk_size))
+
+    try:
+        if encoder_valid is not None:
+            pieces = []
+            for start in range(0, q_len, eff_chunk):
+                stop = min(q_len, start + eff_chunk)
+                mask = joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window)
+                has_any = mask.any(dim=-1, keepdim=True)
+                safe_mask = mask | ~has_any
+                tile_out = F.scaled_dot_product_attention(
+                    query[:, :, start:stop],
+                    k_cast,
+                    v_cast,
+                    attn_mask=safe_mask,
+                    dropout_p=dropout,
+                    scale=scaling,
+                    enable_gqa=enable_gqa,
+                )
+                pieces.append(tile_out.masked_fill(~has_any, 0.0))
+            return torch.cat(pieces, dim=2)
+
+        if isinstance(attention_mask, dict):
+            valid = attention_mask["valid"].to(device=query.device, dtype=torch.bool)
+            bidirectional = bool(attention_mask["bidirectional"])
+            positions = torch.arange(k_len, device=query.device)
+
+            if bidirectional and not window:
+                k_mask = valid[:, None, None, :]
+                has_any = k_mask.any(dim=-1, keepdim=True)
+                safe_mask = k_mask | ~has_any
+                q_valid = valid[:, None, :, None]
+                if q_len <= eff_chunk or (query.device.type == "cuda" and width <= 256):
+                    out = F.scaled_dot_product_attention(
+                        query,
+                        k_cast,
+                        v_cast,
+                        attn_mask=safe_mask,
+                        dropout_p=dropout,
+                        scale=scaling,
+                        enable_gqa=enable_gqa,
+                    )
+                else:
+                    pieces = []
+                    for start in range(0, q_len, eff_chunk):
+                        stop = min(q_len, start + eff_chunk)
+                        pieces.append(
+                            F.scaled_dot_product_attention(
+                                query[:, :, start:stop],
+                                k_cast,
+                                v_cast,
+                                attn_mask=safe_mask,
+                                dropout_p=dropout,
+                                scale=scaling,
+                                enable_gqa=enable_gqa,
+                            )
+                        )
+                    out = torch.cat(pieces, dim=2)
+                return out.masked_fill(~(has_any & q_valid), 0.0)
+
+            pieces = []
+            for start in range(0, q_len, eff_chunk):
+                stop = min(q_len, start + eff_chunk)
+                q_pos = positions[start:stop, None]
+                if window:
+                    if bidirectional:
+                        k_start = max(0, start - window)
+                        k_stop = min(k_len, stop + window)
+                        k_pos = positions[None, k_start:k_stop]
+                        visible = (k_pos - q_pos).abs() <= window
+                    else:
+                        k_start = max(0, start - window + 1)
+                        k_stop = min(k_len, stop)
+                        k_pos = positions[None, k_start:k_stop]
+                        visible = (k_pos <= q_pos) & ((q_pos - k_pos) < window)
+                else:
+                    # Full causal self-attention: only keys [:stop] can be visible.
+                    k_start = 0
+                    k_stop = min(k_len, stop)
+                    k_pos = positions[None, k_start:k_stop]
+                    visible = k_pos <= q_pos
+
+                tile_mask = visible[None, None] & valid[:, None, None, k_start:k_stop]
+                has_any = tile_mask.any(dim=-1, keepdim=True)
+                safe_mask = tile_mask | ~has_any
+                tile_out = F.scaled_dot_product_attention(
+                    query[:, :, start:stop],
+                    k_cast[:, :, k_start:k_stop],
+                    v_cast[:, :, k_start:k_stop],
+                    attn_mask=safe_mask,
+                    dropout_p=dropout,
+                    scale=scaling,
+                    enable_gqa=enable_gqa,
+                )
+                pieces.append(
+                    tile_out.masked_fill(~(has_any & valid[:, None, start:stop, None]), 0.0)
+                )
+            return torch.cat(pieces, dim=2)
+
+        if attention_mask is None:
+            if q_len <= eff_chunk or (query.device.type == "cuda" and width <= 256):
+                return F.scaled_dot_product_attention(
+                    query,
+                    k_cast,
+                    v_cast,
+                    attn_mask=None,
+                    dropout_p=dropout,
+                    scale=scaling,
+                    enable_gqa=enable_gqa,
+                )
+            pieces = []
+            for start in range(0, q_len, eff_chunk):
+                stop = min(q_len, start + eff_chunk)
+                pieces.append(
+                    F.scaled_dot_product_attention(
+                        query[:, :, start:stop],
+                        k_cast,
+                        v_cast,
+                        attn_mask=None,
+                        dropout_p=dropout,
+                        scale=scaling,
+                        enable_gqa=enable_gqa,
+                    )
+                )
+            return torch.cat(pieces, dim=2)
+
+        # Boolean tensor mask
+        pieces = []
+        for start in range(0, q_len, eff_chunk):
+            stop = min(q_len, start + eff_chunk)
+            tile_mask = attention_mask[..., start:stop, :].to(device=query.device, dtype=torch.bool)
+            has_any = tile_mask.any(dim=-1, keepdim=True)
+            safe_mask = tile_mask | ~has_any
+            tile_out = F.scaled_dot_product_attention(
+                query[:, :, start:stop],
+                k_cast,
+                v_cast,
+                attn_mask=safe_mask,
+                dropout_p=dropout,
+                scale=scaling,
+                enable_gqa=enable_gqa,
+            )
+            pieces.append(tile_out.masked_fill(~has_any, 0.0))
+        return torch.cat(pieces, dim=2)
+    except (RuntimeError, NotImplementedError, TypeError):
+        return _TiledAttention.apply(
+            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+        )
+
+
 def tiled_attention(
     query,
     key,
@@ -236,6 +514,19 @@ def tiled_attention(
         raise ValueError("Conservative tiled attention is validated for native Gemma dropout=0.")
     if encoder_valid is not None and decoder_valid is None:
         raise ValueError("Merged attention requires decoder validity.")
+    if backend == "sdpa":
+        return sdpa_attention(
+            query,
+            key,
+            value,
+            chunk_size=chunk_size,
+            scaling=scaling,
+            dropout=dropout,
+            attention_mask=attention_mask,
+            encoder_valid=encoder_valid,
+            decoder_valid=decoder_valid,
+            window=window,
+        )
     if backend == "flex_attention" or (backend == "hybrid_flex" and query.shape[-1] <= 256):
         from bifocalgemma.models.flex_attention import fused_attention
 
@@ -287,6 +578,14 @@ class TiledEncoderAttention(Gemma4TextAttention):
         valid = kwargs.get("self_valid") if getattr(self, "structured_masks", False) else None
         if valid is not None:
             attention_mask = {"valid": valid, "bidirectional": not self.is_causal}
+        backend = getattr(self, "attention_backend", "tiled_eager_fp32")
+        if (
+            backend == "tiled_eager_fp32"
+            and not self.training
+            and not torch.is_grad_enabled()
+            and not getattr(self, "_force_eager_eval", False)
+        ):
+            backend = "sdpa"
         result = tiled_attention(
             query,
             key,
@@ -296,7 +595,7 @@ class TiledEncoderAttention(Gemma4TextAttention):
             dropout=self.attention_dropout if self.training else 0.0,
             attention_mask=attention_mask,
             window=self.sliding_window,
-            backend=getattr(self, "attention_backend", "tiled_eager_fp32"),
+            backend=backend,
         )
         result = result.transpose(1, 2).contiguous().reshape(batch, length, -1)
         return self.o_proj(result), None
@@ -376,7 +675,8 @@ def configure_memory_efficient_training(model, policy=None):
     if set(options) != set(DEFAULT_MEMORY_POLICY) or options["version"] != "tiled_recompute_v1":
         raise ValueError("Unknown memory policy.")
     if (
-        options["attention_backend"] not in {"tiled_eager_fp32", "flex_attention", "hybrid_flex"}
+        options["attention_backend"]
+        not in {"tiled_eager_fp32", "sdpa", "flex_attention", "hybrid_flex"}
         or options["ple_offload"] is not False
     ):
         raise ValueError(

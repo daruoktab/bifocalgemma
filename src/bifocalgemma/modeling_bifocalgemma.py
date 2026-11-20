@@ -199,7 +199,9 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         # 7. Tie embeddings
         self._tie_words()
 
-    def _configure_structured_self_attention(self, query_chunk_size: int = 128) -> None:
+    def _configure_structured_self_attention(
+        self, query_chunk_size: int = 128, attention_backend: str = "sdpa"
+    ) -> None:
         """Install structured tiled self-attention on encoder (and baseline decoder) so 1D valid masks work without 4D mask materialization."""
         import copy
 
@@ -210,11 +212,12 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                     tiled = copy.copy(attn)
                     object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                     object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                    object.__setattr__(tiled, "attention_backend", attention_backend)
                     object.__setattr__(tiled, "structured_masks", True)
                     layer.self_attn = cast(Any, tiled)
                 else:
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "attention_backend", attention_backend)
                     object.__setattr__(attn, "structured_masks", True)
 
         if self.decoder is not None and self.encoder is None:
@@ -224,11 +227,12 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                     tiled = copy.copy(attn)
                     object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                     object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                    object.__setattr__(tiled, "attention_backend", attention_backend)
                     object.__setattr__(tiled, "structured_masks", True)
                     layer.self_attn = cast(Any, tiled)
                 else:
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "attention_backend", attention_backend)
                     object.__setattr__(attn, "structured_masks", True)
 
     def tie_weights(self, *args: Any, **kwargs: Any) -> None:
@@ -321,6 +325,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         query_chunk_size: int = 128,
         loss_chunk_size: int = 128,
         gradient_checkpointing: bool = True,
+        attention_backend: str = "sdpa",
     ) -> BifocalGemmaForCausalLM:
         """Configure tiled attention, gradient checkpointing, and chunked loss for memory efficiency."""
         import copy
@@ -334,11 +339,12 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                     tiled = copy.copy(attn)
                     object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                     object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                    object.__setattr__(tiled, "attention_backend", attention_backend)
                     object.__setattr__(tiled, "structured_masks", True)
                     layer.self_attn = cast(Any, tiled)
                 else:
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "attention_backend", attention_backend)
                     object.__setattr__(attn, "structured_masks", True)
 
         if self.decoder is not None:
@@ -349,15 +355,17 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                         tiled = copy.copy(attn)
                         object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                         object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                        object.__setattr__(tiled, "attention_backend", "tiled_eager_fp32")
+                        object.__setattr__(tiled, "attention_backend", attention_backend)
                         object.__setattr__(tiled, "structured_masks", True)
                         layer.self_attn = cast(Any, tiled)
                     else:
                         object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                        object.__setattr__(attn, "attention_backend", attention_backend)
                         object.__setattr__(attn, "structured_masks", True)
                 else:
                     # Paired decoders already use FullCrossTiledAttention
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
+                    object.__setattr__(attn, "attention_backend", attention_backend)
 
         for stack in (self.encoder, self.decoder):
             if stack is not None:
@@ -1074,13 +1082,18 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
             config is not None and config.encoder_size == "none"
         )
         if config is None:
+            import bifocalgemma.config as _config_mod
+
             config = BifocalGemmaConfig(
                 encoder_size="none" if is_baseline else "E2B",
                 decoder_size="E2B",
                 tiny=False,
-                gate_init_tanh=0.05,
+                gate_init_tanh=float(getattr(_config_mod, "GATE_INIT_TANH", 0.15)),
                 init_rms_scale=1.0,
-                learnable_cross_scale=True,
+                learnable_cross_scale=bool(getattr(_config_mod, "LEARNABLE_CROSS_SCALE", False)),
+                decouple_full_attn_cross_kv=bool(
+                    getattr(_config_mod, "DECOUPLE_FULL_ATTN_CROSS_KV", True)
+                ),
                 tie_encoder_decoder_words=False,
             )
 
@@ -1208,13 +1221,30 @@ def export_matrix_pretrained_model(
             else 2048
         )
 
+        import bifocalgemma.config as _config_mod
+
+        dec_layers = getattr(model.decoder, "layers", [])
+        inferred_decouple = any(
+            getattr(layer.self_attn, "is_kv_shared_layer", False)
+            and getattr(layer.self_attn, "owns_cross_kv", False)
+            for layer in dec_layers
+        )
+        first_scale = (
+            getattr(dec_layers[0].self_attn, "cross_scale", None) if dec_layers else None
+        )
+        inferred_learnable_scale = (
+            bool(first_scale.requires_grad)
+            if isinstance(first_scale, torch.Tensor)
+            else bool(getattr(_config_mod, "LEARNABLE_CROSS_SCALE", False))
+        )
         config = BifocalGemmaConfig(
             encoder_size=enc_size,
             decoder_size=dec_size,
             tiny=is_tiny,
-            gate_init_tanh=0.05,
+            gate_init_tanh=float(getattr(_config_mod, "GATE_INIT_TANH", 0.15)),
             init_rms_scale=1.0,
-            learnable_cross_scale=True,
+            learnable_cross_scale=inferred_learnable_scale,
+            decouple_full_attn_cross_kv=inferred_decouple,
             tie_encoder_decoder_words=False,
             encoder_config=model.encoder.config.to_dict()
             if getattr(model, "encoder", None) is not None
