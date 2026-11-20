@@ -617,3 +617,238 @@ def test_gate_init_tanh_resolution_dynamic_and_v4_fallback(monkeypatch: pytest.M
     info_cfg = configure_full_rank_cross_attention(model_cfg)
     assert math.isclose(info_cfg["gate_init_tanh"], 0.20, rel_tol=1e-6)
     assert info_cfg["learnable_cross_scale"] is False
+
+
+# ---------------------------------------------------------------------------
+# (f) Audit regressions: head_dim=512 training OOM guard & FullCrossCachedAttention
+# ---------------------------------------------------------------------------
+
+
+def test_head_dim_512_routes_training_to_tiled_recompute_and_keeps_eval_and_256_on_sdpa(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """head_dim > 256 in training must route to _TiledAttention (no O(N^2) Math SDPA tile retention),
+    while eval (no_grad) and head_dim <= 256 keep the SDPA fast path.
+    """
+    import bifocalgemma.models.memory_efficient as mem_mod
+
+    sdpa_calls = 0
+    tiled_calls = 0
+    orig_sdpa = torch.nn.functional.scaled_dot_product_attention
+    orig_tiled_apply = mem_mod._TiledAttention.apply
+
+    def spy_sdpa(*args: Any, **kwargs: Any) -> torch.Tensor:
+        nonlocal sdpa_calls
+        sdpa_calls += 1
+        return orig_sdpa(*args, **kwargs)
+
+    def spy_tiled_apply(*args: Any, **kwargs: Any) -> Any:
+        nonlocal tiled_calls
+        tiled_calls += 1
+        return orig_tiled_apply(*args, **kwargs)
+
+    monkeypatch.setattr(torch.nn.functional, "scaled_dot_product_attention", spy_sdpa)
+    monkeypatch.setattr(mem_mod._TiledAttention, "apply", staticmethod(spy_tiled_apply))
+
+    torch.manual_seed(61)
+    # 1. Training with head_dim=512 -> routes to _TiledAttention (0 Math SDPA calls)
+    q512 = torch.randn(2, 4, 18, 512, dtype=torch.float32, requires_grad=True)
+    k512 = torch.randn(2, 2, 18, 512, dtype=torch.float32, requires_grad=True)
+    v512 = torch.randn(2, 2, 18, 512, dtype=torch.float32, requires_grad=True)
+    valid = torch.ones(2, 18, dtype=torch.bool)
+    valid[0, :3] = False
+    valid[1, :] = False  # wholly masked row
+    mask_bi = {"valid": valid, "bidirectional": True}
+    mask_ca = {"valid": valid, "bidirectional": False}
+    scale512 = 512**-0.5
+
+    sdpa_calls = tiled_calls = 0
+    out_bi = sdpa_attention(q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_bi)
+    out_ca = sdpa_attention(q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_ca)
+    assert sdpa_calls == 0
+    assert tiled_calls == 2
+    assert torch.isfinite(out_bi).all() and torch.all(out_bi[1] == 0.0)
+    assert torch.isfinite(out_ca).all() and torch.all(out_ca[1] == 0.0)
+    grads = torch.autograd.grad((out_bi + out_ca).square().sum(), (q512, k512, v512))
+    assert all(torch.isfinite(g).all() for g in grads)
+
+    # Cross-attention training with head_dim=512 -> routes to _TiledAttention (0 Math SDPA calls)
+    kc512 = torch.randn(2, 2, 25, 512, dtype=torch.float32, requires_grad=True)
+    vc512 = torch.randn(2, 2, 25, 512, dtype=torch.float32, requires_grad=True)
+    enc_valid = torch.ones(2, 25, dtype=torch.bool)
+    enc_valid[1, :] = False
+    sdpa_calls = tiled_calls = 0
+    out_cross = sdpa_cross_attention(
+        q512, kc512, vc512, enc_valid, valid, scale512, chunk_size=6, use_sdpa=True
+    )
+    assert sdpa_calls == 0
+    assert tiled_calls == 1
+    assert torch.isfinite(out_cross).all() and torch.all(out_cross[1] == 0.0)
+    cross_grads = torch.autograd.grad(out_cross.square().sum(), (q512, kc512, vc512))
+    assert all(torch.isfinite(g).all() for g in cross_grads)
+
+    # 2. Eval (no_grad) with head_dim=512 -> keeps SDPA fast path!
+    sdpa_calls = tiled_calls = 0
+    with torch.no_grad():
+        eval_bi = sdpa_attention(
+            q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_bi
+        )
+        eval_cross = sdpa_cross_attention(
+            q512, kc512, vc512, enc_valid, valid, scale512, chunk_size=6, use_sdpa=True
+        )
+    assert sdpa_calls >= 2
+    assert tiled_calls == 0
+    torch.testing.assert_close(eval_bi, out_bi.detach(), atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(eval_cross, out_cross.detach(), atol=1e-5, rtol=1e-5)
+
+    # 3. Training with head_dim=256 -> keeps SDPA fast path!
+    q256 = torch.randn(2, 4, 10, 256, dtype=torch.float32, requires_grad=True)
+    k256 = torch.randn(2, 2, 10, 256, dtype=torch.float32, requires_grad=True)
+    v256 = torch.randn(2, 2, 10, 256, dtype=torch.float32, requires_grad=True)
+    valid256 = torch.ones(2, 10, dtype=torch.bool)
+    sdpa_calls = tiled_calls = 0
+    out256 = sdpa_attention(
+        q256,
+        k256,
+        v256,
+        chunk_size=16,
+        scaling=256**-0.5,
+        attention_mask={"valid": valid256, "bidirectional": True},
+    )
+    out256_cross = sdpa_cross_attention(
+        q256, k256, v256, valid256, valid256, 256**-0.5, chunk_size=16, use_sdpa=True
+    )
+    assert sdpa_calls == 2
+    assert tiled_calls == 0
+    assert all(
+        torch.isfinite(g).all()
+        for g in torch.autograd.grad((out256 + out256_cross).square().sum(), (q256, k256, v256))
+    )
+
+    # 4. BifocalGemmaForCausalLM.enable_memory_efficient_training routes head_dim > 256 safely
+    cfg = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    model = BifocalGemmaForCausalLM(cfg)
+    assert model.encoder is not None
+    # Simulate a full-attention layer with head_dim=512 alongside sliding layers with head_dim <= 256
+    full_layer_enc = cast(Any, model.encoder).layers[4].self_attn
+    full_layer_dec = cast(Any, model.decoder).layers[4].self_attn
+    slide_layer_enc = cast(Any, model.encoder).layers[0].self_attn
+    object.__setattr__(full_layer_enc, "head_dim", 512)
+    object.__setattr__(full_layer_dec, "head_dim", 512)
+    model.enable_memory_efficient_training(gradient_checkpointing=False, attention_backend="sdpa")
+    assert cast(Any, model.encoder).layers[4].self_attn.attention_backend == "tiled_eager_fp32"
+    assert cast(Any, model.decoder).layers[4].self_attn.attention_backend == "tiled_eager_fp32"
+    assert slide_layer_enc.attention_backend == "sdpa"
+
+
+def test_full_cross_cached_attention_sdpa_guard_fallback_and_non_left_padded_step_valid(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """FullCrossCachedAttention must guard SDPA with _sdpa_supported/fallback, avoid hardcoded
+    enable_gqa=True, and honor non-left-padded step_valid masks identically to FullCrossTiledAttention.
+    """
+    torch.manual_seed(67)
+    cfg = BifocalGemmaConfig(
+        encoder_size="E2B",
+        decoder_size="E2B",
+        tiny=True,
+        gate_init_tanh=0.25,
+        decouple_full_attn_cross_kv=True,
+    )
+    model = BifocalGemmaForCausalLM(cfg).eval()
+    dec_layers = cast(Any, model.decoder).layers
+
+    enc_ids = torch.randint(5, 80, (2, 8))
+    enc_mask = torch.ones_like(enc_ids, dtype=torch.bool)
+    enc_mask[0, 5:] = False
+
+    # Non-left-padded mask (middle/trailing invalid positions!)
+    dec_ids = torch.randint(5, 80, (2, 5))
+    non_left_mask = torch.tensor(
+        [[True, False, True, False, True], [False, True, True, False, True]],
+        dtype=torch.bool,
+    )
+
+    def _run_cached(force_sdpa_error: bool = False) -> tuple[torch.Tensor, list[bool]]:
+        seen_enable_gqa: list[bool] = []
+        orig_sdpa = torch.nn.functional.scaled_dot_product_attention
+
+        def _spy_sdpa(*args: Any, **kwargs: Any) -> torch.Tensor:
+            if "enable_gqa" in kwargs:
+                seen_enable_gqa.append(bool(kwargs["enable_gqa"]))
+            if force_sdpa_error:
+                raise TypeError("Simulated unsupported enable_gqa")
+            return orig_sdpa(*args, **kwargs)
+
+        with monkeypatch.context() as mp:
+            mp.setattr(torch.nn.functional, "scaled_dot_product_attention", _spy_sdpa)
+            cache = InferenceCache()
+            orig_classes = [layer.self_attn.__class__ for layer in dec_layers]
+            try:
+                for layer in dec_layers:
+                    object.__setattr__(layer.self_attn, "__class__", FullCrossCachedAttention)
+                setattr(cache, "step_valid_mask", non_left_mask)
+                pos_ids = model._positions(non_left_mask)
+                with torch.no_grad():
+                    enc_states = model.encode_context(enc_ids, enc_mask)
+                    dec_out = model.decoder(
+                        input_ids=dec_ids,
+                        position_ids=pos_ids,
+                        attention_mask={"full_attention": None, "sliding_attention": None},
+                        use_cache=False,
+                        inference_cache=cache,
+                        encoder_hidden_states=enc_states,
+                        encoder_valid=enc_mask,
+                    )
+                    logits = model.lm_head(dec_out.last_hidden_state)
+                    cap = model.decoder.config.final_logit_softcapping
+                    if cap is not None:
+                        logits = torch.tanh(logits / cap) * cap
+                return logits, seen_enable_gqa
+            finally:
+                for layer, cls in zip(dec_layers, orig_classes, strict=True):
+                    object.__setattr__(layer.self_attn, "__class__", cls)
+
+    with torch.no_grad():
+        enc_states_ref = model.encode_context(enc_ids, enc_mask)
+        tiled_logits = model.decode_logits(dec_ids, non_left_mask, enc_states_ref, enc_mask)
+
+    # 1. SDPA path matches FullCrossTiledAttention on ALL positions (including non-left-padded invalid slots!)
+    cached_sdpa_logits, gqa_flags = _run_cached(force_sdpa_error=False)
+    assert len(gqa_flags) > 0
+    torch.testing.assert_close(cached_sdpa_logits, tiled_logits, atol=1e-4, rtol=1e-4)
+
+    # 2. Eager fallback when SDPA raises TypeError matches FullCrossTiledAttention identically
+    cached_fallback_logits, _ = _run_cached(force_sdpa_error=True)
+    torch.testing.assert_close(cached_fallback_logits, tiled_logits, atol=1e-4, rtol=1e-4)
+
+    # 3. Direct float64 check: _sdpa_supported returns False -> eager fallback succeeds without error
+    layer0 = dec_layers[0].self_attn
+    orig_cls = layer0.__class__
+    try:
+        object.__setattr__(layer0, "__class__", FullCrossCachedAttention)
+        layer0_64 = layer0.double()
+        cache64 = InferenceCache()
+        setattr(cache64, "step_valid_mask", non_left_mask)
+        hidden64 = torch.randn(2, 5, model.decoder.config.hidden_size, dtype=torch.float64)
+        cos64 = torch.ones(2, 5, layer0_64.head_dim, dtype=torch.float64)
+        sin64 = torch.zeros(2, 5, layer0_64.head_dim, dtype=torch.float64)
+        with torch.no_grad():
+            out64, _ = layer0_64(
+                hidden64,
+                (cos64, sin64),
+                None,
+                {},
+                inference_cache=cache64,
+                encoder_hidden_states=None,
+                encoder_valid=None,
+            )
+        assert out64.dtype == torch.float64
+        assert torch.isfinite(out64).all()
+        # Invalid query positions under non_left_mask must produce zero self-attn output (o_proj has no bias)
+        torch.testing.assert_close(
+            out64[~non_left_mask], torch.zeros_like(out64[~non_left_mask]), atol=1e-12, rtol=0
+        )
+    finally:
+        layer0.float()
+        object.__setattr__(layer0, "__class__", orig_cls)

@@ -188,10 +188,86 @@ def configure_policy_model(model, policy):
     return scope
 
 
+def _build_group_schedule(settings: dict[str, Any], total_steps: int | None) -> dict[str, Any]:
+    scheduler = settings.get("scheduler", "constant")
+    if scheduler not in {"cosine", "wsd"}:
+        return {}
+    if total_steps is not None and (type(total_steps) is not int or total_steps < 1):
+        raise ValueError("Schedule horizon must be a positive integer.")
+    schedule: dict[str, Any] = {
+        "scheduler": scheduler,
+        "total_steps": total_steps,
+        "warmup_ratio": settings.get("warmup_ratio", 0.0),
+        "min_lr_ratio": settings.get("min_lr_ratio", 0.0),
+    }
+    if scheduler == "wsd" and "wsd_decay_fraction" in settings:
+        schedule["wsd_decay_fraction"] = settings["wsd_decay_fraction"]
+    if total_steps is not None:
+        schedule["warmup_steps"] = min(
+            total_steps,
+            max(settings["warmup_steps"], math.ceil(total_steps * schedule["warmup_ratio"])),
+        )
+    return schedule
+
+
 def build_training_groups(model, policy, total_steps=None) -> "list[dict[str, Any]]":
     validate_training_policy(policy, model)
-    entries: dict[str, list[Any]] = {name: [] for name in ("encoder", "decoder", "alignment")}
+    is_v4 = policy.get("version") == "unified_v4"
     seen = set()
+    if is_v4:
+        from bifocalgemma.training.stage import (
+            CANONICAL_PARAM_GROUP_ORDER,
+            classify_bifocalgemma_parameter,
+        )
+
+        entries: dict[str, list[Any]] = {name: [] for name in CANONICAL_PARAM_GROUP_ORDER}
+        # named_parameters deduplicates shared Parameter objects, including aliases.
+        for name, parameter in sorted(model.named_parameters()):
+            if not parameter.requires_grad:
+                continue
+            if id(parameter) in seen:
+                raise ValueError("A trainable Parameter was enumerated twice.")
+            seen.add(id(parameter))
+            group = classify_bifocalgemma_parameter(name, parameter)
+            if group not in policy["groups"]:
+                raise ValueError(f"Unexpected trainable parameter for policy: {name}")
+            entries[group].append((name, parameter))
+        groups = []
+        for name in CANONICAL_PARAM_GROUP_ORDER:
+            if name not in policy["groups"]:
+                continue
+            if not entries[name]:
+                if policy["family"] == "decoder_only":
+                    raise ValueError(f"Empty trainable group: {name}")
+                continue
+            settings = policy["groups"][name]
+            schedule = _build_group_schedule(settings, total_steps)
+            extra: dict[str, Any] = {}
+            if "weight_decay" in settings:
+                extra["weight_decay"] = float(settings["weight_decay"])
+            if "clip_norm" in settings:
+                extra["clip_norm"] = (
+                    None if settings["clip_norm"] is None else float(settings["clip_norm"])
+                )
+            groups.append(
+                {
+                    "name": name,
+                    "params": [p for _, p in entries[name]],
+                    "param_names": [n for n, _ in entries[name]],
+                    "lr": settings["lr"],
+                    "base_lr": settings["lr"],
+                    "warmup_steps": settings["warmup_steps"],
+                    **extra,
+                    **schedule,
+                }
+            )
+        if not groups:
+            raise ValueError("No trainable parameters matched unified_v4 policy groups.")
+        if seen != {id(p) for p in model.parameters() if p.requires_grad}:
+            raise ValueError("Optimizer groups do not cover all trainable parameters.")
+        return groups
+
+    entries = {name: [] for name in ("encoder", "decoder", "alignment")}
     # named_parameters deduplicates shared Parameter objects, including aliases.
     for name, parameter in sorted(model.named_parameters()):
         if not parameter.requires_grad:
@@ -217,23 +293,7 @@ def build_training_groups(model, policy, total_steps=None) -> "list[dict[str, An
         if not entries[name]:
             raise ValueError(f"Empty trainable group: {name}")
         settings = policy["groups"][name]
-        schedule = {}
-        if settings.get("scheduler", "constant") == "cosine":
-            if total_steps is not None and (type(total_steps) is not int or total_steps < 1):
-                raise ValueError("Schedule horizon must be a positive integer.")
-            schedule = {
-                "scheduler": "cosine",
-                "total_steps": total_steps,
-                "warmup_ratio": settings.get("warmup_ratio", 0.0),
-                "min_lr_ratio": settings.get("min_lr_ratio", 0.0),
-            }
-            if total_steps is not None:
-                schedule["warmup_steps"] = min(
-                    total_steps,
-                    max(
-                        settings["warmup_steps"], math.ceil(total_steps * schedule["warmup_ratio"])
-                    ),
-                )
+        schedule = _build_group_schedule(settings, total_steps)
         groups.append(
             {
                 "name": name,

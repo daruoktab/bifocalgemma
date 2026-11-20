@@ -7,6 +7,7 @@ Eager remains the reference. Recompute trades throughput for activation memory.
 import copy
 
 import torch
+import torch.utils.checkpoint
 from torch.nn import functional as F
 from transformers.models.gemma4.modeling_gemma4 import Gemma4TextAttention, apply_rotary_pos_emb
 
@@ -25,6 +26,13 @@ def mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window)
     if encoder_valid is not None:
         return joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window)
     if isinstance(attention_mask, dict):
+        if attention_mask.get("cross"):
+            enc_valid = attention_mask["encoder_valid"].bool()
+            q_valid = attention_mask.get("query_valid")
+            mask = enc_valid[:, None, None, :].expand(enc_valid.shape[0], 1, stop - start, -1)
+            if q_valid is not None:
+                mask = mask & q_valid[:, None, start:stop, None].bool()
+            return mask
         valid = attention_mask["valid"]
         positions = torch.arange(valid.shape[1], device=valid.device)
         queries = positions[start:stop, None]
@@ -136,9 +144,16 @@ class _TiledAttention(torch.autograd.Function):
         )
         ctx.chunk_size, ctx.scaling, ctx.window = chunk_size, scaling, window
         pieces = []
+        is_boolean_mask = (
+            encoder_valid is not None
+            or isinstance(attention_mask, dict)
+            or (isinstance(attention_mask, torch.Tensor) and attention_mask.dtype == torch.bool)
+        )
         for start in range(0, query.shape[2], chunk_size):
             stop = min(start + chunk_size, query.shape[2])
             mask = mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window)
+            if isinstance(mask, torch.Tensor) and mask.device != query.device:
+                mask = mask.to(query.device)
             pieces.append(
                 attention_tile(
                     query[:, :, start:stop],
@@ -147,7 +162,7 @@ class _TiledAttention(torch.autograd.Function):
                     mask,
                     scaling,
                     0.0,
-                    encoder_valid is not None or isinstance(attention_mask, dict),
+                    is_boolean_mask,
                 )
             )
         return torch.cat(pieces, dim=2)
@@ -159,13 +174,20 @@ class _TiledAttention(torch.autograd.Function):
         batch, heads, length, width = query.shape
         groups = heads // key.shape[1]
         # Match native repeat_kv head order, including its final head-group reduction.
-        repeated_key = key.repeat_interleave(groups, dim=1)
-        repeated_value = value.repeat_interleave(groups, dim=1)
+        repeated_key = key.to(query.dtype).repeat_interleave(groups, dim=1)
+        repeated_value = value.to(query.dtype).repeat_interleave(groups, dim=1)
         accumulation_dtype = torch.float64 if query.dtype == torch.float64 else torch.float32
         dk = torch.zeros(repeated_key.shape, dtype=accumulation_dtype, device=key.device)
         dv = torch.zeros(repeated_value.shape, dtype=accumulation_dtype, device=value.device)
         dq = torch.zeros_like(query)
-        merged = ctx.encoder_valid is not None or isinstance(ctx.attention_mask, dict)
+        merged = (
+            ctx.encoder_valid is not None
+            or isinstance(ctx.attention_mask, dict)
+            or (
+                isinstance(ctx.attention_mask, torch.Tensor)
+                and ctx.attention_mask.dtype == torch.bool
+            )
+        )
         for start in range(0, length, ctx.chunk_size):
             stop = min(start + ctx.chunk_size, length)
             q = query[:, :, start:stop]
@@ -173,6 +195,8 @@ class _TiledAttention(torch.autograd.Function):
             mask = mask_tile(
                 ctx.attention_mask, ctx.encoder_valid, ctx.decoder_valid, start, stop, ctx.window
             )
+            if isinstance(mask, torch.Tensor) and mask.device != query.device:
+                mask = mask.to(query.device)
             scores = torch.matmul(q, repeated_key.transpose(-1, -2)) * ctx.scaling
             if mask is not None:
                 if merged:
@@ -243,14 +267,32 @@ def sdpa_cross_attention(
     """Fused SDPA cross-attention with broadcast encoder mask and safe eager fallback.
 
     Preserves exact mask semantics (including wholly masked encoder/query rows)
-    without materializing a dense [B, 1, T_dec, N_enc] mask tensor.
+    without materializing a dense [B, 1, T_dec, N_enc] mask tensor. During training
+    (`torch.is_grad_enabled()`), `head_dim > 256` routes to recomputed `_TiledAttention`
+    so Math SDPA cannot retain O(T_dec * N_enc) softmax activations across tiles.
     """
-    batch, _, length, width = query.shape
+    batch, heads, length, width = query.shape
+    if key.shape[2] == 0:
+        return query.new_zeros((batch, heads, length, value.shape[-1]))
     eff_chunk = max(1, int(chunk_size))
+    max_dim = max(width, value.shape[-1])
     enc_mask_bool = encoder_valid.to(device=query.device, dtype=torch.bool)
     q_valid_bool = (
         query_valid.to(device=query.device, dtype=torch.bool) if query_valid is not None else None
     )
+    cross_mask_spec = {
+        "cross": True,
+        "encoder_valid": enc_mask_bool,
+        "query_valid": q_valid_bool,
+    }
+
+    # On CUDA, Flash/MemEfficient SDPA require head_dim <= 256. For head_dim > 256
+    # during training, tiling Math SDPA in Python retains every tile's softmax tensor
+    # simultaneously (O(T_dec * N_enc) VRAM). Route to recomputed _TiledAttention instead.
+    if torch.is_grad_enabled() and max_dim > 256 and dropout == 0.0:
+        return _TiledAttention.apply(
+            query, key, value, cross_mask_spec, None, None, eff_chunk, scaling, None
+        )
 
     if use_sdpa and _sdpa_supported(query, key, value):
         try:
@@ -259,10 +301,10 @@ def sdpa_cross_attention(
             enc_mask = enc_mask_bool[:, None, None, :]
             has_enc = enc_mask.any(dim=-1, keepdim=True)
             safe_enc_mask = enc_mask | ~has_enc
-            enable_gqa = query.shape[1] != k_cast.shape[1]
+            enable_gqa = heads != k_cast.shape[1]
             # Single-shot when short or Flash/MemEfficient-eligible (head_dim <= 256 on CUDA);
             # tile over query length otherwise to keep transient workspace bounded for head_dim=512.
-            if length <= eff_chunk or (query.device.type == "cuda" and width <= 256):
+            if length <= eff_chunk or (query.device.type == "cuda" and max_dim <= 256):
                 out = F.scaled_dot_product_attention(
                     query,
                     k_cast,
@@ -273,20 +315,40 @@ def sdpa_cross_attention(
                     enable_gqa=enable_gqa,
                 )
             else:
+                checkpoint_tiles = torch.is_grad_enabled() and max_dim > 256
+
+                def _sdpa_tile(
+                    q_slice: torch.Tensor,
+                    k_tensor: torch.Tensor,
+                    v_tensor: torch.Tensor,
+                    mask_tensor: torch.Tensor,
+                ) -> torch.Tensor:
+                    return F.scaled_dot_product_attention(
+                        q_slice,
+                        k_tensor,
+                        v_tensor,
+                        attn_mask=mask_tensor,
+                        dropout_p=dropout,
+                        scale=scaling,
+                        enable_gqa=enable_gqa,
+                    )
+
                 pieces = []
                 for start in range(0, length, eff_chunk):
                     stop = min(length, start + eff_chunk)
-                    pieces.append(
-                        F.scaled_dot_product_attention(
-                            query[:, :, start:stop],
+                    q_slice = query[:, :, start:stop]
+                    if checkpoint_tiles:
+                        tile_out = torch.utils.checkpoint.checkpoint(
+                            _sdpa_tile,
+                            q_slice,
                             k_cast,
                             v_cast,
-                            attn_mask=safe_enc_mask,
-                            dropout_p=dropout,
-                            scale=scaling,
-                            enable_gqa=enable_gqa,
+                            safe_enc_mask,
+                            use_reentrant=False,
                         )
-                    )
+                    else:
+                        tile_out = _sdpa_tile(q_slice, k_cast, v_cast, safe_enc_mask)
+                    pieces.append(tile_out)
                 out = torch.cat(pieces, dim=2)
             out_valid = has_enc
             if q_valid_bool is not None:
@@ -294,6 +356,11 @@ def sdpa_cross_attention(
             return out.masked_fill(~out_valid, 0.0)
         except (RuntimeError, NotImplementedError, TypeError):
             pass
+
+    if dropout == 0.0:
+        return _TiledAttention.apply(
+            query, key, value, cross_mask_spec, None, None, eff_chunk, scaling, None
+        )
 
     pieces = []
     for start in range(0, length, eff_chunk):
@@ -328,7 +395,11 @@ def sdpa_attention(
     decoder_valid=None,
     window=None,
 ) -> torch.Tensor:
-    """SDPA / FlashAttention fast path with window-sliced KV tiles and safe eager fallback."""
+    """SDPA / FlashAttention fast path with window-sliced KV tiles and safe eager fallback.
+
+    During training (`torch.is_grad_enabled()`), `head_dim > 256` routes to recomputed
+    `_TiledAttention` so Math SDPA cannot retain O(N^2) softmax activations across tiles.
+    """
     if not _sdpa_supported(query, key, value):
         return _TiledAttention.apply(
             query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
@@ -340,11 +411,66 @@ def sdpa_attention(
         )
 
     batch, heads, q_len, width = query.shape
+    max_dim = max(width, value.shape[-1])
+    if torch.is_grad_enabled() and max_dim > 256 and dropout == 0.0:
+        return _TiledAttention.apply(
+            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+        )
     k_len = key.shape[2]
     k_cast = key.to(query.dtype)
     v_cast = value.to(query.dtype)
     enable_gqa = heads != k_cast.shape[1]
     eff_chunk = max(int(chunk_size), 256) if not torch.is_grad_enabled() else max(1, int(chunk_size))
+    checkpoint_tiles = torch.is_grad_enabled() and max_dim > 256
+
+    def _run_sdpa_tile(
+        q_slice: torch.Tensor,
+        k_slice: torch.Tensor,
+        v_slice: torch.Tensor,
+        attn_mask_slice: torch.Tensor | None,
+    ) -> torch.Tensor:
+        if checkpoint_tiles:
+            if attn_mask_slice is None:
+                return torch.utils.checkpoint.checkpoint(
+                    lambda q_, k_, v_: F.scaled_dot_product_attention(
+                        q_,
+                        k_,
+                        v_,
+                        attn_mask=None,
+                        dropout_p=dropout,
+                        scale=scaling,
+                        enable_gqa=enable_gqa,
+                    ),
+                    q_slice,
+                    k_slice,
+                    v_slice,
+                    use_reentrant=False,
+                )
+            return torch.utils.checkpoint.checkpoint(
+                lambda q_, k_, v_, m_: F.scaled_dot_product_attention(
+                    q_,
+                    k_,
+                    v_,
+                    attn_mask=m_,
+                    dropout_p=dropout,
+                    scale=scaling,
+                    enable_gqa=enable_gqa,
+                ),
+                q_slice,
+                k_slice,
+                v_slice,
+                attn_mask_slice,
+                use_reentrant=False,
+            )
+        return F.scaled_dot_product_attention(
+            q_slice,
+            k_slice,
+            v_slice,
+            attn_mask=attn_mask_slice,
+            dropout_p=dropout,
+            scale=scaling,
+            enable_gqa=enable_gqa,
+        )
 
     try:
         if encoder_valid is not None:
@@ -354,15 +480,7 @@ def sdpa_attention(
                 mask = joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window)
                 has_any = mask.any(dim=-1, keepdim=True)
                 safe_mask = mask | ~has_any
-                tile_out = F.scaled_dot_product_attention(
-                    query[:, :, start:stop],
-                    k_cast,
-                    v_cast,
-                    attn_mask=safe_mask,
-                    dropout_p=dropout,
-                    scale=scaling,
-                    enable_gqa=enable_gqa,
-                )
+                tile_out = _run_sdpa_tile(query[:, :, start:stop], k_cast, v_cast, safe_mask)
                 pieces.append(tile_out.masked_fill(~has_any, 0.0))
             return torch.cat(pieces, dim=2)
 
@@ -376,7 +494,7 @@ def sdpa_attention(
                 has_any = k_mask.any(dim=-1, keepdim=True)
                 safe_mask = k_mask | ~has_any
                 q_valid = valid[:, None, :, None]
-                if q_len <= eff_chunk or (query.device.type == "cuda" and width <= 256):
+                if q_len <= eff_chunk or (query.device.type == "cuda" and max_dim <= 256):
                     out = F.scaled_dot_product_attention(
                         query,
                         k_cast,
@@ -391,15 +509,7 @@ def sdpa_attention(
                     for start in range(0, q_len, eff_chunk):
                         stop = min(q_len, start + eff_chunk)
                         pieces.append(
-                            F.scaled_dot_product_attention(
-                                query[:, :, start:stop],
-                                k_cast,
-                                v_cast,
-                                attn_mask=safe_mask,
-                                dropout_p=dropout,
-                                scale=scaling,
-                                enable_gqa=enable_gqa,
-                            )
+                            _run_sdpa_tile(query[:, :, start:stop], k_cast, v_cast, safe_mask)
                         )
                     out = torch.cat(pieces, dim=2)
                 return out.masked_fill(~(has_any & q_valid), 0.0)
@@ -429,14 +539,11 @@ def sdpa_attention(
                 tile_mask = visible[None, None] & valid[:, None, None, k_start:k_stop]
                 has_any = tile_mask.any(dim=-1, keepdim=True)
                 safe_mask = tile_mask | ~has_any
-                tile_out = F.scaled_dot_product_attention(
+                tile_out = _run_sdpa_tile(
                     query[:, :, start:stop],
                     k_cast[:, :, k_start:k_stop],
                     v_cast[:, :, k_start:k_stop],
-                    attn_mask=safe_mask,
-                    dropout_p=dropout,
-                    scale=scaling,
-                    enable_gqa=enable_gqa,
+                    safe_mask,
                 )
                 pieces.append(
                     tile_out.masked_fill(~(has_any & valid[:, None, start:stop, None]), 0.0)
@@ -444,7 +551,7 @@ def sdpa_attention(
             return torch.cat(pieces, dim=2)
 
         if attention_mask is None:
-            if q_len <= eff_chunk or (query.device.type == "cuda" and width <= 256):
+            if q_len <= eff_chunk or (query.device.type == "cuda" and max_dim <= 256):
                 return F.scaled_dot_product_attention(
                     query,
                     k_cast,
@@ -457,17 +564,7 @@ def sdpa_attention(
             pieces = []
             for start in range(0, q_len, eff_chunk):
                 stop = min(q_len, start + eff_chunk)
-                pieces.append(
-                    F.scaled_dot_product_attention(
-                        query[:, :, start:stop],
-                        k_cast,
-                        v_cast,
-                        attn_mask=None,
-                        dropout_p=dropout,
-                        scale=scaling,
-                        enable_gqa=enable_gqa,
-                    )
-                )
+                pieces.append(_run_sdpa_tile(query[:, :, start:stop], k_cast, v_cast, None))
             return torch.cat(pieces, dim=2)
 
         # Boolean tensor mask
@@ -477,15 +574,7 @@ def sdpa_attention(
             tile_mask = attention_mask[..., start:stop, :].to(device=query.device, dtype=torch.bool)
             has_any = tile_mask.any(dim=-1, keepdim=True)
             safe_mask = tile_mask | ~has_any
-            tile_out = F.scaled_dot_product_attention(
-                query[:, :, start:stop],
-                k_cast,
-                v_cast,
-                attn_mask=safe_mask,
-                dropout_p=dropout,
-                scale=scaling,
-                enable_gqa=enable_gqa,
-            )
+            tile_out = _run_sdpa_tile(query[:, :, start:stop], k_cast, v_cast, safe_mask)
             pieces.append(tile_out.masked_fill(~has_any, 0.0))
         return torch.cat(pieces, dim=2)
     except (RuntimeError, NotImplementedError, TypeError):

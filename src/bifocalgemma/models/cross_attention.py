@@ -17,6 +17,8 @@ from bifocalgemma.models import inference_cache as inference_cache_mod
 from bifocalgemma.models.bridge import SwiGLUDualGateBridge
 from bifocalgemma.models.memory_efficient import (
     TiledMergedAttention,
+    _sdpa_supported,
+    attention_tile,
     sdpa_cross_attention,
     tiled_attention,
 )
@@ -248,6 +250,22 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
             cache.shared_positions[self.layer_type] = (key_positions, self_length)
 
         self_pieces = []
+        use_sdpa_self = (not getattr(self, "_force_eager_self", False)) and _sdpa_supported(
+            query_self, key_self, value_self
+        )
+        enable_gqa_self = query_self.shape[1] != key_self.shape[1]
+        k_sdpa = key_self.to(query_self.dtype) if use_sdpa_self else key_self
+        v_sdpa = value_self.to(query_self.dtype) if use_sdpa_self else value_self
+        key_valid_bool = (
+            key_valid.to(device=query_self.device, dtype=torch.bool)
+            if key_valid is not None
+            else None
+        )
+        step_valid_bool = (
+            step_valid.to(device=query_self.device, dtype=torch.bool)
+            if step_valid is not None
+            else None
+        )
         for start in range(0, length, 128):
             stop = min(length, start + 128)
             visible = key_positions[None, :] <= positions[start:stop, None]
@@ -256,30 +274,38 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                     key_positions[None, :] > positions[start:stop, None] - self.sliding_window
                 )
             allowed = visible[None, None].expand(batch, 1, -1, -1)
-            if key_valid is not None:
-                allowed = allowed & key_valid[:, None, None, :].bool()
-                has_any_key = allowed.any(dim=-1, keepdim=True)
-                safe_allowed = allowed | ~has_any_key
-                tile_out = F.scaled_dot_product_attention(
-                    query_self[:, :, start:stop],
+            if key_valid_bool is not None:
+                allowed = allowed & key_valid_bool[:, None, None, :]
+            if step_valid_bool is not None:
+                allowed = allowed & step_valid_bool[:, None, start:stop, None]
+            has_any_key = allowed.any(dim=-1, keepdim=True)
+            safe_allowed = allowed | ~has_any_key
+            q_tile = query_self[:, :, start:stop]
+            tile_out: torch.Tensor | None = None
+            if use_sdpa_self:
+                try:
+                    tile_out = F.scaled_dot_product_attention(
+                        q_tile,
+                        k_sdpa,
+                        v_sdpa,
+                        attn_mask=safe_allowed,
+                        dropout_p=0.0,
+                        scale=self.scaling,
+                        enable_gqa=enable_gqa_self,
+                    )
+                except (RuntimeError, NotImplementedError, TypeError):
+                    use_sdpa_self = False
+            if tile_out is None:
+                tile_out = attention_tile(
+                    q_tile,
                     key_self,
                     value_self,
-                    attn_mask=safe_allowed,
-                    dropout_p=0.0,
-                    scale=self.scaling,
-                    enable_gqa=True,
+                    allowed,
+                    self.scaling,
+                    0.0,
+                    True,
                 )
-                tile_out = tile_out.masked_fill(~has_any_key, 0.0)
-            else:
-                tile_out = F.scaled_dot_product_attention(
-                    query_self[:, :, start:stop],
-                    key_self,
-                    value_self,
-                    attn_mask=allowed,
-                    dropout_p=0.0,
-                    scale=self.scaling,
-                    enable_gqa=True,
-                )
+            tile_out = tile_out.masked_fill(~has_any_key, 0.0)
             self_pieces.append(tile_out)
         self_out = torch.cat(self_pieces, dim=2)
 

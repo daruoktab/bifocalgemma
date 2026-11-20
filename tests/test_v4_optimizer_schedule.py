@@ -34,7 +34,11 @@ from bifocalgemma.training.objectives import (
     differential_diff_cross_entropy,
 )
 from bifocalgemma.training.policy import (
+    build_training_groups,
     configure_policy_model,
+    default_training_profiles,
+    optimizer_group_manifest,
+    training_policy_table,
     update_policy_learning_rates,
     validate_training_policy,
 )
@@ -640,3 +644,153 @@ def test_matrix_stage_multi_epoch_and_zero_freeze_end_to_end(tmp_path):
     for row in trace:
         assert set(row["group_gradient_norms"]) == set(CANONICAL_PARAM_GROUP_ORDER)
         assert set(row["learning_rates"]) == set(CANONICAL_PARAM_GROUP_ORDER)
+
+
+# ---------------------------------------------------------------------------
+# 5. Audit regressions: build_training_groups on unified_v4 & fast_pipeline cross_scale
+# ---------------------------------------------------------------------------
+
+
+def test_build_training_groups_supports_unified_v4_all_families_and_legacy():
+    """build_training_groups must handle unified_v4's 6 canonical groups alongside legacy policies."""
+    from bifocalgemma.training.optimizers import build_policy_optimizer
+
+    # 1. Paired symmetric & asymmetric unified_v4 models
+    for key in ("2base-2it", "4base-2it"):
+        model, policy = _tiny_model(key)
+        groups = build_training_groups(model, policy, total_steps=100)
+        assert tuple(g["name"] for g in groups) == CANONICAL_PARAM_GROUP_ORDER
+        by_name = {g["name"]: g for g in groups}
+
+        assert by_name["cross_gate_scalars"]["lr"] == pytest.approx(2e-3)
+        assert by_name["cross_gate_scalars"]["weight_decay"] == 0.0
+        assert by_name["cross_gate_scalars"]["clip_norm"] is None
+        assert by_name["cross_gate_scalars"]["scheduler"] == "wsd"
+        assert by_name["cross_gate_proj"]["lr"] == pytest.approx(5e-4)
+        assert by_name["cross_gate_proj"]["clip_norm"] == pytest.approx(1.0)
+        assert by_name["bridge_mlp"]["lr"] == pytest.approx(4e-4)
+        assert by_name["bridge_mlp"]["weight_decay"] == pytest.approx(1e-4)
+        assert by_name["cross_kv_proj"]["lr"] == pytest.approx(1.5e-4)
+        assert by_name["encoder_lora"]["lr"] == pytest.approx(8e-5)
+        assert by_name["encoder_lora"]["scheduler"] == "cosine"
+        assert by_name["decoder_lora"]["lr"] == pytest.approx(4e-5)
+        assert by_name["decoder_lora"]["scheduler"] == "cosine"
+
+        # Full trainable parameter coverage, zero duplicates, cross_scale frozen by default
+        ids = [id(p) for g in groups for p in g["params"]]
+        assert len(ids) == len(set(ids))
+        assert set(ids) == {id(p) for p in model.parameters() if p.requires_grad}
+        all_names = [n for g in groups for n in g["param_names"]]
+        assert not any(n.endswith(".cross_scale") for n in all_names)
+
+        # Downstream consumers: build_policy_optimizer, update_policy_learning_rates, manifest, table
+        opt = build_policy_optimizer(groups, policy)
+        rates_start = update_policy_learning_rates(opt, 0)
+        rates_end = update_policy_learning_rates(opt, 99)
+        assert set(rates_start) == set(CANONICAL_PARAM_GROUP_ORDER)
+        for name in CANONICAL_PARAM_GROUP_ORDER:
+            assert rates_end[name] == pytest.approx(policy["groups"][name]["lr"] * 0.1)
+        manifest = optimizer_group_manifest(groups)
+        assert [m["name"] for m in manifest] == list(CANONICAL_PARAM_GROUP_ORDER)
+        table = training_policy_table(groups, policy)
+        assert [row["group"] for row in table] == list(CANONICAL_PARAM_GROUP_ORDER)
+
+        # Also works when total_steps=None (e.g. manifest/inspection calls)
+        groups_no_horizon = build_training_groups(model, policy, total_steps=None)
+        assert tuple(g["name"] for g in groups_no_horizon) == CANONICAL_PARAM_GROUP_ORDER
+
+    # 2. Decoder-only unified_v4 baseline
+    base_model, base_policy = _tiny_model("e2b-it")
+    base_groups = build_training_groups(base_model, base_policy, total_steps=50)
+    assert [g["name"] for g in base_groups] == ["decoder_lora"]
+    assert base_groups[0]["lr"] == pytest.approx(4e-5)
+    assert base_groups[0]["scheduler"] == "cosine"
+
+    # 3. Legacy attention_lora_policy_v1 still works cleanly
+    from bifocalgemma.config import EXPERIMENT_SPECS
+    from bifocalgemma.modeling_bifocalgemma import build_native_tiny_model
+
+    legacy_policy = default_training_profiles()["asymmetric"]
+    legacy_policy.update(rank=2, alpha=4)
+    legacy_model = build_native_tiny_model(EXPERIMENT_SPECS[2])
+    configure_policy_model(legacy_model, legacy_policy)
+    legacy_groups = build_training_groups(legacy_model, legacy_policy)
+    assert [g["name"] for g in legacy_groups] == ["encoder", "decoder", "alignment"]
+
+
+def test_fast_pipeline_respects_learnable_cross_scale_default_and_override(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """FastTrainingPipeline must keep *.cross_scale frozen by default (respecting LEARNABLE_CROSS_SCALE
+    and cfg.learnable_cross_scale) in both Stage 1 and Stage 2.
+    """
+    import bifocalgemma.config as config_mod
+    from bifocalgemma.training.fast_pipeline import FastTrainingConfig, FastTrainingPipeline
+
+    # 1. Default LEARNABLE_CROSS_SCALE=False -> *.cross_scale stays frozen across build, Stage 1, Stage 2
+    monkeypatch.setattr(config_mod, "LEARNABLE_CROSS_SCALE", False)
+    for stage1_enc_lora in (True, False):
+        cfg = FastTrainingConfig(
+            model_choice="bifocalgemma-2b",
+            tiny=True,
+            stage1_encoder_lora=stage1_enc_lora,
+        )
+        pipeline = FastTrainingPipeline(cfg)
+        assert pipeline.model_config.learnable_cross_scale is False
+        scales = [p for n, p in pipeline.model.named_parameters() if n.endswith(".cross_scale")]
+        assert len(scales) > 0
+        assert all(p.requires_grad is False for p in scales)
+
+        opt1 = pipeline.configure_stage1()
+        assert all(p.requires_grad is False for p in scales)
+        assert not any(
+            n.endswith(".cross_scale") for g in opt1.param_groups for n in g["param_names"]
+        )
+        # Other cross-attention params remain trainable
+        assert any(
+            n.endswith(".cross_gate") for g in opt1.param_groups for n in g["param_names"]
+        )
+
+        opt2 = pipeline.configure_stage2()
+        assert all(p.requires_grad is False for p in scales)
+        assert not any(
+            n.endswith(".cross_scale") for g in opt2.param_groups for n in g["param_names"]
+        )
+
+    # 2. Explicit cfg.learnable_cross_scale=True unfreezes *.cross_scale into cross_kv_proj
+    cfg_opt_in = FastTrainingConfig(
+        model_choice="bifocalgemma-2b",
+        tiny=True,
+        learnable_cross_scale=True,
+    )
+    pipeline_opt_in = FastTrainingPipeline(cfg_opt_in)
+    assert pipeline_opt_in.model_config.learnable_cross_scale is True
+    opt1_in = pipeline_opt_in.configure_stage1()
+    by_name_in = {g["name"]: g for g in opt1_in.param_groups}
+    assert any(n.endswith(".cross_scale") for n in by_name_in["cross_kv_proj"]["param_names"])
+    assert not any(
+        n.endswith(".cross_scale") for n in by_name_in["cross_gate_scalars"]["param_names"]
+    )
+    opt2_in = pipeline_opt_in.configure_stage2()
+    assert all(
+        p.requires_grad
+        for n, p in pipeline_opt_in.model.named_parameters()
+        if n.endswith(".cross_scale")
+    )
+    assert any(
+        n.endswith(".cross_scale")
+        for g in opt2_in.param_groups
+        if g["name"] == "cross_kv_proj"
+        for n in g["param_names"]
+    )
+
+    # 3. Dynamic config.LEARNABLE_CROSS_SCALE=True when cfg.learnable_cross_scale is None
+    monkeypatch.setattr(config_mod, "LEARNABLE_CROSS_SCALE", True)
+    pipeline_global = FastTrainingPipeline(FastTrainingConfig(model_choice="bifocalgemma-2b", tiny=True))
+    assert pipeline_global.model_config.learnable_cross_scale is True
+    pipeline_global.configure_stage1()
+    assert all(
+        p.requires_grad
+        for n, p in pipeline_global.model.named_parameters()
+        if n.endswith(".cross_scale")
+    )

@@ -199,6 +199,13 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         # 7. Tie embeddings
         self._tie_words()
 
+    @staticmethod
+    def _resolve_layer_attention_backend(attn: Any, attention_backend: str) -> str:
+        """Route head_dim > 256 layers away from Math SDPA during training (auto-upgrades to SDPA in eval)."""
+        if attention_backend == "sdpa" and int(getattr(attn, "head_dim", 0) or 0) > 256:
+            return "tiled_eager_fp32"
+        return attention_backend
+
     def _configure_structured_self_attention(
         self, query_chunk_size: int = 128, attention_backend: str = "sdpa"
     ) -> None:
@@ -208,31 +215,33 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         if self.encoder is not None:
             for layer in self.encoder.layers:
                 attn = layer.self_attn
+                layer_backend = self._resolve_layer_attention_backend(attn, attention_backend)
                 if not isinstance(attn, TiledEncoderAttention):
                     tiled = copy.copy(attn)
                     object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                     object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(tiled, "attention_backend", attention_backend)
+                    object.__setattr__(tiled, "attention_backend", layer_backend)
                     object.__setattr__(tiled, "structured_masks", True)
                     layer.self_attn = cast(Any, tiled)
                 else:
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(attn, "attention_backend", attention_backend)
+                    object.__setattr__(attn, "attention_backend", layer_backend)
                     object.__setattr__(attn, "structured_masks", True)
 
         if self.decoder is not None and self.encoder is None:
             for layer in self.decoder.layers:
                 attn = layer.self_attn
+                layer_backend = self._resolve_layer_attention_backend(attn, attention_backend)
                 if not isinstance(attn, TiledEncoderAttention):
                     tiled = copy.copy(attn)
                     object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                     object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(tiled, "attention_backend", attention_backend)
+                    object.__setattr__(tiled, "attention_backend", layer_backend)
                     object.__setattr__(tiled, "structured_masks", True)
                     layer.self_attn = cast(Any, tiled)
                 else:
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(attn, "attention_backend", attention_backend)
+                    object.__setattr__(attn, "attention_backend", layer_backend)
                     object.__setattr__(attn, "structured_masks", True)
 
     def tie_weights(self, *args: Any, **kwargs: Any) -> None:
@@ -335,37 +344,39 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         if self.encoder is not None:
             for layer in self.encoder.layers:
                 attn = layer.self_attn
+                layer_backend = self._resolve_layer_attention_backend(attn, attention_backend)
                 if not isinstance(attn, TiledEncoderAttention):
                     tiled = copy.copy(attn)
                     object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                     object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(tiled, "attention_backend", attention_backend)
+                    object.__setattr__(tiled, "attention_backend", layer_backend)
                     object.__setattr__(tiled, "structured_masks", True)
                     layer.self_attn = cast(Any, tiled)
                 else:
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(attn, "attention_backend", attention_backend)
+                    object.__setattr__(attn, "attention_backend", layer_backend)
                     object.__setattr__(attn, "structured_masks", True)
 
         if self.decoder is not None:
             for layer in self.decoder.layers:
                 attn = layer.self_attn
+                layer_backend = self._resolve_layer_attention_backend(attn, attention_backend)
                 if self.encoder is None:
                     if not isinstance(attn, TiledEncoderAttention):
                         tiled = copy.copy(attn)
                         object.__setattr__(tiled, "__class__", TiledEncoderAttention)
                         object.__setattr__(tiled, "query_chunk_size", query_chunk_size)
-                        object.__setattr__(tiled, "attention_backend", attention_backend)
+                        object.__setattr__(tiled, "attention_backend", layer_backend)
                         object.__setattr__(tiled, "structured_masks", True)
                         layer.self_attn = cast(Any, tiled)
                     else:
                         object.__setattr__(attn, "query_chunk_size", query_chunk_size)
-                        object.__setattr__(attn, "attention_backend", attention_backend)
+                        object.__setattr__(attn, "attention_backend", layer_backend)
                         object.__setattr__(attn, "structured_masks", True)
                 else:
                     # Paired decoders already use FullCrossTiledAttention
                     object.__setattr__(attn, "query_chunk_size", query_chunk_size)
-                    object.__setattr__(attn, "attention_backend", attention_backend)
+                    object.__setattr__(attn, "attention_backend", layer_backend)
 
         for stack in (self.encoder, self.decoder):
             if stack is not None:

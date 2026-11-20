@@ -19,6 +19,7 @@ from typing import Any, Callable, cast
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+import bifocalgemma.config as _config_mod
 from bifocalgemma.assets import ensure_assets_on_disk
 from bifocalgemma.config import COLLECTION, DATASET_REPO, DATASET_REVISION
 from bifocalgemma.configuration_bifocalgemma import BifocalGemmaConfig
@@ -55,6 +56,7 @@ class FastTrainingConfig:
     lambda_ptr: float = 0.0  # Clean cross-entropy; eliminates copy-bias on code repair
     stage1_lambda_ptr: float = 0.15  # Stage 1 pointer grounding loss
     gate_init_tanh: float = 0.10  # Initial tanh cross-attention gate value
+    learnable_cross_scale: bool | None = None  # Defaults to config.LEARNABLE_CROSS_SCALE (False)
     stage1_encoder_lora: bool = True  # Enable ProbeLoRALinear on encoder during Stage 1
     use_comprehension_curriculum: bool = True  # Mix anti-forgetting comprehension replay in Stage 1
     inject_query_into_encoder: bool = (
@@ -382,6 +384,13 @@ class FastTrainingPipeline:
         self.out_path.mkdir(parents=True, exist_ok=True)
         self.history: list[dict[str, Any]] = []
 
+    def _resolve_learnable_cross_scale(self) -> bool:
+        """Resolve whether *.cross_scale is trainable from cfg or config.LEARNABLE_CROSS_SCALE."""
+        cfg_val = getattr(self.cfg, "learnable_cross_scale", None)
+        if cfg_val is not None:
+            return bool(cfg_val)
+        return bool(getattr(_config_mod, "LEARNABLE_CROSS_SCALE", False))
+
     def _build_model(self) -> BifocalGemmaForCausalLM:
         """Instantiate BifocalGemma PreTrainedModel."""
         is_baseline = self.cfg.model_choice == "baseline-2b"
@@ -391,7 +400,7 @@ class FastTrainingPipeline:
             tiny=self.cfg.tiny,
             gate_init_tanh=self.cfg.gate_init_tanh,
             init_rms_scale=1.0,
-            learnable_cross_scale=True,
+            learnable_cross_scale=self._resolve_learnable_cross_scale(),
         )
         if self.cfg.tiny:
             model = cast(Any, BifocalGemmaForCausalLM(self.model_config)).to(self.cfg.device)
@@ -572,11 +581,12 @@ class FastTrainingPipeline:
                     elif name.startswith("decoder.") or ".decoder." in name:
                         module.scaling = 0.0
 
+            learnable_cross_scale = self._resolve_learnable_cross_scale()
             for name, param in self.model.named_parameters():
                 if name.startswith("encoder_projection."):
                     param.requires_grad = True
                 elif is_cross_bridge_parameter(name):
-                    param.requires_grad = True
+                    param.requires_grad = learnable_cross_scale or not name.endswith(".cross_scale")
                 elif (name.startswith("encoder.") or ".encoder." in name) and (
                     name.endswith(".lora_A") or name.endswith(".lora_B")
                 ):
@@ -595,9 +605,10 @@ class FastTrainingPipeline:
                 weight_decay_bridge=self.cfg.weight_decay_bridge,
             )
         else:
+            learnable_cross_scale = self._resolve_learnable_cross_scale()
             for name, param in self.model.decoder.named_parameters():
                 if is_cross_bridge_parameter(name):
-                    param.requires_grad = True
+                    param.requires_grad = learnable_cross_scale or not name.endswith(".cross_scale")
                 else:
                     param.requires_grad = False
 
@@ -627,11 +638,12 @@ class FastTrainingPipeline:
             if isinstance(module, ProbeLoRALinear):
                 module.scaling = 2.0
 
+        learnable_cross_scale = self._resolve_learnable_cross_scale()
         for name, param in self.model.named_parameters():
             if name.startswith("encoder_projection."):
                 param.requires_grad = True
             elif is_cross_bridge_parameter(name):
-                param.requires_grad = True
+                param.requires_grad = learnable_cross_scale or not name.endswith(".cross_scale")
             elif name.endswith(".lora_A") or name.endswith(".lora_B"):
                 param.requires_grad = True
             else:
