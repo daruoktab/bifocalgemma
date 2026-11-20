@@ -202,6 +202,7 @@ def test_f5_training_semantics_change_rejects_legacy_approval(project_root: Path
         "fb253cb387c45c224c62232b3943bd87dd5682ccebfe358c8b2200aa2af8e5a7",
         "79b2a4e2de7774c22d7bd331f3b0e549c2bb24c7050b26789a3604fa770da8ff",
         "ebe51cc8e4050d46a1118846d4c7de6224b5cf8aeefd22dde8d0e173e85b021c",
+        "e4afca3418667544d5750bc8e2ca964aece79454a9f60b7352a1b635fbf9df27",
     }
 
     # Dynamically compute the live AST fingerprint from the actual source tree

@@ -859,14 +859,12 @@ def build_bifocalgemma_optimizer(
         overrides.setdefault("bridge_mlp", {})["weight_decay"] = float(weight_decay_bridge)
     if lr_cross is not None:
         overrides.setdefault("cross_kv_proj", {})["lr"] = float(lr_cross)
-    if lr_encoder_lora is not None or lr_lora is not None:
-        overrides.setdefault("encoder_lora", {})["lr"] = float(
-            lr_encoder_lora if lr_encoder_lora is not None else lr_lora  # type: ignore[arg-type]
-        )
-    if lr_decoder_lora is not None or lr_lora is not None:
-        overrides.setdefault("decoder_lora", {})["lr"] = float(
-            lr_decoder_lora if lr_decoder_lora is not None else lr_lora  # type: ignore[arg-type]
-        )
+    enc_lora_lr = lr_encoder_lora if lr_encoder_lora is not None else lr_lora
+    if enc_lora_lr is not None:
+        overrides.setdefault("encoder_lora", {})["lr"] = float(enc_lora_lr)
+    dec_lora_lr = lr_decoder_lora if lr_decoder_lora is not None else lr_lora
+    if dec_lora_lr is not None:
+        overrides.setdefault("decoder_lora", {})["lr"] = float(dec_lora_lr)
 
     groups, _ = build_partitioned_param_groups(
         model,

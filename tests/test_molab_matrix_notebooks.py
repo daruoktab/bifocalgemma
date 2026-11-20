@@ -426,17 +426,21 @@ def test_v3_partitioned_optimizer_weight_decay_invariants():
     configure_full_rank_cross_attention(model)
     stage_groups, _ = configure_matrix_stage(model, policy, freeze_decoder=False, total_steps=100)
     stage_groups_by_name = {g["name"]: g for g in stage_groups}
-    assert stage_groups_by_name["alignment_bridge_decay"]["weight_decay"] == 1e-4
-    assert stage_groups_by_name["alignment"]["weight_decay"] == 0.0
-    assert stage_groups_by_name["encoder"]["weight_decay"] == 0.0
-    assert stage_groups_by_name["decoder"]["weight_decay"] == 0.0
+    assert stage_groups_by_name["bridge_mlp"]["weight_decay"] == 1e-4
+    assert stage_groups_by_name["cross_gate_scalars"]["weight_decay"] == 0.0
+    assert stage_groups_by_name["cross_gate_proj"]["weight_decay"] == 0.0
+    assert stage_groups_by_name["cross_kv_proj"]["weight_decay"] == 0.0
+    assert stage_groups_by_name["encoder_lora"]["weight_decay"] == 0.0
+    assert stage_groups_by_name["decoder_lora"]["weight_decay"] == 0.0
 
     opt = build_bifocalgemma_v3_optimizer(model, weight_decay_bridge=1e-4)
     groups_by_name = {g["name"]: g for g in opt.param_groups}
-    assert groups_by_name["bridge_linear_decay"]["weight_decay"] == 1e-4
-    assert groups_by_name["bridge_norm_and_calib_nodecay"]["weight_decay"] == 0.0
-    assert groups_by_name["decoupled_cross_attn_nodecay"]["weight_decay"] == 0.0
-    assert groups_by_name["backbone_lora"]["weight_decay"] == 0.0
+    assert groups_by_name["bridge_mlp"]["weight_decay"] == 1e-4
+    assert groups_by_name["cross_gate_scalars"]["weight_decay"] == 0.0
+    assert groups_by_name["cross_gate_proj"]["weight_decay"] == 0.0
+    assert groups_by_name["cross_kv_proj"]["weight_decay"] == 0.0
+    assert groups_by_name["encoder_lora"]["weight_decay"] == 0.0
+    assert groups_by_name["decoder_lora"]["weight_decay"] == 0.0
 
 
 def test_anti_forgetting_curriculum_balances_comprehension_and_preserves_length():
@@ -601,12 +605,29 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline(learnable
     assert scales
     assert all(param.requires_grad == learnable_cross_scale for param in scales)
 
-    # Stage 1: Frozen decoder on paired model
+    # Stage 1: Frozen decoder on paired model (v4 canonical 6-group partition)
     groups1, summary1 = configure_matrix_stage(model, policy, freeze_decoder=True, total_steps=5551)
     assert summary1["freeze_decoder"] is True
-    assert summary1["active_groups"] == ["encoder", "alignment"]
-    assert [g["name"] for g in groups1] == ["encoder", "alignment_bridge_decay", "alignment"]
-    assert all(g["warmup_ratio"] == 0.05 and g["warmup_steps"] == 278 for g in groups1)
+    assert summary1["active_groups"] == [
+        "cross_gate_scalars",
+        "cross_gate_proj",
+        "bridge_mlp",
+        "cross_kv_proj",
+        "encoder_lora",
+    ]
+    assert [g["name"] for g in groups1] == [
+        "cross_gate_scalars",
+        "cross_gate_proj",
+        "bridge_mlp",
+        "cross_kv_proj",
+        "encoder_lora",
+    ]
+    groups1_by_name = {g["name"]: g for g in groups1}
+    for align_name in ("cross_gate_scalars", "cross_gate_proj", "bridge_mlp", "cross_kv_proj"):
+        assert groups1_by_name[align_name]["warmup_ratio"] == 0.03
+        assert groups1_by_name[align_name]["warmup_steps"] == 167
+    assert groups1_by_name["encoder_lora"]["warmup_ratio"] == 0.05
+    assert groups1_by_name["encoder_lora"]["warmup_steps"] == 278
     assert summary1["decoder_trainable_tensors"] == 0
     assert all(param.requires_grad == learnable_cross_scale for param in scales)
     for name, param in model.named_parameters():
@@ -618,12 +639,21 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline(learnable
         model, policy, freeze_decoder=False, total_steps=5551
     )
     assert summary2["freeze_decoder"] is False
-    assert summary2["active_groups"] == ["encoder", "decoder", "alignment"]
+    assert summary2["active_groups"] == [
+        "cross_gate_scalars",
+        "cross_gate_proj",
+        "bridge_mlp",
+        "cross_kv_proj",
+        "encoder_lora",
+        "decoder_lora",
+    ]
     assert [g["name"] for g in groups2] == [
-        "encoder",
-        "decoder",
-        "alignment_bridge_decay",
-        "alignment",
+        "cross_gate_scalars",
+        "cross_gate_proj",
+        "bridge_mlp",
+        "cross_kv_proj",
+        "encoder_lora",
+        "decoder_lora",
     ]
     assert summary2["decoder_trainable_tensors"] > 0
     assert all(param.requires_grad == learnable_cross_scale for param in scales)
@@ -639,7 +669,7 @@ def test_configure_matrix_stage_parameter_freezing_paired_and_baseline(learnable
         model_base, policy_base, freeze_decoder=True, total_steps=5551
     )
     assert sum_base["freeze_decoder"] is False
-    assert sum_base["active_groups"] == ["decoder"]
+    assert sum_base["active_groups"] == ["decoder_lora"]
     assert sum_base["decoder_trainable_tensors"] > 0
 
 

@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from bifocalgemma.contracts import RepositoryFile, RepositorySnapshot
+from bifocalgemma.data.context_tasks import (
+    format_numbered_code,
+)
+from bifocalgemma.data.context_tasks import (
+    split_disjoint_context as split_disjoint_context,
+)
 from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.protocol import (
@@ -95,7 +101,7 @@ def _normalize_fim_cursor_marker(text: str) -> str:
 
 
 def _number_lines(lines: list[str], start_line: int = 1) -> str:
-    return "\n".join(f"{idx}: {line}" for idx, line in enumerate(lines, start_line))
+    return format_numbered_code("\n".join(lines), start_line=start_line, skip_if_numbered=False)
 
 
 def _resolve_repair_mode(row: dict[str, Any], repair_mode: str | None = None) -> str:

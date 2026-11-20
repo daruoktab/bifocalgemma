@@ -665,7 +665,7 @@ def test_recovered_completed_training_and_benchmark_resume_skip_completed_work(
 
 
 def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_path):
-    """Stage 2 keeps encoder/alignment cosine decay continuous while decoder warms up via warmup_offset."""
+    """Stage 2 keeps alignment at peak on entry (WSD flat-top / reset) while decoder warms up via warmup_offset."""
     key = "2base-2it"
     model, base_policy = fixture_model(key)
     policy = copy.deepcopy(base_policy)
@@ -680,10 +680,12 @@ def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_
         model, policy, freeze_decoder=False, total_steps=100, warmup_offset=50
     )
     by_name = {g["name"]: g for g in groups_s2}
-    assert by_name["encoder"]["warmup_offset"] == 0
-    assert by_name["alignment_bridge_decay"]["warmup_offset"] == 0
-    assert by_name["alignment"]["warmup_offset"] == 0
-    assert by_name["decoder"]["warmup_offset"] == 50
+    assert by_name["encoder_lora"]["warmup_offset"] == 0
+    assert by_name["bridge_mlp"]["warmup_offset"] == 0
+    assert by_name["cross_gate_scalars"]["warmup_offset"] == 0
+    assert by_name["cross_gate_proj"]["warmup_offset"] == 0
+    assert by_name["cross_kv_proj"]["warmup_offset"] == 0
+    assert by_name["decoder_lora"]["warmup_offset"] == 50
 
     opt1 = torch.optim.AdamW(groups_s1)
     opt2 = torch.optim.AdamW(groups_s2)
@@ -692,11 +694,12 @@ def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_
     r51 = update_policy_learning_rates(opt2, 51)
     r99 = update_policy_learning_rates(opt2, 99)
 
-    assert r50["encoder"] < r49["encoder"]
-    assert r50["alignment"] < r49["alignment"]
-    assert 0.0 < r50["decoder"] < r51["decoder"]
-    assert r99["encoder"] == pytest.approx(by_name["encoder"]["base_lr"] * 0.1)
-    assert r99["decoder"] == pytest.approx(by_name["decoder"]["base_lr"] * 0.1)
+    # Alignment groups hold peak at Stage 2 entry (fixing Stage-2 alignment LR carry-over starvation)
+    assert r50["cross_gate_scalars"] == pytest.approx(r49["cross_gate_scalars"])
+    assert r50["bridge_mlp"] == pytest.approx(r49["bridge_mlp"])
+    assert 0.0 < r50["decoder_lora"] < r51["decoder_lora"]
+    assert r99["encoder_lora"] == pytest.approx(by_name["encoder_lora"]["base_lr"] * 0.1)
+    assert r99["decoder_lora"] == pytest.approx(by_name["decoder_lora"]["base_lr"] * 0.1)
 
     # Verify real Stage 1 -> Stage 2 run_matrix_stage emits per-group clipped norms and continuous LRs.
     examples, schedule = fixture_data(key, count=16)
@@ -736,10 +739,16 @@ def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_
         group_norms = row["group_gradient_norms"]
         assert row["gradient_norm"] == pytest.approx(math.sqrt(sum(v * v for v in group_norms.values())))
     assert set(trace[2]["group_gradient_norms"]) == {
-        "encoder",
-        "decoder",
-        "alignment_bridge_decay",
-        "alignment",
+        "cross_gate_scalars",
+        "cross_gate_proj",
+        "bridge_mlp",
+        "cross_kv_proj",
+        "encoder_lora",
+        "decoder_lora",
     }
-    assert trace[2]["learning_rates"]["encoder"] < trace[1]["learning_rates"]["encoder"]
-    assert trace[2]["learning_rates"]["alignment"] < trace[1]["learning_rates"]["alignment"]
+    assert trace[2]["learning_rates"]["cross_gate_scalars"] == pytest.approx(
+        trace[1]["learning_rates"]["cross_gate_scalars"]
+    )
+    assert trace[2]["learning_rates"]["bridge_mlp"] == pytest.approx(
+        trace[1]["learning_rates"]["bridge_mlp"]
+    )

@@ -825,7 +825,8 @@ def build_gsm8k_fingerprints(questions) -> set[str]:
 
 
 def _extract_row_license(raw: dict[str, Any], source_key: str) -> str:
-    meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    raw_meta = raw.get("metadata")
+    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
     for candidate in (
         raw.get("code_license"),
         raw.get("repo_license"),
@@ -841,7 +842,8 @@ def _extract_row_license(raw: dict[str, Any], source_key: str) -> str:
 
 
 def _extract_repo_from_v4_row(raw: dict[str, Any]) -> str:
-    meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    raw_meta = raw.get("metadata")
+    meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
     for val in (
         raw.get("repo"),
         raw.get("repo_name"),
@@ -962,7 +964,8 @@ def adapt_v4_row(
 
     task_type = str(raw.get("task_type") or entry["default_task_type"])
     if source_key == "fim_midtraining":
-        meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+        raw_meta = raw.get("metadata")
+        meta: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
         prefix = str(raw.get("prefix") or raw.get("prompt") or "")
         suffix = str(raw.get("suffix") or raw.get("right_context") or "")
         target = str(raw.get("middle") or raw.get("completion") or raw.get("output") or "")
@@ -1123,9 +1126,10 @@ def mixed_pool_v4(
     if context is not None:
         ctx_rows, _ = load_curated_pool(context)
         for row in ctx_rows["train"] + ctx_rows["dev"]:
-            enriched = {**row, "context_format": "v4", "disjoint_context": True}
-            if enriched["instance_id"] not in seen_ids:
-                seen_ids.add(enriched["instance_id"])
+            enriched: dict[str, Any] = {**row, "context_format": "v4", "disjoint_context": True}
+            inst_id = str(enriched["instance_id"])
+            if inst_id not in seen_ids:
+                seen_ids.add(inst_id)
                 admitted.append(enriched)
 
     # 2. Adapt all vetted v4 sources

@@ -170,6 +170,8 @@ BENCHMARK_SAMPLE_SEED = 17
 HEAVY_BENCHMARK_SAMPLE_LIMIT = 100
 GATE_INIT_TANH = 0.15
 GATE_INIT_ATANH = math.atanh(GATE_INIT_TANH)
+LEARNABLE_CROSS_SCALE = False
+DECOUPLE_FULL_ATTN_CROSS_KV = True
 
 # V4 training and benchmark parity constants (legacy v3 constants above retained for resume compat).
 V4_COLLECTION = "mixed_context_enc32k_dec8k_v4"

@@ -94,13 +94,14 @@ def test_stage1_and_stage2_lora_configuration():
         elif name == "lm_head.weight":
             assert param.requires_grad is False, "lm_head must be frozen in Stage 1"
 
-    # Check optimizer groups in Stage 1
-    lora_groups1 = [g for g in opt1.param_groups if g.get("name") == "backbone_lora"]
-    assert len(lora_groups1) == 1, "Must have a backbone_lora param group in Stage 1"
+    # Check optimizer groups in Stage 1 (v4 canonical 6-group partition)
+    lora_groups1 = [g for g in opt1.param_groups if g.get("name") == "encoder_lora"]
+    assert len(lora_groups1) == 1, "Must have an encoder_lora param group in Stage 1"
     assert lora_groups1[0]["lr"] == cfg.lr_lora
     assert all(name.startswith("encoder.") for name in lora_groups1[0]["param_names"]), (
-        "Stage 1 backbone_lora must only contain encoder parameters"
+        "Stage 1 encoder_lora must only contain encoder parameters"
     )
+    assert not any(g.get("name") == "decoder_lora" for g in opt1.param_groups)
 
     # 2. Configure Stage 2
     opt2 = pipeline.configure_stage2()
@@ -117,11 +118,14 @@ def test_stage1_and_stage2_lora_configuration():
         elif name.startswith("encoder_projection.") or is_cross_bridge_parameter(name):
             assert param.requires_grad is True, f"{name} must remain trainable in Stage 2"
 
-    lora_groups2 = [g for g in opt2.param_groups if g.get("name") == "backbone_lora"]
-    assert len(lora_groups2) == 1
-    assert any(name.startswith("decoder.") for name in lora_groups2[0]["param_names"])
-    assert any(name.startswith("encoder.") for name in lora_groups2[0]["param_names"])
-    assert len(lora_groups2[0]["params"]) > len(lora_groups1[0]["params"])
+    enc_lora_groups2 = [g for g in opt2.param_groups if g.get("name") == "encoder_lora"]
+    dec_lora_groups2 = [g for g in opt2.param_groups if g.get("name") == "decoder_lora"]
+    assert len(enc_lora_groups2) == 1 and len(dec_lora_groups2) == 1
+    assert all(name.startswith("encoder.") for name in enc_lora_groups2[0]["param_names"])
+    assert all(name.startswith("decoder.") for name in dec_lora_groups2[0]["param_names"])
+    assert len(enc_lora_groups2[0]["params"]) + len(dec_lora_groups2[0]["params"]) > len(
+        lora_groups1[0]["params"]
+    )
 
 
 def test_optimizer_momentum_preserved_stage1_to_stage2():

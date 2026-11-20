@@ -267,7 +267,7 @@ def load_hf_external_model_and_tokenizer(
         trust_remote_code=False,
     )
     if getattr(tokenizer, "padding_side", None) != "left":
-        tokenizer.padding_side = "left"
+        setattr(tokenizer, "padding_side", "left")
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         revision=revision,

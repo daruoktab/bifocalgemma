@@ -1,56 +1,58 @@
-# Graph Report - bifocalgemma  (2026-11-18)
+# Graph Report - bifocalgemma  (2026-11-20)
 
 ## Corpus Check
-- 249 files · ~329,652 words
+- 255 files · ~353,430 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 22 file(s) not represented in the graph (top: .tex 11, (none) 2, .jsonl 2)
 
 ## Summary
-- 2289 nodes · 6196 edges · 187 communities (88 shown, 99 thin omitted)
-- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 730 edges (avg confidence: 0.86)
+- 2526 nodes · 6950 edges · 185 communities (86 shown, 99 thin omitted)
+- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 781 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `6c65153e`
+- Built from commit: `846b23c6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - preflight.py
 - TrainingDashboard
-- repository_corpus.py
-- modeling_bifocalgemma.py
+- RepositorySnapshot
+- benchmark.py
 - build_native_tiny_model
 - re
-- stages.py
-- test_notebook_dependencies.py
-- scorer_fingerprint
-- FastTrainingPipeline
+- pathlib
+- test_dashboard_dependency_state.py
+- test_memory_efficient_training.py
+- FastTrainingConfig
 - test_matrix_runtime_loader.py
 - curation.py
 - schedule.py
 - benchmark_upload.py
 - prepare_context_data.py
 - json
-- test_gsm8k.py
+- test_v4_eval_parity.py
 - eval_code.py
 - test_tier5_adversarial.py
 - hashlib
-- test_curation.py
-- test_dashboard_dependency_state.py
+- pytest
+- context_tasks.py
 - patch_cross_entropy
 - adversarial_r3_probe.py
 - torch
-- random
-- full_pool.py
-- run_batched_context_benchmark
+- FastTrainingPipeline
+- test_v4_data_disjoint.py
+- curriculum.py
+- stable_fingerprint
+- external_runner.py
 - examples
 - FeatureNotReadyError
 - prepare_context_data.py
 - synchronize_matrix
-- collections_abc
+- generation.py
 - test_molab_matrix_notebooks.py
-- test_context_benchmark_resume.py
+- is_cross_bridge_parameter
 - protocol.py
 - load_local_native_model
 - evaluation/context.py
@@ -58,34 +60,33 @@
 - test_pretrained_hf_model.py
 - sys
 - bifocalgemma/__init__.py
-- notebook_launcher.py
+- test_tier4_scenarios.py
 - repository_study.py
 - test_repository_study.py
 - run_matrix_stage
-- audit_context_release.py
+- adapters.py
 - test_matrix_schedule_runtime.py
-- training/offline_sft.py
-- inspect_python_target
-- compute_step_loss
-- copy
+- fit_offline_sft
+- .config
+- objectives.py
+- packed_tokens.py
 - JSONLRepairDataset
 - remote_reset_plan
 - memory_probe.py
-- math
+- matrix.py
 - test_training_telemetry.py
-- SwiGLUDualGateBridge
+- TestBifocalGemmaArchitecture
 - test_context_tasks.py
-- contracts.py
+- test_construction_blocks.py
 - repository_corpus.py
 - tempfile
 - test_construction_blocks.py
-- NativeMergedAttention
+- Tensor
 - NativeTinyModel
 - WigglyDashboard
 - telemetry.py
 - json
-- JSONLRepairDataset
-- test_hf_pretrained_model.py
+- modeling_bifocalgemma.py
 - test_upload_recovery_receipts.py
 - BifocalGemmaForCausalLM
 - bifocalgemma
@@ -94,20 +95,24 @@
 - RepairCollator
 - remediation.py
 - normalize_context_task
-- stable_fingerprint
+- eval_external_baselines.py
 - tests_e2e/conftest.py
-- matrix.py
-- fast_pipeline.py
+- test_v4_architecture.py
+- .from_pretrained_backbones
 - BifocalGemmaConfig
-- TestMemoryProbe
+- test_synchronize_matrix_retains_stage1_milestone_and_retries_412_contention
+- JSONLRepairDataset
 - .snapshot
 - patch_matrix_tokenization
-- test_fast_pipeline.py
-- config.py
+- DummyTrackingTokenizer
+- __main__.py
 - PackedTokenizedDataset
-- test_training_recipes.py
-- sys
+- test_optimized_native_resume_matches_full_and_rejects_different_recipe
+- RepairPrediction
+- test_applied_python_patch_reports_syntax_independently
+- generate_repo_niah_haystack
 - repository_sft.py
+- fit_curated_sft
 - load_verified_tokenizer
 - test_tier1_features.py
 - tests_e2e/conftest.py
@@ -115,414 +120,406 @@
 - test_export_matrix_pretrained_model_with_subfolder_and_tokenizer
 - test_evaluation.py
 - RecordingStream
-- ProbeLoRALinear
-- run_length_grid
-- TestMergedAttentionReference
-- ast.py
+- test_all_ten_batched_runners_execute_shared_allowance_and_reject_changed_gold
+- TestCheckpointTransfer
+- test_generate_multi_eos_per_row_stopping_and_cache_parity
+- NativeMergedAttention
 - source_fingerprints
-- dependency_state
+- FullCrossCachedAttention
 - TrainingLossLog
 
 ## God Nodes (most connected - your core abstractions)
-1. `stable_fingerprint()` - 65 edges
-2. `atomic_json()` - 52 edges
-3. `load_verified_tokenizer()` - 50 edges
-4. `run_matrix_training()` - 50 edges
-5. `RepositorySnapshot` - 41 edges
-6. `BifocalGemmaForCausalLM` - 41 edges
+1. `stable_fingerprint()` - 67 edges
+2. `atomic_json()` - 56 edges
+3. `run_matrix_training()` - 50 edges
+4. `load_verified_tokenizer()` - 50 edges
+5. `BifocalGemmaForCausalLM` - 49 edges
+6. `RepositorySnapshot` - 45 edges
 7. `run_matrix_benchmark()` - 40 edges
-8. `TokenizedRepairExample` - 39 edges
-9. `FastTrainingPipeline` - 37 edges
-10. `fit_offline_sft()` - 37 edges
+8. `TokenizedRepairExample` - 40 edges
+9. `BifocalGemmaConfig` - 37 edges
+10. `FastTrainingPipeline` - 37 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `decode()` --calls--> `GreedyGeneration`  [INFERRED]
-  tests/test_effective_benchmark_protocol.py → src/bifocalgemma/inference/generation.py
-- `test_full_overlap_index_skips_impossible_blob_reads()` --calls--> `CodeOverlapIndex`  [INFERRED]
-  tests/test_curation.py → src/bifocalgemma/data/curation.py
-- `test_near_matching_and_short_fragment_policy()` --calls--> `CodeOverlapIndex`  [INFERRED]
-  tests/test_curation.py → src/bifocalgemma/data/curation.py
-- `test_readonly_partial_postings_never_use_full_intersection_bound()` --calls--> `CodeOverlapIndex`  [INFERRED]
-  tests/test_curation.py → src/bifocalgemma/data/curation.py
 - `test_bifocalgemma_config_initialization_and_serialization()` --calls--> `BifocalGemmaConfig`  [INFERRED]
   tests/test_pretrained_hf_model.py → src/bifocalgemma/configuration_bifocalgemma.py
+- `test_repair_record_type_has_same_prefix_as_explicit_repair_task()` --calls--> `decoder_prompt()`  [INFERRED]
+  tests/test_benchmark_prompt_budget.py → src/bifocalgemma/evaluation/context.py
+- `generate()` --calls--> `decoder_prompt()`  [INFERRED]
+  tests/test_benchmark_prompt_budget.py → src/bifocalgemma/evaluation/context.py
+- `test_swiglu_dual_gate_bridge_symmetric_and_asymmetric_shapes_and_grads()` --calls--> `SwiGLUDualGateBridge`  [INFERRED]
+  tests/test_molab_matrix_notebooks.py → src/bifocalgemma/models/bridge.py
+- `test_swiglu_bridge_non_redundant_single_post_gain()` --uses--> `SwiGLUDualGateBridge`  [INFERRED]
+  tests/test_v4_architecture.py → src/bifocalgemma/models/bridge.py
 
 ## Import Cycles
 - 2-file cycle: `src/bifocalgemma/evaluation/context.py -> src/bifocalgemma/evaluation/protocol.py -> src/bifocalgemma/evaluation/context.py`
 
-## Communities (187 total, 99 thin omitted)
+## Communities (185 total, 99 thin omitted)
 
 ### Community 0 - "preflight.py"
-Cohesion: 0.20
-Nodes (9): current_capacity(), execution_settings(), _gpu_context(), maximum_probe(), _measure_phase(), seal_report(), select_execution(), save() (+1 more)
+Cohesion: 0.11
+Nodes (14): build_policy_optimizer(), GrokOrScaleLoRA, orthogonal_direction(), validate_optimizer_config(), current_capacity(), execution_settings(), _gpu_context(), maximum_probe() (+6 more)
 
-### Community 2 - "repository_corpus.py"
-Cohesion: 0.14
-Nodes (12): ContextWindow, render_window(), select_repository_context(), _terms(), context_license_evidence(), path_license_evidence(), recognize_license(), resolved_license() (+4 more)
+### Community 1 - "TrainingDashboard"
+Cohesion: 0.18
+Nodes (5): loss_chart(), render_dashboard(), TrainingDashboard, test_monitor_escapes_errors_updates_validation_and_exports_html(), test_telemetry_history_appends_all_active_stages()
 
-### Community 3 - "modeling_bifocalgemma.py"
-Cohesion: 0.09
-Nodes (8): batched_greedy_decode(), infer_benchmark_weight_tier(), greedy_decode(), GreedyGeneration, FullCrossCachedAttention, cached_logits(), CachedAttention, InferenceCache
+### Community 2 - "RepositorySnapshot"
+Cohesion: 0.13
+Nodes (16): RepairExample, RepositoryFile, RepositorySnapshot, canonical_snapshot_hash(), ContextWindow, render_window(), select_repository_context(), _terms() (+8 more)
+
+### Community 3 - "benchmark.py"
+Cohesion: 0.16
+Nodes (8): batched_greedy_decode(), infer_benchmark_weight_tier(), resolve_optimal_eval_batch_size(), greedy_decode(), GreedyGeneration, InferenceCache, test_resolve_optimal_eval_batch_size_scales_with_model_and_benchmark_weight(), test_v4_config_constants_and_external_registry()
 
 ### Community 5 - "build_native_tiny_model"
-Cohesion: 0.18
-Nodes (4): build_native_tiny_model(), TestNativeIntegration, TestCheckpointTransfer, test_last_token_logits_match_full_head()
+Cohesion: 0.24
+Nodes (3): build_native_tiny_model(), TestNativeIntegration, test_last_token_logits_match_full_head()
 
 ### Community 6 - "re"
-Cohesion: 0.12
-Nodes (23): RepositoryFile, RepositorySnapshot, _add_missing_git_headers(), apply_patch_to_snapshot(), apply_patch_with_recount(), _apply_validated_patch(), _build_canonical_patch(), diagnose_patch_application() (+15 more)
+Cohesion: 0.17
+Nodes (17): _add_missing_git_headers(), apply_patch_to_snapshot(), apply_patch_with_recount(), _apply_validated_patch(), _build_canonical_patch(), diagnose_patch_application(), extract_unified_diff(), _git_text_lines() (+9 more)
 
-### Community 7 - "stages.py"
-Cohesion: 0.14
-Nodes (14): file_digest(), build_packed_cache(), open_packed_cache(), checked_prefix(), recover_remote_run(), _copy_atomic(), _synchronize_once(), synchronize_run() (+6 more)
+### Community 7 - "pathlib"
+Cohesion: 0.10
+Nodes (13): file_digest(), recover_remote_run(), _copy_atomic(), retry_delay(), _synchronize_once(), synchronize_run(), atomic_json(), retry_windows_file_operation() (+5 more)
 
-### Community 8 - "test_notebook_dependencies.py"
-Cohesion: 0.12
-Nodes (14): simulated_environment(), test_conda_base_is_rejected_before_any_install(), test_cpu_wheel_invalidates_matching_receipt(), test_failed_install_cannot_write_success_receipt(), test_force_reinstall_targets_kernel_and_receipt_skips_next_install(), test_inherited_or_wrong_cuda_torchvision_invalidates_receipt(), test_native_import_diagnostic_preserves_original_dependency_failure(), test_native_import_loads_direct_modules_and_expected_symbols() (+6 more)
+### Community 8 - "test_dashboard_dependency_state.py"
+Cohesion: 0.06
+Nodes (36): dependency_state(), test_changed_ui_constraint_profile_cannot_bypass_pending_restart(), test_changed_ui_install_becomes_ready_after_restart_without_reinstall(), test_explicit_reinstall_of_loaded_ui_requires_restart_even_at_same_version(), test_inherited_ui_with_different_or_unknown_version_requires_diagnostic_restart(), test_inherited_ui_without_local_metadata_can_install_the_same_loaded_version(), test_install_with_preloaded_pinned_ui_module_requires_restart(), test_matching_loaded_and_installed_ui_version_remains_ready() (+28 more)
 
-### Community 10 - "scorer_fingerprint"
+### Community 10 - "test_memory_efficient_training.py"
 Cohesion: 0.13
-Nodes (12): _extract_match_letter(), fallback_letter_regex(), score_context_case(), score_repo_niah_case(), strict_letter(), _clean_extracted_number(), extract_gsm8k_answer(), extract_release_answer() (+4 more)
+Nodes (15): run_training_memory_preflight(), __getattr__(), patch_cross_entropy(), bounded_threads(), examples(), make_model(), test_bf16_many_query_tiles_do_not_accumulate_bf16_kv_rounding(), test_chunked_head_softcap_and_ignored_labels_preserve_loss_and_gradients() (+7 more)
 
-### Community 11 - "FastTrainingPipeline"
+### Community 11 - "FastTrainingConfig"
 Cohesion: 0.12
-Nodes (15): _initialization_plan(), main(), FastTrainingConfig, FastTrainingPipeline, run_fast_training(), test_optimizer_momentum_preserved_stage1_to_stage2(), test_stage1_and_stage2_lora_configuration(), test_warmup_cosine_learning_rate_schedule() (+7 more)
+Nodes (10): FastTrainingConfig, test_anti_forgetting_curriculum_and_stage1_pointer_loss(), test_checkpoint_save_and_resume_lora_scaling(), test_fast_training_pipeline_end_to_end_smoke(), test_optimizer_momentum_preserved_stage1_to_stage2(), test_stage1_and_stage2_lora_configuration(), test_warmup_cosine_learning_rate_schedule(), test_fast_training_config_and_pipeline_baseline_single_stage() (+2 more)
 
 ### Community 13 - "test_matrix_runtime_loader.py"
-Cohesion: 0.25
-Nodes (13): archive_bytes(), loader(), no_network(), settings(), test_bad_download_never_activates_code(), test_corrupt_local_archive_uses_verified_cache(), test_local_preview_missing_archive_explains_publication_without_network(), test_publication_only_adds_verified_immutable_runtime() (+5 more)
+Cohesion: 0.23
+Nodes (16): archive_bytes(), loader(), no_network(), settings(), test_bad_download_never_activates_code(), test_corrupt_local_archive_uses_verified_cache(), test_invalid_generation_modes_cannot_publish(), test_local_preview_missing_archive_explains_publication_without_network() (+8 more)
 
 ### Community 14 - "curation.py"
-Cohesion: 0.18
-Nodes (14): code_shingles(), code_signature(), code_tokens(), CodeOverlapIndex, CodeOverlapMatch, curate_paired_sources(), nextcoder_row(), test_cross_source_duplicates_and_nextcoder_variants() (+6 more)
+Cohesion: 0.08
+Nodes (31): code_shingles(), code_signature(), code_tokens(), CodeOverlapIndex, CodeOverlapMatch, curate_paired_sources(), nextcoder_row(), validate_curated_pool_limits() (+23 more)
 
 ### Community 15 - "schedule.py"
-Cohesion: 0.10
-Nodes (24): build_shared_schedule(), canonical_schedule_records(), _digest(), _integer(), _json(), _length_bin(), persist_shared_schedule(), ScheduleRecord (+16 more)
+Cohesion: 0.08
+Nodes (31): _build_schedule_for_epochs(), _schedule_signature_matches(), _apportion_strata_counts(), build_shared_schedule(), canonical_schedule_records(), _digest(), _integer(), _json() (+23 more)
 
 ### Community 16 - "benchmark_upload.py"
-Cohesion: 0.08
-Nodes (11): retry_delay(), append_event(), test_durable_backoff_shared_across_models_and_final_retries_without_sleep(), fail(), test_external_activity_reader_does_not_need_running_kernel(), test_fatal_errors_not_hidden(), test_interval_throttles_periodic_upload_but_final_can_flush(), test_keyboard_interrupt_is_not_swallowed() (+3 more)
+Cohesion: 0.07
+Nodes (17): BenchmarkUploadQueue, retry_delay(), limited(), test_durable_backoff_shared_across_models_and_final_retries_without_sleep(), fail(), test_fatal_errors_not_hidden(), test_interval_throttles_periodic_upload_but_final_can_flush(), test_keyboard_interrupt_is_not_swallowed() (+9 more)
 
 ### Community 17 - "prepare_context_data.py"
-Cohesion: 0.16
-Nodes (9): map_codereview_to_bifocal(), map_instructcoder_to_bifocal(), map_nextcoder_to_bifocal(), sanitize_posix_path(), editing_record(), git_text_lines(), TestOfflineEditing, TestTokenRoleAndDataIdentity (+1 more)
+Cohesion: 0.29
+Nodes (7): map_codereview_to_bifocal(), map_instructcoder_to_bifocal(), map_nextcoder_to_bifocal(), sanitize_posix_path(), editing_record(), git_text_lines(), code_fragment_signatures()
 
 ### Community 18 - "json"
-Cohesion: 0.09
-Nodes (16): curated_pool_digest(), compare_predictions(), test_paired_bootstrap_and_cohort_rejection(), audit(), main(), audit(), emit(), main() (+8 more)
+Cohesion: 0.08
+Nodes (18): curated_pool_digest(), write_view(), compare_predictions(), test_external_activity_reader_does_not_need_running_kernel(), test_paired_bootstrap_and_cohort_rejection(), test_view_record_json_is_lossless_and_gsm_shots_are_explicit(), audit(), emit() (+10 more)
 
-### Community 19 - "test_gsm8k.py"
-Cohesion: 0.15
-Nodes (9): assets(), FakeTokenizer, fixture_rows(), test_bad_generation_budget_rejected_before_loading_weights(), test_cli_rejects_prediction_from_another_prompt_protocol(), test_release_extraction_and_fixed_denominator(), test_six_generation_paths_cache_assets_and_never_read_gold(), test_target_is_separate_and_shots_use_only_train() (+1 more)
+### Community 19 - "test_v4_eval_parity.py"
+Cohesion: 0.06
+Nodes (14): assets(), FakeTokenizer, fixture_rows(), test_bad_generation_budget_rejected_before_loading_weights(), test_cli_rejects_prediction_from_another_prompt_protocol(), test_release_extraction_and_fixed_denominator(), test_six_generation_paths_cache_assets_and_never_read_gold(), test_target_is_separate_and_shots_use_only_train() (+6 more)
 
 ### Community 20 - "eval_code.py"
-Cohesion: 0.17
-Nodes (5): _format_score(), print_comparison_table(), print_repair_comparison_table(), print_repair_experiment_table(), TestEvaluationReporting
+Cohesion: 0.14
+Nodes (7): BaselineScores, _format_score(), print_comparison_table(), print_repair_comparison_table(), print_repair_experiment_table(), print_v4_parity_comparison_table(), TestEvaluationReporting
 
 ### Community 22 - "test_tier5_adversarial.py"
 Cohesion: 0.07
-Nodes (20): extract_mcq_letter(), test_adversarial_context_containing_forbidden_phrases(), test_adversarial_mcq_adverb_preambles(), test_adversarial_mcq_ambiguity_guards(), test_adversarial_mcq_delimited_negation_and_conjunction_guards(), test_adversarial_mcq_isolated_formatting(), test_adversarial_mcq_lowercase_letter_normalization(), test_adversarial_mcq_redos_scaling() (+12 more)
+Nodes (23): extract_mcq_letter(), strict_letter(), test_adversarial_context_containing_forbidden_phrases(), test_adversarial_mcq_adverb_preambles(), test_adversarial_mcq_ambiguity_guards(), test_adversarial_mcq_delimited_negation_and_conjunction_guards(), test_adversarial_mcq_isolated_formatting(), test_adversarial_mcq_lowercase_letter_normalization() (+15 more)
 
 ### Community 23 - "hashlib"
-Cohesion: 0.23
-Nodes (11): digest(), fetch_gsm8k_sources(), fingerprint(), generate_gsm8k(), generate_run(), gsm8k_prompt_ids(), load_gsm8k(), main() (+3 more)
+Cohesion: 0.16
+Nodes (16): _clean_extracted_number(), digest(), extract_gsm8k_answer(), extract_release_answer(), extract_resilient_answer(), fetch_gsm8k_sources(), fingerprint(), generate_gsm8k() (+8 more)
 
-### Community 24 - "test_curation.py"
-Cohesion: 0.14
-Nodes (15): export_pool(), split_connected_records(), validate_curated_pool_limits(), raw(), test_complete_epoch_training_budget_all_families(), test_disk_index_matches_memory_and_syntax_repairs_are_admitted(), test_frozen_budget_matches_all_six_controls(), test_frozen_pool_verifies_checksums_before_use() (+7 more)
+### Community 24 - "pytest"
+Cohesion: 0.17
+Nodes (11): build_bifocalgemma_optimizer(), build_bifocalgemma_adamw(), configure_matrix_stage(), test_consolidated_optimizer_builder_parity_and_decoder_only_apples_to_apples(), test_diff_marker_v1_strictly_gated_to_repair_unified_diffs_only(), test_matrix_stage_microbatch_invariance_under_heterogeneous_lengths(), test_per_group_grad_clipping_isolates_gate_scalars_and_gate_proj_from_bridge(), test_six_group_partitioning_and_argon_116_invariants() (+3 more)
 
-### Community 25 - "test_dashboard_dependency_state.py"
+### Community 25 - "context_tasks.py"
 Cohesion: 0.18
-Nodes (15): test_changed_ui_constraint_profile_cannot_bypass_pending_restart(), test_changed_ui_install_becomes_ready_after_restart_without_reinstall(), test_explicit_reinstall_of_loaded_ui_requires_restart_even_at_same_version(), test_inherited_ui_with_different_or_unknown_version_requires_diagnostic_restart(), test_inherited_ui_without_local_metadata_can_install_the_same_loaded_version(), test_install_with_preloaded_pinned_ui_module_requires_restart(), test_matching_loaded_and_installed_ui_version_remains_ready(), test_matrix_launcher_preserves_reported_molab_host_widget_versions() (+7 more)
+Nodes (16): _anchor_index_for_repair(), DisjointContextSplit, _extract_numbered_entries(), format_numbered_code(), _is_numbered_block(), _parse_file_sections(), _render_entries(), _resolve_eot_token_id() (+8 more)
 
 ### Community 26 - "patch_cross_entropy"
-Cohesion: 0.16
-Nodes (9): fit_offline_sft(), emit(), model_stage(), fit_repository_sft(), resource_snapshot(), TestOfflineSFT, TinyLossModel, test_cadence_uses_actual_updates_and_final_validation_is_not_duplicated() (+1 more)
+Cohesion: 0.20
+Nodes (4): examples(), TestOfflineSFT, TinyLossModel, test_training_resume_keeps_elapsed_from_step_five_through_ten()
 
 ### Community 27 - "adversarial_r3_probe.py"
 Cohesion: 0.12
 Nodes (7): probe_mcq_delimiters_and_wrappers(), probe_mcq_preambles_and_ambiguity(), probe_prompt_neutrality_scan(), probe_redos_catastrophic_backtracking(), probe_reponiah_negation_coverage(), probe_unicode_and_metrics(), verify_gate_round_2_resolved_cases()
 
 ### Community 28 - "torch"
-Cohesion: 0.06
-Nodes (30): FullCrossTiledAttention, _norm_weight_dtype(), flex_kernel_options(), fused_attention(), attention_tile(), build_joint_visibility(), joint_visibility_tile(), mask_tile() (+22 more)
+Cohesion: 0.12
+Nodes (17): flex_kernel_options(), fused_attention(), attention_tile(), build_joint_visibility(), joint_visibility_tile(), mask_tile(), sdpa_attention(), sdpa_cross_attention() (+9 more)
 
-### Community 31 - "random"
-Cohesion: 0.22
-Nodes (7): TokenizedRepairExample, build_anti_forgetting_curriculum(), encode_comprehension_prefix(), is_comprehension_example(), synthesize_comprehension_examples(), test_anti_forgetting_curriculum_balances_comprehension_and_preserves_length(), test_comprehension_targets_stay_inside_baseline_visible_prefix()
+### Community 30 - "test_v4_data_disjoint.py"
+Cohesion: 0.19
+Nodes (7): _CharTokenizer, _load_prepare_module(), test_disjoint_split_crosscodelong_repair_and_qa_layouts(), test_format_numbered_code_and_exports(), test_mixed_pool_v4_curriculum_grounded_and_curated_sft(), test_multifunction_completion_extraction_removes_single_return_cap(), test_v4_quarantine_licenses_dedup_and_nextcoder_rejection()
 
-### Community 32 - "full_pool.py"
-Cohesion: 0.18
-Nodes (10): read_arrow_rows(), token_profile(), audit_repository_sources(), build_benchmark_index(), build_full_pool(), rows(), fetch_benchmark_files(), main() (+2 more)
+### Community 31 - "curriculum.py"
+Cohesion: 0.21
+Nodes (8): build_anti_forgetting_curriculum(), build_v4_curriculum(), classify_v4_bucket(), encode_comprehension_prefix(), _encoder_token_count(), is_comprehension_example(), synthesize_comprehension_examples(), test_anti_forgetting_curriculum_balances_comprehension_and_preserves_length()
 
-### Community 34 - "run_batched_context_benchmark"
-Cohesion: 0.18
-Nodes (9): prepare_sampled_benchmark_collection(), run_batched_context_benchmark(), activity(), prompt_ids(), run_context_benchmark(), activity(), DurableClock, test_repair_benchmark_requests_same_diff_format_for_pair_and_baseline() (+1 more)
+### Community 32 - "stable_fingerprint"
+Cohesion: 0.12
+Nodes (22): fetch_public(), matched_eval_cohort(), prepare_crosscodelong(), prepare_longcodeqa(), prepare_sweqa(), write_context_eval(), read_arrow_rows(), audit_repository_sources() (+14 more)
 
-### Community 35 - "examples"
-Cohesion: 0.27
-Nodes (3): make_identity(), examples(), TestTrainingPolicy
+### Community 34 - "external_runner.py"
+Cohesion: 0.12
+Nodes (15): prepare_sampled_benchmark_collection(), build_repo_niah_case(), _build_reponiah_cohort(), _collect_int_ids(), extract_generated_tokens(), format_external_prompt(), generate_external_batch(), _load_benchmark_cohort() (+7 more)
 
 ### Community 36 - "FeatureNotReadyError"
-Cohesion: 0.10
-Nodes (16): DeveloperAgent, RepairExample, RepairPrediction, CommitPackFTAdapter, DatasetAdapter, EditPackFTAdapter, SWEGymAdapter, SWESmithAdapter (+8 more)
+Cohesion: 0.16
+Nodes (5): DeveloperAgent, extract_token_ast_features(), TokenASTFeatures, BuildBlock, FeatureNotReadyError
 
 ### Community 37 - "prepare_context_data.py"
-Cohesion: 0.15
-Nodes (14): normalize_context_task(), repair_preimage_coverage(), _resolve_eot_token_id(), task_prompt(), tokenize_context_task(), load_curated_pool(), test_repair_requires_visible_preimage_without_refilling_context(), completion_from_snapshot() (+6 more)
+Cohesion: 0.11
+Nodes (19): is_permissive_license(), split_connected_records(), adapt_v4_row(), build_gsm8k_fingerprints(), completion_from_snapshot(), completions_from_snapshot(), context_pool(), _conversation_to_instruction_context_target() (+11 more)
 
 ### Community 38 - "synchronize_matrix"
 Cohesion: 0.17
-Nodes (8): load_matrix_adapters_for_inference(), prune_matrix_checkpoints(), restore_matrix_checkpoint(), restore_optimizer_state_by_name(), save_matrix_checkpoint(), synchronize_matrix(), snapshot(), snapshot()
+Nodes (11): load_matrix_adapters_for_inference(), prune_matrix_checkpoints(), restore_matrix_checkpoint(), restore_optimizer_state_by_name(), save_matrix_checkpoint(), synchronize_matrix(), snapshot(), snapshot() (+3 more)
 
-### Community 39 - "collections_abc"
-Cohesion: 0.24
-Nodes (4): build_policy_optimizer(), GrokOrScaleLoRA, orthogonal_direction(), test_shared_numbers_and_orthogonal_zero_factor_bootstrap()
+### Community 39 - "generation.py"
+Cohesion: 0.23
+Nodes (7): decode_text(), format_encoder_context(), generate_diagnostic_text(), generate_patch(), repair_prompt_ids(), _safe_apply_chat_template(), cached_logits()
 
 ### Community 40 - "test_molab_matrix_notebooks.py"
-Cohesion: 0.10
-Nodes (23): make_experiment_spec(), configure_full_rank_cross_attention(), configure_memory_efficient_training(), is_cross_bridge_parameter(), configure_policy_model(), unified_recipe(), configure_matrix_stage(), test_cached_uncached_and_batched_greedy_decode_equivalence() (+15 more)
+Cohesion: 0.08
+Nodes (22): make_experiment_spec(), configure_full_rank_cross_attention(), configure_memory_efficient_training(), configure_policy_model(), unified_recipe(), clamped_triton_kernel_options(), StageLedger, test_cached_uncached_and_batched_greedy_decode_equivalence() (+14 more)
 
-### Community 41 - "test_context_benchmark_resume.py"
-Cohesion: 0.15
-Nodes (9): limited(), test_parent_conflict_refreshes_but_keeps_retry_bounded(), always_conflict(), sync(), FixtureGenerationModel, FixtureTokenizer, test_gold_in_public_row_is_rejected_before_tokenization(), test_prediction_journal_resume_and_checkpoint_mismatch() (+1 more)
+### Community 41 - "is_cross_bridge_parameter"
+Cohesion: 0.20
+Nodes (5): is_cross_bridge_parameter(), is_zero_weight_decay_bridge_parameter(), build_partitioned_param_groups(), classify_bifocalgemma_parameter(), _resolve_group_settings()
 
 ### Community 42 - "protocol.py"
-Cohesion: 0.10
-Nodes (16): build_effective_benchmark_spec(), effective_generation_budget(), _fingerprint(), gsm8k_report_metrics(), mcq_report_metrics(), _positive_integer(), _runtime_model_identity(), test_all_ten_batched_runners_execute_shared_allowance_and_reject_changed_gold() (+8 more)
+Cohesion: 0.09
+Nodes (18): _extract_match_letter(), fallback_letter_regex(), build_effective_benchmark_spec(), effective_generation_budget(), _fingerprint(), gsm8k_report_metrics(), mcq_report_metrics(), _positive_integer() (+10 more)
 
 ### Community 43 - "load_local_native_model"
-Cohesion: 0.20
+Cohesion: 0.16
 Nodes (5): build_native_model(), load_local_native_model(), load_sft_adapters_for_inference(), transfer_text_checkpoint(), test_local_loader_preflights_and_preserves_shared_words()
 
 ### Community 44 - "evaluation/context.py"
-Cohesion: 0.11
-Nodes (13): build_repo_niah_case(), completion_metrics(), format_crosscodelong_summary(), generate_repo_niah_haystack(), make_distractor_python_chunk(), normalize_completion_prediction(), _sequence_and_identifier_metrics(), _single_repair_target_file() (+5 more)
+Cohesion: 0.07
+Nodes (29): completion_metrics(), _context_already_includes_instruction(), decoder_prompt(), _deduplicate_longcodeqa_headers(), encoder_context(), _extract_full_python_code(), format_crosscodelong_summary(), greedy_decode() (+21 more)
 
 ### Community 45 - "test_molab_remediation.py"
 Cohesion: 0.07
 Nodes (10): FixtureGenerationModel, FixtureTokenizer, test_clean_notebooks_have_no_embedded_b85_and_valid_runtime_archive(), test_clean_recipe_version_and_constants(), test_context_benchmark_mcq_budget_floor_execution(), test_fast_notebook_is_clean_without_embedded_b85(), test_matrix_notebooks_strict_line_count_and_ast(), test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues() (+2 more)
 
 ### Community 47 - "test_pretrained_hf_model.py"
-Cohesion: 0.14
-Nodes (8): _resolve_backbone_weights(), test_bifocalgemma_bin_serialization_and_dtype(), test_bifocalgemma_config_initialization_and_serialization(), test_bifocalgemma_for_causal_lm_forward_loss_and_generation(), test_enable_memory_efficient_training_and_softcapping(), test_export_matrix_pretrained_model_baseline(), test_from_pretrained_backbones_baseline(), test_from_pretrained_backbones_loading()
+Cohesion: 0.15
+Nodes (8): test_from_pretrained_raises_file_not_found_when_weights_missing(), test_bifocalgemma_bin_serialization_and_dtype(), test_bifocalgemma_config_initialization_and_serialization(), test_bifocalgemma_for_causal_lm_forward_loss_and_generation(), test_bifocalgemma_merge_and_unload(), test_bifocalgemma_save_and_from_pretrained_roundtrip(), test_enable_memory_efficient_training_and_softcapping(), test_fast_training_pipeline_baseline_2b()
 
 ### Community 48 - "sys"
-Cohesion: 0.24
-Nodes (7): test_invalid_generation_modes_cannot_publish(), format_code(), main(), matrix_bundle(), render_notebook(), source_bundle(), source_bundle_bytes()
+Cohesion: 0.18
+Nodes (7): test_exact_benchmark_release_preserves_training_identity_and_rejects_model_changes(), format_code(), matrix_bundle(), main(), render(), source_bundle(), source_bundle_bytes()
 
-### Community 50 - "notebook_launcher.py"
-Cohesion: 0.35
-Nodes (6): test_notebook_launcher_handles_bifocalgemma_workspace_name_and_tools_provenance(), _prepare(), _expected_bifocalgemma_path(), _normalized_bytes(), prepare_runtime(), _validate_loaded_modules()
+### Community 50 - "test_tier4_scenarios.py"
+Cohesion: 0.24
+Nodes (4): validate_paper_manuscript(), test_scenario_end_to_end_mock_evaluation_pipeline(), test_scenario_scientific_paper_document_validation(), test_scenario_training_compatibility_preflight()
 
 ### Community 51 - "repository_study.py"
-Cohesion: 0.24
-Nodes (19): get_experiment(), normalized_code(), prepare_crosscode_tasks(), prepare_repoqa_tasks(), score_diagnostics(), read_source_rows(), fetch_tokenizer_assets(), generate_run() (+11 more)
+Cohesion: 0.25
+Nodes (17): get_experiment(), normalized_code(), prepare_crosscode_tasks(), prepare_repoqa_tasks(), score_diagnostics(), fetch_tokenizer_assets(), generate_run(), main() (+9 more)
 
 ### Community 52 - "test_repository_study.py"
-Cohesion: 0.07
-Nodes (25): canonical_snapshot_hash(), example_from_record(), prepare_repository_record(), RepositoryTask, NativeTaskResult, score_python_patch(), summarize_native_results(), authoritative_empirical_results() (+17 more)
+Cohesion: 0.11
+Nodes (17): v4_repository_task_from_row(), repository_task_from_row(), RepositoryTask, project_root(), CharacterTokenizer, diff(), ExecutingScoringOptions, fixture() (+9 more)
 
 ### Community 53 - "run_matrix_stage"
-Cohesion: 0.14
-Nodes (11): resolve_optimal_eval_batch_size(), export_matrix_pretrained_model(), run_matrix_stage(), fixture_data(), fixture_model(), test_all_ten_real_stage_loaders_consume_identical_windows(), test_interrupted_optimizer_boundary_resume_matches_uninterrupted(), test_partial_backward_oom_replays_entire_window_without_double_gradient() (+3 more)
+Cohesion: 0.25
+Nodes (8): run_matrix_stage(), fixture_data(), fixture_model(), test_all_ten_real_stage_loaders_consume_identical_windows(), test_interrupted_optimizer_boundary_resume_matches_uninterrupted(), test_partial_backward_oom_replays_entire_window_without_double_gradient(), test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(), test_trained_adapters_export_reload_logit_parity()
 
-### Community 54 - "audit_context_release.py"
-Cohesion: 0.21
-Nodes (7): ArchiveSnapshotStore, test_failed_download_removes_partial_bytes(), audit_pool(), audit_views(), main(), main(), source_notices()
+### Community 54 - "adapters.py"
+Cohesion: 0.25
+Nodes (5): CommitPackFTAdapter, DatasetAdapter, EditPackFTAdapter, SWEGymAdapter, SWESmithAdapter
 
 ### Community 55 - "test_matrix_schedule_runtime.py"
 Cohesion: 0.10
 Nodes (5): test_matrix_entrypoint_local_pool_completed_resume_exports_trained_weights(), download(), local_export(), test_recovered_completed_training_and_benchmark_resume_skip_completed_work(), download()
 
-### Community 56 - "training/offline_sft.py"
-Cohesion: 0.20
-Nodes (9): encoder_diagnostics(), stratified_subset(), cpu_tree(), evaluate_sft_loss(), file_digest(), restore_sft_checkpoint(), save_sft_checkpoint(), validation_batches() (+1 more)
-
-### Community 58 - "inspect_python_target"
-Cohesion: 0.19
-Nodes (8): count_syntax_warnings(), empty_syntax_warning_summary(), inspect_python_target(), summarize_admitted_warning_records(), test_curated_warning_target_retained_and_summary_distinguishes_duplicate(), test_errors_are_still_rejected_and_other_warnings_still_visible(), test_final_cohort_summary_does_not_include_filtered_examples(), test_warning_has_provenance_without_stderr_or_source_mutation()
-
-### Community 59 - "compute_step_loss"
+### Community 56 - "fit_offline_sft"
 Cohesion: 0.11
-Nodes (13): backward_window(), chunked_differential_cross_entropy(), chunked_linear_cross_entropy(), compute(), compute_diff_token_weights(), compute_step_loss(), differential_diff_cross_entropy(), _pointer_chunk_forward() (+5 more)
+Nodes (23): run_batched_context_benchmark(), activity(), prompt_ids(), _prompt_ids_impl(), run_context_benchmark(), activity(), repair_report_metrics(), encoder_diagnostics() (+15 more)
 
-### Community 60 - "copy"
-Cohesion: 0.30
-Nodes (11): remediate_records(), record(), test_ast_valid_but_bytecode_invalid_or_warning_target_is_quarantined(), test_canonical_git_patch_batch_including_missing_final_newline(), test_conflicting_event_variants_are_all_quarantined(), test_doc_only_and_warning_targets_are_removed(), test_event_variants_choose_documented_export_and_merge_lineage(), test_heldout_role_rejected() (+3 more)
+### Community 59 - "objectives.py"
+Cohesion: 0.07
+Nodes (22): _resolve_example_diff_flag(), backward_window(), chunked_differential_cross_entropy(), chunked_linear_cross_entropy(), compute(), compute_diff_token_weights(), _compute_row_weights(), compute_example_loss_weights() (+14 more)
+
+### Community 60 - "packed_tokens.py"
+Cohesion: 0.36
+Nodes (4): build_packed_cache(), open_packed_cache(), test_packed_cache_can_be_built_without_tensor_runtime(), test_roundtrip_uses_real_sized_ids_without_modulo_and_verifies_hashes()
 
 ### Community 62 - "remote_reset_plan"
-Cohesion: 0.13
-Nodes (7): remote_reset_plan(), reset_local_benchmarks(), reset_state(), test_remote_reset_is_scoped_and_receipt_hashes_match(), test_reset_archives_benchmark_underscore_keys_too(), test_reset_archives_evaluation_once_without_changing_training(), main()
+Cohesion: 0.14
+Nodes (9): remote_reset_plan(), reset_local_benchmarks(), reset_state(), checked_prefix(), test_remote_reset_is_scoped_and_receipt_hashes_match(), test_reset_archives_benchmark_underscore_keys_too(), test_reset_archives_evaluation_once_without_changing_training(), test_make_experiment_spec_and_hub_prefix_for_all_ten_models() (+1 more)
 
 ### Community 63 - "memory_probe.py"
-Cohesion: 0.33
-Nodes (5): gpu_memory(), optimizer_bytes(), profile_training_group(), synthetic_stress_target(), tensor_bytes()
+Cohesion: 0.18
+Nodes (8): configure_probe_training(), gpu_memory(), optimizer_bytes(), ProbeLoRALinear, profile_training_group(), synthetic_stress_target(), tensor_bytes(), TestMemoryProbe
 
-### Community 64 - "math"
-Cohesion: 0.14
-Nodes (11): fit_curated_sft(), validate_optimizer_config(), build_training_groups(), default_training_profiles(), Float32Alignment, update_policy_learning_rates(), validate_training_policy(), resolve_training_cadence() (+3 more)
+### Community 64 - "matrix.py"
+Cohesion: 0.07
+Nodes (19): ensure_assets_on_disk(), load_asset_json(), BackboneProfile, download_model(), resolve_training_contract(), _validate_num_epochs(), build_training_groups(), default_training_profiles() (+11 more)
 
 ### Community 66 - "test_training_telemetry.py"
 Cohesion: 0.17
 Nodes (3): test_semantic_identity_allows_comments_and_ui_but_rejects_model_changes(), test_widgets_update_in_place_and_restore_history_without_duplicate_points(), _widget_runtime()
 
-### Community 67 - "SwiGLUDualGateBridge"
-Cohesion: 0.06
-Nodes (5): NormalizedAlignment, SwiGLUDualGateBridge, TestBifocalGemmaArchitecture, TestGemma4EdgeTopology, test_swiglu_dual_gate_bridge_symmetric_and_asymmetric_shapes_and_grads()
-
 ### Community 68 - "test_context_tasks.py"
-Cohesion: 0.12
-Nodes (5): task(), test_eval_role_and_invisible_localization_target_rejected(), test_patch_matrix_tokenization_preserves_target_whitespace_and_collator_alignment(), test_prepare_sweqa_instance_id_ignores_correct_answer(), test_tokenize_context_task_preserves_target_indentation_and_newlines()
+Cohesion: 0.10
+Nodes (7): task(), test_eval_role_and_invisible_localization_target_rejected(), test_patch_matrix_tokenization_preserves_target_whitespace_and_collator_alignment(), test_prepare_sweqa_instance_id_ignores_correct_answer(), test_repair_benchmark_requests_same_diff_format_for_pair_and_baseline(), test_short_answer_scoring_rejects_unrequested_prose(), test_tokenize_context_task_preserves_target_indentation_and_newlines()
 
-### Community 69 - "contracts.py"
-Cohesion: 0.11
-Nodes (3): EvaluationReport, test_exact_synthetic_lengths_preserve_shift_and_closing_turn(), test_notebook_stress_helpers_match_shared_library()
+### Community 69 - "test_construction_blocks.py"
+Cohesion: 0.06
+Nodes (8): run_length_grid(), TestTokenRoleAndDataIdentity, test_length_grid_matches_baseline_budget_and_stops_after_failure(), probe(), test_notebook_stress_helpers_match_shared_library(), test_notebook_sweep_persists_results_per_case(), limit_threads(), test_fp32_alignment_on_bf16_backbone()
 
 ### Community 72 - "repository_corpus.py"
-Cohesion: 0.29
-Nodes (9): patch_license_evidence(), read_text_archive(), archive(), test_archive_commit_budget_and_static_license(), test_archive_download_retries_incomplete_transport(), read(), test_context_files_are_licensed_separately_from_patch(), test_license_document_include_is_resolved_inside_snapshot() (+1 more)
+Cohesion: 0.12
+Nodes (16): repair_preimage_coverage(), context_license_evidence(), patch_license_evidence(), path_license_evidence(), prepare_repository_corpus(), read_text_archive(), recognize_license(), resolved_license() (+8 more)
 
 ### Community 74 - "tempfile"
-Cohesion: 0.15
-Nodes (7): _git_apply(), normalize_swesmith_record(), NormalizedSWESmithRecord, snapshot_hash(), SWESmithRecord, fixture_records(), TestSWESmithContract
+Cohesion: 0.11
+Nodes (12): EvaluationReport, _git_apply(), normalize_swesmith_record(), NormalizedSWESmithRecord, snapshot_hash(), SWESmithRecord, NativeTaskResult, score_python_patch() (+4 more)
 
 ### Community 76 - "test_construction_blocks.py"
 Cohesion: 0.22
 Nodes (3): apply_word_embedding_policy(), EmbeddingPolicyResult, TestWordEmbeddingPolicy
 
-### Community 79 - "NativeTinyModel"
-Cohesion: 0.16
-Nodes (4): ModelOutput, NativeTinyModel, __getattr__(), patch_cross_entropy()
-
 ### Community 80 - "WigglyDashboard"
-Cohesion: 0.24
-Nodes (6): WigglyDashboard, model_opens(), test_dashboard_created_before_context_registers_all_displayed_models(), test_layout_and_wrappers_remain_stable_after_gc_and_updates(), test_pre_layout_events_are_preserved_in_durable_monitor_and_first_display(), widget_runtime()
+Cohesion: 0.35
+Nodes (7): LastSeenWidget, WigglyDashboard, model_opens(), test_dashboard_created_before_context_registers_all_displayed_models(), test_layout_and_wrappers_remain_stable_after_gc_and_updates(), test_pre_layout_events_are_preserved_in_durable_monitor_and_first_display(), widget_runtime()
 
 ### Community 82 - "telemetry.py"
-Cohesion: 0.13
-Nodes (8): format_duration(), format_stage_display(), loss_chart(), render_dashboard(), LastSeenWidget, phase_category(), test_monitor_escapes_errors_updates_validation_and_exports_html(), test_dashboard_stage_display_formatting()
+Cohesion: 0.17
+Nodes (4): format_duration(), format_stage_display(), phase_category(), test_dashboard_stage_display_formatting()
 
 ### Community 83 - "json"
 Cohesion: 0.09
-Nodes (27): archive_files(), audit_split_disjointness(), build_release(), digest(), fetch_collection(), main(), publish_release(), rows() (+19 more)
+Nodes (25): archive_files(), audit_split_disjointness(), build_release(), digest(), fetch_collection(), main(), publish_release(), rows() (+17 more)
 
-### Community 85 - "test_hf_pretrained_model.py"
-Cohesion: 0.17
-Nodes (5): test_bfloat16_forward_backward_gradient_flow_and_optimizer_step(), test_bridge_init_preserved_across_post_init(), test_forward_prompt_masked_labels_shift_and_noncontiguous_forward_loss(), test_from_pretrained_raises_file_not_found_when_weights_missing(), test_generate_multi_eos_per_row_stopping_and_cache_parity()
+### Community 85 - "modeling_bifocalgemma.py"
+Cohesion: 0.07
+Nodes (9): NormalizedAlignment, SwiGLUDualGateBridge, FullCrossTiledAttention, CachedAttention, TiledEncoderAttention, TiledMergedAttention, test_bfloat16_forward_backward_gradient_flow_and_optimizer_step(), test_bridge_init_preserved_across_post_init() (+1 more)
 
 ### Community 87 - "test_upload_recovery_receipts.py"
-Cohesion: 0.09
-Nodes (4): test_full_then_checkpoint_only_upload_refreshes_receipt_for_cold_resume(), download(), test_recover_remote_run_tolerates_interrupted_recovery_and_rejects_local_only(), test_standalone_export_requires_matching_remote_contents()
+Cohesion: 0.07
+Nodes (13): editing_manifest(), repository_editing_record(), repository_row(), test_conflicting_repository_hashes_are_rejected(), test_generated_preparation_consumes_frozen_raw_repository_pool(), test_legacy_paired_manifest_remains_byte_identical(), test_raw_and_normalized_repository_manifests_are_identical(), test_raw_repository_manifest_derives_hashes_without_mutation() (+5 more)
 
 ### Community 91 - "test_benchmark_prompt_budget.py"
-Cohesion: 0.16
-Nodes (6): _context_already_includes_instruction(), decoder_prompt(), test_repair_record_type_has_same_prefix_as_explicit_repair_task(), test_shared_budget_uses_full_actual_prompt_without_architecture_specific_truncation(), generate(), TextTokenizer
+Cohesion: 0.20
+Nodes (4): test_repair_record_type_has_same_prefix_as_explicit_repair_task(), test_shared_budget_uses_full_actual_prompt_without_architecture_specific_truncation(), generate(), TextTokenizer
 
 ### Community 92 - "run_matrix_training"
-Cohesion: 0.08
-Nodes (20): BenchmarkUploadQueue, download_model(), RemoteHeartbeat, _backfill_final_stage(), _final_stage_info(), _latest_checkpoint_matches(), _local_standalone_export_valid(), resolve_training_contract() (+12 more)
+Cohesion: 0.09
+Nodes (16): RemoteHeartbeat, target_fingerprint(), _backfill_final_stage(), _final_stage_info(), _latest_checkpoint_matches(), _local_standalone_export_valid(), _reusable_training_report(), run_matrix_benchmark() (+8 more)
 
 ### Community 93 - "RepairCollator"
-Cohesion: 0.11
-Nodes (5): Seq2SeqBatch, RepairCollator, __getattr__(), write_swebench_predictions(), TestDataAndLoss
+Cohesion: 0.12
+Nodes (8): Seq2SeqBatch, TokenizedRepairExample, RepairCollator, __getattr__(), TestDataAndLoss, test_forward_prompt_masked_labels_shift_and_noncontiguous_forward_loss(), test_fast_pipeline_batch_edge_cases(), test_exact_synthetic_lengths_preserve_shift_and_closing_turn()
 
 ### Community 95 - "remediation.py"
-Cohesion: 0.16
-Nodes (10): audit_rows(), build_remediated_pool(), event_key(), inspect_structure(), main(), merge_lineage(), preference(), refresh_patch_targets() (+2 more)
+Cohesion: 0.10
+Nodes (24): token_profile(), audit_rows(), build_remediated_pool(), event_key(), inspect_structure(), main(), merge_lineage(), preference() (+16 more)
 
 ### Community 96 - "normalize_context_task"
-Cohesion: 0.10
-Nodes (19): generate_grounded_tasks(), _render(), _sha(), validate_grounded_task(), editing_manifest(), repository_editing_record(), validate_context_license_record(), repository_row() (+11 more)
+Cohesion: 0.18
+Nodes (12): normalize_context_task(), generate_grounded_pool_tasks(), generate_grounded_tasks(), _render(), _sha(), validate_grounded_task(), validate_context_license_record(), parent() (+4 more)
 
-### Community 101 - "stable_fingerprint"
-Cohesion: 0.19
-Nodes (11): fetch_public(), matched_eval_cohort(), prepare_crosscodelong(), prepare_longcodeqa(), prepare_sweqa(), write_context_eval(), stable_fingerprint(), retry_delay() (+3 more)
+### Community 101 - "eval_external_baselines.py"
+Cohesion: 0.32
+Nodes (4): test_eval_external_baselines_cli_dry_run(), _flatten_csv_args(), main(), parse_args()
 
 ### Community 102 - "tests_e2e/conftest.py"
-Cohesion: 0.09
-Nodes (10): pytest_configure(), reference_resilient_mcq_parser(), validate_empirical_results_schema(), validate_paper_manuscript(), test_combination_crosscode_continuous_metrics_aggregation(), test_combination_eval_metrics_to_paper_data_serialization(), test_combination_mcq_scoring_across_benchmarks(), test_scenario_end_to_end_mock_evaluation_pipeline() (+2 more)
+Cohesion: 0.10
+Nodes (9): authoritative_empirical_results(), pytest_configure(), sample_crosscode_row(), sample_mcq_row(), sample_repair_row(), validate_empirical_results_schema(), test_combination_crosscode_continuous_metrics_aggregation(), test_combination_eval_metrics_to_paper_data_serialization() (+1 more)
 
-### Community 103 - "matrix.py"
-Cohesion: 0.07
-Nodes (12): _compute_per_row_cross_query(), benchmark_directory_name(), target_fingerprint(), build_bifocalgemma_optimizer(), extract_trivial_token_ids(), is_zero_weight_decay_bridge_parameter(), resolve_diff_token_ids(), clamped_triton_kernel_options() (+4 more)
+### Community 103 - "test_v4_architecture.py"
+Cohesion: 0.13
+Nodes (10): critical_attention_beta(), test_v3_critical_attention_beta_and_triton_tile_clamping(), test_compute_per_row_cross_query_has_no_host_sync_calls(), test_compute_per_row_cross_query_on_cuda_stays_on_device(), test_compute_per_row_cross_query_vectorized_parity(), test_decoupled_upper_full_attention_cross_kv_topology(), test_sdpa_attention_structured_masks_match_tiled_eager(), test_sdpa_cross_attention_matches_eager_and_handles_all_masked_rows() (+2 more)
+
+### Community 104 - ".from_pretrained_backbones"
+Cohesion: 0.29
+Nodes (3): _resolve_backbone_weights(), test_from_pretrained_backbones_baseline(), test_from_pretrained_backbones_loading()
 
 ### Community 105 - "BifocalGemmaConfig"
 Cohesion: 0.17
-Nodes (3): BifocalGemmaConfig, _check_transformers_version(), native_config()
+Nodes (5): BifocalGemmaConfig, _check_transformers_version(), native_config(), test_decoupled_full_attn_cross_kv_fp32_master_weights_and_gradients(), test_decoupled_full_attn_cross_kv_tiled_vs_cached_parity_and_independence()
+
+### Community 106 - "test_synchronize_matrix_retains_stage1_milestone_and_retries_412_contention"
+Cohesion: 0.29
+Nodes (3): test_synchronize_matrix_retains_stage1_milestone_and_retries_412_contention(), create_commit(), make_412()
+
+### Community 108 - "JSONLRepairDataset"
+Cohesion: 0.29
+Nodes (3): JSONLRepairDataset, test_fast_training_pipeline_features_and_export(), test_fast_training_pipeline_with_jsonl_data_dir()
 
 ### Community 110 - "patch_matrix_tokenization"
 Cohesion: 0.17
 Nodes (5): format_query_injected_context(), patch_matrix_tokenization(), safe_load_verified_tokenizer(), safe_tokenize_context_task(), test_matrix_tokenization_patch_it_encoder_and_query_prefix_contract()
 
-### Community 113 - "test_fast_pipeline.py"
-Cohesion: 0.14
-Nodes (5): DummyTrackingTokenizer, test_anti_forgetting_curriculum_and_stage1_pointer_loss(), test_checkpoint_save_and_resume_lora_scaling(), test_fast_training_pipeline_end_to_end_smoke(), test_jsonl_dataset_query_injection_into_encoder()
-
-### Community 114 - "config.py"
-Cohesion: 0.11
-Nodes (10): BackboneProfile, CheckpointRef, ExperimentSpec, get_v2_experiment(), _pair(), _ref(), validate_experiment_matrix(), BaselineScores (+2 more)
-
-### Community 116 - "test_training_recipes.py"
-Cohesion: 0.17
-Nodes (5): comparison_recipes(), limit_threads(), test_fp32_alignment_on_bf16_backbone(), test_optimized_native_resume_matches_full_and_rejects_different_recipe(), model()
-
-### Community 120 - "sys"
-Cohesion: 0.21
-Nodes (3): test_exact_benchmark_release_preserves_training_identity_and_rejects_model_changes(), main(), render()
+### Community 114 - "__main__.py"
+Cohesion: 0.19
+Nodes (5): validate_experiment_matrix(), _initialization_plan(), main(), run_native_smoke(), TestConstructionEntrypoints
 
 ### Community 122 - "repository_sft.py"
-Cohesion: 0.25
-Nodes (6): prepare_editing_records(), split_editing_records(), prepare_curated_training(), tokenize(), prepare_repository_training(), tokenize_repository_record()
+Cohesion: 0.20
+Nodes (8): prepare_editing_records(), split_editing_records(), prepare_curated_training(), tokenize(), fit_repository_sft(), prepare_repository_training(), tokenize_repository_record(), TestOfflineEditing
 
 ### Community 124 - "load_verified_tokenizer"
-Cohesion: 0.18
-Nodes (6): load_verified_tokenizer(), tokenize_repair_example(), greedy_decode(), run_repo_niah_eval(), TestRealOfflineTokenizers, TestTokenizerVerification
+Cohesion: 0.13
+Nodes (8): CheckpointRef, ExperimentSpec, get_v2_experiment(), _pair(), _ref(), load_verified_tokenizer(), tokenize_repair_example(), TestTokenizerVerification
 
 ### Community 130 - "test_tier1_features.py"
-Cohesion: 0.12
-Nodes (11): test_f10_methodological_autopsy_data_integrity(), test_f1_decoder_prompt_neutral_template(), test_f1_task_prompt_neutral_template(), test_f2_mcq_resilient_regex_parser(), test_f3_crosscodelong_continuous_metrics(), test_f4_reponiah_distractor_injection_and_retrieval(), test_f5_training_semantics_change_rejects_legacy_approval(), test_f6_repo_core_syntax_tests_executable() (+3 more)
+Cohesion: 0.13
+Nodes (10): test_f10_methodological_autopsy_data_integrity(), test_f1_decoder_prompt_neutral_template(), test_f1_task_prompt_neutral_template(), test_f2_mcq_resilient_regex_parser(), test_f3_crosscodelong_continuous_metrics(), test_f4_reponiah_distractor_injection_and_retrieval(), test_f6_repo_core_syntax_tests_executable(), test_f7_dataset_checkpoint_contract() (+2 more)
 
 ### Community 134 - "tests_e2e/conftest.py"
 Cohesion: 0.14
-Nodes (6): test_boundary_empty_and_whitespace_completions(), test_boundary_letter_extraction_alphabet(), test_boundary_multiline_conversational_preamble(), test_boundary_regex_meta_characters_in_generation(), test_boundary_token_budget_bounds_enforcement(), test_boundary_zero_identifier_f1_safeguard()
+Nodes (7): reference_resilient_mcq_parser(), test_boundary_empty_and_whitespace_completions(), test_boundary_letter_extraction_alphabet(), test_boundary_multiline_conversational_preamble(), test_boundary_regex_meta_characters_in_generation(), test_boundary_token_budget_bounds_enforcement(), test_boundary_zero_identifier_f1_safeguard()
 
 ### Community 137 - "build_repository_corpus"
-Cohesion: 0.26
-Nodes (4): build_repository_corpus(), prepare_repository_corpus(), RepositoryPreparationLedger, test_preparation_ledger_preserves_records_and_rejects_new_settings()
+Cohesion: 0.13
+Nodes (11): export_pool(), load_curated_pool(), ArchiveSnapshotStore, build_repository_corpus(), RepositoryPreparationLedger, repo_identity(), test_frozen_pool_verifies_checksums_before_use(), test_repository_pool_requires_context_license_policy_and_coverage() (+3 more)
 
-### Community 146 - "test_evaluation.py"
-Cohesion: 0.18
-Nodes (4): test_crosscodelong_normalize_completion_prediction_strips_fences_and_suffix_overlap(), test_decoder_prompt_baseline_zero_duplication_and_paired_gsm8k_parity(), test_prompt_ids_instance_id_isolation_and_gold_rejection(), test_resilient_mcq_uses_terminal_final_answer_after_questioned_candidate()
+### Community 142 - "test_export_matrix_pretrained_model_with_subfolder_and_tokenizer"
+Cohesion: 0.25
+Nodes (3): export_matrix_pretrained_model(), test_export_matrix_pretrained_model_with_subfolder_and_tokenizer(), test_export_matrix_pretrained_model_baseline()
 
-### Community 173 - "ProbeLoRALinear"
+### Community 177 - "source_fingerprints"
 Cohesion: 0.33
-Nodes (4): ProbeLoRALinear, test_model_to_bfloat16_preserves_fp32_master_weights(), test_bifocalgemma_merge_and_unload(), test_bifocalgemma_save_and_from_pretrained_roundtrip()
+Nodes (3): source_fingerprints(), WithoutDocstrings, test_f5_training_semantics_change_rejects_legacy_approval()
 
-### Community 174 - "run_length_grid"
-Cohesion: 0.40
-Nodes (4): run_length_grid(), test_length_grid_matches_baseline_budget_and_stops_after_failure(), probe(), test_notebook_sweep_persists_results_per_case()
+### Community 180 - "FullCrossCachedAttention"
+Cohesion: 0.13
+Nodes (7): Bf16FullLinear, _compute_per_row_cross_query(), FullCrossCachedAttention, _norm_weight_dtype(), _owns_cross_kv(), _project_cross_kv(), _resolve_gate_init_tanh()
 
 ## Knowledge Gaps
 - **1 isolated node(s):** `bifocalgemma`
-  These have ≤1 connection - possible missing edges. (Counts symbols only; 883 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+  These have ≤1 connection - possible missing edges. (Counts symbols only; 978 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **99 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `atomic_json()` connect `stable_fingerprint` to `preflight.py`, `run_batched_context_benchmark`, `modeling_bifocalgemma.py`, `prepare_context_data.py`, `synchronize_matrix`, `stages.py`, `matrix.py`, `evaluation/context.py`, `run_matrix_training`, `benchmark_upload.py`, `schedule.py`, `json`, `audit_context_release.py`, `test_upload_recovery_receipts.py`, `compute_step_loss`, `load_verified_tokenizer`, `remote_reset_plan`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
-- **Are the 8 inferred relationships involving `stable_fingerprint()` (e.g. with `prepare_sampled_benchmark_collection()` and `run_batched_context_benchmark()`) actually correct?**
-  _`stable_fingerprint()` has 8 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `load_verified_tokenizer()` connect `load_verified_tokenizer` to `benchmark.py`, `pathlib`, `build_repository_corpus`, `json`, `test_v4_eval_parity.py`, `hashlib`, `stable_fingerprint`, `prepare_context_data.py`, `generation.py`, `evaluation/context.py`, `repository_study.py`, `fit_offline_sft`, `matrix.py`, `repository_corpus.py`, `JSONLRepairDataset`, `run_matrix_training`, `RepairCollator`, `remediation.py`, `repository_sft.py`?**
+  _High betweenness centrality (0.026) - this node is a cross-community bridge._
 - **What connects `bifocalgemma` to the rest of the system?**
   _1 weakly-connected nodes found - possible missing edges._
-- **Should `repository_corpus.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.14153846153846153 - nodes in this community are weakly interconnected._
-- **Why does `BifocalGemmaPreTrainedModel` connect `bifocalgemma/__init__.py` to `BifocalGemmaForCausalLM`, `modeling_bifocalgemma.py`?**
-  _High betweenness centrality (0.027) - this node is a cross-community bridge._
-- **Should `modeling_bifocalgemma.py` be split into smaller, more focused modules?**
-  _Cohesion score 0.08912655971479501 - nodes in this community are weakly interconnected._
-- **Why does `run_matrix_training()` connect `run_matrix_training` to `TrainingDashboard`, `stable_fingerprint`, `synchronize_matrix`, `matrix.py`, `test_molab_matrix_notebooks.py`, `stages.py`, `test_molab_remediation.py`, `patch_matrix_tokenization`, `schedule.py`, `load_verified_tokenizer`, `source_fingerprints`, `json`, `json`, `run_matrix_stage`, `test_matrix_schedule_runtime.py`, `repository_sft.py`, `copy`?**
+- **Should `preflight.py` be split into smaller, more focused modules?**
+  _Cohesion score 0.11330049261083744 - nodes in this community are weakly interconnected._
+- **Why does `run_matrix_training()` connect `run_matrix_training` to `TrainingDashboard`, `pathlib`, `test_export_matrix_pretrained_model_with_subfolder_and_tokenizer`, `schedule.py`, `benchmark_upload.py`, `json`, `stable_fingerprint`, `synchronize_matrix`, `test_molab_matrix_notebooks.py`, `test_molab_remediation.py`, `source_fingerprints`, `run_matrix_stage`, `test_matrix_schedule_runtime.py`, `objectives.py`, `matrix.py`, `json`, `patch_matrix_tokenization`, `repository_sft.py`, `load_verified_tokenizer`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Should `RepositorySnapshot` be split into smaller, more focused modules?**
+  _Cohesion score 0.12903225806451613 - nodes in this community are weakly interconnected._
+- **Why does `stable_fingerprint()` connect `stable_fingerprint` to `preflight.py`, `pathlib`, `build_repository_corpus`, `curation.py`, `json`, `hashlib`, `external_runner.py`, `prepare_context_data.py`, `test_molab_matrix_notebooks.py`, `evaluation/context.py`, `test_matrix_schedule_runtime.py`, `fit_offline_sft`, `packed_tokens.py`, `matrix.py`, `repository_corpus.py`, `json`, `test_upload_recovery_receipts.py`, `run_matrix_training`, `remediation.py`, `repository_sft.py`?**
   _High betweenness centrality (0.024) - this node is a cross-community bridge._
+- **Should `pathlib` be split into smaller, more focused modules?**
+  _Cohesion score 0.10336817653890824 - nodes in this community are weakly interconnected._
