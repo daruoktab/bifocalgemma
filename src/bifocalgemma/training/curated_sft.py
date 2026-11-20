@@ -38,7 +38,7 @@ def prepare_curated_training(
             for r in rows["train"][:16]
         )
     )
-    use_disjoint = pool_is_v4 if disjoint_context is None else bool(disjoint_context)
+    use_disjoint = pool_is_v4 if disjoint_context is None else disjoint_context
     cache_identity = {
         "pool_fingerprint": pool["fingerprint"],
         "limits": limits,
@@ -54,8 +54,8 @@ def prepare_curated_training(
     }
     if use_disjoint or decoder_local_only:
         cache_identity["disjoint_context"] = use_disjoint
-        cache_identity["decoder_local_only"] = bool(decoder_local_only)
-        cache_identity["local_window_lines"] = int(local_window_lines)
+        cache_identity["decoder_local_only"] = decoder_local_only
+        cache_identity["local_window_lines"] = local_window_lines
 
     def tokenize(row):
         context = row.get("context") or (
@@ -64,12 +64,12 @@ def prepare_curated_training(
         enriched = {**row, "context": context}
         if use_disjoint:
             enriched["disjoint_context"] = True
-            enriched["local_window_lines"] = int(local_window_lines)
+            enriched["local_window_lines"] = local_window_lines
         elif disjoint_context is False:
             enriched["disjoint_context"] = False
         if decoder_local_only:
             enriched["decoder_local_only"] = True
-            enriched["local_window_lines"] = int(local_window_lines)
+            enriched["local_window_lines"] = local_window_lines
         return tokenize_repository_record(
             enriched,
             spec,

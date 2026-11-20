@@ -520,9 +520,13 @@ def test_mixed_pool_v4_curriculum_grounded_and_curated_sft(tmp_path):
 
     orig_loader = cs_mod.load_verified_tokenizer
     try:
-        cs_mod.load_verified_tokenizer = lambda ref, root: (
-            tok,
-            {"model_id": ref.model_id, "files": {"tokenizer.json": "a" * 64}},
+        setattr(
+            cs_mod,
+            "load_verified_tokenizer",
+            lambda checkpoint, tokenizer_cache: (
+                tok,
+                {"model_id": checkpoint.model_id, "files": {"tokenizer.json": "a" * 64}},
+            ),
         )
         tr_pair, dev_pair, m_pair = prepare_curated_training(
             EXPERIMENT_SPECS[0], pool_dir, tok_cache, local_window_lines=16

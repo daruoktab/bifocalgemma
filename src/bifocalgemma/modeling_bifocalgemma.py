@@ -943,7 +943,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                 )
 
     @classmethod
-    def from_pretrained(  # type: ignore[override]
+    def from_pretrained(  # ty: ignore[incompatible-method-override]  # type: ignore[override]
         cls,
         pretrained_model_name_or_path: str | Path,
         *model_args: Any,
@@ -1244,7 +1244,7 @@ def export_matrix_pretrained_model(
             getattr(dec_layers[0].self_attn, "cross_scale", None) if dec_layers else None
         )
         inferred_learnable_scale = (
-            bool(first_scale.requires_grad)
+            first_scale.requires_grad
             if isinstance(first_scale, torch.Tensor)
             else bool(getattr(_config_mod, "LEARNABLE_CROSS_SCALE", False))
         )

@@ -856,7 +856,7 @@ def normalize_context_task(row):
 
 def _use_disjoint_mode(row: Mapping[str, Any], disjoint_context: bool | None) -> bool:
     if disjoint_context is not None:
-        return bool(disjoint_context)
+        return disjoint_context
     return bool(
         row.get("disjoint_context") is True
         or row.get("context_format") == "v4"

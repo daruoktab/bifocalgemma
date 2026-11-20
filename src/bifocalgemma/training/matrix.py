@@ -160,7 +160,7 @@ def _build_schedule_for_epochs(
     base_count = len(schedule_records)
     if base_count < 1:
         raise ValueError("Cannot build an empty training schedule.")
-    target_count = max(1, int(round(base_count * float(resolved_epochs))))
+    target_count = max(1, round(base_count * float(resolved_epochs)))
     full_epochs = math.ceil(target_count / base_count)
     all_records: list[ScheduleRecord] = []
     all_indices: list[int] = []
@@ -223,7 +223,7 @@ def resolve_training_contract(
         if size < 1:
             raise ValueError("Local training pool is empty.")
         scheduled_examples = (
-            size if resolved_epochs == 1 else max(1, int(round(size * float(resolved_epochs))))
+            size if resolved_epochs == 1 else max(1, round(size * float(resolved_epochs)))
         )
         updates = (scheduled_examples + eff_batch - 1) // eff_batch
         dataset = {
@@ -236,7 +236,7 @@ def resolve_training_contract(
             updates = TOTAL_STEPS
         else:
             base_examples = int(getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * eff_batch))
-            scheduled_examples = max(1, int(round(base_examples * float(resolved_epochs))))
+            scheduled_examples = max(1, round(base_examples * float(resolved_epochs)))
             updates = (scheduled_examples + eff_batch - 1) // eff_batch
 
     total = updates if total_steps is None else total_steps

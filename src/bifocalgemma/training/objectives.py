@@ -471,11 +471,11 @@ def compute_diff_token_weights(
         if not bool(row_valid.any()):
             return out
         apply_diff = True
-        if row_task is not None and str(row_task).strip().lower() != "repair":
+        if row_task is not None and row_task.strip().lower() != "repair":
             apply_diff = False
         if apply_diff:
             if row_is_diff is not None:
-                apply_diff = bool(row_is_diff)
+                apply_diff = row_is_diff
             elif require_unified_diff:
                 apply_diff = is_unified_diff_target_tokens(
                     row_labels,
@@ -512,7 +512,7 @@ def compute_diff_token_weights(
         return out
 
     if labels.ndim == 2:
-        batch_size = int(labels.shape[0])
+        batch_size = labels.shape[0]
         if task_types is not None and len(task_types) != batch_size:
             raise ValueError(f"Expected {batch_size} task_types, got {len(task_types)}.")
         if is_unified_diff is not None and len(is_unified_diff) != batch_size:
@@ -593,7 +593,7 @@ def _normalized_token_coefficients(
         labels, reduction=loss_reduction, length_cap=length_cap, ignore_index=ignore_index
     )
     total_example_weight = example_weights.sum().clamp_min(1e-12)
-    batch_size = int(labels.shape[0])
+    batch_size = labels.shape[0]
     for b in range(batch_size):
         row_valid = valid[b]
         n_valid = int(row_valid.sum().item())

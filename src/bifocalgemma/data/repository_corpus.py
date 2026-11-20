@@ -489,7 +489,7 @@ def build_repository_corpus(
             if disjoint_context
             else "repository_archive_v4_syntax_diagnostics"
         ),
-        "disjoint_context": bool(disjoint_context),
+        "disjoint_context": disjoint_context,
         "local_window_lines": local_window_lines if disjoint_context else None,
         "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
         "study_config_fingerprint": stable_fingerprint(study_config),

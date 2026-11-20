@@ -173,10 +173,9 @@ def extract_generated_tokens(
     eos_set = set(eos_ids)
     kept: list[int] = []
     for tok in token_ids:
-        int_tok = int(tok)
-        if int_tok in eos_set:
+        if tok in eos_set:
             return tuple(kept), "eos"
-        kept.append(int_tok)
+        kept.append(tok)
     return tuple(kept), "length_limit"
 
 
@@ -292,7 +291,7 @@ def _build_reponiah_cohort(
     seed = int(benchmark_item.get("seed", 42))
     suite_cap = int(benchmark_item.get("max_new_tokens", 128))
     max_prompt_tokens = (
-        max(1, int(max_position_embeddings) - suite_cap)
+        max(1, max_position_embeddings - suite_cap)
         if max_position_embeddings is not None
         else None
     )
@@ -416,7 +415,7 @@ def run_external_benchmark(
             "max_position_embeddings": model_cfg["max_position_embeddings"],
             "cohort_available": cohort_exists,
             "planned_cases": sample_count,
-            "batch_size": max(1, int(batch_size)),
+            "batch_size": max(1, batch_size),
         }
 
     if model is None or tokenizer is None:
@@ -450,7 +449,7 @@ def run_external_benchmark(
     completed: list[dict[str, Any]] = []
     started = time.perf_counter()
 
-    step_batch = max(1, int(batch_size))
+    step_batch = max(1, batch_size)
     with predictions_path.open("w", encoding="utf-8", newline="\n") as stream:
         for start in range(0, len(public), step_batch):
             chunk = public[start : start + step_batch]

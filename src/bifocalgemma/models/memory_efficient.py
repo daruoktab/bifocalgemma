@@ -274,7 +274,7 @@ def sdpa_cross_attention(
     batch, heads, length, width = query.shape
     if key.shape[2] == 0:
         return query.new_zeros((batch, heads, length, value.shape[-1]))
-    eff_chunk = max(1, int(chunk_size))
+    eff_chunk = max(1, chunk_size)
     max_dim = max(width, value.shape[-1])
     enc_mask_bool = encoder_valid.to(device=query.device, dtype=torch.bool)
     q_valid_bool = (
@@ -354,7 +354,7 @@ def sdpa_cross_attention(
             if q_valid_bool is not None:
                 out_valid = out_valid & q_valid_bool[:, None, :, None]
             return out.masked_fill(~out_valid, 0.0)
-        except (RuntimeError, NotImplementedError, TypeError):
+        except (RuntimeError, TypeError):
             pass
 
     if dropout == 0.0:
@@ -420,7 +420,7 @@ def sdpa_attention(
     k_cast = key.to(query.dtype)
     v_cast = value.to(query.dtype)
     enable_gqa = heads != k_cast.shape[1]
-    eff_chunk = max(int(chunk_size), 256) if not torch.is_grad_enabled() else max(1, int(chunk_size))
+    eff_chunk = max(chunk_size, 256) if not torch.is_grad_enabled() else max(1, chunk_size)
     checkpoint_tiles = torch.is_grad_enabled() and max_dim > 256
 
     def _run_sdpa_tile(
@@ -577,7 +577,7 @@ def sdpa_attention(
             tile_out = _run_sdpa_tile(query[:, :, start:stop], k_cast, v_cast, safe_mask)
             pieces.append(tile_out.masked_fill(~has_any, 0.0))
         return torch.cat(pieces, dim=2)
-    except (RuntimeError, NotImplementedError, TypeError):
+    except (RuntimeError, TypeError):
         return _TiledAttention.apply(
             query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
         )

@@ -213,7 +213,7 @@ def _apportion_strata_counts(
     if weight_sum <= 0:
         raise ValueError("At least one task/length stratum must have positive weight.")
     exact = {k: (w / weight_sum) * total for k, w in strata_weights.items()}
-    counts = {k: int(math.floor(v)) for k, v in exact.items()}
+    counts = {k: math.floor(v) for k, v in exact.items()}
     remainder = total - sum(counts.values())
     order = sorted(
         strata_weights,
@@ -266,12 +266,12 @@ def build_shared_schedule(
     if not items:
         raise ValueError("Cannot build an empty training schedule.")
 
-    use_balanced = bool(
+    use_balanced = (
         balance_strata or task_weights is not None or length_bin_weights is not None
     )
     stratification_json: str | None = None
     if use_balanced:
-        strat_payload: dict[str, Any] = {"balance_strata": bool(balance_strata)}
+        strat_payload: dict[str, Any] = {"balance_strata": balance_strata}
         if task_weights is not None:
             for k, v in task_weights.items():
                 if isinstance(v, bool) or not isinstance(v, (int, float)) or float(v) < 0:

@@ -70,7 +70,7 @@ class TestGemma4EdgeTopology(unittest.TestCase):
                     cast(Gemma4TextAttention, layer.self_attn) for layer in model.layers
                 ]
                 self.assertEqual(
-                    sum(bool(attention.is_kv_shared_layer) for attention in attention_layers),
+                    sum(attention.is_kv_shared_layer for attention in attention_layers),
                     expected["shared"],
                 )
                 self.assertEqual(model.embed_tokens.weight.shape, (262144, expected["width"]))

@@ -388,7 +388,7 @@ class FastTrainingPipeline:
         """Resolve whether *.cross_scale is trainable from cfg or config.LEARNABLE_CROSS_SCALE."""
         cfg_val = getattr(self.cfg, "learnable_cross_scale", None)
         if cfg_val is not None:
-            return bool(cfg_val)
+            return cfg_val
         return bool(getattr(_config_mod, "LEARNABLE_CROSS_SCALE", False))
 
     def _build_model(self) -> BifocalGemmaForCausalLM:

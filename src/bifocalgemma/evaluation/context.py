@@ -1570,8 +1570,8 @@ def generate_repo_niah_haystack(
     special_overhead = len(tokenizer.encode("", add_special_tokens=True)) if tokenizer is not None else 0
     if tokenizer is not None and getattr(tokenizer, "bos_token_id", None) is not None:
         special_overhead = max(special_overhead, 1)
-    eff_reserved = max(0, int(reserved_tokens))
-    distractor_budget = max(0, int(target_tokens) - needle_tokens - special_overhead - eff_reserved)
+    eff_reserved = max(0, reserved_tokens)
+    distractor_budget = max(0, target_tokens - needle_tokens - special_overhead - eff_reserved)
     sep_tokens = max(1, _count_niah_tokens("\n", tokenizer)) if tokenizer is not None else 1
 
     blocks: list[tuple[str, int]] = []
@@ -1632,9 +1632,9 @@ def build_repo_niah_case(
     needle_line = f'{key_name} = "{needle_value}"'
     instruction = f"What is the value of {key_name} in the codebase? Return only the value."
     eff_target = (
-        min(int(context_tokens), int(max_prompt_tokens))
+        min(context_tokens, max_prompt_tokens)
         if max_prompt_tokens is not None
-        else int(context_tokens)
+        else context_tokens
     )
     if reserved_tokens is None:
         if tokenizer is not None:
@@ -1645,7 +1645,7 @@ def build_repo_niah_case(
         else:
             eff_reserved = max(16, len(instruction) // 3)
     else:
-        eff_reserved = max(0, int(reserved_tokens))
+        eff_reserved = max(0, reserved_tokens)
 
     haystack = generate_repo_niah_haystack(
         eff_target,
@@ -1660,7 +1660,7 @@ def build_repo_niah_case(
                 instruction, haystack, tokenizer, enable_thinking=enable_thinking
             )
             enc_toks = _encoded_context_tokens(haystack, tokenizer)
-            overflow = max(prompt_toks - eff_target, enc_toks - int(context_tokens))
+            overflow = max(prompt_toks - eff_target, enc_toks - context_tokens)
             if overflow <= 0:
                 break
             eff_reserved += overflow + 4

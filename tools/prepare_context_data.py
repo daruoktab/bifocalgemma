@@ -811,7 +811,7 @@ def mixed_pool(foundation, context, benchmark_root, output):
 
 def normalize_math_question(text: str) -> str:
     """Normalize math/QA prompt text for exact GSM8K deduplication."""
-    cleaned = re.sub(r"\s+", " ", str(text or "").strip().lower())
+    cleaned = re.sub(r"\s+", " ", (text or "").strip().lower())
     return re.sub(r"[^a-z0-9 ]+", "", cleaned).strip()
 
 

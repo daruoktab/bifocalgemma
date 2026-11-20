@@ -129,11 +129,11 @@ def build_partitioned_param_groups(
         raise ValueError("warmup_offset must be nonnegative.")
 
     has_encoder = getattr(model, "encoder", None) is not None
-    effective_freeze_decoder = bool(freeze_decoder and has_encoder)
+    effective_freeze_decoder = freeze_decoder and has_encoder
     use_asymmetric_warmup = (
-        bool(asymmetric_warmup)
+        asymmetric_warmup
         if asymmetric_warmup is not None
-        else bool(has_encoder and not effective_freeze_decoder and warmup_offset == 0)
+        else (has_encoder and not effective_freeze_decoder and warmup_offset == 0)
     )
 
     entries: dict[str, list[tuple[str, Any]]] = {name: [] for name in CANONICAL_PARAM_GROUP_ORDER}
@@ -415,7 +415,7 @@ def configure_matrix_stage(
 
     default_scaling = policy["alpha"] / policy["rank"]
     has_encoder = getattr(model, "encoder", None) is not None
-    effective_freeze_decoder = bool(freeze_decoder and has_encoder)
+    effective_freeze_decoder = freeze_decoder and has_encoder
     default_learnable_cross_scale = bool(getattr(_config, "LEARNABLE_CROSS_SCALE", False))
     learnable_cross_scale = bool(
         getattr(getattr(model, "config", None), "learnable_cross_scale", default_learnable_cross_scale)

@@ -42,14 +42,14 @@ def _compute_per_row_cross_query(
     if n_0 <= 0:
         return query_cross
     # Fast host-only shape check avoids device-to-host sync whenever N_enc <= n_0.
-    if max(int(encoder_valid.shape[-1]), int(fallback_n_enc)) <= n_0:
+    if max(encoder_valid.shape[-1], fallback_n_enc) <= n_0:
         return query_cross
     bsz = query_cross.shape[0]
     counts = encoder_valid.to(device=query_cross.device).bool().sum(dim=-1)
     effective_counts = torch.where(
         counts > 0,
         counts,
-        counts.new_full((), int(fallback_n_enc)),
+        counts.new_full((), fallback_n_enc),
     ).to(dtype=torch.float32)
     ratio = (effective_counts / float(n_0)).clamp_min(1.0)
     beta_scale = (0.1 * torch.log(ratio) + 1.0).view(bsz, 1, 1, 1)
@@ -293,7 +293,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                         scale=self.scaling,
                         enable_gqa=enable_gqa_self,
                     )
-                except (RuntimeError, NotImplementedError, TypeError):
+                except (RuntimeError, TypeError):
                     use_sdpa_self = False
             if tile_out is None:
                 tile_out = attention_tile(
@@ -586,7 +586,7 @@ def configure_full_rank_cross_attention(
     gate_init_atanh = math.atanh(resolved_gate_init_tanh)
 
     if decouple_full_attn_cross_kv is not None:
-        resolved_decouple_full_attn = bool(decouple_full_attn_cross_kv)
+        resolved_decouple_full_attn = decouple_full_attn_cross_kv
     elif cfg is not None and hasattr(cfg, "decouple_full_attn_cross_kv"):
         resolved_decouple_full_attn = bool(getattr(cfg, "decouple_full_attn_cross_kv"))
     elif spec is not None and hasattr(spec, "decouple_full_attn_cross_kv"):
@@ -597,7 +597,7 @@ def configure_full_rank_cross_attention(
         )
 
     if learnable_cross_scale is not None:
-        resolved_learnable_scale = bool(learnable_cross_scale)
+        resolved_learnable_scale = learnable_cross_scale
     elif cfg is not None and hasattr(cfg, "learnable_cross_scale"):
         resolved_learnable_scale = bool(getattr(cfg, "learnable_cross_scale"))
     else:

@@ -351,7 +351,7 @@ def _encoder_token_count(item: Any) -> int:
     if isinstance(item, dict):
         lengths = item.get("token_lengths") or {}
         if isinstance(lengths, dict) and isinstance(lengths.get("encoder"), int):
-            return int(lengths["encoder"])
+            return lengths["encoder"]
         ctx = str(item.get("context") or "")
         return max(1, len(ctx) // 4)
     enc = getattr(item, "encoder_ids", ())
@@ -377,7 +377,7 @@ def build_v4_curriculum(
             "long_context_ratio": 0.0,
         }
     mix = dict(target_mix or V4_DEFAULT_MIX)
-    total = len(records) if target_count is None else max(1, min(len(records), int(target_count)))
+    total = len(records) if target_count is None else max(1, min(len(records), target_count))
     by_bucket: dict[str, list[dict[str, Any]]] = {bucket: [] for bucket in V4_DEFAULT_MIX}
     for row in records:
         by_bucket.setdefault(classify_v4_bucket(row), []).append(row)
@@ -406,7 +406,7 @@ def build_v4_curriculum(
 
     selected: list[dict[str, Any]] = []
     used_ids: set[str] = set()
-    long_target = int(round(total * min_long_context_ratio))
+    long_target = round(total * min_long_context_ratio)
     long_selected = 0
 
     for bucket in present_buckets:
