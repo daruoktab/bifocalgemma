@@ -13,8 +13,45 @@ from bifocalgemma.contracts import TokenizedRepairExample
 # ---------------------------------------------------------------------------
 
 COMPREHENSION_TASK_TYPES = frozenset(
-    {"localization", "completion", "qa", "mcq", "span_copy", "code_qa_mcq", "comprehension"}
+    {
+        "localization",
+        "completion",
+        "qa",
+        "long_context_qa",
+        "mcq",
+        "span_copy",
+        "code_qa_mcq",
+        "comprehension",
+        "source_extraction",
+        "source_mcq",
+        "source_reconstruction",
+    }
 )
+
+V4_DEFAULT_MIX: dict[str, float] = {
+    "repair_loc": 0.35,
+    "fim_completion": 0.25,
+    "long_context_qa": 0.25,
+    "retention": 0.15,
+}
+
+_V4_BUCKET_BY_TASK: dict[str, str] = {
+    "repair": "repair_loc",
+    "localization": "repair_loc",
+    "completion": "fim_completion",
+    "fim": "fim_completion",
+    "qa": "long_context_qa",
+    "long_context_qa": "long_context_qa",
+    "mcq": "long_context_qa",
+    "comprehension": "long_context_qa",
+    "span_copy": "long_context_qa",
+    "code_qa_mcq": "long_context_qa",
+    "source_extraction": "long_context_qa",
+    "source_mcq": "long_context_qa",
+    "source_reconstruction": "long_context_qa",
+    "retention": "retention",
+    "instruction": "retention",
+}
 
 COMPREHENSION_INSTRUCTION_PROMPTS: dict[str, str] = {
     "span_copy": "Extract and copy the exact target identifier or code span from the context.",
@@ -296,3 +333,130 @@ def build_anti_forgetting_curriculum(
         "synthesized_examples": len(synthesized),
     }
     return curriculum, stats
+
+
+def classify_v4_bucket(item: Any) -> str:
+    """Classify a raw record dict or TokenizedRepairExample into one of the four v4 buckets."""
+    if isinstance(item, dict):
+        task_type = str(item.get("task_type") or "repair").lower()
+        if item.get("v4_bucket") in V4_DEFAULT_MIX:
+            return str(item["v4_bucket"])
+    else:
+        meta = getattr(item, "metadata", None) or {}
+        task_type = str(meta.get("task_type") or "repair").lower()
+    return _V4_BUCKET_BY_TASK.get(task_type, "repair_loc")
+
+
+def _encoder_token_count(item: Any) -> int:
+    if isinstance(item, dict):
+        lengths = item.get("token_lengths") or {}
+        if isinstance(lengths, dict) and isinstance(lengths.get("encoder"), int):
+            return int(lengths["encoder"])
+        ctx = str(item.get("context") or "")
+        return max(1, len(ctx) // 4)
+    enc = getattr(item, "encoder_ids", ())
+    return len(enc)
+
+
+def build_v4_curriculum(
+    records: list[dict[str, Any]],
+    *,
+    target_count: int | None = None,
+    target_mix: dict[str, float] | None = None,
+    min_long_context_ratio: float = 0.40,
+    long_context_threshold: int = 8192,
+    seed: int = 17,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Select and balance a v4 pool targeting 35/25/25/15 mix and >=40% 8k-32k rows."""
+    if not records:
+        return [], {
+            "total_examples": 0,
+            "bucket_counts": {},
+            "bucket_ratios": {},
+            "long_context_count": 0,
+            "long_context_ratio": 0.0,
+        }
+    mix = dict(target_mix or V4_DEFAULT_MIX)
+    total = len(records) if target_count is None else max(1, min(len(records), int(target_count)))
+    by_bucket: dict[str, list[dict[str, Any]]] = {bucket: [] for bucket in V4_DEFAULT_MIX}
+    for row in records:
+        by_bucket.setdefault(classify_v4_bucket(row), []).append(row)
+
+    rng = random.Random(f"bifocalgemma_v4_curriculum_{seed}")
+    for bucket, items in by_bucket.items():
+        items.sort(key=lambda r: str(r.get("instance_id", "")))
+        rng.shuffle(items)
+        # Partition long-context (>=8k) first within each bucket so we can hit >=40% long rows
+        long_items = [r for r in items if _encoder_token_count(r) >= long_context_threshold]
+        short_items = [r for r in items if _encoder_token_count(r) < long_context_threshold]
+        by_bucket[bucket] = long_items + short_items
+
+    present_buckets = [b for b, items in by_bucket.items() if items]
+    active_weights = {b: max(0.0, float(mix.get(b, 0.0))) for b in present_buckets}
+    weight_sum = sum(active_weights.values()) or float(len(present_buckets))
+    quotas: dict[str, int] = {
+        b: int(total * (active_weights[b] / weight_sum)) for b in present_buckets
+    }
+    remainder = total - sum(quotas.values())
+    for b in sorted(present_buckets, key=lambda k: -(active_weights[k] / weight_sum)):
+        if remainder <= 0:
+            break
+        quotas[b] += 1
+        remainder -= 1
+
+    selected: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    long_target = int(round(total * min_long_context_ratio))
+    long_selected = 0
+
+    for bucket in present_buckets:
+        items = by_bucket[bucket]
+        quota = min(len(items), quotas[bucket])
+        long_pool = [r for r in items if _encoder_token_count(r) >= long_context_threshold]
+        short_pool = [r for r in items if _encoder_token_count(r) < long_context_threshold]
+        want_long = min(len(long_pool), max(1 if long_pool and quota > 0 else 0, round(quota * min_long_context_ratio)))
+        if long_selected < long_target:
+            want_long = min(len(long_pool), max(want_long, quota))
+        chosen = long_pool[:want_long]
+        if len(chosen) < quota:
+            chosen.extend(short_pool[: quota - len(chosen)])
+        if len(chosen) < quota:
+            chosen.extend(long_pool[want_long : want_long + (quota - len(chosen))])
+        for row in chosen:
+            rid = str(row.get("instance_id", id(row)))
+            if rid not in used_ids:
+                used_ids.add(rid)
+                selected.append(row)
+                if _encoder_token_count(row) >= long_context_threshold:
+                    long_selected += 1
+
+    # Fill any remaining shortfall up to `total` prioritizing long-context items
+    if len(selected) < total:
+        leftovers = [
+            row
+            for row in records
+            if str(row.get("instance_id", id(row))) not in used_ids
+        ]
+        leftovers.sort(
+            key=lambda r: (
+                -(_encoder_token_count(r) >= long_context_threshold),
+                str(r.get("instance_id", "")),
+            )
+        )
+        selected.extend(leftovers[: total - len(selected)])
+
+    bucket_counts: dict[str, int] = {}
+    for row in selected:
+        b = classify_v4_bucket(row)
+        bucket_counts[b] = bucket_counts.get(b, 0) + 1
+    actual_long = sum(1 for r in selected if _encoder_token_count(r) >= long_context_threshold)
+    stats = {
+        "total_examples": len(selected),
+        "bucket_counts": bucket_counts,
+        "bucket_ratios": {
+            b: round(c / max(1, len(selected)), 4) for b, c in sorted(bucket_counts.items())
+        },
+        "long_context_count": actual_long,
+        "long_context_ratio": round(actual_long / max(1, len(selected)), 4),
+    }
+    return selected, stats

@@ -11,7 +11,15 @@ from bifocalgemma.training.schedule import canonical_schedule_records
 
 
 def prepare_curated_training(
-    spec, pool_directory, tokenizer_cache, *, packed_cache=None, progress=None
+    spec,
+    pool_directory,
+    tokenizer_cache,
+    *,
+    packed_cache=None,
+    progress=None,
+    disjoint_context: bool | None = None,
+    decoder_local_only: bool = False,
+    local_window_lines: int = 48,
 ):
     """Consume all frozen IDs in order; no sampling, re-split or overflow dropping."""
     rows, pool = load_curated_pool(pool_directory)
@@ -22,24 +30,48 @@ def prepare_curated_training(
         if spec.encoder
         else (None, None)
     )
+    pool_is_v4 = bool(
+        pool["report"].get("disjoint_context")
+        or pool["report"].get("context_format") == "v4"
+        or any(
+            r.get("disjoint_context") is True or r.get("context_format") == "v4"
+            for r in rows["train"][:16]
+        )
+    )
+    use_disjoint = pool_is_v4 if disjoint_context is None else bool(disjoint_context)
     cache_identity = {
         "pool_fingerprint": pool["fingerprint"],
         "limits": limits,
         "encoder_files": enc_manifest["files"] if enc_manifest else None,
         "decoder_files": dec_manifest["files"],
-        "prompt_recipe": "context_mixture_v2_grounded",
+        "prompt_recipe": (
+            "context_mixture_v4_disjoint" if use_disjoint else "context_mixture_v2_grounded"
+        ),
         "prompt_sources": {
             name: stable_fingerprint((Path(__file__).resolve().parents[1] / name).read_text(encoding="utf-8"))
             for name in ("training/repository_sft.py", "data/context_tasks.py", "data/tokenization.py")
         },
     }
+    if use_disjoint or decoder_local_only:
+        cache_identity["disjoint_context"] = use_disjoint
+        cache_identity["decoder_local_only"] = bool(decoder_local_only)
+        cache_identity["local_window_lines"] = int(local_window_lines)
 
     def tokenize(row):
         context = row.get("context") or (
             f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
         )
+        enriched = {**row, "context": context}
+        if use_disjoint:
+            enriched["disjoint_context"] = True
+            enriched["local_window_lines"] = int(local_window_lines)
+        elif disjoint_context is False:
+            enriched["disjoint_context"] = False
+        if decoder_local_only:
+            enriched["decoder_local_only"] = True
+            enriched["local_window_lines"] = int(local_window_lines)
         return tokenize_repository_record(
-            {**row, "context": context},
+            enriched,
             spec,
             encoder,
             decoder,
@@ -123,9 +155,14 @@ def fit_curated_sft(
     from bifocalgemma.training.offline_sft import fit_offline_sft
     from bifocalgemma.training.policy import configure_policy_model, default_training_profiles
 
-    if epochs < 1 or batch_size < 1 or accumulation < 1 or not train or not dev:
+    if isinstance(epochs, bool) or epochs <= 0 or batch_size < 1 or accumulation < 1 or not train or not dev:
         raise ValueError("Invalid complete-epoch budget.")
-    planned_updates = epochs * math.ceil(len(train) / (batch_size * accumulation))
+    base_updates = math.ceil(len(train) / (batch_size * accumulation))
+    planned_updates = (
+        epochs * base_updates
+        if isinstance(epochs, int)
+        else max(1, round(float(epochs) * base_updates))
+    )
     budget = planned_updates if max_steps is None else max_steps
     if budget < 1:
         raise ValueError("Invalid optimizer update limit.")

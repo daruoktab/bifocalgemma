@@ -113,9 +113,61 @@ def generate_grounded_tasks(parent: dict[str, Any], *, seed: int = 17) -> list[d
                 "source_context": source,
             },
         )
+        if parent.get("context_format") == "v4":
+            row["context_format"] = "v4"
+        if parent.get("disjoint_context") is True:
+            row["disjoint_context"] = True
         validate_grounded_task(row)
         result.append(row)
     return result
+
+
+def generate_grounded_pool_tasks(
+    parents: list[dict[str, Any]],
+    *,
+    seed: int = 17,
+    max_parents: int | None = None,
+    min_encoder_tokens: int = 0,
+    max_per_parent: int = 3,
+) -> list[dict[str, Any]]:
+    """Deterministically derive grounded source-retrieval tasks across an admitted v4 pool."""
+    from bifocalgemma.data.context_tasks import normalize_context_task
+
+    if max_per_parent < 1:
+        raise ValueError("max_per_parent must be >= 1")
+    eligible = [
+        p
+        for p in parents
+        if p.get("record_type") == "context_sft_v1"
+        and p.get("pool_split") in {"train", "dev"}
+        and (p.get("token_lengths", {}).get("encoder", 0) >= min_encoder_tokens)
+    ]
+    # Deterministically prioritize long-context parents first so grounded retrieval teaches 8k-32k routing.
+    eligible.sort(
+        key=lambda p: (
+            -(p.get("token_lengths", {}).get("encoder", 0) >= 8192),
+            _sha(f"{VERSION}:{seed}:{p['instance_id']}"),
+        )
+    )
+    if max_parents is not None:
+        eligible = eligible[: max(0, max_parents)]
+    generated: list[dict[str, Any]] = []
+    for parent in eligible:
+        try:
+            children = generate_grounded_tasks(parent, seed=seed)
+        except ValueError:
+            continue
+        parent_enc = int(parent.get("token_lengths", {}).get("encoder", 0) or 0)
+        for child in children[:max_per_parent]:
+            normalized = normalize_context_task(child)
+            if parent_enc > 0 and "token_lengths" not in normalized:
+                normalized["token_lengths"] = {
+                    "encoder": max(parent_enc, len(normalized["context"].split())),
+                    "target": max(1, len(normalized["target_text"].split())),
+                }
+            normalized["v4_bucket"] = "long_context_qa"
+            generated.append(normalized)
+    return generated
 
 
 def validate_grounded_task(row: dict[str, Any]) -> None:

@@ -7,6 +7,7 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import re
 import sys
 import textwrap
 from collections import Counter
@@ -28,22 +29,29 @@ from bifocalgemma.data.context_benchmarks import (
     prepare_sweqa,
 )
 from bifocalgemma.data.context_tasks import (
+    BLOCKED_V4_DATASETS,
+    V4_DATASET_REGISTRY,
+    is_permissive_license,
     normalize_context_task,
     repair_preimage_coverage,
     tokenize_context_task,
 )
 from bifocalgemma.data.curation import code_signature, export_pool, split_connected_records
+from bifocalgemma.data.curriculum import V4_DEFAULT_MIX, build_v4_curriculum
+from bifocalgemma.data.grounded_tasks import generate_grounded_pool_tasks
 from bifocalgemma.data.offline_sft import load_curated_pool, stable_fingerprint
 from bifocalgemma.data.patches import patch_paths
 from bifocalgemma.data.repository import (
     SOURCE_REVISIONS,
     read_source_rows,
+    repo_identity,
     repository_task_from_row,
 )
 from bifocalgemma.data.repository_corpus import (
     ArchiveSnapshotStore,
     build_repository_corpus,
     context_license_evidence,
+    v4_repository_task_from_row,
 )
 from bifocalgemma.data.tokenization import load_verified_tokenizer
 from bifocalgemma.training.stages import atomic_json
@@ -112,11 +120,15 @@ def prepare_core(
     per_repo_limit,
     *,
     prefetch=True,
+    source_key="swe_rebench_v2",
+    disjoint_context=False,
 ):
     from huggingface_hub import hf_hub_download
 
     from bifocalgemma.data.full_pool import build_benchmark_index, fetch_benchmark_files
 
+    if source_key not in {"swe_rebench_v2", "swe_fixer"}:
+        raise ValueError(f"Unsupported prepare_core source_key: {source_key!r}")
     study = json.loads((ROOT / "configs/repository_study.json").read_text(encoding="utf-8"))
     quarantine = json.loads(
         (benchmarks_root / "benchmark_quarantine.json").read_text(encoding="utf-8")
@@ -129,10 +141,15 @@ def prepare_core(
     existing_slugs = set(
         manifest["report"]["benchmark_quarantine"]["crosscodeeval_repository_slugs"]
     )
-    source, revision, _ = SOURCE_REVISIONS["swe_rebench_v2"]
+    source, revision, _ = SOURCE_REVISIONS[source_key]
+    filename = (
+        "swe-fixer-train-110k.jsonl"
+        if source_key == "swe_fixer"
+        else "data/train-00000-of-00001.parquet"
+    )
     source_path = hf_hub_download(
         source,
-        "data/train-00000-of-00001.parquet",
+        filename,
         repo_type="dataset",
         revision=revision,
         cache_dir=cache / "hf",
@@ -143,7 +160,7 @@ def prepare_core(
     for offset, row in enumerate(read_source_rows(source_path)):
         counts["source_rows"] += 1
         try:
-            task = repository_task_from_row("swe_rebench_v2", row)
+            task = repository_task_from_row(source_key, row)
             if task.language not in {"python", "py"}:
                 raise ValueError("non_python")
             if not source_python_paths(task.target_patch):
@@ -181,7 +198,7 @@ def prepare_core(
 
     def fetch(row):
         try:
-            store.fetch_archive(repository_task_from_row("swe_rebench_v2", row))
+            store.fetch_archive(repository_task_from_row(source_key, row))
             return "cached"
         except Exception as exc:
             return type(exc).__name__
@@ -232,7 +249,7 @@ def prepare_core(
         if evidence.get("index_sha256") != file_digest(benchmark_index_path):
             raise ValueError("Completed benchmark index hash changed.")
     return build_repository_corpus(
-        "swe_rebench_v2",
+        source_key,
         candidate_file,
         foundation,
         tokenizers,
@@ -247,13 +264,21 @@ def prepare_core(
         allow_network=False,
         progress=log,
         benchmark_index_path=benchmark_index_path,
+        disjoint_context=disjoint_context,
     )
 
 
-def completion_from_snapshot(row, snapshot):
-    """Mask an unchanged function that calls a symbol imported from another source file."""
+def completions_from_snapshot(
+    row,
+    snapshot,
+    *,
+    max_per_file: int | None = None,
+    max_total: int | None = None,
+) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """Mask all non-overlapping unchanged functions calling symbols imported from sibling files."""
     files = {f.path: f.content for f in snapshot.files}
     changed = set(patch_paths(row["target_patch"]))
+    results: list[tuple[str, str, str, dict[str, Any]]] = []
     for path in sorted(files):
         if (
             not path.endswith(".py")
@@ -289,8 +314,18 @@ def completion_from_snapshot(row, snapshot):
                     if alias.name != "*":
                         imports[alias.asname or alias.name] = possible[0]
         lines = content.splitlines(keepends=True)
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or not node.body:
+        fn_nodes = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.body and n.end_lineno
+        ]
+        fn_nodes.sort(key=lambda n: (n.lineno, n.col_offset))
+        occupied: list[tuple[int, int]] = []
+        file_count = 0
+        for node in fn_nodes:
+            a, b = node.body[0].lineno - 1, node.end_lineno
+            assert b is not None
+            if any(not (b <= prev_a or a >= prev_b) for prev_a, prev_b in occupied):
                 continue
             calls = {
                 n.id
@@ -302,8 +337,6 @@ def completion_from_snapshot(row, snapshot):
             helpers = [p for p in helpers if p not in changed]
             if not helpers:
                 continue
-            a, b = node.body[0].lineno - 1, node.end_lineno
-            assert b is not None
             target = "".join(lines[a:b])
             if len(target) < 64 or target.count("\n") < 2:
                 continue
@@ -330,8 +363,20 @@ def completion_from_snapshot(row, snapshot):
                 "policy": "static_import_dependency_masking_training_v1",
                 "windows": [{"path": p} for p in sorted(visible)],
             }
-            return instruction, context, target, selection
-    return None
+            occupied.append((a, b))
+            results.append((instruction, context, target, selection))
+            file_count += 1
+            if max_total is not None and len(results) >= max_total:
+                return results
+            if max_per_file is not None and file_count >= max_per_file:
+                break
+    return results
+
+
+def completion_from_snapshot(row, snapshot):
+    """Mask an unchanged function that calls a symbol imported from another source file."""
+    extracted = completions_from_snapshot(row, snapshot, max_total=1)
+    return extracted[0] if extracted else None
 
 
 def source_python_paths(patch):
@@ -347,7 +392,7 @@ def source_python_paths(patch):
     ]
 
 
-def context_pool(core, output, cache, tokenizers):
+def context_pool(core, output, cache, tokenizers, *, disjoint_context: bool = False):
     rows, manifest = load_curated_pool(core)
     candidate_rows = {
         raw["instance_id"]: {"candidate_row": offset, "upstream_row": raw["original_upstream_row"]}
@@ -425,8 +470,8 @@ def context_pool(core, output, cache, tokenizers):
                     None,
                 )
             )
-        task = repository_task_from_row(
-            "swe_rebench_v2",
+        task = v4_repository_task_from_row(
+            row.get("source_key", "swe_rebench_v2"),
             {
                 "repo": row["repos"],
                 "base_commit": row["commit"],
@@ -436,34 +481,34 @@ def context_pool(core, output, cache, tokenizers):
             },
         )
         snapshot, _ = store.snapshot(task)
-        completion = completion_from_snapshot(row, snapshot)
-        if completion:
-            instruction, context, target, selection = completion
+        for instruction, context, target, selection in completions_from_snapshot(row, snapshot):
             try:
                 evidence = context_license_evidence(snapshot, selection)
                 variants.append(("completion", instruction, context, target, selection, evidence))
             except ValueError as exc:
                 rejected["completion_license:" + str(exc)] += 1
         for kind, instruction, context, target, selection, evidence in variants:
-            record = normalize_context_task(
-                {
-                    **row,
-                    "record_type": "context_sft_v1",
-                    "research_role": "repository_dependency_multitask_sft",
-                    "task_scope": "cross_file_context"
-                    if len({w["path"] for w in selection["windows"]}) > 1
-                    else "single_file_context_with_snapshot",
-                    "task_type": kind,
-                    "instance_id": "ctx-"
-                    + stable_fingerprint([row["instance_id"], kind, context, target]),
-                    "instruction": instruction,
-                    "context": context,
-                    "target_text": target,
-                    "context_selection": selection,
-                    "context_source_code_license_evidence": evidence
-                    or row["context_source_code_license_evidence"],
-                }
-            )
+            payload = {
+                **row,
+                "record_type": "context_sft_v1",
+                "research_role": "repository_dependency_multitask_sft",
+                "task_scope": "cross_file_context"
+                if len({w["path"] for w in selection["windows"]}) > 1
+                else "single_file_context_with_snapshot",
+                "task_type": kind,
+                "instance_id": "ctx-"
+                + stable_fingerprint([row["instance_id"], kind, context, target]),
+                "instruction": instruction,
+                "context": context,
+                "target_text": target,
+                "context_selection": selection,
+                "context_source_code_license_evidence": evidence
+                or row["context_source_code_license_evidence"],
+            }
+            if disjoint_context:
+                payload["disjoint_context"] = True
+                payload["context_format"] = "v4"
+            record = normalize_context_task(payload)
             record.pop("target_patch", None)
             record["before_signature"] = code_signature(context)
             record["normalized_pair_hash"] = record["pair_hash"]
@@ -764,9 +809,432 @@ def mixed_pool(foundation, context, benchmark_root, output):
     return result
 
 
+def normalize_math_question(text: str) -> str:
+    """Normalize math/QA prompt text for exact GSM8K deduplication."""
+    cleaned = re.sub(r"\s+", " ", str(text or "").strip().lower())
+    return re.sub(r"[^a-z0-9 ]+", "", cleaned).strip()
+
+
+def build_gsm8k_fingerprints(questions) -> set[str]:
+    """Build normalized question fingerprints for GSM8K test-set deduplication."""
+    return {
+        fp
+        for q in questions
+        if (fp := normalize_math_question(q))
+    }
+
+
+def _extract_row_license(raw: dict[str, Any], source_key: str) -> str:
+    meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    for candidate in (
+        raw.get("code_license"),
+        raw.get("repo_license"),
+        raw.get("license"),
+        raw.get("license_name"),
+        meta.get("license"),
+        meta.get("repo_license"),
+    ):
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip().lower()
+    entry = V4_DATASET_REGISTRY[source_key]
+    return str(entry["dataset_license"]).lower()
+
+
+def _extract_repo_from_v4_row(raw: dict[str, Any]) -> str:
+    meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    for val in (
+        raw.get("repo"),
+        raw.get("repo_name"),
+        raw.get("repos"),
+        meta.get("repository_url"),
+        meta.get("repo"),
+    ):
+        if isinstance(val, str) and val.strip():
+            cleaned = val.strip().removeprefix("https://github.com/").removeprefix("http://github.com/").removesuffix(".git").strip("/")
+            if "/" in cleaned:
+                parts = cleaned.split("/")
+                return f"{parts[0]}/{parts[1]}".lower()
+            return cleaned.lower()
+    return ""
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(1, (len(text) + 3) // 4)
+
+
+def _conversation_to_instruction_context_target(raw: dict[str, Any]) -> tuple[str, str, str]:
+    messages = raw.get("messages") or raw.get("conversations")
+    if isinstance(messages, list) and len(messages) >= 2:
+        user_turns = [
+            str(m.get("content") or m.get("value") or "")
+            for m in messages
+            if str(m.get("role") or m.get("from") or "").lower() in {"user", "human"}
+        ]
+        assistant_turns = [
+            str(m.get("content") or m.get("value") or "")
+            for m in messages
+            if str(m.get("role") or m.get("from") or "").lower() in {"assistant", "gpt", "model"}
+        ]
+        if user_turns and assistant_turns:
+            full_user = "\n\n".join(t for t in user_turns if t.strip())
+            target = assistant_turns[-1]
+            if "\n\n" in full_user and len(full_user) > 2048:
+                ctx, _, instr = full_user.rpartition("\n\n")
+                if len(instr.strip()) >= 8:
+                    return instr.strip(), ctx.strip(), target
+            return full_user.strip(), full_user.strip(), target
+    instr = str(
+        raw.get("instruction")
+        or raw.get("problem_statement")
+        or raw.get("question")
+        or raw.get("problem")
+        or raw.get("prompt")
+        or raw.get("input")
+        or ""
+    ).strip()
+    ctx = str(raw.get("context") or raw.get("input") or instr).strip()
+    target = str(
+        raw.get("target_text")
+        or raw.get("patch")
+        or raw.get("model_patch")
+        or raw.get("output")
+        or raw.get("response")
+        or raw.get("completion")
+        or raw.get("solution")
+        or raw.get("generated_solution")
+        or raw.get("answer")
+        or ""
+    )
+    return instr, ctx, target
+
+
+def adapt_v4_row(
+    source_key: str,
+    raw: dict[str, Any],
+    *,
+    blocked_repos: set[str] | frozenset[str] = frozenset(),
+    blocked_slugs: set[str] | frozenset[str] = frozenset(),
+    code_signatures: set[str] | frozenset[str] = frozenset(),
+    gsm8k_fingerprints: set[str] | frozenset[str] = frozenset(),
+    repo_aliases: dict[str, str] | None = None,
+    max_encoder_tokens: int = ENCODER_LIMIT,
+) -> dict[str, Any]:
+    """Adapt and strictly validate a vetted v4 dataset row against license & quarantine gates."""
+    raw_source = str(raw.get("source") or "")
+    if raw_source in BLOCKED_V4_DATASETS or source_key == "nextcoder":
+        raise ValueError("blocked_v4_dataset")
+    if source_key not in V4_DATASET_REGISTRY:
+        raise ValueError(f"unvetted_v4_source:{source_key}")
+    entry = V4_DATASET_REGISTRY[source_key]
+    if entry["dataset_id"] in BLOCKED_V4_DATASETS:
+        raise ValueError("blocked_v4_dataset")
+
+    raw_license = _extract_row_license(raw, source_key)
+    code_only = bool(entry.get("requires_row_license_check", False))
+    if not is_permissive_license(raw_license, code_only=code_only):
+        raise ValueError(f"non_permissive_license:{raw_license}")
+    normalized_lic = raw_license.split(",")[0].strip()
+    if normalized_lic not in {"mit", "apache-2.0", "bsd-2-clause", "bsd-3-clause", "isc", "cc0-1.0", "unlicense"}:
+        # For CC-BY-4.0 / ODC-BY non-code or wrapped datasets, preserve valid code evidence license marker
+        # while recording the true dataset license separately.
+        evidence_lic = "apache-2.0" if not code_only else normalized_lic
+    else:
+        evidence_lic = normalized_lic
+
+    if "min_test_score" in entry:
+        score = raw.get("average_test_score")
+        if score is None or float(score) < float(entry["min_test_score"]):
+            raise ValueError("opencodeinstruct_low_test_score")
+
+    repo_str = _extract_repo_from_v4_row(raw)
+    canonical_repo = ""
+    if repo_str and "/" in repo_str:
+        try:
+            canonical_repo = repo_identity(repo_str, repo_aliases)
+        except ValueError:
+            canonical_repo = repo_str
+    if entry.get("quarantine_repos", True) and canonical_repo:
+        slug_prefix = canonical_repo.replace("/", "-")
+        if canonical_repo in blocked_repos or slug_prefix in blocked_slugs or any(
+            s.startswith(slug_prefix + "-") for s in blocked_slugs
+        ):
+            raise ValueError("benchmark_repository_quarantine")
+
+    task_type = str(raw.get("task_type") or entry["default_task_type"])
+    if source_key == "fim_midtraining":
+        meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+        prefix = str(raw.get("prefix") or raw.get("prompt") or "")
+        suffix = str(raw.get("suffix") or raw.get("right_context") or "")
+        target = str(raw.get("middle") or raw.get("completion") or raw.get("output") or "")
+        if not prefix or not target:
+            raise ValueError("missing_fim_fields")
+        file_path = str(meta.get("file_path") or raw.get("path") or "module.py")
+        cross = str(meta.get("cross_file_context") or raw.get("cross_file_context") or "").strip()
+        instr = str(raw.get("instruction") or f"Complete the missing code in {file_path}.").strip()
+        parts = [f"### Instruction\n{instr}"]
+        if cross:
+            parts.append(f"### File: {meta.get('cross_file_path', 'sibling.py')}\n{cross}")
+        parts.append(f"### File: {file_path}\n{prefix}\n# <MISSING_CODE>\n{suffix}")
+        context = "\n\n".join(parts)
+        visible_paths = [file_path] + (
+            [str(meta.get("cross_file_path", "sibling.py"))] if cross else []
+        )
+    else:
+        instr, context, target = _conversation_to_instruction_context_target(raw)
+        if not instr or not context or not target:
+            raise ValueError("missing_v4_fields")
+        if task_type == "completion" and "# <MISSING_CODE>" not in context:
+            context = f"{context}\n# <MISSING_CODE>"
+        if task_type == "completion" and target in context:
+            raise ValueError("completion_target_visible_in_context")
+        path_hint = str(raw.get("path") or raw.get("old_file") or "")
+        if path_hint and "### File:" not in context and task_type in {"repair", "completion", "localization"}:
+            context = f"### Instruction\n{instr}\n\n### File: {path_hint}\n{context}"
+        visible_paths = [
+            m.group(1).strip()
+            for m in re.finditer(r"^### File:\s*([^\n(]+)", context, re.M)
+        ] or [path_hint or "context.txt"]
+
+    if entry.get("dedup_gsm8k") and gsm8k_fingerprints:
+        q_norm = normalize_math_question(instr)
+        if q_norm in gsm8k_fingerprints or any(fp in q_norm for fp in gsm8k_fingerprints if len(fp) >= 24):
+            raise ValueError("gsm8k_test_overlap")
+
+    if code_signatures:
+        if (code_fragment_signatures(target) | code_fragment_signatures(context)) & code_signatures:
+            raise ValueError("benchmark_code_overlap")
+
+    token_limit = int(entry.get("max_tokens") or max_encoder_tokens)
+    est_enc_tokens = int(raw.get("encoder_tokens") or _estimate_tokens(context))
+    if est_enc_tokens > token_limit:
+        raise ValueError("v4_context_exceeds_max_tokens")
+
+    snap_sha = hashlib.sha256(context.encode("utf-8")).hexdigest()
+    raw_id = str(raw.get("instance_id") or "")
+    inst_id = raw_id if raw_id else f"v4-{source_key}-" + stable_fingerprint([source_key, instr, context, target])[:24]
+    lic_sha = hashlib.sha256(f"{entry['dataset_id']}:{raw_license}".encode("utf-8")).hexdigest()
+    repo_label = canonical_repo or f"dataset/{source_key}"
+    record: dict[str, Any] = {
+        "record_type": "context_sft_v1",
+        "context_format": "v4",
+        "disjoint_context": True,
+        "v4_bucket": entry["bucket"],
+        "role": "train",
+        "task_type": task_type,
+        "instance_id": inst_id,
+        "group": repo_label if canonical_repo else f"{repo_label}:{inst_id}",
+        "canonical_repos": [canonical_repo] if canonical_repo else [],
+        "instruction": instr,
+        "context": context,
+        "target_text": target,
+        "source": entry["dataset_id"],
+        "source_key": source_key,
+        "source_revision": str(raw.get("source_revision") or "pinned"),
+        "snapshot_sha256": snap_sha,
+        "commit": str(raw.get("base_commit") or raw.get("commit_hash") or raw.get("commit") or snap_sha[:40]),
+        "repos": repo_label,
+        "license": evidence_lic,
+        "dataset_license": normalized_lic,
+        "context_selection": {
+            "gold_used": False,
+            "policy": "v4_disjoint_curated_adapter",
+            "windows": [{"path": p} for p in dict.fromkeys(visible_paths)],
+        },
+        "context_source_code_license_evidence": [
+            {"path": p, "licenses": [{"license": evidence_lic, "sha256": lic_sha}]}
+            for p in dict.fromkeys(visible_paths)
+        ],
+        "token_lengths": {
+            "encoder": est_enc_tokens,
+            "target": _estimate_tokens(target),
+        },
+    }
+    normalized = normalize_context_task(record)
+    normalized["before_signature"] = code_signature(context)
+    normalized["normalized_pair_hash"] = normalized["pair_hash"]
+    return normalized
+
+
+def mixed_pool_v4(
+    v4_sources: dict[str, Any],
+    benchmark_root: Path | None,
+    output: Path,
+    *,
+    foundation: Path | None = None,
+    context: Path | None = None,
+    blocked_repos: set[str] | None = None,
+    blocked_slugs: set[str] | None = None,
+    code_signatures: set[str] | None = None,
+    gsm8k_questions: tuple[str, ...] | list[str] = (),
+    foundation_edit_cap: int = 4000,
+    grounded_max_parents: int = 500,
+    target_count: int | None = None,
+    min_long_context_ratio: float = 0.40,
+    seed: int = 17,
+) -> dict[str, Any]:
+    """Build the v4 disjoint-context curated pool (`mixed_context_enc32k_dec8k_v4`)."""
+    blocked = set(blocked_repos or ())
+    slugs = set(blocked_slugs or ())
+    sigs = set(code_signatures or ())
+    if benchmark_root is not None and (Path(benchmark_root) / "benchmark_quarantine.json").is_file():
+        quarantine = json.loads(
+            (Path(benchmark_root) / "benchmark_quarantine.json").read_text(encoding="utf-8")
+        )
+        blocked |= set(quarantine.get("repositories", []))
+        slugs |= set(quarantine.get("slugs", []))
+
+    gsm8k_fps = build_gsm8k_fingerprints(gsm8k_questions)
+    admitted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    rejection_counts: Counter[str] = Counter()
+    seen_ids: set[str] = set()
+
+    # 1. Optionally carry over non-NextCoder foundation rows (capped) & context pool rows
+    if foundation is not None:
+        old_rows, _ = load_curated_pool(foundation)
+        cap_counts: Counter[str] = Counter()
+        for row in old_rows["train"] + old_rows["dev"]:
+            src = str(row.get("source") or "")
+            if src == "microsoft/NextCoderDataset" or src in BLOCKED_V4_DATASETS:
+                rejection_counts["dropped_nextcoder_or_blocked"] += 1
+                continue
+            if cap_counts[src] >= foundation_edit_cap:
+                rejection_counts["foundation_edit_capped"] += 1
+                continue
+            src_key = "editpackft" if "EditPackFT" in src else ("commitpackft" if "commitpackft" in src else "")
+            if not src_key:
+                continue
+            try:
+                adapted = adapt_v4_row(
+                    src_key,
+                    {**row, "task_type": "repair"},
+                    blocked_repos=blocked,
+                    blocked_slugs=slugs,
+                    code_signatures=sigs,
+                )
+            except ValueError as err:
+                rejection_counts[str(err).split(":")[0]] += 1
+                continue
+            if adapted["instance_id"] not in seen_ids:
+                seen_ids.add(adapted["instance_id"])
+                admitted.append(adapted)
+                cap_counts[src] += 1
+
+    if context is not None:
+        ctx_rows, _ = load_curated_pool(context)
+        for row in ctx_rows["train"] + ctx_rows["dev"]:
+            enriched = {**row, "context_format": "v4", "disjoint_context": True}
+            if enriched["instance_id"] not in seen_ids:
+                seen_ids.add(enriched["instance_id"])
+                admitted.append(enriched)
+
+    # 2. Adapt all vetted v4 sources
+    for source_key, raw_iter in v4_sources.items():
+        for idx, raw in enumerate(raw_iter):
+            try:
+                adapted = adapt_v4_row(
+                    source_key,
+                    raw,
+                    blocked_repos=blocked,
+                    blocked_slugs=slugs,
+                    code_signatures=sigs,
+                    gsm8k_fingerprints=gsm8k_fps,
+                )
+            except ValueError as err:
+                reason = str(err)
+                rejection_counts[reason.split(":")[0]] += 1
+                rejected.append(
+                    {"source_key": source_key, "offset": idx, "reason": reason}
+                )
+                continue
+            if adapted["instance_id"] in seen_ids:
+                rejection_counts["duplicate_instance_id"] += 1
+                continue
+            seen_ids.add(adapted["instance_id"])
+            admitted.append(adapted)
+
+    if len(admitted) < 2:
+        raise ValueError("insufficient_v4_admitted_records")
+
+    # 3. Connected split BEFORE grounded derivation so train/dev stay strictly isolated
+    train_base, dev_base, split_info = split_connected_records(admitted, seed=seed)
+
+    # 4. Wire grounded_tasks.py on admitted parents (preserving parent split)
+    grounded = generate_grounded_pool_tasks(
+        train_base + dev_base,
+        seed=seed,
+        max_parents=grounded_max_parents,
+    )
+    for g in grounded:
+        if g["instance_id"] not in seen_ids:
+            seen_ids.add(g["instance_id"])
+            if g.get("pool_split") == "dev":
+                dev_base.append(g)
+            else:
+                train_base.append(g)
+
+    # 5. Wire curriculum.py for 35/25/25/15 target mix & >=40% 8k-32k rows
+    train_target = target_count if target_count is not None else len(train_base)
+    train_selected, train_curriculum_stats = build_v4_curriculum(
+        train_base,
+        target_count=train_target,
+        target_mix=V4_DEFAULT_MIX,
+        min_long_context_ratio=min_long_context_ratio,
+        seed=seed,
+    )
+    for row in train_selected:
+        row["pool_split"] = "train"
+    for row in dev_base:
+        row["pool_split"] = "dev"
+
+    all_selected = train_selected + dev_base
+    report = {
+        "research_role": "v4_disjoint_context_multitask_sft",
+        "pool_recipe": "mixed_context_enc32k_dec8k_v4",
+        "context_format": "v4",
+        "disjoint_context": True,
+        "snapshot_policy": "mixed_v4; repo snapshots immutable; grounded tasks derived post-split",
+        "context_source_license_policy": "nearest_license_for_each_visible_file_v1",
+        "dropped_sources": ["microsoft/NextCoderDataset"],
+        "tokens": {
+            "limits": {
+                "encoder": ENCODER_LIMIT,
+                "pair_decoder": DECODER_LIMIT,
+                "baseline_decoder": BASELINE_LIMIT,
+            }
+        },
+        "split": {**split_info, "train": len(train_selected), "dev": len(dev_base)},
+        "task_counts": dict(Counter(r.get("task_type", "repair") for r in all_selected)),
+        "bucket_counts": train_curriculum_stats["bucket_counts"],
+        "curriculum_stats": train_curriculum_stats,
+        "grounded_tasks_count": len(grounded),
+        "source_counts": dict(Counter(r["source"] for r in all_selected)),
+        "rejections": dict(rejection_counts),
+        "benchmark_quarantine": {
+            "blocked_repositories": sorted(blocked),
+            "crosscodeeval_repository_slugs": sorted(slugs),
+        },
+        "training_plan": {
+            "epochs": 1,
+            "batch_size": 1,
+            "accumulation": 4,
+            "updates_full_epoch": (len(train_selected) + 3) // 4,
+            "supervised_train_tokens": sum(
+                r.get("token_lengths", {}).get("target", 1) for r in train_selected
+            ),
+        },
+    }
+    result = export_pool(all_selected, output, report)
+    atomic_json(Path(output) / "v4_exclusions.json", rejected)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("stage", choices=["benchmarks", "repository", "tasks", "mix"])
+    parser.add_argument(
+        "stage", choices=["benchmarks", "repository", "tasks", "mix", "mix-v4"]
+    )
+    parser.add_argument("--source-key", choices=["swe_rebench_v2", "swe_fixer"], default="swe_rebench_v2")
     parser.add_argument("--target-count", type=int, default=0, help="0 = all admitted candidates")
     parser.add_argument("--per-repo-limit", type=int, default=0, help="0 = no repository quota")
     parser.add_argument(
@@ -798,6 +1266,8 @@ def main():
             args.target_count,
             args.per_repo_limit,
             prefetch=not args.cached_snapshots_only,
+            source_key=args.source_key,
+            disjoint_context=True,
         )
     elif args.stage == "tasks":
         context_pool(
@@ -805,6 +1275,15 @@ def main():
             ROOT / "outputs/context_sft_enc32k_dec8k_v1",
             cache,
             tokenizers,
+            disjoint_context=True,
+        )
+    elif args.stage == "mix-v4":
+        mixed_pool_v4(
+            {},
+            output,
+            ROOT / "outputs/mixed_context_enc32k_dec8k_v4",
+            foundation=ROOT / "outputs/instruction_enc8k_dec2k_v2_ready",
+            context=ROOT / "outputs/context_sft_enc32k_dec8k_v1",
         )
     else:
         mixed_pool(

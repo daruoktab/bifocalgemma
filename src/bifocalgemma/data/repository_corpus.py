@@ -13,6 +13,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from bifocalgemma.contracts import RepositoryFile, RepositorySnapshot
+from bifocalgemma.data.context_tasks import (
+    V4_DATASET_REGISTRY,
+    split_disjoint_context,
+)
+from bifocalgemma.data.context_tasks import (
+    format_numbered_code as format_numbered_code,
+)
 from bifocalgemma.data.curation import (
     PERMITTED_CODE_LICENSES,
     CodeOverlapIndex,
@@ -30,11 +37,51 @@ from bifocalgemma.data.python_quality import (
     inspect_python_target,
 )
 from bifocalgemma.data.repository import (
+    RepositoryTask,
     prepare_repository_record_with_snapshot,
     read_source_rows,
     repo_identity,
     repository_task_from_row,
 )
+
+V4_REPO_SOURCES = frozenset({"swe_fixer", "swe_rebench_v2", "swe_smith_py", "r2e_gym", "swe_gym"})
+
+
+def v4_repository_task_from_row(source: str, raw: dict[str, Any]) -> RepositoryTask:
+    """Normalize a vetted v4 repository patch dataset row into a RepositoryTask."""
+    if source in {"swe_fixer", "swe_rebench_v2"}:
+        return repository_task_from_row(source, raw)
+    if source not in V4_REPO_SOURCES:
+        raise ValueError("unknown_repository_source")
+    entry = V4_DATASET_REGISTRY[source]
+    repo = raw.get("repo") or raw.get("repo_name")
+    issue = raw.get("problem_statement") or raw.get("instruction")
+    patch = raw.get("patch") or raw.get("model_patch")
+    commit = raw.get("base_commit") or raw.get("commit_hash")
+    identifier = raw.get("instance_id")
+    if not all(isinstance(v, str) and v.strip() for v in (repo, issue, patch, commit, identifier)):
+        raise ValueError("missing_repository_task_fields")
+    assert isinstance(commit, str)
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit):
+        raise ValueError("invalid_base_commit")
+    assert isinstance(repo, str) and isinstance(issue, str) and isinstance(patch, str)
+    assert isinstance(identifier, str)
+    patch_paths(patch)
+    return RepositoryTask(
+        identifier,
+        entry["dataset_id"],
+        str(raw.get("source_revision") or "pinned"),
+        "train",
+        repo_identity(repo),
+        commit.lower(),
+        issue.strip(),
+        patch,
+        str(raw.get("license") or entry["dataset_license"]),
+        None,
+        None,
+        None,
+        str(raw.get("language") or "python").lower(),
+    )
 
 
 class ArchiveSnapshotStore:
@@ -366,6 +413,8 @@ def build_repository_corpus(
     allow_network=False,
     progress=None,
     benchmark_index_path=None,
+    disjoint_context: bool = False,
+    local_window_lines: int = 48,
 ):
     """Freeze a resource-bounded corpus; every exclusion is a recorded outcome."""
     import platform
@@ -375,7 +424,7 @@ def build_repository_corpus(
     from bifocalgemma.data.tokenization import load_verified_tokenizer
     from bifocalgemma.training.repository_sft import tokenize_repository_record
 
-    if source not in {"swe_fixer", "swe_rebench_v2"}:
+    if source not in V4_REPO_SOURCES:
         raise ValueError("core_source_not_admitted")
     if min(target_count, per_repo_limit, context_limit, decoder_limit, disk_budget_gib) < 1:
         raise ValueError("invalid_corpus_budget")
@@ -435,7 +484,13 @@ def build_repository_corpus(
         "context_limit": context_limit,
         "decoder_limit": decoder_limit,
         "disk_budget_gib": disk_budget_gib,
-        "admission_version": "repository_archive_v4_syntax_diagnostics",
+        "admission_version": (
+            "repository_archive_v4_disjoint_context"
+            if disjoint_context
+            else "repository_archive_v4_syntax_diagnostics"
+        ),
+        "disjoint_context": bool(disjoint_context),
+        "local_window_lines": local_window_lines if disjoint_context else None,
         "syntax_diagnostics_policy": SYNTAX_DIAGNOSTICS_POLICY,
         "study_config_fingerprint": stable_fingerprint(study_config),
         "tokenizer_assets_fingerprint": stable_fingerprint(
@@ -481,7 +536,7 @@ def build_repository_corpus(
         syntax_diagnostics = []
         identifier = str(raw.get("instance_id", offset))
         try:
-            task = repository_task_from_row(source, raw)
+            task = v4_repository_task_from_row(source, raw)
             canonical = repo_identity(task.repo, aliases)
             if task.language not in {"python", "py"}:
                 raise ValueError("non_python")
@@ -526,6 +581,10 @@ def build_repository_corpus(
                             fixed_files[path], filename=f"{task.instance_id}:{path}"
                         )
                     )
+            if disjoint_context:
+                row["disjoint_context"] = True
+                row["context_format"] = "v4"
+                row["local_window_lines"] = local_window_lines
             pair = tokenize_repository_record(
                 row,
                 EXPERIMENT_SPECS[0],
@@ -534,7 +593,12 @@ def build_repository_corpus(
                 encoder_limit=context_limit,
                 decoder_limit=decoder_limit,
             )
-            other_len = len(other_encoder.encode(row["context"], add_special_tokens=True))
+            other_enc_text = (
+                split_disjoint_context(row, local_window_lines=local_window_lines).encoder_context
+                if disjoint_context
+                else row["context"]
+            )
+            other_len = len(other_encoder.encode(other_enc_text, add_special_tokens=True))
             if other_len > context_limit:
                 raise ValueError("other_encoder_overflow")
             baseline_limit = context_limit + decoder_limit + 512
@@ -550,7 +614,9 @@ def build_repository_corpus(
                 snapshot_coverage=coverage,
                 source_code_license_evidence=license_evidence,
                 context_source_code_license_evidence=visible_license_evidence,
-                dataset_license="mit" if source == "swe_fixer" else "cc-by-4.0",
+                dataset_license=V4_DATASET_REGISTRY.get(source, {}).get(
+                    "dataset_license", "cc-by-4.0"
+                ),
                 source_key=source,
                 token_lengths={
                     "encoder": max(len(pair.encoder_ids), other_len),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import tempfile
 from collections import defaultdict
@@ -152,6 +153,8 @@ class SharedSchedule:
     seed: int
     effective_batch: int
     signature: str
+    num_epochs: float = 1.0
+    stratification_config: str | None = None
 
     @property
     def ordered_ids(self) -> tuple[str, ...]:
@@ -183,7 +186,7 @@ class SharedSchedule:
         return self.ordered_indices[offset : offset + self.effective_batch]
 
     def to_manifest(self) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "algorithm": ALGORITHM,
             "dataset_identity": json.loads(self.dataset_identity_json),
@@ -194,7 +197,31 @@ class SharedSchedule:
             "partial_window_size": self.total_examples % self.effective_batch,
             "ordered_examples": [asdict(record) for record in self.records],
         }
+        if self.num_epochs != 1.0:
+            payload["num_epochs"] = self.num_epochs
+        if self.stratification_config is not None:
+            payload["stratification"] = json.loads(self.stratification_config)
         return {**payload, "signature": self.signature}
+
+
+def _apportion_strata_counts(
+    strata_weights: dict[tuple[str, str], float],
+    total: int,
+    seed: int,
+) -> dict[tuple[str, str], int]:
+    weight_sum = sum(strata_weights.values())
+    if weight_sum <= 0:
+        raise ValueError("At least one task/length stratum must have positive weight.")
+    exact = {k: (w / weight_sum) * total for k, w in strata_weights.items()}
+    counts = {k: int(math.floor(v)) for k, v in exact.items()}
+    remainder = total - sum(counts.values())
+    order = sorted(
+        strata_weights,
+        key=lambda k: (-(exact[k] - counts[k]), _digest([seed, "apportion", k]), k),
+    )
+    for k in order[:remainder]:
+        counts[k] += 1
+    return counts
 
 
 def build_shared_schedule(
@@ -203,8 +230,12 @@ def build_shared_schedule(
     dataset_identity: Mapping[str, Any],
     seed: int = 17,
     effective_batch: int = 4,
+    num_epochs: float | int = 1,
+    balance_strata: bool = False,
+    task_weights: Mapping[str, float] | None = None,
+    length_bin_weights: Mapping[str, float] | None = None,
 ) -> SharedSchedule:
-    """Distribute task/source/length strata over one pass, without replacement.
+    """Distribute task/source/length strata deterministically over `num_epochs` passes.
 
     The SHA-256 permutation and exact rational ranks avoid mutable RNG state and
     floating-point ties. Equivalent descriptors in a different input order have
@@ -212,36 +243,144 @@ def build_shared_schedule(
     """
     _integer(seed, "seed")
     _integer(effective_batch, "effective batch", minimum=1)
+    if (
+        isinstance(num_epochs, bool)
+        or not isinstance(num_epochs, (int, float))
+        or not math.isfinite(float(num_epochs))
+        or float(num_epochs) <= 0
+    ):
+        raise ValueError("Schedule num_epochs must be a finite number > 0.")
+    epochs_value = float(num_epochs)
     if not isinstance(dataset_identity, Mapping) or not dataset_identity:
         raise ValueError("A nonempty pinned dataset identity is required.")
     identity_json = _json(dict(dataset_identity))
-    buckets: dict[tuple[str, str, str], list[tuple[int, ScheduleRecord]]] = defaultdict(list)
+
+    items: list[tuple[int, ScheduleRecord]] = []
     seen: set[str] = set()
     for index, raw in enumerate(records):
         record = ScheduleRecord.from_mapping(raw)
         if record.instance_id in seen:
             raise ValueError(f"Duplicate schedule instance_id: {record.instance_id}")
         seen.add(record.instance_id)
-        buckets[(record.task, record.source, record.length_bin)].append((index, record))
-    if not seen:
+        items.append((index, record))
+    if not items:
         raise ValueError("Cannot build an empty training schedule.")
-    ranked: list[tuple[Fraction, str, int, ScheduleRecord]] = []
-    for key, bucket in sorted(buckets.items()):
-        bucket.sort(
-            key=lambda item: (_digest([seed, key, item[1].instance_id]), item[1].instance_id)
-        )
-        for position, (index, record) in enumerate(bucket):
-            ranked.append(
-                (Fraction(2 * position + 1, 2 * len(bucket)), record.instance_id, index, record)
-            )
-    ranked.sort(key=lambda item: (item[0], item[1]))
+
+    use_balanced = bool(
+        balance_strata or task_weights is not None or length_bin_weights is not None
+    )
+    stratification_json: str | None = None
+    if use_balanced:
+        strat_payload: dict[str, Any] = {"balance_strata": bool(balance_strata)}
+        if task_weights is not None:
+            for k, v in task_weights.items():
+                if isinstance(v, bool) or not isinstance(v, (int, float)) or float(v) < 0:
+                    raise ValueError(f"Invalid task weight for {k!r}.")
+            strat_payload["task_weights"] = {k: float(v) for k, v in sorted(task_weights.items())}
+        if length_bin_weights is not None:
+            for k, v in length_bin_weights.items():
+                if isinstance(v, bool) or not isinstance(v, (int, float)) or float(v) < 0:
+                    raise ValueError(f"Invalid length_bin weight for {k!r}.")
+            strat_payload["length_bin_weights"] = {
+                k: float(v) for k, v in sorted(length_bin_weights.items())
+            }
+        stratification_json = _json(strat_payload)
+
+    base_count = len(items)
+    total_scheduled = base_count if epochs_value == 1.0 else max(1, round(base_count * epochs_value))
+    num_passes = max(1, math.ceil(total_scheduled / base_count))
+
+    scheduled_items: list[tuple[int, ScheduleRecord]] = []
+    for pass_idx in range(num_passes):
+        pass_seed: Any = seed if pass_idx == 0 else [seed, pass_idx]
+        if not use_balanced:
+            buckets: dict[tuple[str, str, str], list[tuple[int, ScheduleRecord]]] = defaultdict(list)
+            for index, record in items:
+                buckets[(record.task, record.source, record.length_bin)].append((index, record))
+            ranked: list[tuple[Fraction, str, int, ScheduleRecord]] = []
+            for key, bucket in sorted(buckets.items()):
+                bucket.sort(
+                    key=lambda item: (
+                        _digest([pass_seed, key, item[1].instance_id]),
+                        item[1].instance_id,
+                    )
+                )
+                for position, (index, record) in enumerate(bucket):
+                    ranked.append(
+                        (
+                            Fraction(2 * position + 1, 2 * len(bucket)),
+                            record.instance_id,
+                            index,
+                            record,
+                        )
+                    )
+            ranked.sort(key=lambda item: (item[0], item[1]))
+            scheduled_items.extend((item[2], item[3]) for item in ranked)
+        else:
+            strata: dict[tuple[str, str], list[tuple[int, ScheduleRecord]]] = defaultdict(list)
+            for index, record in items:
+                strata[(record.task, record.length_bin)].append((index, record))
+            strata_weights: dict[tuple[str, str], float] = {}
+            for task_key, len_key in sorted(strata):
+                tw = float(task_weights.get(task_key, 1.0)) if task_weights is not None else 1.0
+                lw = (
+                    float(length_bin_weights.get(len_key, 1.0))
+                    if length_bin_weights is not None
+                    else 1.0
+                )
+                strata_weights[(task_key, len_key)] = tw * lw
+            target_counts = _apportion_strata_counts(strata_weights, base_count, seed + pass_idx)
+            balanced_ranked: list[tuple[Fraction, str, int, int, ScheduleRecord]] = []
+            for stratum_key in sorted(strata):
+                target_m = target_counts[stratum_key]
+                if target_m <= 0:
+                    continue
+                # Sub-stratify evenly by source inside each (task, length_bin) stratum
+                by_source: dict[str, list[tuple[int, ScheduleRecord]]] = defaultdict(list)
+                for index, record in strata[stratum_key]:
+                    by_source[record.source].append((index, record))
+                sub_ranked: list[tuple[Fraction, str, int, ScheduleRecord]] = []
+                for src, src_items in sorted(by_source.items()):
+                    src_items.sort(
+                        key=lambda item: (
+                            _digest([pass_seed, stratum_key, src, item[1].instance_id]),
+                            item[1].instance_id,
+                        )
+                    )
+                    for pos, (index, record) in enumerate(src_items):
+                        sub_ranked.append(
+                            (
+                                Fraction(2 * pos + 1, 2 * len(src_items)),
+                                record.instance_id,
+                                index,
+                                record,
+                            )
+                        )
+                sub_ranked.sort(key=lambda item: (item[0], item[1]))
+                for pos in range(target_m):
+                    _, inst_id, index, record = sub_ranked[pos % len(sub_ranked)]
+                    balanced_ranked.append(
+                        (
+                            Fraction(2 * pos + 1, 2 * target_m),
+                            inst_id,
+                            pos // len(sub_ranked),
+                            index,
+                            record,
+                        )
+                    )
+            balanced_ranked.sort(key=lambda item: (item[0], item[1], item[2]))
+            scheduled_items.extend((item[3], item[4]) for item in balanced_ranked)
+
+    scheduled_items = scheduled_items[:total_scheduled]
     schedule = SharedSchedule(
-        records=tuple(item[3] for item in ranked),
-        ordered_indices=tuple(item[2] for item in ranked),
+        records=tuple(item[1] for item in scheduled_items),
+        ordered_indices=tuple(item[0] for item in scheduled_items),
         dataset_identity_json=identity_json,
         seed=seed,
         effective_batch=effective_batch,
         signature="",
+        num_epochs=epochs_value,
+        stratification_config=stratification_json,
     )
     payload = schedule.to_manifest()
     del payload["signature"]
@@ -252,6 +391,8 @@ def build_shared_schedule(
         seed=seed,
         effective_batch=effective_batch,
         signature=_digest(payload),
+        num_epochs=epochs_value,
+        stratification_config=stratification_json,
     )
 
 
