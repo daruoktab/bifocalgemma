@@ -5,8 +5,10 @@ from __future__ import annotations
 import copy
 import gc
 import hashlib
+import inspect
 import json
 import logging
+import math
 import random
 import shutil
 import time
@@ -16,6 +18,7 @@ from typing import Any
 import torch
 import torch.utils.checkpoint
 
+import bifocalgemma.config as _config
 from bifocalgemma.config import (
     ACCUMULATION,
     BATCH_SIZE,
@@ -65,6 +68,7 @@ from bifocalgemma.training.hub import (
     target_fingerprint,
 )
 from bifocalgemma.training.objectives import (
+    compute_example_loss_weights,
     compute_step_loss,
     is_cross_bridge_parameter,
     resolve_diff_token_ids,
@@ -84,7 +88,11 @@ from bifocalgemma.training.schedule import (
     persist_shared_schedule,
 )
 from bifocalgemma.training.source_identity import source_fingerprints
-from bifocalgemma.training.stage import configure_matrix_stage
+from bifocalgemma.training.stage import (
+    build_bifocalgemma_adamw,
+    clip_optimizer_group_grads,
+    configure_matrix_stage,
+)
 from bifocalgemma.training.stages import (
     StageLedger,
     atomic_json,
@@ -95,12 +103,114 @@ from bifocalgemma.training.telemetry import TrainingDashboard
 logger = logging.getLogger(__name__)
 
 
+def _validate_num_epochs(num_epochs: int | float) -> int | float:
+    if (
+        isinstance(num_epochs, bool)
+        or not isinstance(num_epochs, (int, float))
+        or not math.isfinite(num_epochs)
+        or num_epochs <= 0
+    ):
+        raise ValueError("num_epochs must be a finite positive number.")
+    return int(num_epochs) if float(num_epochs).is_integer() else float(num_epochs)
+
+
+def _resolve_example_diff_flag(item: Any) -> bool | None:
+    """Resolve optional explicit unified-diff flag from a TokenizedRepairExample's metadata."""
+    meta = getattr(item, "metadata", None)
+    if not isinstance(meta, dict):
+        return None
+    if meta.get("is_unified_diff") is not None:
+        return bool(meta["is_unified_diff"])
+    target_format = meta.get("target_format")
+    if target_format is not None:
+        return str(target_format).strip().lower() == "unified_diff"
+    return None
+
+
+def _build_schedule_for_epochs(
+    schedule_records: list[dict[str, Any]],
+    *,
+    dataset_identity: dict[str, Any],
+    seed: int,
+    effective_batch: int,
+    num_epochs: int | float = 1,
+) -> SharedSchedule:
+    """Build deterministic shared schedule supporting multi-epoch (`1`, `1.5`, `2`, ...) runs.
+
+    Delegates `num_epochs` directly to `build_shared_schedule` when supported, and falls back
+    to deterministic per-epoch permutation concatenation when called against a 1-epoch builder.
+    """
+    resolved_epochs = _validate_num_epochs(num_epochs)
+    sig_params = inspect.signature(build_shared_schedule).parameters
+    if "num_epochs" in sig_params:
+        return build_shared_schedule(
+            schedule_records,
+            dataset_identity=dataset_identity,
+            seed=seed,
+            effective_batch=effective_batch,
+            num_epochs=resolved_epochs,  # type: ignore[call-arg]
+        )
+    if resolved_epochs == 1:
+        return build_shared_schedule(
+            schedule_records,
+            dataset_identity=dataset_identity,
+            seed=seed,
+            effective_batch=effective_batch,
+        )
+    base_count = len(schedule_records)
+    if base_count < 1:
+        raise ValueError("Cannot build an empty training schedule.")
+    target_count = max(1, int(round(base_count * float(resolved_epochs))))
+    full_epochs = math.ceil(target_count / base_count)
+    all_records: list[ScheduleRecord] = []
+    all_indices: list[int] = []
+    epoch_identity = {**dataset_identity, "num_epochs": resolved_epochs}
+    for ep in range(full_epochs):
+        ep_sched = build_shared_schedule(
+            schedule_records,
+            dataset_identity=epoch_identity,
+            seed=seed + ep,
+            effective_batch=effective_batch,
+        )
+        all_records.extend(ep_sched.records)
+        all_indices.extend(ep_sched.ordered_indices)
+    trimmed_records = tuple(all_records[:target_count])
+    trimmed_indices = tuple(all_indices[:target_count])
+    prelim = SharedSchedule(
+        records=trimmed_records,
+        ordered_indices=trimmed_indices,
+        dataset_identity_json=json.dumps(
+            epoch_identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        ),
+        seed=seed,
+        effective_batch=effective_batch,
+        signature="",
+    )
+    payload = prelim.to_manifest()
+    del payload["signature"]
+    return SharedSchedule(
+        records=prelim.records,
+        ordered_indices=prelim.ordered_indices,
+        dataset_identity_json=prelim.dataset_identity_json,
+        seed=seed,
+        effective_batch=effective_batch,
+        signature=_digest(payload),
+    )
+
+
 def resolve_training_contract(
-    spec: Any, *, total_steps: int | None = None, stage1_steps: int | None = None, pool_directory: str | Path | None = None
+    spec: Any,
+    *,
+    total_steps: int | None = None,
+    stage1_steps: int | None = None,
+    stage1_fraction: float | None = None,
+    num_epochs: int | float = 1,
+    pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Declare local supplements and pilots explicitly; never replace the pinned pool."""
+    """Declare local supplements, multi-epoch horizons, and short warm-start vs 0%-freeze stage split."""
+    resolved_epochs = _validate_num_epochs(num_epochs)
     dataset = {"dataset_repo": DATASET_REPO, "dataset_revision": DATASET_REVISION, "collection": COLLECTION}
-    updates = TOTAL_STEPS
+    eff_batch = BATCH_SIZE * ACCUMULATION
     if pool_directory is not None:
         manifest = json.loads((Path(pool_directory) / "manifest.json").read_text(encoding="utf-8"))
         if (
@@ -112,19 +222,69 @@ def resolve_training_contract(
         size = len(manifest["record_ids"]["train"])
         if size < 1:
             raise ValueError("Local training pool is empty.")
-        updates = (size + BATCH_SIZE * ACCUMULATION - 1) // (BATCH_SIZE * ACCUMULATION)
+        scheduled_examples = (
+            size if resolved_epochs == 1 else max(1, int(round(size * float(resolved_epochs))))
+        )
+        updates = (scheduled_examples + eff_batch - 1) // eff_batch
         dataset = {
             "dataset_repo": "local_curated_pool",
             "dataset_revision": manifest["fingerprint"],
             "collection": Path(pool_directory).name,
         }
+    else:
+        if resolved_epochs == 1:
+            updates = TOTAL_STEPS
+        else:
+            base_examples = int(getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * eff_batch))
+            scheduled_examples = max(1, int(round(base_examples * float(resolved_epochs))))
+            updates = (scheduled_examples + eff_batch - 1) // eff_batch
+
     total = updates if total_steps is None else total_steps
     if type(total) is not int or not 1 <= total <= updates:
-        raise ValueError("total_steps must fit the positive one-pass training horizon.")
-    first = total if spec.encoder is None else (max(1, total // 2) if stage1_steps is None else stage1_steps)
+        raise ValueError("total_steps must fit the positive training horizon.")
+
+    if spec.encoder is None:
+        first = total
+    elif stage1_steps is not None:
+        first = stage1_steps
+    else:
+        default_frac = float(
+            getattr(_config, "STAGE1_FRACTION", getattr(_config, "V4_STAGE1_FRACTION", 0.06))
+        )
+        frac = default_frac if stage1_fraction is None else stage1_fraction
+        if (
+            isinstance(frac, bool)
+            or not isinstance(frac, (int, float))
+            or not math.isfinite(frac)
+            or not 0.0 <= frac <= 1.0
+        ):
+            raise ValueError("stage1_fraction must lie in [0.0, 1.0].")
+        if frac == 0.0:
+            first = 0
+        elif frac == 1.0:
+            first = total
+        else:
+            first = max(1, round(total * float(frac)))
+            if total > 1:
+                first = min(first, total - 1)
+
     if type(first) is not int or not 0 <= first <= total:
         raise ValueError("stage1_steps must fall within the total training horizon.")
-    return {**dataset, "total_steps": total, "stage1_steps": first, "stage2_steps": total - first}
+
+    schedule_mode = (
+        "decoder_only"
+        if spec.encoder is None
+        else ("asymmetric_warmup_joint" if first == 0 else "short_warmstart_joint")
+    )
+    return {
+        **dataset,
+        "total_steps": total,
+        "stage1_steps": first,
+        "stage2_steps": total - first,
+        "stage1_fraction": (first / total) if total > 0 else 0.0,
+        "num_epochs": resolved_epochs,
+        "schedule_mode": schedule_mode,
+    }
 
 
 def run_matrix_stage(
@@ -152,8 +312,11 @@ def run_matrix_stage(
     decoder: Any = None,
     diff_token_ids: dict[str, tuple[int, ...]] | None = None,
     total_steps: int | None = None,
+    asymmetric_warmup: bool | None = None,
+    loss_reduction: str | None = None,
+    length_cap: int | None = None,
 ) -> dict[str, Any]:
-    """Execute one training stage (Stage 1 frozen or Stage 2 joint) with continuous AdamW schedule."""
+    """Execute one training stage (Stage 1 warm-start or Stage 2 / Step-0 joint) with v4 AdamW."""
     ensure_hardware_memory_guards()
     run_dir = Path(run_dir).resolve()
     train_dir = run_dir / "training"
@@ -164,7 +327,22 @@ def run_matrix_stage(
         raise ValueError("Execution batch disagrees with shared schedule.")
     if seed != shared_schedule.seed:
         raise ValueError("Execution seed disagrees with shared schedule.")
-    if len(train_examples) != shared_schedule.total_examples:
+    schedule_base_examples = getattr(shared_schedule, "base_examples", None)
+    schedule_num_epochs = getattr(shared_schedule, "num_epochs", None)
+    is_multi_epoch_schedule = (
+        schedule_base_examples is not None
+        or (schedule_num_epochs is not None and float(schedule_num_epochs) != 1.0)
+        or (len(set(shared_schedule.ordered_indices)) < len(shared_schedule.ordered_indices))
+    )
+    if schedule_base_examples is not None:
+        if len(train_examples) != int(schedule_base_examples):
+            raise ValueError("Training cohort disagrees with shared schedule.")
+    elif is_multi_epoch_schedule:
+        if not shared_schedule.ordered_indices or len(train_examples) <= max(
+            shared_schedule.ordered_indices
+        ):
+            raise ValueError("Training cohort disagrees with multi-epoch shared schedule.")
+    elif len(train_examples) != shared_schedule.total_examples:
         raise ValueError("Training cohort disagrees with shared schedule.")
     if max_steps < 1 or start_global_step < 0:
         raise ValueError("Invalid stage horizon.")
@@ -172,22 +350,24 @@ def run_matrix_stage(
     persist_shared_schedule(train_dir / "shared_schedule.json", shared_schedule)
 
     resolved_horizon = total_steps if total_steps is not None else (start_global_step + max_steps)
+    resolved_loss_reduction = (
+        loss_reduction
+        if loss_reduction is not None
+        else str(getattr(_config, "LOSS_REDUCTION", "per_example_mean"))
+    )
+    resolved_length_cap = (
+        length_cap if length_cap is not None else int(getattr(_config, "LOSS_LENGTH_CAP", 256))
+    )
     groups, stage_summary = configure_matrix_stage(
         model,
         policy,
         freeze_decoder=freeze_decoder,
         total_steps=resolved_horizon,
         warmup_offset=start_global_step,
+        asymmetric_warmup=asymmetric_warmup,
     )
     effective_freeze_decoder = stage_summary["freeze_decoder"]
-    opt_cfg = policy.get("optimizer", {})
-    optimizer = torch.optim.AdamW(
-        groups,
-        betas=tuple(opt_cfg.get("betas", (0.9, 0.999))),
-        eps=float(opt_cfg.get("eps", 1e-8)),
-        weight_decay=float(opt_cfg.get("weight_decay", 0.0)),
-        foreach=False,
-    )
+    optimizer = build_bifocalgemma_adamw(groups, policy=policy)
     trainable_params = [p for g in groups for p in g["params"]]
 
     decoder_snapshot = {
@@ -230,16 +410,19 @@ def run_matrix_stage(
         step_started = time.perf_counter()
 
         raw_item_groups: list[list[Any]] = []
+        raw_record_groups: list[list[Any]] = []
         micro_batches = []
         window_indices = shared_schedule.window(global_step - 1)
-        for offset in range(0, len(window_indices), batch_size):
-            indices = window_indices[offset : offset + batch_size]
-            items = [train_examples[i] for i in indices]
-            raw_item_groups.append(items)
-            micro_batches.append(collator(items))
         scheduled_records = shared_schedule.records[
             (global_step - 1) * shared_schedule.effective_batch : global_step * shared_schedule.effective_batch
         ]
+        for offset in range(0, len(window_indices), batch_size):
+            indices = window_indices[offset : offset + batch_size]
+            items = [train_examples[i] for i in indices]
+            records_slice = list(scheduled_records[offset : offset + batch_size])
+            raw_item_groups.append(items)
+            raw_record_groups.append(records_slice)
+            micro_batches.append(collator(items))
         drawn_items = [item for items in raw_item_groups for item in items]
         if [item.instance_id for item in drawn_items] != [record.instance_id for record in scheduled_records]:
             raise ValueError("Tokenized loader order disagrees with the canonical shared schedule.")
@@ -250,18 +433,54 @@ def run_matrix_stage(
 
         active_diff_token_ids = getattr(model, "diff_token_ids", None) or diff_token_ids
 
-        def backward_window(batches: list[Any]) -> float:
+        def backward_window(
+            batches: list[Any],
+            item_groups: list[list[Any]],
+            record_groups: list[list[Any]],
+        ) -> float:
+            batch_weights = [
+                float(
+                    compute_example_loss_weights(
+                        batch_cpu.labels,
+                        reduction=resolved_loss_reduction,
+                        length_cap=resolved_length_cap,
+                    )
+                    .sum()
+                    .item()
+                )
+                for batch_cpu in batches
+            ]
+            total_weight = sum(batch_weights)
+            if total_weight <= 0.0:
+                raise ValueError("Shared schedule window has zero effective loss weight.")
             loss_value = 0.0
-            for batch_cpu in batches:
+            for batch_cpu, items_slice, records_slice, batch_weight in zip(
+                batches, item_groups, record_groups, batch_weights, strict=True
+            ):
+                if batch_weight <= 0.0:
+                    continue
                 batch = batch_cpu.to(device)
-                count = int((batch_cpu.labels != -100).sum())
-                scale = count / token_count
+                scale = batch_weight / total_weight
+                batch_task_types = [
+                    (
+                        item.metadata.get("task_type")
+                        if isinstance(getattr(item, "metadata", None), dict)
+                        and item.metadata.get("task_type")
+                        else record.task
+                    )
+                    for item, record in zip(items_slice, records_slice, strict=True)
+                ]
+                batch_diff_flags = [_resolve_example_diff_flag(item) for item in items_slice]
                 step_loss = compute_step_loss(
                     model,
                     batch,
                     stage_name=stage_name,
                     diff_token_ids=active_diff_token_ids,
                     token_weighting="diff_marker_v1",
+                    task_types=batch_task_types,
+                    is_unified_diff=batch_diff_flags,
+                    loss_reduction=resolved_loss_reduction,
+                    length_cap=resolved_length_cap,
                 )
                 if step_loss is None or not bool(torch.isfinite(step_loss)):
                     raise RuntimeError(f"Nonfinite loss at step {step + 1} (global {global_step})")
@@ -275,7 +494,7 @@ def run_matrix_stage(
         python_rng = random.getstate()
         cuda_rng = torch.cuda.get_rng_state_all() if device.type == "cuda" else []
         try:
-            mean_loss = backward_window(micro_batches)
+            mean_loss = backward_window(micro_batches, raw_item_groups, raw_record_groups)
         except torch.cuda.OutOfMemoryError:
             # Replay the complete update: a failed backward may have written partial
             # gradients. No parameter/optimizer/cursor advance happens on failure.
@@ -287,7 +506,11 @@ def run_matrix_stage(
             if device.type == "cuda":
                 torch.cuda.set_rng_state_all(cuda_rng)
                 torch.cuda.empty_cache()
-            mean_loss = backward_window([collator([item]) for item in drawn_items])
+            mean_loss = backward_window(
+                [collator([item]) for item in drawn_items],
+                [[item] for item in drawn_items],
+                [[record] for record in scheduled_records],
+            )
 
         if effective_freeze_decoder:
             leaked = [
@@ -307,16 +530,9 @@ def run_matrix_stage(
         if not grads or not all(bool(torch.isfinite(g).all()) for g in grads):
             raise RuntimeError(f"Missing or nonfinite gradients at step {global_step}.")
 
-        group_grad_norms: dict[str, float] = {}
-        for group in optimizer.param_groups:
-            group_params = [p for p in group["params"] if p.grad is not None]
-            if not group_params:
-                continue
-            group_name = str(group.get("name", "default"))
-            group_grad_norms[group_name] = float(
-                torch.nn.utils.clip_grad_norm_(group_params, clip_norm, foreach=False)
-            )
-        grad_norm = sum(v * v for v in group_grad_norms.values()) ** 0.5
+        grad_norm, group_grad_norms = clip_optimizer_group_grads(
+            optimizer, default_clip_norm=clip_norm
+        )
         rates = update_policy_learning_rates(optimizer, global_step - 1)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
@@ -751,10 +967,14 @@ def run_matrix_training(
     standalone_repo_id: str | None = None,
     total_steps: int | None = None,
     stage1_steps: int | None = None,
+    stage1_fraction: float | None = None,
+    num_epochs: int | float = 1,
+    loss_reduction: str | None = None,
+    length_cap: int | None = None,
     force_fresh: bool = False,
     pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Execute complete two-stage matrix training run with configurable steps and clean recipe version."""
+    """Execute complete matrix training run with short warm-start or 0%-freeze asymmetric warmup."""
     ensure_hardware_memory_guards()
     patch_matrix_tokenization()
     if model_key not in MATRIX_MODELS:
@@ -770,10 +990,24 @@ def run_matrix_training(
     subfolder = cfg.get("subfolder", model_key)
 
     contract = resolve_training_contract(
-        spec, total_steps=total_steps, stage1_steps=stage1_steps, pool_directory=pool_directory
+        spec,
+        total_steps=total_steps,
+        stage1_steps=stage1_steps,
+        stage1_fraction=stage1_fraction,
+        num_epochs=num_epochs,
+        pool_directory=pool_directory,
     )
     resolved_total, resolved_stage1, resolved_stage2 = (
         contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps")
+    )
+    resolved_epochs = contract["num_epochs"]
+    resolved_loss_reduction = (
+        loss_reduction
+        if loss_reduction is not None
+        else str(getattr(_config, "LOSS_REDUCTION", "per_example_mean"))
+    )
+    resolved_length_cap = (
+        length_cap if length_cap is not None else int(getattr(_config, "LOSS_LENGTH_CAP", 256))
     )
 
     root = (Path(output_root) / model_key / "train").resolve()
@@ -1005,7 +1239,7 @@ def run_matrix_training(
         "train": target_fingerprint(train_data),
         "dev": target_fingerprint(dev_data),
     }
-    shared_schedule = build_shared_schedule(
+    shared_schedule = _build_schedule_for_epochs(
         manifest["schedule_records"],
         dataset_identity={
             "repo": contract["dataset_repo"],
@@ -1015,9 +1249,10 @@ def run_matrix_training(
         },
         seed=17,
         effective_batch=BATCH_SIZE * ACCUMULATION,
+        num_epochs=resolved_epochs,
     )
     if resolved_total > shared_schedule.total_updates:
-        raise ValueError("Training horizon exceeds the immutable one-pass schedule.")
+        raise ValueError("Training horizon exceeds the immutable training schedule.")
     persist_shared_schedule(train_dir / "shared_schedule.json", shared_schedule)
 
     decoder_tokenizer = None
@@ -1051,11 +1286,19 @@ def run_matrix_training(
         "seed": 17,
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
+        "num_epochs": resolved_epochs,
         "schedule_signature": shared_schedule.signature,
         "schedule_total_updates": shared_schedule.total_updates,
         "training_semantics_sha256": identity["training_semantics_sha256"],
-        "sampling_policy": "shared_one_pass_without_replacement_v1",
-        "loss_policy": "diff_marker_v1",
+        "sampling_policy": (
+            "shared_one_pass_without_replacement_v1"
+            if resolved_epochs == 1
+            else f"shared_multi_epoch_v1:{resolved_epochs}"
+        ),
+        "loss_policy": "task_gated_diff_marker_v2",
+        "loss_reduction": resolved_loss_reduction,
+        "loss_length_cap": resolved_length_cap,
+        "schedule_mode": contract["schedule_mode"],
         "training_policy": policy,
         "memory_policy": model.memory_policy,
         "total_steps": resolved_total,
@@ -1116,6 +1359,8 @@ def run_matrix_training(
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
                 shared_schedule=shared_schedule,
+                loss_reduction=resolved_loss_reduction,
+                length_cap=resolved_length_cap,
             )
             progress(
                 {
@@ -1153,6 +1398,8 @@ def run_matrix_training(
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
                 shared_schedule=shared_schedule,
+                loss_reduction=resolved_loss_reduction,
+                length_cap=resolved_length_cap,
             )
             progress(
                 {
@@ -1192,6 +1439,9 @@ def run_matrix_training(
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
                 shared_schedule=shared_schedule,
+                asymmetric_warmup=(resolved_stage1 == 0),
+                loss_reduction=resolved_loss_reduction,
+                length_cap=resolved_length_cap,
             )
             progress(
                 {
@@ -1287,7 +1537,11 @@ def run_matrix_training(
         "realized_id_order_sha256": stable_fingerprint(
             shared_schedule.ordered_ids[: shared_schedule.validate_cursor(resolved_total)]
         ),
-        "loss_policy": "diff_marker_v1",
+        "loss_policy": "task_gated_diff_marker_v2",
+        "loss_reduction": resolved_loss_reduction,
+        "loss_length_cap": resolved_length_cap,
+        "num_epochs": resolved_epochs,
+        "schedule_mode": contract["schedule_mode"],
         "explicit_prefix_pilot": resolved_total < shared_schedule.total_updates,
         "training_semantics_sha256": identity["training_semantics_sha256"],
         "stage1": stage1_report,
@@ -1321,6 +1575,8 @@ def run_matrix_benchmark(
     standalone_repo_id: str | None = None,
     total_steps: int | None = None,
     stage1_steps: int | None = None,
+    stage1_fraction: float | None = None,
+    num_epochs: int | float = 1,
     force_fresh: bool = False,
     pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -1340,7 +1596,12 @@ def run_matrix_benchmark(
     subfolder = cfg.get("subfolder", model_key)
 
     contract = resolve_training_contract(
-        spec, total_steps=total_steps, stage1_steps=stage1_steps, pool_directory=pool_directory
+        spec,
+        total_steps=total_steps,
+        stage1_steps=stage1_steps,
+        stage1_fraction=stage1_fraction,
+        num_epochs=num_epochs,
+        pool_directory=pool_directory,
     )
     resolved_total, resolved_stage1, resolved_stage2 = (
         contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps")
@@ -1596,6 +1857,10 @@ def run_matrix_training_and_benchmark(
     standalone_repo_id: str | None = None,
     total_steps: int | None = None,
     stage1_steps: int | None = None,
+    stage1_fraction: float | None = None,
+    num_epochs: int | float = 1,
+    loss_reduction: str | None = None,
+    length_cap: int | None = None,
     force_fresh: bool = False,
     pool_directory: str | Path | None = None,
 ) -> dict[str, Any]:
@@ -1612,6 +1877,10 @@ def run_matrix_training_and_benchmark(
         standalone_repo_id=standalone_repo_id,
         total_steps=total_steps,
         stage1_steps=stage1_steps,
+        stage1_fraction=stage1_fraction,
+        num_epochs=num_epochs,
+        loss_reduction=loss_reduction,
+        length_cap=length_cap,
         force_fresh=force_fresh,
         pool_directory=pool_directory,
     )
@@ -1630,6 +1899,8 @@ def run_matrix_training_and_benchmark(
         standalone_repo_id=standalone_repo_id,
         total_steps=total_steps,
         stage1_steps=stage1_steps,
+        stage1_fraction=stage1_fraction,
+        num_epochs=num_epochs,
         force_fresh=force_fresh,
         pool_directory=pool_directory,
     )

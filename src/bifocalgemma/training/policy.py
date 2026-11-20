@@ -56,11 +56,13 @@ def validate_training_policy(policy, model=None):
     if family not in {"symmetric", "asymmetric", "decoder_only"}:
         raise ValueError("Unknown training-policy family.")
     v2 = policy.get("version") == "unified_v2"
+    v4 = policy.get("version") == "unified_v4"
+    v2_like = v2 or v4
     if (
-        policy.get("version") not in {"attention_lora_policy_v1", "unified_v2"}
+        policy.get("version") not in {"attention_lora_policy_v1", "unified_v2", "unified_v4"}
         or policy.get("phase") != "joint"
     ):
-        raise ValueError("Only joint attention LoRA policy v1 is supported.")
+        raise ValueError("Only joint attention LoRA policy v1, unified_v2, or unified_v4 is supported.")
     if policy.get("freeze_words") is not True or policy.get("freeze_ple") is not True:
         raise ValueError("Word/PLE training needs a separately validated policy.")
     if type(policy.get("rank")) is not int or policy["rank"] < 1:
@@ -71,11 +73,28 @@ def validate_training_policy(policy, model=None):
         or policy["alpha"] <= 0
     ):
         raise ValueError("LoRA alpha must be finite and positive.")
-    expected = ({"decoder"} if family == "decoder_only" else {"encoder", "decoder"}) | (
-        {"alignment"} if family == "asymmetric" or (v2 and family == "symmetric") else set()
-    )
-    if set(policy.get("groups", {})) != expected or policy.get("train_alignment") != (
-        family == "asymmetric" or (v2 and family == "symmetric")
+    if v4:
+        expected = (
+            {"decoder_lora"}
+            if family == "decoder_only"
+            else {
+                "cross_gate_scalars",
+                "cross_gate_proj",
+                "bridge_mlp",
+                "cross_kv_proj",
+                "encoder_lora",
+                "decoder_lora",
+            }
+        )
+        expected_train_alignment = family != "decoder_only"
+    else:
+        expected = ({"decoder"} if family == "decoder_only" else {"encoder", "decoder"}) | (
+            {"alignment"} if family == "asymmetric" or (v2 and family == "symmetric") else set()
+        )
+        expected_train_alignment = family == "asymmetric" or (v2 and family == "symmetric")
+    if (
+        set(policy.get("groups", {})) != expected
+        or policy.get("train_alignment") != expected_train_alignment
     ):
         raise ValueError("Policy groups/alignment do not match family.")
     for name, settings in policy["groups"].items():
@@ -84,37 +103,67 @@ def validate_training_policy(policy, model=None):
             raise ValueError(f"Invalid LR for {name}.")
         if type(warmup) is not int or warmup < 0:
             raise ValueError(f"Invalid warmup for {name}.")
-        if settings.get("scheduler", "constant") not in {"constant", "cosine"}:
+        if settings.get("scheduler", "constant") not in {"constant", "cosine", "wsd"}:
             raise ValueError(f"Invalid scheduler for {name}.")
-        for key in ("warmup_ratio", "min_lr_ratio"):
+        for key in ("warmup_ratio", "min_lr_ratio", "asymmetric_warmup_ratio"):
+            if key == "asymmetric_warmup_ratio" and key not in settings:
+                continue
             value = settings.get(key, 0.0)
             if (
                 not isinstance(value, (int, float))
+                or isinstance(value, bool)
                 or not math.isfinite(value)
                 or not 0 <= value < 1
             ):
                 raise ValueError(f"Invalid {key} for {name}.")
+        if "wsd_decay_fraction" in settings:
+            decay_frac = settings["wsd_decay_fraction"]
+            if (
+                not isinstance(decay_frac, (int, float))
+                or isinstance(decay_frac, bool)
+                or not math.isfinite(decay_frac)
+                or not 0 < decay_frac <= 1
+            ):
+                raise ValueError(f"Invalid wsd_decay_fraction for {name}.")
+        if "weight_decay" in settings:
+            wd = settings["weight_decay"]
+            if (
+                not isinstance(wd, (int, float))
+                or isinstance(wd, bool)
+                or not math.isfinite(wd)
+                or wd < 0
+            ):
+                raise ValueError(f"Invalid weight_decay for {name}.")
+        if "clip_norm" in settings and settings["clip_norm"] is not None:
+            clip = settings["clip_norm"]
+            if (
+                not isinstance(clip, (int, float))
+                or isinstance(clip, bool)
+                or not math.isfinite(clip)
+                or clip <= 0
+            ):
+                raise ValueError(f"Invalid clip_norm for {name}.")
     if model is not None:
-        if v2 and model.spec.architecture_version != "normalized_merged_v2":
+        if v2_like and model.spec.architecture_version != "normalized_merged_v2":
             raise ValueError(
-                "unified_v2 requires a v2 model; legacy checkpoints cannot resume this architecture."
+                "unified_v2/unified_v4 requires a v2 model; legacy checkpoints cannot resume this architecture."
             )
         if family == "decoder_only":
             if model.encoder is not None or model.encoder_projection is not None:
                 raise ValueError("Decoder-only policy requires a baseline model.")
             return
         if getattr(model, "encoder", None) is None or model.spec.tie_encoder_decoder_words != (
-            family == "symmetric" and not v2
+            family == "symmetric" and not v2_like
         ):
             raise ValueError("Model architecture does not match policy family.")
         projection = model.encoder_projection
-        if v2:
+        if v2_like:
             from bifocalgemma.models.bridge import NormalizedAlignment, SwiGLUDualGateBridge
 
             if model.spec.architecture_version != "normalized_merged_v2" or not isinstance(
                 projection, (NormalizedAlignment, SwiGLUDualGateBridge)
             ):
-                raise ValueError("unified_v2 requires normalized_merged_v2 alignment.")
+                raise ValueError("unified_v2/unified_v4 requires normalized_merged_v2 alignment.")
             return
         if family == "symmetric" and not isinstance(projection, nn.Identity):
             raise ValueError("Symmetric policy expects Identity alignment.")
@@ -125,7 +174,7 @@ def validate_training_policy(policy, model=None):
 def configure_policy_model(model, policy):
     validate_training_policy(policy, model)
     scope = configure_probe_training(model, policy="lora", rank=policy["rank"])
-    if policy["version"] == "unified_v2" and model.encoder_projection is not None:
+    if policy["version"] in {"unified_v2", "unified_v4"} and model.encoder_projection is not None:
         model.encoder_projection.float().requires_grad_(True)
     if policy.get("alignment_fp32") and isinstance(model.encoder_projection, nn.Linear):
         model.encoder_projection.__class__ = Float32Alignment
@@ -215,7 +264,8 @@ def training_policy_table(groups, policy):
             "words_frozen": policy["freeze_words"],
             "PLE_frozen": policy["freeze_ple"],
             "word_tying": "shared_IT_anchor"
-            if policy["family"] == "symmetric" and policy["version"] != "unified_v2"
+            if policy["family"] == "symmetric"
+            and policy["version"] not in {"unified_v2", "unified_v4"}
             else "separate",
             "optimizer": policy.get("optimizer", {}).get("name", "adamw"),
             "alignment_fp32": policy.get("alignment_fp32", False),
@@ -256,7 +306,8 @@ def update_policy_learning_rates(optimizer, step):
         else:
             warmup = group["warmup_steps"]
             fraction = min(1.0, (effective_step + 1) / warmup) if warmup else 1.0
-            if group.get("scheduler") == "cosine":
+            scheduler = group.get("scheduler", "constant")
+            if scheduler == "cosine":
                 total = group["total_steps"]
                 if total is None:
                     raise ValueError("Cosine schedule needs a resolved training horizon.")
@@ -266,6 +317,29 @@ def update_policy_learning_rates(optimizer, step):
                     progress = min(
                         1.0, (effective_step + 1 - warmup) / max(1, effective_total - warmup)
                     )
+                    floor = group["min_lr_ratio"]
+                    fraction = floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * progress))
+            elif scheduler == "wsd":
+                total = group["total_steps"]
+                if total is None:
+                    raise ValueError("WSD schedule needs a resolved training horizon.")
+                effective_total = max(1, total - offset)
+                decay_steps = int(group.get("decay_steps", 0))
+                if decay_steps <= 0:
+                    decay_fraction = float(group.get("wsd_decay_fraction", 0.20))
+                    decay_steps = max(1, math.ceil(effective_total * decay_fraction))
+                stable_end = max(warmup, effective_total - decay_steps)
+                stable_until = group.get("stable_until_step")
+                if stable_until is not None:
+                    stable_end = max(stable_end, int(stable_until) - offset)
+                stable_end = min(stable_end, effective_total)
+                if effective_step + 1 <= warmup:
+                    fraction = min(1.0, (effective_step + 1) / warmup) if warmup else 1.0
+                elif effective_step + 1 <= stable_end:
+                    fraction = 1.0
+                else:
+                    remaining = max(1, effective_total - stable_end)
+                    progress = min(1.0, (effective_step + 1 - stable_end) / remaining)
                     floor = group["min_lr_ratio"]
                     fraction = floor + (1 - floor) * 0.5 * (1 + math.cos(math.pi * progress))
         group["lr"] = group["base_lr"] * fraction
