@@ -89,8 +89,9 @@ class BifocalGemmaConfig(PretrainedConfig):
         d_dec: int | None = None,
         d_mid: int | None = None,
         init_rms_scale: float = 1.0,
-        gate_init_tanh: float = 0.05,
-        learnable_cross_scale: bool = True,
+        gate_init_tanh: float = 0.15,
+        learnable_cross_scale: bool = False,
+        decouple_full_attn_cross_kv: bool = True,
         tie_word_embeddings: bool = True,
         tie_encoder_decoder_words: bool = False,
         vocab_size: int = 256000,
@@ -159,6 +160,7 @@ class BifocalGemmaConfig(PretrainedConfig):
         self.init_rms_scale = float(init_rms_scale)
         self.gate_init_tanh = float(gate_init_tanh)
         self.learnable_cross_scale = learnable_cross_scale
+        self.decouple_full_attn_cross_kv = decouple_full_attn_cross_kv
         dec_vocab = (
             self.decoder_config.get("vocab_size", 262144 if not self.tiny else 128)
             if isinstance(self.decoder_config, dict)
@@ -200,6 +202,7 @@ class BifocalGemmaConfig(PretrainedConfig):
         output["init_rms_scale"] = self.init_rms_scale
         output["gate_init_tanh"] = self.gate_init_tanh
         output["learnable_cross_scale"] = self.learnable_cross_scale
+        output["decouple_full_attn_cross_kv"] = self.decouple_full_attn_cross_kv
         output["architectures"] = self.architectures
         output["auto_map"] = self.auto_map
         output["vocab_size"] = self.vocab_size

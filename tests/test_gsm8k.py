@@ -220,7 +220,7 @@ def test_gsm8k_resilient_vs_strict_and_no_mcq_collision():
     from bifocalgemma.evaluation.context import score_context_case
     from bifocalgemma.evaluation.protocol import gsm8k_report_metrics, mcq_report_metrics
 
-    assert gsm8k.extract_release_answer("####7.5") is None
+    assert gsm8k.extract_release_answer("####7.5") == "7.5"  # v4: no-space ####N accepted
     assert gsm8k.extract_resilient_answer("####7.5") == "7.5"
     assert gsm8k.extract_resilient_answer("####\n80") == "80"
     assert gsm8k.extract_resilient_answer("####$540") == "540"

@@ -59,7 +59,7 @@ def test_model_to_bfloat16_preserves_fp32_master_weights():
     assert bridge.w_gate.weight.dtype == torch.float32
     assert bridge.w_up.weight.dtype == torch.float32
     assert bridge.w_down.weight.dtype == torch.float32
-    assert bridge.post_norm.weight.dtype == torch.float32
+    assert bridge.post_norm.weight is None  # v4: gamma_calib is the single gain
     assert bridge.gamma_calib.dtype == torch.float32
 
     # 3. Cross attention parameters must be preserved in float32

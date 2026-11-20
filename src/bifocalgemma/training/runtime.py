@@ -129,9 +129,27 @@ def patch_matrix_tokenization() -> None:
     # 2. Defense-in-depth: patch tokenize_context_task in context_tasks and repository_sft
     if not getattr(ct_mod, "_matrix_bos_patched", False):
 
+        orig_tokenize_context_task = ct_mod.tokenize_context_task
+
         def safe_tokenize_context_task(
-            row, spec, encoder, decoder, *, encoder_limit, decoder_limit
+            row, spec, encoder, decoder, *, encoder_limit, decoder_limit, **kwargs
         ):
+            if (
+                kwargs.get("disjoint_context")
+                or kwargs.get("decoder_local_only")
+                or row.get("disjoint_context")
+                or row.get("decoder_local_only")
+            ):
+                # v4 disjoint/local-only rows: delegate to the canonical tokenizer.
+                return orig_tokenize_context_task(
+                    row,
+                    spec,
+                    encoder,
+                    decoder,
+                    encoder_limit=encoder_limit,
+                    decoder_limit=decoder_limit,
+                    **kwargs,
+                )
             context = row["context"]
             if row.get("inject_query_prefix") and row.get("instruction"):
                 candidate_ctx = format_query_injected_context(context, row.get("instruction"))
@@ -199,8 +217,10 @@ def patch_matrix_tokenization() -> None:
     if not getattr(eval_ctx_mod, "_matrix_bos_patched", False):
         orig_prompt_ids = eval_ctx_mod.prompt_ids
 
-        def safe_prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
-            enc, prefix = orig_prompt_ids(row, spec, encoder, decoder, encoder_limit=encoder_limit)
+        def safe_prompt_ids(row, spec, encoder, decoder, *, encoder_limit, **kwargs):
+            enc, prefix = orig_prompt_ids(
+                row, spec, encoder, decoder, encoder_limit=encoder_limit, **kwargs
+            )
             if enc and encoder is not None and enc[0] != encoder.bos_token_id:
                 enc = (encoder.bos_token_id, *enc)
                 if len(enc) > encoder_limit:
