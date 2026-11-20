@@ -186,6 +186,12 @@ def test_adversarial_prompt_neutrality_matrix():
                 assert row["context"] not in dp, (
                     f"Context leaked into paired decoder_prompt for task '{task_type}'"
                 )
+            elif task_type in ("repair", "repository_patch_v1"):
+                for line in row["context"].splitlines():
+                    if line.strip():
+                        assert line in dp, (
+                            f"Context line missing from baseline decoder_prompt for task '{task_type}'"
+                        )
             else:
                 assert row["context"] in dp, (
                     f"Context missing from baseline decoder_prompt for task '{task_type}'"

@@ -86,7 +86,10 @@ def test_stage1_and_stage2_lora_configuration():
         if name.startswith("encoder_projection."):
             assert param.requires_grad is True, f"{name} must be trainable in Stage 1"
         elif is_cross_bridge_parameter(name):
-            assert param.requires_grad is True, f"{name} cross-attn must be trainable in Stage 1"
+            expected_grad = not name.endswith(".cross_scale")
+            assert param.requires_grad is expected_grad, (
+                f"{name} cross-attn requires_grad mismatch in Stage 1"
+            )
         elif name.startswith("encoder.") and (name.endswith(".lora_A") or name.endswith(".lora_B")):
             assert param.requires_grad is True, f"Encoder LoRA {name} must be trainable in Stage 1"
         elif name.startswith("decoder.") and (name.endswith(".lora_A") or name.endswith(".lora_B")):
@@ -115,8 +118,13 @@ def test_stage1_and_stage2_lora_configuration():
     for name, param in pipeline.model.named_parameters():
         if name.endswith(".lora_A") or name.endswith(".lora_B"):
             assert param.requires_grad is True, f"{name} must be trainable in Stage 2"
-        elif name.startswith("encoder_projection.") or is_cross_bridge_parameter(name):
+        elif name.startswith("encoder_projection."):
             assert param.requires_grad is True, f"{name} must remain trainable in Stage 2"
+        elif is_cross_bridge_parameter(name):
+            expected_grad = not name.endswith(".cross_scale")
+            assert param.requires_grad is expected_grad, (
+                f"{name} cross-attn requires_grad mismatch in Stage 2"
+            )
 
     enc_lora_groups2 = [g for g in opt2.param_groups if g.get("name") == "encoder_lora"]
     dec_lora_groups2 = [g for g in opt2.param_groups if g.get("name") == "decoder_lora"]

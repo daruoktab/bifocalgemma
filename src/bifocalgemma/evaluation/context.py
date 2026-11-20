@@ -1593,7 +1593,7 @@ def generate_repo_niah_haystack(
     accum = 0
     insert_idx = len(blocks)
     for i, (_, tc) in enumerate(blocks):
-        if accum + tc >= target_needle_pos:
+        if accum + tc > target_needle_pos:
             insert_idx = i
             break
         accum += tc

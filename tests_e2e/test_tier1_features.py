@@ -42,8 +42,10 @@ def test_f1_decoder_prompt_neutral_template(sample_repair_row: Dict[str, Any]):
     assert "Return only a unified diff fulfilling the instruction." in paired_prompt
     assert sample_repair_row["instruction"] in paired_prompt
 
-    # Baseline prompt should contain the context directly
-    assert sample_repair_row["context"] in baseline_prompt
+    # Baseline prompt should contain all context lines (numbered in v4 repair mode)
+    for line in sample_repair_row["context"].splitlines():
+        if line.strip():
+            assert line in baseline_prompt
 
 
 @pytest.mark.tier1

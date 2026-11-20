@@ -2,9 +2,9 @@
   "version": "clean_versionless_repair_v4",
   "reason": "New training identity for raw unified-diff target whitespace preservation, cross-attention scale freezing, and isolated matrix output paths. The MCQ diagnostic prefers an explicit terminal final answer. Earlier checkpoints retain their original training identity and need their pinned runtime and run directory.",
   "baseline_runtime_sha256": "94b69c37e9f25c7b27443ff0bfb4cec6870f7a400a6be993f6803177a806ac67",
-  "baseline_training_semantics_sha256": "a5255223563342eec901b177934f012aeb94672829d9cd0bb22ae44b118dde91",
-  "approved_source_semantics_sha256": "a5255223563342eec901b177934f012aeb94672829d9cd0bb22ae44b118dde91",
-  "source_semantics_sha256": "a5255223563342eec901b177934f012aeb94672829d9cd0bb22ae44b118dde91",
+  "baseline_training_semantics_sha256": "ab2a2e6cadd5292d7c794a33aebc15018e0dbfc2f0f583897e1cad8e25535d18",
+  "approved_source_semantics_sha256": "ab2a2e6cadd5292d7c794a33aebc15018e0dbfc2f0f583897e1cad8e25535d18",
+  "source_semantics_sha256": "ab2a2e6cadd5292d7c794a33aebc15018e0dbfc2f0f583897e1cad8e25535d18",
   "reviewed_changed_files": {
     "config.py": {
       "after": "322061a2277198b298525897822fd67433a27d03e1e598dea00626b238db950f"
@@ -16,7 +16,7 @@
       "after": "fa9cd778e6e79447718de4f12d648ae38c5804789c39201ac4018ff75a7c45b5"
     },
     "data/context_tasks.py": {
-      "after": "e8ed75782602848e2da2be38cd2d67cb3a23a232ffac34f9282ff197d5f67ff0"
+      "after": "e874021c5a6a51c57bb595839b28ec6d5e66d6eb08e32e175a04c3a8e2a2415e"
     },
     "data/patches.py": {
       "after": "9e64ff34f03155babc791ea1480ddc0a76b43e3cfbb655f70bc053c316760446"
@@ -25,7 +25,10 @@
       "after": "99a68a17b7ec5454f82b2ea848b1d1238e094b5b0611e181730e67a37a48d196"
     },
     "evaluation/context.py": {
-      "after": "91298e5539731b7ea7c1be6cc23b4da669f11689d81a70753322195a1220135b"
+      "after": "5e3093806bd66d741c84018351f19e063067f8fdb0e0e730cef45f46c3454e4b"
+    },
+    "evaluation/external_runner.py": {
+      "after": "321b124dd5a0df98cc35a39891e51157338fa7c4d8db0b468825847920b12b91"
     },
     "evaluation/gsm8k.py": {
       "after": "faabe58e1545569f246bb06687addefa4ce1191b19a9904d293e05df67cf246a"
@@ -34,13 +37,19 @@
       "after": "378cce972e734ec732ae7bba0b31fe13eef8e3d08e5f0431ddc41c67085ab678"
     },
     "modeling_bifocalgemma.py": {
-      "after": "9444becbf27190238922806d789fb5c39518e535a08f4b8024cb9079cca51309"
+      "after": "a7ec00bd11e788184dd1309547acc88b36fa0b0b181ba6eca7fbceca4e836f48"
     },
     "models/bridge.py": {
       "after": "06c1d851911abf38eea2c250b61d694b1a3af08b5521e74c9dd7c710dccf017c"
     },
     "models/cross_attention.py": {
-      "after": "3bfb25ddea7e6c80669c3c07dfe9aa375d75f31fd2087a785e05e7a5f04b2454"
+      "after": "7f06cb96c9bf5adcfc49dff57d482a8aac44b1f6c6a6779433cda0e367ece1d6"
+    },
+    "models/memory_efficient.py": {
+      "after": "1bc9ed1c62c9774633c0e3a66a6d0aa7a90a4e32487256d217f5deea029c6faa"
+    },
+    "training/fast_pipeline.py": {
+      "after": "32e5ab452bb36cad3efcfdfcc8eb54a572ed0af823aae83a810ee1636a062296"
     },
     "training/hub.py": {
       "after": "3359ef06a966b0b888f0f9382cfa74a90819cf7a83b8e4bd8782a8cc966321b0"
@@ -50,6 +59,9 @@
     },
     "training/objectives.py": {
       "after": "80f144e0e70240f63db0f84560a538deeb62ed85375910cb3702a5a9151856c0"
+    },
+    "training/policy.py": {
+      "after": "ded97ce9b010ebdf96b49418b6efe1eb8dc0a258c56c8bc368b393c2b2dc03ff"
     },
     "training/repository_sft.py": {
       "after": "3e8eac396fd024d10b99b6c19aefb6862f82d5883581db595f1a887d9f669348"

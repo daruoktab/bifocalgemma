@@ -54,9 +54,9 @@
     "ast_empty": true
   },
   "configs/training_resume_compatibility.json": {
-    "mtime": 1795161938.511213,
-    "seen": 1795161961.6851242,
-    "ast_hash": "25b814e018ed5b90ec87b6b3990b49d7",
+    "mtime": 1795185426.7327785,
+    "seen": 1795185474.3164868,
+    "ast_hash": "3d8914c52546b31fe13100b7eb3bbe34",
     "semantic_hash": ""
   },
   "docs/data/ai_runtime_upgrade_20261009.json": {
@@ -613,9 +613,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/data/context_tasks.py": {
-    "mtime": 1795160759.070024,
-    "seen": 1795161961.6851242,
-    "ast_hash": "0f80ec50779aa86d63ef9bf96b2a763c",
+    "mtime": 1795184045.9349902,
+    "seen": 1795185474.3164868,
+    "ast_hash": "fe0bc35cd065119b2fc9beac7aa250af",
     "semantic_hash": ""
   },
   "src/bifocalgemma/data/curation.py": {
@@ -709,9 +709,9 @@
     "semantic_hash": "31ef895f282527d350d583ef29f838a3"
   },
   "src/bifocalgemma/evaluation/context.py": {
-    "mtime": 1795161937.740526,
-    "seen": 1795161961.6851242,
-    "ast_hash": "3ace8f82cc750523aa97e0d5ebd4a99f",
+    "mtime": 1795185393.6742349,
+    "seen": 1795185474.3164868,
+    "ast_hash": "368c7904d378977c70c809f3c35001f6",
     "semantic_hash": ""
   },
   "src/bifocalgemma/evaluation/eval_code.py": {
@@ -775,9 +775,9 @@
     "semantic_hash": "b2499773e2f1732574439b4fd0818e09"
   },
   "src/bifocalgemma/models/memory_efficient.py": {
-    "mtime": 1795160759.007813,
-    "seen": 1795161961.6851242,
-    "ast_hash": "6278088084b57607ca6c9c3cfba3c38f",
+    "mtime": 1795184045.8493333,
+    "seen": 1795185474.3164868,
+    "ast_hash": "8abf0f22f3e295482e5cc73dbcab1081",
     "semantic_hash": ""
   },
   "src/bifocalgemma/repository_study.py": {
@@ -847,9 +847,9 @@
     "semantic_hash": "8c4ebc2793a0364357f403569b917537"
   },
   "src/bifocalgemma/training/policy.py": {
-    "mtime": 1795160759.0400176,
-    "seen": 1795161961.6851242,
-    "ast_hash": "a5aa1e657cfed4f2823d87fe2f2f1bd3",
+    "mtime": 1795184045.8514998,
+    "seen": 1795185474.3164868,
+    "ast_hash": "bf29e6406ef787878312a99994767a81",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/recipes.py": {
@@ -1208,9 +1208,9 @@
     "semantic_hash": ""
   },
   "tools/prepare_context_data.py": {
-    "mtime": 1795161660.9515564,
-    "seen": 1795161961.6851242,
-    "ast_hash": "8603a5e568a30173567261e096d58c87",
+    "mtime": 1795184045.9396029,
+    "seen": 1795185474.3164868,
+    "ast_hash": "cbc484a82cf62258ca899bf3d8ded890",
     "semantic_hash": ""
   },
   "tools/profile_repository_lengths.py": {
@@ -2030,15 +2030,15 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/modeling_bifocalgemma.py": {
-    "mtime": 1795160758.996949,
-    "seen": 1795161961.6851242,
-    "ast_hash": "36ac221bfdf4d99e853c1a582db03dd2",
+    "mtime": 1795184045.846283,
+    "seen": 1795185474.3164868,
+    "ast_hash": "9c7368a87c8a6233ff0f0fd70ffad07b",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/fast_pipeline.py": {
-    "mtime": 1794802691.2792752,
-    "seen": 1794803104.7247386,
-    "ast_hash": "56c8d647f1545b3b08c4e17b7c3281f7",
+    "mtime": 1795184045.8509562,
+    "seen": 1795185474.3164868,
+    "ast_hash": "bfb8440386560195438de1836c347327",
     "semantic_hash": ""
   },
   "tests/test_pretrained_hf_model.py": {
@@ -2066,9 +2066,9 @@
     "semantic_hash": ""
   },
   "tests/test_fast_pipeline.py": {
-    "mtime": 1795161601.0652022,
-    "seen": 1795161961.6851242,
-    "ast_hash": "911643d16eb9e0cba9ead0fb0ddf401d",
+    "mtime": 1795184151.2978828,
+    "seen": 1795185474.3164868,
+    "ast_hash": "749cd8849979cef3412a378147617653",
     "semantic_hash": ""
   },
   "tests/test_hf_pretrained_model.py": {
@@ -2186,9 +2186,9 @@
     "semantic_hash": ""
   },
   "tests_e2e/test_tier1_features.py": {
-    "mtime": 1795161690.7602944,
-    "seen": 1795161961.6851242,
-    "ast_hash": "29f7a6986fa498034c2704cdb3aa2b08",
+    "mtime": 1795185395.9744134,
+    "seen": 1795185474.3164868,
+    "ast_hash": "e44cfc041c00bdc370ee652ac1d86211",
     "semantic_hash": ""
   },
   "tests_e2e/test_tier2_boundary.py": {
@@ -2210,9 +2210,9 @@
     "semantic_hash": ""
   },
   "tests_e2e/test_tier5_adversarial.py": {
-    "mtime": 1794457621.8577254,
-    "seen": 1794472067.481315,
-    "ast_hash": "612091f97cbdb77d60eb88c3c8dffcb1",
+    "mtime": 1795185398.0790434,
+    "seen": 1795185474.3164868,
+    "ast_hash": "c3f2575227f8d897bcbde631df4caff8",
     "semantic_hash": ""
   },
   "tools/build_grounded_training_pool.py": {
@@ -2282,9 +2282,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/models/cross_attention.py": {
-    "mtime": 1795160758.996949,
-    "seen": 1795161961.6851242,
-    "ast_hash": "91dc76e920eb0df64ac00dd359218449",
+    "mtime": 1795184045.8476715,
+    "seen": 1795185474.3164868,
+    "ast_hash": "b0f66cfaeadb2c19c811beb883e3ab64",
     "semantic_hash": ""
   },
   "src/bifocalgemma/models/embeddings.py": {
@@ -2444,33 +2444,33 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/evaluation/external_runner.py": {
-    "mtime": 1795161653.1612835,
-    "seen": 1795161961.6851242,
-    "ast_hash": "5135209f930b8eee5ea5a7f0b3db8e4d",
+    "mtime": 1795184045.9365695,
+    "seen": 1795185474.3164868,
+    "ast_hash": "4bb345983830c5e4d9480a99ef15184f",
     "semantic_hash": ""
   },
   "tests/test_v4_architecture.py": {
-    "mtime": 1795160759.007813,
-    "seen": 1795161961.6851242,
-    "ast_hash": "257c295151cc03109671c6694ba7cc2c",
+    "mtime": 1795184045.8525634,
+    "seen": 1795185474.3164868,
+    "ast_hash": "5f770dffb6ce5b22bf469d037ca08bb9",
     "semantic_hash": ""
   },
   "tests/test_v4_data_disjoint.py": {
-    "mtime": 1795160759.0751994,
-    "seen": 1795161961.6851242,
-    "ast_hash": "73ccd3b9bcb0b4b6a6a78cac5334e858",
+    "mtime": 1795184045.9376037,
+    "seen": 1795185474.3164868,
+    "ast_hash": "9aca73e085c02c05599fda703f9120bf",
     "semantic_hash": ""
   },
   "tests/test_v4_eval_parity.py": {
-    "mtime": 1795160759.1161153,
-    "seen": 1795161961.6851242,
-    "ast_hash": "e4cf08a60fabd0343262eab92ed727b6",
+    "mtime": 1795184045.938613,
+    "seen": 1795185474.3164868,
+    "ast_hash": "188367831da279d95b5a8dc432e6ca10",
     "semantic_hash": ""
   },
   "tests/test_v4_optimizer_schedule.py": {
-    "mtime": 1795160759.042122,
-    "seen": 1795161961.6851242,
-    "ast_hash": "3776939ecc00af68f687af07ae53cfde",
+    "mtime": 1795184045.8531227,
+    "seen": 1795185474.3164868,
+    "ast_hash": "b4db78e2823dbe4f7c1ea78ffc1d79c8",
     "semantic_hash": ""
   },
   "tools/eval_external_baselines.py": {
