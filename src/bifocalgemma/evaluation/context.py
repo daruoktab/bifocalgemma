@@ -1,5 +1,6 @@
 """Restartable static-context evaluation with fixed denominators and explicit protocols."""
 
+import ast
 import hashlib
 import json
 import keyword
@@ -11,6 +12,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from bifocalgemma.contracts import RepositoryFile, RepositorySnapshot
 from bifocalgemma.data.offline_sft import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.protocol import (
@@ -21,6 +23,7 @@ from bifocalgemma.evaluation.protocol import (
     effective_generation_budget,
     gsm8k_report_metrics,
     mcq_report_metrics,
+    repair_report_metrics,
 )
 from bifocalgemma.training.stages import atomic_json
 
@@ -54,7 +57,15 @@ _GOLD_INPUT_KEYS = (
     "test_script",
 )
 _REPAIR_INSTRUCTION_PREFIX = "Return only a unified diff fulfilling the instruction."
+_FULL_FUNCTION_REPAIR_PREFIX = (
+    "Return only the complete fixed Python code fulfilling the instruction."
+)
+VALID_CONTEXT_MODES = ("full", "disjoint", "local_only")
+VALID_REPAIR_MODES = ("unified_diff", "full_function")
+DEFAULT_LOCAL_CURSOR_WINDOW_LINES = 48
 _FILE_HEADER_RE = re.compile(r"^### File:\s*([^\s(]+)", re.MULTILINE)
+_FILE_SECTION_SPLIT_RE = re.compile(r"(?=^### File:\s*)", re.MULTILINE)
+_FIM_MISSING_LINE_RE = re.compile(r"^[ \t]*###\s*MISSING CODE[ \t]*$", re.MULTILINE)
 _FORBIDDEN_PROMPT_PHRASES = (
     "using the encoder context",
     "use the supplied encoder context",
@@ -63,6 +74,108 @@ _FORBIDDEN_PROMPT_PHRASES = (
     "cross-attention",
     "bifocal",
 )
+
+
+def _deduplicate_longcodeqa_headers(text: str) -> str:
+    """Collapse duplicated Repository:/Question: header prefixes in LongCodeQA prompts."""
+    if not text:
+        return text
+    text = re.sub(r"(?im)^([ \t]*Repository:[ \t]*)(?:Repository:[ \t]*)+", r"\1", text)
+    text = re.sub(r"(?im)^([ \t]*Question:[ \t]*)(?:Question:[ \t]*)+", r"\1", text)
+    text = re.sub(r"(?im)^([ \t]*Repository:)[ \t]*\r?\n[ \t]*Repository:[ \t]*", r"\1 ", text)
+    text = re.sub(r"(?im)^([ \t]*Question:)[ \t]*\r?\n[ \t]*Question:[ \t]*", r"\1 ", text)
+    return text
+
+
+def _normalize_fim_cursor_marker(text: str) -> str:
+    """Unify CrossCodeLong ### MISSING CODE marker to # <MISSING_CODE> matching SFT training."""
+    if not text or "MISSING CODE" not in text:
+        return text
+    return _FIM_MISSING_LINE_RE.sub("# <MISSING_CODE>", text)
+
+
+def _number_lines(lines: list[str], start_line: int = 1) -> str:
+    return "\n".join(f"{idx}: {line}" for idx, line in enumerate(lines, start_line))
+
+
+def _resolve_repair_mode(row: dict[str, Any], repair_mode: str | None = None) -> str:
+    if repair_mode is not None:
+        if repair_mode not in VALID_REPAIR_MODES:
+            raise ValueError(f"unsupported_repair_mode:{repair_mode}")
+        return repair_mode
+    row_mode = row.get("repair_mode")
+    if row_mode in VALID_REPAIR_MODES:
+        return str(row_mode)
+    col = str(row.get("collection") or row.get("benchmark") or "").lower()
+    if "humanevalfix_python_full" in col or "full_function" in col:
+        return "full_function"
+    return "unified_diff"
+
+
+def _parse_fim_sections(context: str) -> tuple[str, str, str] | None:
+    """Extract (cross_file, prefix, suffix) from CrossCodeLong FIM contexts."""
+    if "### PREFIX" not in context or "### SUFFIX" not in context:
+        return None
+    before_prefix, _, after_prefix = context.partition("### PREFIX")
+    if after_prefix.startswith("\r\n"):
+        after_prefix = after_prefix[2:]
+    elif after_prefix.startswith("\n"):
+        after_prefix = after_prefix[1:]
+    prefix_raw, _, suffix_raw = after_prefix.partition("### SUFFIX")
+    if suffix_raw.startswith("\r\n"):
+        suffix_raw = suffix_raw[2:]
+    elif suffix_raw.startswith("\n"):
+        suffix_raw = suffix_raw[1:]
+    prefix_clean = _FIM_MISSING_LINE_RE.sub("", prefix_raw)
+    prefix_clean = prefix_clean.replace("# <MISSING_CODE>", "").rstrip("\r\n")
+    cross_text = ""
+    if "### CROSS-FILE CONTEXT" in before_prefix:
+        _, _, cross_raw = before_prefix.partition("### CROSS-FILE CONTEXT")
+        cross_text = cross_raw.strip("\r\n")
+    return cross_text, prefix_clean, suffix_raw.rstrip("\r\n")
+
+
+def _parse_file_sections(context: str) -> tuple[str, list[tuple[str, str]]] | None:
+    """Split context into (preamble, [(path, body), ...]) when ### File: blocks exist."""
+    if not _FILE_HEADER_RE.search(context):
+        return None
+    chunks = _FILE_SECTION_SPLIT_RE.split(context)
+    preamble = ""
+    files: list[tuple[str, str]] = []
+    for chunk in chunks:
+        if not chunk.strip():
+            continue
+        match = re.match(r"^### File:\s*([^\s(]+)(?:[^\n]*)\r?\n?(.*)$", chunk, re.DOTALL)
+        if match:
+            files.append((match.group(1).strip(), match.group(2).rstrip("\r\n")))
+        elif not files:
+            preamble = (preamble + "\n\n" + chunk.strip()).strip() if preamble else chunk.strip()
+    return (preamble, files) if files else None
+
+
+def _target_window_bounds(
+    row: dict[str, Any], target_path: str, total_lines: int, local_window_lines: int
+) -> tuple[int, int]:
+    """Return inclusive 1-based [start, end] line bounds for the decoder's local window."""
+    if total_lines <= 0:
+        return 1, 0
+    selection = row.get("context_selection")
+    if isinstance(selection, dict) and selection.get("gold_used") is not True:
+        matched = [
+            w
+            for w in selection.get("windows", ())
+            if isinstance(w, dict)
+            and w.get("path") == target_path
+            and isinstance(w.get("start_line"), int)
+            and isinstance(w.get("end_line"), int)
+        ]
+        if matched:
+            center_start = min(w["start_line"] for w in matched)
+            center_end = max(w["end_line"] for w in matched)
+            w_start = max(1, center_start - local_window_lines)
+            w_end = min(total_lines, center_end + local_window_lines)
+            return w_start, w_end
+    return 1, min(total_lines, 2 * local_window_lines)
 
 
 def _single_repair_target_file(row: dict[str, Any]) -> str | None:
@@ -98,54 +211,264 @@ def _context_already_includes_instruction(context: str, instruction: str) -> boo
         return False
     if context.startswith(instruction):
         return True
-    if "\nQuestion:\n" in instruction:
-        goal, _, question_part = instruction.partition("\nQuestion:\n")
+    if "\nQuestion:" in instruction:
+        goal, _, question_part = instruction.partition("\nQuestion:")
+        q_stripped = question_part.strip()
         if (
             goal
-            and context.startswith(goal)
-            and f"Question:\n{question_part.strip()}" in context
+            and context.startswith(goal.strip())
+            and q_stripped
+            and (
+                f"Question:\n{q_stripped}" in context
+                or f"Question: {q_stripped}" in context
+                or f"Question:{q_stripped}" in context
+            )
         ):
             return True
     return False
 
 
-def decoder_prompt(row, *, paired):
-    """One prompt renderer for actual decoding and the shared output allowance."""
-    instruction = row["instruction"]
+def split_context_for_mode(
+    row: dict[str, Any],
+    *,
+    context_mode: str,
+    repair_mode: str | None = None,
+    local_window_lines: int = DEFAULT_LOCAL_CURSOR_WINDOW_LINES,
+) -> tuple[str, str]:
+    """Return ``(decoder_text, encoder_text)`` for ``full``, ``disjoint``, or ``local_only``."""
+    if context_mode not in VALID_CONTEXT_MODES:
+        raise ValueError(f"unsupported_context_mode:{context_mode}")
+
+    instruction = _deduplicate_longcodeqa_headers(str(row["instruction"]))
+    context = _deduplicate_longcodeqa_headers(
+        _normalize_fim_cursor_marker(str(row.get("context") or ""))
+    )
     is_repair = (
         row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
     )
     if is_repair:
-        if paired:
-            target_file = _single_repair_target_file(row)
-            if target_file:
-                return (
-                    f"{_REPAIR_INSTRUCTION_PREFIX}\n\nTarget file: {target_file}\n\n{instruction}"
+        eff_repair_mode = _resolve_repair_mode(row, repair_mode)
+        repair_prefix = (
+            _FULL_FUNCTION_REPAIR_PREFIX
+            if eff_repair_mode == "full_function"
+            else _REPAIR_INSTRUCTION_PREFIX
+        )
+        if context_mode == "full":
+            body = context
+            if body.startswith(_REPAIR_INSTRUCTION_PREFIX) and repair_prefix != _REPAIR_INSTRUCTION_PREFIX:
+                body = repair_prefix + body[len(_REPAIR_INSTRUCTION_PREFIX) :]
+            if body.startswith(repair_prefix):
+                return body, ""
+            if _context_already_includes_instruction(body, instruction) or body.startswith(
+                f"### Issue\n{instruction}"
+            ):
+                return f"{repair_prefix}\n\n{body}", ""
+            return f"{repair_prefix}\n\n{instruction}\n\n{body}", ""
+
+        target_file = _single_repair_target_file(row)
+        file_sections = _parse_file_sections(context)
+        if file_sections is not None:
+            preamble, files = file_sections
+            target_idx = 0
+            if target_file is not None:
+                for idx, (path, _) in enumerate(files):
+                    if path == target_file:
+                        target_idx = idx
+                        break
+            tpath, tbody = files[target_idx]
+            lines = tbody.splitlines()
+            w_start, w_end = _target_window_bounds(row, tpath, len(lines), local_window_lines)
+            local_lines = lines[w_start - 1 : w_end] if w_end >= w_start else []
+            local_block = (
+                f"### File: {tpath} (lines {w_start}-{w_end})\n{_number_lines(local_lines, w_start)}"
+                if local_lines
+                else f"### File: {tpath}"
+            )
+            header = f"{repair_prefix}\n\nTarget file: {tpath}\n\n{instruction}"
+            dec_text = f"{header}\n\n{local_block}"
+            if context_mode == "local_only":
+                return dec_text, ""
+            enc_parts: list[str] = []
+            if preamble:
+                enc_parts.append(preamble)
+            before_lines = lines[: w_start - 1]
+            after_lines = lines[w_end:]
+            if before_lines:
+                enc_parts.append(
+                    f"### File: {tpath} (lines 1-{w_start - 1})\n{_number_lines(before_lines, 1)}"
                 )
-            return f"{_REPAIR_INSTRUCTION_PREFIX}\n\n{instruction}"
-        context = row["context"]
-        if context.startswith(_REPAIR_INSTRUCTION_PREFIX):
-            return context
-        if _context_already_includes_instruction(context, instruction) or context.startswith(
-            f"### Issue\n{instruction}"
-        ):
-            return f"{_REPAIR_INSTRUCTION_PREFIX}\n\n{context}"
-        return f"{_REPAIR_INSTRUCTION_PREFIX}\n\n{instruction}\n\n{context}"
+            if after_lines:
+                enc_parts.append(
+                    f"### File: {tpath} (lines {w_end + 1}-{len(lines)})\n"
+                    f"{_number_lines(after_lines, w_end + 1)}"
+                )
+            for idx, (opath, obody) in enumerate(files):
+                if idx == target_idx:
+                    continue
+                olines = obody.splitlines()
+                numbered_other = _number_lines(olines, 1)
+                enc_parts.append(
+                    f"### File: {opath}\n{numbered_other}" if numbered_other else f"### File: {opath}"
+                )
+            enc_text = "\n\n".join(part for part in enc_parts if part)
+            if not enc_text:
+                enc_text = f"### Issue\n{instruction}"
+            return dec_text, enc_text
 
-    if paired:
-        if str(row.get("benchmark", "")).lower() == "gsm8k":
-            question = row.get("question")
-            if isinstance(question, str) and question.strip():
-                return f"{instruction}\n\nQuestion: {question}"
-        return instruction
+        lines = context.splitlines()
+        w_end = min(len(lines), 2 * local_window_lines)
+        local_lines = lines[:w_end]
+        remote_lines = lines[w_end:]
+        target_banner = f"Target file: {target_file}\n\n" if target_file else ""
+        local_block = f"\n\n{_number_lines(local_lines, 1)}" if local_lines else ""
+        dec_text = f"{repair_prefix}\n\n{target_banner}{instruction}{local_block}"
+        if context_mode == "local_only":
+            return dec_text, ""
+        enc_text = (
+            _number_lines(remote_lines, w_end + 1)
+            if remote_lines
+            else f"### Issue\n{instruction}"
+        )
+        return dec_text, enc_text
 
-    context = row["context"]
-    if _context_already_includes_instruction(context, instruction):
-        return context
-    return f"{instruction}\n\n{context}"
+    fim_sections = _parse_fim_sections(context)
+    if fim_sections is not None:
+        cross_text, prefix_text, suffix_text = fim_sections
+        if context_mode == "full":
+            if _context_already_includes_instruction(context, instruction):
+                return context, ""
+            return f"{instruction}\n\n{context}", ""
+        prefix_lines = prefix_text.splitlines()
+        suffix_lines = suffix_text.splitlines()
+        p_start = max(1, len(prefix_lines) - local_window_lines + 1)
+        local_prefix = prefix_lines[p_start - 1 :]
+        local_suffix = suffix_lines[:local_window_lines]
+        local_parts = [instruction, "", "### PREFIX"]
+        if local_prefix:
+            local_parts.append(_number_lines(local_prefix, p_start))
+        local_parts.append("# <MISSING_CODE>")
+        local_parts.append("### SUFFIX")
+        if local_suffix:
+            local_parts.append(_number_lines(local_suffix, 1))
+        dec_text = "\n".join(local_parts)
+        if context_mode == "local_only":
+            return dec_text, ""
+        enc_parts = []
+        if cross_text.strip():
+            enc_parts.append(
+                "### CROSS-FILE CONTEXT\n" + _number_lines(cross_text.splitlines(), 1)
+            )
+        distant_prefix = prefix_lines[: p_start - 1]
+        distant_suffix = suffix_lines[local_window_lines:]
+        if distant_prefix:
+            enc_parts.append("### DISTANT PREFIX\n" + _number_lines(distant_prefix, 1))
+        if distant_suffix:
+            enc_parts.append(
+                "### DISTANT SUFFIX\n" + _number_lines(distant_suffix, local_window_lines + 1)
+            )
+        enc_text = "\n\n".join(enc_parts) if enc_parts else instruction
+        return dec_text, enc_text
+
+    if context_mode == "full":
+        if _context_already_includes_instruction(context, instruction):
+            return context, ""
+        return (f"{instruction}\n\n{context}" if context else instruction), ""
+
+    if str(row.get("benchmark", "")).lower() == "gsm8k":
+        question = row.get("question")
+        if isinstance(question, str) and question.strip():
+            dec_text = f"{instruction}\n\nQuestion: {question}"
+        else:
+            dec_text = instruction
+    else:
+        dec_text = instruction
+    if context_mode == "local_only":
+        return dec_text, ""
+    return dec_text, context
 
 
-def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
+def encoder_context(
+    row: dict[str, Any],
+    *,
+    paired: bool,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
+) -> str:
+    """Return the encoder input string for the requested mode without duplicating local context."""
+    if context_mode is not None:
+        return split_context_for_mode(
+            row, context_mode=context_mode, repair_mode=repair_mode
+        )[1]
+    if not paired:
+        return ""
+    raw_context = _deduplicate_longcodeqa_headers(
+        _normalize_fim_cursor_marker(str(row.get("context") or ""))
+    )
+    if _parse_fim_sections(raw_context) is not None or _parse_file_sections(raw_context) is not None:
+        return split_context_for_mode(
+            row, context_mode="disjoint", repair_mode=repair_mode
+        )[1]
+    return raw_context
+
+
+def decoder_prompt(
+    row,
+    *,
+    paired,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
+):
+    """One prompt renderer for actual decoding and the shared output allowance."""
+    if context_mode is not None:
+        return split_context_for_mode(
+            row, context_mode=context_mode, repair_mode=repair_mode
+        )[0]
+    if not paired:
+        return split_context_for_mode(
+            row, context_mode="full", repair_mode=repair_mode
+        )[0]
+
+    raw_context = _deduplicate_longcodeqa_headers(
+        _normalize_fim_cursor_marker(str(row.get("context") or ""))
+    )
+    if _parse_fim_sections(raw_context) is not None or _parse_file_sections(raw_context) is not None:
+        return split_context_for_mode(
+            row, context_mode="disjoint", repair_mode=repair_mode
+        )[0]
+
+    instruction = _deduplicate_longcodeqa_headers(str(row["instruction"]))
+    is_repair = (
+        row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
+    )
+    if is_repair:
+        eff_repair_mode = _resolve_repair_mode(row, repair_mode)
+        repair_prefix = (
+            _FULL_FUNCTION_REPAIR_PREFIX
+            if eff_repair_mode == "full_function"
+            else _REPAIR_INSTRUCTION_PREFIX
+        )
+        target_file = _single_repair_target_file(row)
+        if target_file:
+            return f"{repair_prefix}\n\nTarget file: {target_file}\n\n{instruction}"
+        return f"{repair_prefix}\n\n{instruction}"
+
+    if str(row.get("benchmark", "")).lower() == "gsm8k":
+        question = row.get("question")
+        if isinstance(question, str) and question.strip():
+            return f"{instruction}\n\nQuestion: {question}"
+    return instruction
+
+
+def _prompt_ids_impl(
+    row,
+    spec,
+    encoder,
+    decoder,
+    *,
+    encoder_limit,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
+):
     selection = row.get("context_selection")
     if (
         row.get("role") != "eval"
@@ -153,15 +476,34 @@ def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
         or any(k in row for k in _GOLD_INPUT_KEYS)
     ):
         raise ValueError("benchmark_gold_in_model_input")
-    context = row["context"]
+    if context_mode is not None and context_mode not in VALID_CONTEXT_MODES:
+        raise ValueError(f"unsupported_context_mode:{context_mode}")
+    if context_mode == "disjoint" and not spec.encoder:
+        raise ValueError("disjoint_context_mode_requires_encoder")
+
+    use_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
     enc = ()
-    if spec.encoder:
+    if use_encoder:
         if encoder is None:
             raise ValueError("benchmark_missing_encoder_tokenizer")
-        enc = tuple(encoder.encode(context, add_special_tokens=True))
+        enc_text = encoder_context(
+            row,
+            paired=True,
+            context_mode=context_mode,
+            repair_mode=repair_mode,
+        )
+        enc = tuple(encoder.encode(enc_text, add_special_tokens=True)) if enc_text else ()
+        enc_bos = getattr(encoder, "bos_token_id", None)
+        if enc and enc_bos is not None and enc[0] != enc_bos:
+            enc = (enc_bos, *enc)
         if len(enc) > encoder_limit:
             raise ValueError("encoder_context_overflow")
-    prompt = decoder_prompt(row, paired=spec.encoder is not None)
+    prompt = decoder_prompt(
+        row,
+        paired=use_encoder,
+        context_mode=context_mode,
+        repair_mode=repair_mode,
+    )
     try:
         text = decoder.apply_chat_template(
             [{"role": "user", "content": prompt}],
@@ -176,9 +518,30 @@ def prompt_ids(row, spec, encoder, decoder, *, encoder_limit):
             add_generation_prompt=True,
         )
     prefix = tuple(decoder.encode(text, add_special_tokens=False))
-    if not prefix or prefix[0] != decoder.bos_token_id:
+    if not prefix or (decoder.bos_token_id is not None and prefix[0] != decoder.bos_token_id):
         raise ValueError("benchmark_bos_policy")
     return enc, prefix
+
+
+def prompt_ids(
+    row,
+    spec,
+    encoder,
+    decoder,
+    *,
+    encoder_limit,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
+):
+    return _prompt_ids_impl(
+        row,
+        spec,
+        encoder,
+        decoder,
+        encoder_limit=encoder_limit,
+        context_mode=context_mode,
+        repair_mode=repair_mode,
+    )
 
 
 DELIM_OPEN = r"[*'\"`\(\{\[]*"
@@ -333,7 +696,7 @@ def extract_mcq_letter(text: str) -> str | None:
 
 
 def _strip_fim_markers(text: str) -> str:
-    text = re.sub(r"^\s*###\s*MISSING CODE[ \t]*\r?\n?", "", text, count=1)
+    text = re.sub(r"^\s*(?:###\s*MISSING CODE|#\s*<MISSING_CODE>)[ \t]*\r?\n?", "", text, count=1)
     return re.split(r"(?:^|\r?\n)\s*###\s*SUFFIX\b", text, maxsplit=1)[0]
 
 
@@ -478,8 +841,176 @@ def score_repo_niah_case(
     }
 
 
+def _extract_full_python_code(completion: str) -> str:
+    """Extract clean Python source from raw or markdown-fenced full-function completions."""
+    if not isinstance(completion, str):
+        return ""
+    stripped = _strip_markdown_fences(completion).strip("\r\n")
+    return stripped
+
+
+def _merge_full_function_into_file(before: str, candidate: str) -> str:
+    """Splice single-function completions into ``before`` when imports/helpers are omitted."""
+    try:
+        before_tree = ast.parse(before)
+        cand_tree = ast.parse(candidate)
+    except SyntaxError:
+        return candidate
+    if not cand_tree.body:
+        return candidate
+    before_funcs = {
+        node.name: node
+        for node in before_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    cand_funcs = [
+        node
+        for node in cand_tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    # Only splice when the completion consists solely of existing top-level functions and
+    # the original file has additional top-level statements (imports, constants, helpers).
+    if (
+        len(cand_funcs) == len(cand_tree.body)
+        and len(before_tree.body) > len(cand_tree.body)
+        and all(node.name in before_funcs for node in cand_funcs)
+    ):
+        before_lines = before.splitlines(keepends=True)
+        cand_lines = candidate.splitlines(keepends=True)
+        # Replace from bottom to top so earlier line offsets remain valid.
+        replacements = sorted(
+            ((before_funcs[node.name], node) for node in cand_funcs),
+            key=lambda pair: pair[0].lineno,
+            reverse=True,
+        )
+        for old_node, new_node in replacements:
+            start = (old_node.decorator_list[0].lineno if old_node.decorator_list else old_node.lineno) - 1
+            end = old_node.end_lineno or old_node.lineno
+            new_start = (new_node.decorator_list[0].lineno if new_node.decorator_list else new_node.lineno) - 1
+            new_end = new_node.end_lineno or new_node.lineno
+            snippet = "".join(cand_lines[new_start:new_end])
+            if not snippet.endswith("\n"):
+                snippet += "\n"
+            before_lines[start:end] = [snippet]
+        return "".join(before_lines)
+    return candidate if candidate.endswith("\n") else candidate + "\n"
+
+
+def _score_full_function_repair(
+    row: dict[str, Any],
+    gold: dict[str, Any],
+    snapshot: RepositorySnapshot,
+    completion: str,
+    *,
+    python_executable: str,
+    allow_execution: bool,
+) -> dict[str, Any]:
+    """Score full-function pass@1 completion by diffing against the target file and running tests."""
+    from dataclasses import asdict
+
+    from bifocalgemma.data.patches import _build_canonical_patch
+    from bifocalgemma.evaluation.native_python import score_python_patch
+
+    code = _extract_full_python_code(completion)
+    if not code.strip():
+        return {
+            "instance_id": row["instance_id"],
+            "status": "SYNTAX_ERROR",
+            "patch_applied": False,
+            "functional_pass": False,
+            "pass_at_1": False,
+            "correct": False,
+            "repair_mode": "full_function",
+            "syntax_valid": False,
+            "reason": "empty_full_function_completion",
+            "stdout": "",
+            "stderr": "",
+        }
+    try:
+        ast.parse(code)
+    except SyntaxError as exc:
+        return {
+            "instance_id": row["instance_id"],
+            "status": "SYNTAX_ERROR",
+            "patch_applied": False,
+            "functional_pass": False,
+            "pass_at_1": False,
+            "correct": False,
+            "repair_mode": "full_function",
+            "syntax_valid": False,
+            "reason": f"syntax_error: {exc}",
+            "stdout": "",
+            "stderr": "",
+        }
+
+    target_path = _single_repair_target_file(row)
+    file_map = {f.path: f.content for f in snapshot.files}
+    if target_path not in file_map:
+        if len(snapshot.files) == 1:
+            target_path = snapshot.files[0].path
+        elif "solution.py" in file_map:
+            target_path = "solution.py"
+        else:
+            target_path = snapshot.files[0].path
+    before = file_map[target_path]
+    after = _merge_full_function_into_file(before, code)
+    if after == before:
+        if not allow_execution:
+            return {
+                "instance_id": row["instance_id"],
+                "status": "STATIC_ONLY",
+                "patch_applied": True,
+                "functional_pass": None,
+                "pass_at_1": None,
+                "correct": None,
+                "repair_mode": "full_function",
+                "syntax_valid": True,
+                "reason": "Native execution disabled.",
+                "stdout": "",
+                "stderr": "",
+            }
+        after = before + ("\n" if before and not before.endswith("\n") else "") + "# unchanged\n"
+    after_snapshot = RepositorySnapshot(
+        snapshot.repo,
+        snapshot.base_commit,
+        tuple(
+            RepositoryFile(f.path, after if f.path == target_path else f.content)
+            for f in snapshot.files
+        ),
+    )
+    patch = _build_canonical_patch(snapshot, after_snapshot, {target_path})
+    result = score_python_patch(
+        row["instance_id"],
+        snapshot,
+        patch,
+        gold.get("test_script") or "",
+        python_executable=python_executable,
+        expected_snapshot_sha256=gold["snapshot_sha256"],
+        allow_code_execution=allow_execution,
+        timeout_seconds=30,
+        expected_python_version=gold.get("python_environment"),
+    )
+    if result.status == "INFRA_ERROR":
+        raise RuntimeError("Functional benchmark infrastructure failed: " + result.reason)
+    return {
+        **asdict(result),
+        "correct": result.functional_pass,
+        "pass_at_1": result.functional_pass,
+        "repair_mode": "full_function",
+        "syntax_valid": True,
+    }
+
+
 def score_context_case(
-    row, gold, completion, *, directory, python_executable, allow_execution, include_syntax=False
+    row,
+    gold,
+    completion,
+    *,
+    directory,
+    python_executable,
+    allow_execution,
+    include_syntax=False,
+    repair_mode=None,
 ):
     kind = row.get("task_type")
     if kind == "mcq":
@@ -540,6 +1071,7 @@ def score_context_case(
     if "snapshot_file" in gold:
         from dataclasses import asdict
 
+        from bifocalgemma.data.patches import diagnose_patch_application
         from bifocalgemma.evaluation.native_python import score_python_patch
         from bifocalgemma.repository_study import snapshot_from_json
 
@@ -547,6 +1079,17 @@ def score_context_case(
         if not path.is_relative_to(Path(directory).resolve()):
             raise ValueError("benchmark_snapshot_path")
         snapshot = snapshot_from_json(path)
+        eff_repair_mode = _resolve_repair_mode(row, repair_mode)
+        if eff_repair_mode == "full_function":
+            return _score_full_function_repair(
+                row,
+                gold,
+                snapshot,
+                completion,
+                python_executable=python_executable,
+                allow_execution=allow_execution,
+            )
+
         result = score_python_patch(
             row["instance_id"],
             snapshot,
@@ -560,7 +1103,40 @@ def score_context_case(
         )
         if result.status == "INFRA_ERROR":
             raise RuntimeError("Functional benchmark infrastructure failed: " + result.reason)
-        record: dict[str, Any] = {**asdict(result), "correct": result.functional_pass}
+        diag = diagnose_patch_application(
+            snapshot,
+            completion,
+            default_path=_single_repair_target_file(row),
+        )
+        recount_pass: bool | None
+        if result.patch_applied:
+            recount_pass = result.functional_pass
+        elif diag.recount_applied and diag.normalized_patch:
+            if allow_execution:
+                recount_res = score_python_patch(
+                    row["instance_id"],
+                    snapshot,
+                    diag.normalized_patch,
+                    gold.get("test_script") or "",
+                    python_executable=python_executable,
+                    expected_snapshot_sha256=gold["snapshot_sha256"],
+                    allow_code_execution=True,
+                    timeout_seconds=30,
+                    expected_python_version=gold.get("python_environment"),
+                )
+                recount_pass = recount_res.functional_pass
+            else:
+                recount_pass = None
+        else:
+            recount_pass = False
+        record: dict[str, Any] = {
+            **asdict(result),
+            "correct": result.functional_pass,
+            "repair_mode": "unified_diff",
+            "recount_patch_applied": diag.recount_applied,
+            "recount_diagnostic_mode": diag.diagnostic_mode,
+            "recount_functional_pass": recount_pass,
+        }
         if include_syntax:
             from bifocalgemma.evaluation.syntax import patch_syntax
 
@@ -586,6 +1162,8 @@ def run_context_benchmark(
     prediction_callback=None,
     upload_every=100,
     use_cache=False,
+    context_mode=None,
+    repair_mode=None,
 ):
     """Commit each prediction once. A failed process resumes the next uncommitted case."""
     import sys
@@ -622,6 +1200,8 @@ def run_context_benchmark(
         suite_cap=max_new_tokens,
         use_cache=use_cache,
         allow_execution=allow_execution,
+        context_mode=context_mode,
+        repair_mode=repair_mode,
     )
     signature = stable_fingerprint(
         {
@@ -712,9 +1292,28 @@ def run_context_benchmark(
             {**case_info, "stage": "benchmark_case_started", "generated_tokens": 0}, force=True
         )
         cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
-        enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
+        if context_mode is None and repair_mode is None:
+            enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
+        else:
+            enc, prefix = _prompt_ids_impl(
+                row,
+                spec,
+                encoder,
+                decoder,
+                encoder_limit=cap,
+                context_mode=context_mode,
+                repair_mode=repair_mode,
+            )
         # Same output allowance for pairs and baselines: reserve the paired IT prefix.
-        paired_prompt = decoder_prompt(row, paired=True)
+        paired_budget_mode = (
+            "disjoint" if context_mode in ("disjoint", "local_only") else None
+        )
+        paired_prompt = decoder_prompt(
+            row,
+            paired=True,
+            context_mode=paired_budget_mode,
+            repair_mode=repair_mode,
+        )
         try:
             paired_rendered = decoder.apply_chat_template(
                 [{"role": "user", "content": paired_prompt}],
@@ -735,7 +1334,8 @@ def run_context_benchmark(
             paired_prefix_tokens=paired_prefix_size,
             decoder_limit=decoder_limit,
         )
-        total = decoder_limit if spec.encoder else cap + decoder_limit + 512
+        uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
+        total = decoder_limit if uses_encoder else cap + decoder_limit + 512
         if len(prefix) + new_tokens > total:
             raise ValueError("benchmark_decoder_prefix_exceeds_budget")
         generated = greedy_decode(
@@ -764,6 +1364,7 @@ def run_context_benchmark(
             python_executable=python_executable or sys.executable,
             allow_execution=allow_execution,
             **({"include_syntax": True} if use_cache else {}),
+            repair_mode=repair_mode,
         )
         record = {
             "protocol_signature": signature,
@@ -838,6 +1439,7 @@ def run_context_benchmark(
     }
     report.update(mcq_report_metrics(completed))
     report.update(gsm8k_report_metrics(completed))
+    report.update(repair_report_metrics(completed))
     for key in (
         "exact_match",
         "sequence_similarity",
@@ -851,13 +1453,6 @@ def run_context_benchmark(
     ):
         if completed and key in completed[0]:
             report[key] = sum(float(r[key]) for r in completed) / len(ids)
-    if completed and "patch_applied" in completed[0]:
-        report["patch_apply_rate"] = sum(bool(r["patch_applied"]) for r in completed) / len(ids)
-        checked = [r for r in completed if r.get("syntax_valid") is not None]
-        report["syntax_checked"] = len(checked)
-        report["syntax_success_rate"] = (
-            sum(bool(r["syntax_valid"]) for r in checked) / len(checked) if checked else None
-        )
     atomic_json(output / "benchmark_report.json", report)
     activity(
         {"stage": "benchmark_completed", "items_done": len(ids), "items_total": len(ids)},

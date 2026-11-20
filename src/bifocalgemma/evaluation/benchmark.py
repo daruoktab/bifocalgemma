@@ -26,6 +26,7 @@ from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.context import (
     EVALUATION_PROTOCOL,
     V2_EVALUATION_PROTOCOL,
+    _prompt_ids_impl,
     decoder_prompt,
     prompt_ids,
     score_context_case,
@@ -36,6 +37,7 @@ from bifocalgemma.evaluation.protocol import (
     effective_generation_budget,
     gsm8k_report_metrics,
     mcq_report_metrics,
+    repair_report_metrics,
 )
 from bifocalgemma.inference.generation import GreedyGeneration, greedy_decode
 from bifocalgemma.models import inference_cache as inference_cache_mod
@@ -60,7 +62,7 @@ def infer_benchmark_weight_tier(benchmark_item: dict[str, Any] | None) -> str:
         return "medium"
     if "crosscodelong" in name:
         return "heavy"
-    if "longcodeqa" in name or "sweqa" in name:
+    if "longcodeqa" in name or "sweqa" in name or "reponiah" in name:
         return "medium_long"
     enc_lim = int(benchmark_item.get("encoder_limit", 32768))
     if enc_lim <= 4096:
@@ -449,11 +451,15 @@ def run_batched_context_benchmark(
     prediction_callback: Any = None,
     upload_every: int = 100,
     use_cache: bool = True,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
 ) -> dict[str, Any]:
     """Run context benchmark using dynamic optimal batching and deterministic sampling with OOM backoff."""
     from bifocalgemma.data.tokenization import decode_text, load_verified_tokenizer
     from bifocalgemma.training.timing import DurableClock
 
+    if repair_mode is None and benchmark_item is not None:
+        repair_mode = benchmark_item.get("repair_mode")
     sample_limit = benchmark_item.get("sample_limit") if benchmark_item else None
     sample_seed = (
         int(benchmark_item.get("sample_seed", BENCHMARK_SAMPLE_SEED))
@@ -504,6 +510,8 @@ def run_batched_context_benchmark(
         allow_execution=allow_execution,
         sample_limit=sample_limit,
         sample_seed=sample_seed,
+        context_mode=context_mode,
+        repair_mode=repair_mode,
     )
     signature = stable_fingerprint(
         {
@@ -603,8 +611,27 @@ def run_batched_context_benchmark(
 
         for row in chunk_rows:
             cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
-            enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
-            paired_prompt = decoder_prompt(row, paired=True)
+            if context_mode is None and repair_mode is None:
+                enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
+            else:
+                enc, prefix = _prompt_ids_impl(
+                    row,
+                    spec,
+                    encoder,
+                    decoder,
+                    encoder_limit=cap,
+                    context_mode=context_mode,
+                    repair_mode=repair_mode,
+                )
+            paired_budget_mode = (
+                "disjoint" if context_mode in ("disjoint", "local_only") else None
+            )
+            paired_prompt = decoder_prompt(
+                row,
+                paired=True,
+                context_mode=paired_budget_mode,
+                repair_mode=repair_mode,
+            )
             try:
                 paired_rendered = decoder.apply_chat_template(
                     [{"role": "user", "content": paired_prompt}],
@@ -625,7 +652,8 @@ def run_batched_context_benchmark(
                 paired_prefix_tokens=paired_prefix_size,
                 decoder_limit=decoder_limit,
             )
-            total = decoder_limit if spec.encoder else cap + decoder_limit + 512
+            uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
+            total = decoder_limit if uses_encoder else cap + decoder_limit + 512
             if len(prefix) + new_tokens > total:
                 raise ValueError("benchmark_decoder_prefix_exceeds_budget")
             batch_enc.append(enc)
@@ -697,6 +725,7 @@ def run_batched_context_benchmark(
                 python_executable=python_executable or sys.executable,
                 allow_execution=allow_execution,
                 **({"include_syntax": True} if use_cache else {}),
+                repair_mode=repair_mode,
             )
             record = {
                 "protocol_signature": signature,
@@ -769,6 +798,7 @@ def run_batched_context_benchmark(
     }
     report.update(mcq_report_metrics(completed))
     report.update(gsm8k_report_metrics(completed))
+    report.update(repair_report_metrics(completed))
     for key in (
         "exact_match",
         "sequence_similarity",
@@ -782,13 +812,6 @@ def run_batched_context_benchmark(
     ):
         if completed and key in completed[0]:
             report[key] = sum(float(r[key]) for r in completed) / len(ids)
-    if completed and "patch_applied" in completed[0]:
-        report["patch_apply_rate"] = sum(bool(r["patch_applied"]) for r in completed) / len(ids)
-        checked = [r for r in completed if r.get("syntax_valid") is not None]
-        report["syntax_checked"] = len(checked)
-        report["syntax_success_rate"] = (
-            sum(bool(r["syntax_valid"]) for r in checked) / len(checked) if checked else None
-        )
     atomic_json(out_dir / "benchmark_report.json", report)
     activity(
         {"stage": "benchmark_completed", "items_done": len(ids), "items_total": len(ids)},

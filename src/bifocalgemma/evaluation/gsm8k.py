@@ -33,10 +33,10 @@ _GSM8K_TERMINAL_ANSWER_RE = re.compile(
 
 
 def extract_release_answer(completion):
-    """Match the release's first #### answer and comma removal; no numeric eval."""
+    """Match the release's first #### answer (tolerating optional whitespace) and comma removal."""
     if not isinstance(completion, str):
         return None
-    match = re.search(r"#### (\-?[0-9\.\,]+)", completion)
+    match = re.search(r"####\s*(\-?[0-9\.\,]+)", completion)
     return match.group(1).strip().replace(",", "") if match else None
 
 
@@ -299,6 +299,11 @@ def score_gsm8k(inputs, gold, predictions):
         "strict_accuracy": strict_accuracy,
         "resilient_correct": resilient_counts["correct"],
         "resilient_accuracy": resilient_accuracy,
+        "resilient_recovery_delta": resilient_accuracy - strict_accuracy,
+        "accuracy_summary": {
+            "strict_accuracy": strict_accuracy,
+            "resilient_accuracy": resilient_accuracy,
+        },
         "resilient_metric_role": "diagnostic_only_same_predictions",
         "counts": dict(counts),
         "resilient_counts": dict(resilient_counts),
@@ -332,14 +337,21 @@ def gsm8k_prompt_ids(spec, row, encoder, decoder, *, max_encoder_tokens=2048):
         context = row["context"]
         instruction = row["instruction"]
         prompt = context if context.startswith(instruction) else instruction + "\n\n" + context
-    rendered = decoder.apply_chat_template(
-        [{"role": "user", "content": prompt}],
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
+    try:
+        rendered = decoder.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        rendered = decoder.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
     prefix = tuple(decoder.encode(rendered, add_special_tokens=False))
-    if not prefix or prefix[0] != decoder.bos_token_id:
+    if not prefix or (decoder.bos_token_id is not None and prefix[0] != decoder.bos_token_id):
         raise ValueError("gsm8k_bos_policy")
     return enc, prefix
 

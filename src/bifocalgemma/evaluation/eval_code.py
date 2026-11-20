@@ -8,7 +8,7 @@ baselines with the same dataset, harness, sampling, and token/tool budget.
 from dataclasses import dataclass
 from typing import Optional
 
-from bifocalgemma.config import EXPERIMENT_NAMES
+from bifocalgemma.config import EXPERIMENT_NAMES, EXTERNAL_COMPARISON_MODELS
 
 
 @dataclass
@@ -42,6 +42,7 @@ REFERENCE_BASELINES: dict[str, BaselineScores] = {
 
 # Canonical registry shared with configuration and the CLI.
 EXPERIMENT_MODELS = EXPERIMENT_NAMES
+EXTERNAL_BASELINE_MODELS = tuple(EXTERNAL_COMPARISON_MODELS)
 
 
 def _format_score(value: Optional[float]) -> str:
@@ -154,3 +155,30 @@ def print_repair_experiment_table(
             f"{_format_score(metrics.get('crosscodeeval'))}"
         )
     print("=" * 104)
+
+
+def print_v4_parity_comparison_table(
+    results_by_model: dict[str, dict[str, float]],
+    *,
+    title: str = "V4 APPLES-TO-APPLES PARITY COMPARISON (INTERNAL + EXTERNAL)",
+) -> None:
+    """Print controlled v4 parity scores across internal 3-way controls and external models."""
+    width = 122
+    print("=" * width)
+    print(f"  {title}")
+    print("  Same cohorts, greedy decoding, enable_thinking=False; N/A indicates unmeasured.")
+    print("=" * width)
+    print(
+        f"{'Model / Mode':<34} | {'LongCodeQA':<11} | {'RepoNIAH':<10} | "
+        f"{'HEFix pass@1':<12} | {'GSM8K Res.':<11} | {'CCL NormSim':<11}"
+    )
+    print("-" * width)
+    for model_name, metrics in results_by_model.items():
+        print(
+            f"{model_name:<34} | {_format_score(metrics.get('longcodeqa')):<11} | "
+            f"{_format_score(metrics.get('reponiah')):<10} | "
+            f"{_format_score(metrics.get('humanevalfix_pass1')):<12} | "
+            f"{_format_score(metrics.get('gsm8k_resilient')):<11} | "
+            f"{_format_score(metrics.get('crosscodelong_norm_sim')):<11}"
+        )
+    print("=" * width)

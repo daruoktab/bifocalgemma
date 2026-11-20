@@ -144,6 +144,8 @@ def build_effective_benchmark_spec(
     allow_execution: bool,
     sample_limit: int | None = None,
     sample_seed: int | None = None,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
 ) -> dict[str, Any]:
     """Resolve the executed contract used by signatures, journals and reports."""
     _positive_integer(encoder_limit, "encoder_limit")
@@ -154,6 +156,23 @@ def build_effective_benchmark_spec(
     runtime_identity = _runtime_model_identity(model)
     if "spec" in runtime_identity and runtime_identity["spec"] != spec.to_dict():
         raise ValueError("benchmark_runtime_model_spec_mismatch")
+    generation_cfg: dict[str, Any] = {
+        "policy": GENERATION_BUDGET_POLICY,
+        "suite_max_new_tokens": suite_cap,
+        "encoder_limit": encoder_limit,
+        "decoder_limit": min(decoder_limit, MAX_DECODER_TOKENS),
+        "prefix": "actual_paired_chat_template_enable_thinking_false",
+        "decoding": "greedy_cached" if use_cache else "greedy_no_temporal_cache",
+    }
+    if context_mode is not None:
+        generation_cfg["context_mode"] = context_mode
+    scoring_cfg: dict[str, Any] = {
+        "mcq_mode": MCQ_SCORER_MODE,
+        "fingerprint": scorer_fingerprint(),
+        "execution": allow_execution,
+    }
+    if repair_mode is not None:
+        scoring_cfg["repair_mode"] = repair_mode
     return {
         "version": EFFECTIVE_BENCHMARK_PROTOCOL,
         "reset_id": BENCHMARK_RESET_ID,
@@ -165,19 +184,40 @@ def build_effective_benchmark_spec(
         "sample_ids": [row["instance_id"] for row in public_rows],
         "inputs_fingerprint": _fingerprint(public_rows),
         "gold_fingerprint": _fingerprint(gold_rows),
-        "generation": {
-            "policy": GENERATION_BUDGET_POLICY,
-            "suite_max_new_tokens": suite_cap,
-            "encoder_limit": encoder_limit,
-            "decoder_limit": min(decoder_limit, MAX_DECODER_TOKENS),
-            "prefix": "actual_paired_chat_template_enable_thinking_false",
-            "decoding": "greedy_cached" if use_cache else "greedy_no_temporal_cache",
+        "generation": generation_cfg,
+        "scoring": scoring_cfg,
+    }
+
+
+def _surface_strict_and_resilient(
+    records: list[dict[str, Any]],
+    *,
+    primary_metric: str,
+    count_key: str,
+) -> dict[str, Any]:
+    strict_correct = sum(bool(record["strict_correct"]) for record in records)
+    resilient_correct = sum(bool(record["resilient_correct"]) for record in records)
+    total = len(records)
+    strict = strict_correct / total
+    resilient = resilient_correct / total
+    return {
+        "primary_metric": primary_metric,
+        "accuracy_alias": "strict_accuracy",
+        "strict_correct": strict_correct,
+        "resilient_correct": resilient_correct,
+        "strict_accuracy": strict,
+        "resilient_accuracy": resilient,
+        "resilient_recovery_delta": resilient - strict,
+        "accuracy_summary": {
+            "strict_accuracy": strict,
+            "resilient_accuracy": resilient,
         },
-        "scoring": {
-            "mcq_mode": MCQ_SCORER_MODE,
-            "fingerprint": scorer_fingerprint(),
-            "execution": allow_execution,
-        },
+        "resilient_metric_role": "diagnostic_only_same_predictions",
+        "strict_invalid_outputs": sum(record["strict_parsed_answer"] is None for record in records),
+        "resilient_invalid_outputs": sum(
+            record["resilient_parsed_answer"] is None for record in records
+        ),
+        count_key: total,
     }
 
 
@@ -191,20 +231,9 @@ def mcq_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     if not mcq:
         return {}
-    strict = sum(bool(record["strict_correct"]) for record in mcq) / len(mcq)
-    resilient = sum(bool(record["resilient_correct"]) for record in mcq) / len(mcq)
-    return {
-        "primary_metric": "mcq_strict_accuracy",
-        "accuracy_alias": "strict_accuracy",
-        "strict_accuracy": strict,
-        "resilient_accuracy": resilient,
-        "resilient_metric_role": "diagnostic_only_same_predictions",
-        "strict_invalid_outputs": sum(record["strict_parsed_answer"] is None for record in mcq),
-        "resilient_invalid_outputs": sum(
-            record["resilient_parsed_answer"] is None for record in mcq
-        ),
-        "mcq_scored_count": len(mcq),
-    }
+    return _surface_strict_and_resilient(
+        mcq, primary_metric="mcq_strict_accuracy", count_key="mcq_scored_count"
+    )
 
 
 def gsm8k_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -212,21 +241,44 @@ def gsm8k_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     gsm = [
         record
         for record in records
-        if record.get("primary_metric") == "gsm8k_strict_accuracy"
+        if record.get("primary_metric") in {"gsm8k_strict_accuracy", "release_regex_string_accuracy"}
     ]
     if not gsm:
         return {}
-    strict = sum(bool(record["strict_correct"]) for record in gsm) / len(gsm)
-    resilient = sum(bool(record["resilient_correct"]) for record in gsm) / len(gsm)
-    return {
-        "primary_metric": "gsm8k_strict_accuracy",
-        "accuracy_alias": "strict_accuracy",
-        "strict_accuracy": strict,
-        "resilient_accuracy": resilient,
-        "resilient_metric_role": "diagnostic_only_same_predictions",
-        "strict_invalid_outputs": sum(record["strict_parsed_answer"] is None for record in gsm),
-        "resilient_invalid_outputs": sum(
-            record["resilient_parsed_answer"] is None for record in gsm
-        ),
-        "gsm8k_scored_count": len(gsm),
-    }
+    return _surface_strict_and_resilient(
+        gsm, primary_metric="gsm8k_strict_accuracy", count_key="gsm8k_scored_count"
+    )
+
+
+def repair_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate strict patch-apply, --recount diagnostic, full-function pass@1, and syntax."""
+    if not records:
+        return {}
+    out: dict[str, Any] = {}
+    total = len(records)
+    if "patch_applied" in records[0]:
+        out["patch_apply_rate"] = sum(bool(r.get("patch_applied")) for r in records) / total
+        checked = [r for r in records if r.get("syntax_valid") is not None]
+        out["syntax_checked"] = len(checked)
+        out["syntax_success_rate"] = (
+            sum(bool(r["syntax_valid"]) for r in checked) / len(checked) if checked else None
+        )
+    if any("recount_patch_applied" in r for r in records):
+        recount_rows = [r for r in records if "recount_patch_applied" in r]
+        out["recount_patch_apply_rate"] = sum(
+            bool(r["recount_patch_applied"]) for r in recount_rows
+        ) / len(recount_rows)
+        recount_pass_rows = [r for r in recount_rows if r.get("recount_functional_pass") is not None]
+        if recount_pass_rows:
+            out["recount_functional_pass_rate"] = sum(
+                bool(r["recount_functional_pass"]) for r in recount_pass_rows
+            ) / len(recount_rows)
+    if any("pass_at_1" in r for r in records):
+        scored_pass = [r for r in records if r.get("pass_at_1") is not None]
+        out["repair_mode"] = "full_function"
+        out["pass_at_1"] = (
+            sum(bool(r["pass_at_1"]) for r in scored_pass) / len(records)
+            if len(scored_pass) == len(records)
+            else None
+        )
+    return out

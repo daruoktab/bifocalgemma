@@ -168,8 +168,70 @@ COMPREHENSION_MIX_RATIO = 0.20
 WARMUP_RATIO = 0.05
 BENCHMARK_SAMPLE_SEED = 17
 HEAVY_BENCHMARK_SAMPLE_LIMIT = 100
-GATE_INIT_TANH = 0.05
+GATE_INIT_TANH = 0.15
 GATE_INIT_ATANH = math.atanh(GATE_INIT_TANH)
+
+# V4 training and benchmark parity constants (legacy v3 constants above retained for resume compat).
+V4_COLLECTION = "mixed_context_enc32k_dec8k_v4"
+V4_EFFECTIVE_BATCH = 16
+V4_BATCH_SIZE = 2
+V4_ACCUMULATION = 8
+V4_STAGE1_FRACTION = 0.06
+V4_NUM_EPOCHS = 1.5
+V4_HEAVY_BENCHMARK_SAMPLE_LIMIT = 500
+
+EXTERNAL_COMPARISON_MODELS: dict[str, dict[str, Any]] = {
+    "gemma-4-e2b-it": {
+        "title": "Untrained Baseline · Gemma-4-E2B-IT",
+        "model_id": "google/gemma-4-E2B-it",
+        "revision": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
+        "family": "gemma4",
+        "kind": "untrained_native_baseline",
+        "max_position_embeddings": 131072,
+        "enable_thinking": False,
+        "dtype": "bfloat16",
+    },
+    "gemma-4-e4b-it": {
+        "title": "Untrained Baseline · Gemma-4-E4B-IT",
+        "model_id": "google/gemma-4-E4B-it",
+        "revision": "ee0ef6023621cff504d758262d4e04895a5af4a2",
+        "family": "gemma4",
+        "kind": "untrained_native_baseline",
+        "max_position_embeddings": 131072,
+        "enable_thinking": False,
+        "dtype": "bfloat16",
+    },
+    "qwen3-4b-instruct-2507": {
+        "title": "External Competitor · Qwen3-4B-Instruct-2507",
+        "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+        "revision": "cdbee75f17c0",
+        "family": "qwen3",
+        "kind": "external_competitor",
+        "max_position_embeddings": 262144,
+        "enable_thinking": False,
+        "dtype": "bfloat16",
+    },
+    "qwen2.5-coder-3b-instruct": {
+        "title": "External Competitor · Qwen2.5-Coder-3B-Instruct",
+        "model_id": "Qwen/Qwen2.5-Coder-3B-Instruct",
+        "revision": "488639f1ff80",
+        "family": "qwen2.5",
+        "kind": "external_competitor",
+        "max_position_embeddings": 32768,
+        "enable_thinking": None,
+        "dtype": "bfloat16",
+    },
+    "qwen2.5-coder-7b-instruct": {
+        "title": "External Competitor · Qwen2.5-Coder-7B-Instruct",
+        "model_id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+        "revision": "c03e6d358207",
+        "family": "qwen2.5",
+        "kind": "external_competitor",
+        "max_position_embeddings": 32768,
+        "enable_thinking": None,
+        "dtype": "bfloat16",
+    },
+}
 
 MATRIX_MODELS: dict[str, dict[str, Any]] = {
     "2base-2it": {
@@ -423,6 +485,99 @@ BENCHMARKS: list[dict[str, Any]] = [
         "decoder_limit": 8192,
         "max_new_tokens": 2048,
         "sample_limit": HEAVY_BENCHMARK_SAMPLE_LIMIT,
+        "sample_seed": BENCHMARK_SAMPLE_SEED,
+        "weight_tier": "heavy",
+    },
+]
+
+# V4 parity benchmark suite: adds RepoNIAH (4k-32k), full-function HumanEvalFix pass@1,
+# and raises CrossCodeLong sample_limit to V4_HEAVY_BENCHMARK_SAMPLE_LIMIT (500).
+V4_BENCHMARKS: list[dict[str, Any]] = [
+    {
+        "collection": "longcodeqa_gemma32k_dec8k_v1",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 256,
+        "sample_limit": None,
+        "weight_tier": "medium_long",
+    },
+    {
+        "collection": "reponiah_gemma32k_dec8k_v1",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 128,
+        "sample_limit": None,
+        "weight_tier": "medium_long",
+        "depths": (4096, 8192, 16384, 32768),
+        "depth_ratios": (0.1, 0.25, 0.5, 0.75, 0.9),
+        "cases_per_depth": 5,
+    },
+    {
+        "collection": "humanevalfix_python_full_v1",
+        "source_collection": "humanevalfix_python_v2",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 8192,
+        "sample_limit": None,
+        "weight_tier": "medium",
+        "repair_mode": "full_function",
+    },
+    {
+        "collection": "humanevalfix_python_v2",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 8192,
+        "sample_limit": None,
+        "weight_tier": "medium",
+        "repair_mode": "unified_diff",
+    },
+    {
+        "collection": "sweqa_oracle_gemma32k_dec8k_v1",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 256,
+        "sample_limit": None,
+        "weight_tier": "medium_long",
+    },
+    {
+        "collection": "sweqa_noisy_oracle_gemma32k_dec8k_v1",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 256,
+        "sample_limit": None,
+        "weight_tier": "medium_long",
+    },
+    {
+        "collection": "gsm8k_zero_shot_v2",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 8192,
+        "sample_limit": None,
+        "weight_tier": "light",
+    },
+    {
+        "collection": "gsm8k_eight_shot_v2",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 8192,
+        "sample_limit": None,
+        "weight_tier": "light",
+    },
+    {
+        "collection": "crosscodelong_chunk_gemma32k_dec8k_v1",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 2048,
+        "sample_limit": V4_HEAVY_BENCHMARK_SAMPLE_LIMIT,
+        "sample_seed": BENCHMARK_SAMPLE_SEED,
+        "weight_tier": "heavy",
+    },
+    {
+        "collection": "crosscodelong_function_gemma32k_dec8k_v1",
+        "encoder_limit": 32768,
+        "decoder_limit": 8192,
+        "max_new_tokens": 2048,
+        "sample_limit": V4_HEAVY_BENCHMARK_SAMPLE_LIMIT,
         "sample_seed": BENCHMARK_SAMPLE_SEED,
         "weight_tier": "heavy",
     },
