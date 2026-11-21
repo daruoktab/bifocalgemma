@@ -32,11 +32,11 @@ def _():
         """
         # BifocalGemma · 4Base → 4IT (Symmetric)
 
-        Pelatihan dan evaluasi terpadu Molab: SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
+        Pelatihan dan evaluasi terpadu Molab (V4): SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
         - **Model:** `4base-4it` (Symmetric (4B -> 4B): 2560 -> 2560) · **HF:** [daruokta/bifocalgemma-4base-4it](https://huggingface.co/daruokta/bifocalgemma-4base-4it) (`latest/`)
         - **Backbones:** Encoder `google/gemma-4-E4B` (rev `411aa17b749aa952df1359d2dcea73917a544d9a`) | Decoder `google/gemma-4-E4B-it` (rev `ee0ef6023621cff504d758262d4e04895a5af4a2`)
-        - **Kurikulum:** Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps (Batch=2, Accum=2)
-        - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)
+        - **Kurikulum V4:** Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps (1.5 epoch, Batch=2, Accum=8, Eff=16)
+        - **Benchmarks (10 V4):** 8 Full (longcodeqa, reponiah 4k-32k, humanevalfix full & diff, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-500 (crosscodelong chunk/func)
         """
     )
     return (mo,)
@@ -127,9 +127,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-2026-11-02",
-        "filename": "runtime/runtime-188056bb8841bb32.zip",
-        "revision": "a73969733e72bd0acc5fd2676f165583eb58c09c",
-        "sha256": "188056bb8841bb3212a3c5d0298e5822588412e394b2d3b13a848290430c1efd",
+        "filename": "runtime/runtime-ecb03f535255d0c0.zip",
+        "revision": "7d1f1d5c6a58871e406be41935ed69dbe152b904",
+        "sha256": "ecb03f535255d0c05c7da7d921cb75c4f09a1832b118e232b7dbaa8a66d985fa",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],
@@ -163,7 +163,7 @@ def _(dependency_runtime, mo, runtime_root):
         [
             mo.md(
                 f"**Model:** `{MODEL_KEY}` · **HF Otomatis:** `{HF_REPO_ID}` (subfolder `{HF_SUBFOLDER}`)\n"
-                f"Pelatihan {MODEL_KEY} dan 8 benchmark berjalan terpadu dengan auto-save & auto-resume.\n"
+                f"Pelatihan V4 {MODEL_KEY} dan 10 benchmark berjalan terpadu dengan auto-save & auto-resume.\n"
                 "Token di bawah hanya diperlukan jika `HF_TOKEN` belum tersedia di environment."
             ),
             token_form,
@@ -196,7 +196,7 @@ def _(HF_REPO_ID, MODEL_KEY, live_monitor, mo, token_form):
         not token,
         mo.md(
             "Isi HF token di atas dan tekan **Jalankan**, atau sediakan `HF_TOKEN` lalu Run.\n"
-            "Training: 11,102 steps dan dilanjutkan 8 benchmark."
+            "Training V4: 4,494 steps (1.5 epoch, Eff=16) dan dilanjutkan 10 benchmark."
         ),
     )
     ms = __import__("importlib").import_module("tools.molab_matrix_support")
@@ -207,6 +207,7 @@ def _(HF_REPO_ID, MODEL_KEY, live_monitor, mo, token_form):
         repo_id=HF_REPO_ID,
         mo=mo,
         monitor=live_monitor,
+        profile="v4",
     )
     mo.vstack(
         [

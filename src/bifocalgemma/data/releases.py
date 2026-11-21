@@ -44,7 +44,10 @@ def archive_files(root, names, output):
             inventory[name] = {"sha256": digest(source), "bytes": source.stat().st_size}
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            with source.open("rb") as incoming, archive.open(info, "w") as outgoing:
+            with (
+                source.open("rb") as incoming,
+                archive.open(info, "w", force_zip64=source.stat().st_size >= (1 << 31)) as outgoing,
+            ):
                 shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
     return {
         "path": output.name,

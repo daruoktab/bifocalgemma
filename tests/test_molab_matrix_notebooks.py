@@ -1206,7 +1206,7 @@ def test_baseline_notebooks_contain_no_two_stage_or_bridge_labels():
         for term in forbidden:
             assert term.lower() not in code.lower(), f"Forbidden term {term!r} found in {fname}"
         assert "Baseline Decoder-Only Causal LM (Full Decoder SFT)" in code
-        assert "Full Decoder SFT = 11,102 steps terbuka penuh" in code
+        assert "Full Decoder SFT = 4,494 steps terbuka penuh" in code
         assert "Runtime Baseline siap" in code
         assert "Full Decoder SFT & dynamic benchmark batching aktif." in code
 
@@ -1215,7 +1215,7 @@ def test_paired_notebooks_contain_bifocalgemma_and_two_stage_labels():
     for fname in ("train_2base_2it.py", "train_4base_4it.py"):
         code = (ROOT / "notebooks" / fname).read_text(encoding="utf-8")
         assert "SwiGLUDualGateBridge" in code
-        assert "Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps" in code
+        assert "Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps" in code
         assert "Runtime BifocalGemma siap" in code
 
 

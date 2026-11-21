@@ -392,7 +392,16 @@ def source_python_paths(patch):
     ]
 
 
-def context_pool(core, output, cache, tokenizers, *, disjoint_context: bool = False):
+def context_pool(
+    core,
+    output,
+    cache,
+    tokenizers,
+    *,
+    disjoint_context: bool = False,
+    max_completions_per_file: int | None = None,
+    max_completions_per_snapshot: int | None = None,
+):
     rows, manifest = load_curated_pool(core)
     candidate_rows = {
         raw["instance_id"]: {"candidate_row": offset, "upstream_row": raw["original_upstream_row"]}
@@ -481,7 +490,12 @@ def context_pool(core, output, cache, tokenizers, *, disjoint_context: bool = Fa
             },
         )
         snapshot, _ = store.snapshot(task)
-        for instruction, context, target, selection in completions_from_snapshot(row, snapshot):
+        for instruction, context, target, selection in completions_from_snapshot(
+            row,
+            snapshot,
+            max_per_file=max_completions_per_file,
+            max_total=max_completions_per_snapshot,
+        ):
             try:
                 evidence = context_license_evidence(snapshot, selection)
                 variants.append(("completion", instruction, context, target, selection, evidence))

@@ -496,13 +496,18 @@ def run_batched_context_benchmark(
     if not ids or len(set(ids)) != len(ids) or ids != [r["instance_id"] for r in hidden]:
         raise ValueError("benchmark_public_gold_cohort_mismatch")
     gold = {r["instance_id"]: r for r in hidden}
+    benchmark_name = (
+        str(benchmark_item.get("collection") or Path(directory).name)
+        if benchmark_item
+        else Path(directory).name
+    )
     protocol_version = V2_EVALUATION_PROTOCOL if use_cache else EVALUATION_PROTOCOL
     effective_protocol = build_effective_benchmark_spec(
         spec=spec,
         model=model,
         public_rows=public,
         gold_rows=hidden,
-        collection=Path(directory).name,
+        collection=benchmark_name,
         encoder_limit=encoder_limit,
         decoder_limit=decoder_limit,
         suite_cap=max_new_tokens,
@@ -585,7 +590,7 @@ def run_batched_context_benchmark(
         heartbeat_stage = event.get("stage")
         payload = {
             "updated_at": time.time(),
-            "benchmark": Path(directory).name,
+            "benchmark": benchmark_name,
             "eval_batch_size": current_batch_size,
             **event,
         }
@@ -754,8 +759,8 @@ def run_batched_context_benchmark(
                         "stage": "benchmark_progress",
                         "items_done": index,
                         "items_total": len(ids),
-                        "message": f"{Path(directory).name}: {index:,}/{len(ids):,} (batch={len(chunk_rows)})",
-                        "benchmark": Path(directory).name,
+                        "message": f"{benchmark_name}: {index:,}/{len(ids):,} (batch={len(chunk_rows)})",
+                        "benchmark": benchmark_name,
                         "eval_batch_size": len(chunk_rows),
                         "benchmark_elapsed_seconds": clock.elapsed(),
                         "unobserved_gap_seconds": clock.gap,
@@ -775,7 +780,7 @@ def run_batched_context_benchmark(
         "status": "COMPLETED",
         "signature": signature,
         "experiment": spec.name,
-        "benchmark": Path(directory).name,
+        "benchmark": benchmark_name,
         "total": len(ids),
         "sample_limit": sample_limit,
         "eval_batch_size": current_batch_size,

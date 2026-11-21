@@ -31,6 +31,8 @@ from bifocalgemma.config import (
     MATRIX_MODELS,
     MATRIX_RUN_NAMESPACE,
     TOTAL_STEPS,
+    V4_BENCHMARKS,
+    V4_COLLECTION,
     make_experiment_spec,
 )
 from bifocalgemma.data.collator import RepairCollator
@@ -198,19 +200,73 @@ def _build_schedule_for_epochs(
     )
 
 
+def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
+    """Resolve dataset, batching, epoch, and benchmark defaults for v3 (legacy) or v4."""
+    resolved = "v3" if profile is None else profile.strip().lower()
+    if resolved not in {"v3", "v4"}:
+        raise ValueError(f"Unknown training profile {profile!r}; expected 'v3' or 'v4'.")
+    if resolved == "v4":
+        v4_batch = int(getattr(_config, "V4_BATCH_SIZE", BATCH_SIZE))
+        v4_accum = int(getattr(_config, "V4_ACCUMULATION", ACCUMULATION))
+        return {
+            "profile": "v4",
+            "dataset_repo": DATASET_REPO,
+            "dataset_revision": str(getattr(_config, "V4_DATASET_REVISION", DATASET_REVISION)),
+            "collection": str(getattr(_config, "V4_COLLECTION", V4_COLLECTION)),
+            "batch_size": v4_batch,
+            "accumulation": v4_accum,
+            "default_epochs": float(getattr(_config, "V4_NUM_EPOCHS", 1.5)),
+            "base_examples": int(
+                getattr(
+                    _config,
+                    "V4_TOTAL_EXAMPLES",
+                    getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * v4_batch * v4_accum),
+                )
+            ),
+            "default_stage1_fraction": float(getattr(_config, "V4_STAGE1_FRACTION", 0.06)),
+            "benchmarks": list(getattr(_config, "V4_BENCHMARKS", V4_BENCHMARKS)),
+            "run_namespace": str(getattr(_config, "V4_MATRIX_RUN_NAMESPACE", "versionless-repair-v4")),
+        }
+    return {
+        "profile": "v3",
+        "dataset_repo": DATASET_REPO,
+        "dataset_revision": DATASET_REVISION,
+        "collection": COLLECTION,
+        "batch_size": BATCH_SIZE,
+        "accumulation": ACCUMULATION,
+        "default_epochs": 1,
+        "base_examples": int(getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * BATCH_SIZE * ACCUMULATION)),
+        "default_stage1_fraction": float(
+            getattr(_config, "STAGE1_FRACTION", getattr(_config, "V4_STAGE1_FRACTION", 0.06))
+        ),
+        "benchmarks": list(BENCHMARKS),
+        "run_namespace": MATRIX_RUN_NAMESPACE,
+    }
+
+
 def resolve_training_contract(
     spec: Any,
     *,
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     stage1_fraction: float | None = None,
-    num_epochs: int | float = 1,
+    num_epochs: int | float | None = None,
     pool_directory: str | Path | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Declare local supplements, multi-epoch horizons, and short warm-start vs 0%-freeze stage split."""
-    resolved_epochs = _validate_num_epochs(num_epochs)
-    dataset = {"dataset_repo": DATASET_REPO, "dataset_revision": DATASET_REVISION, "collection": COLLECTION}
-    eff_batch = BATCH_SIZE * ACCUMULATION
+    prof = _resolve_profile_settings(profile)
+    resolved_epochs = _validate_num_epochs(
+        prof["default_epochs"] if num_epochs is None else num_epochs
+    )
+    dataset = {
+        "dataset_repo": prof["dataset_repo"],
+        "dataset_revision": prof["dataset_revision"],
+        "collection": prof["collection"],
+    }
+    batch_size = int(prof["batch_size"])
+    accumulation = int(prof["accumulation"])
+    eff_batch = batch_size * accumulation
     if pool_directory is not None:
         manifest = json.loads((Path(pool_directory) / "manifest.json").read_text(encoding="utf-8"))
         if (
@@ -232,11 +288,15 @@ def resolve_training_contract(
             "collection": Path(pool_directory).name,
         }
     else:
-        if resolved_epochs == 1:
+        if prof["profile"] == "v3" and resolved_epochs == 1:
             updates = TOTAL_STEPS
         else:
-            base_examples = int(getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * eff_batch))
-            scheduled_examples = max(1, round(base_examples * float(resolved_epochs)))
+            base_examples = int(prof["base_examples"])
+            scheduled_examples = (
+                base_examples
+                if resolved_epochs == 1
+                else max(1, round(base_examples * float(resolved_epochs)))
+            )
             updates = (scheduled_examples + eff_batch - 1) // eff_batch
 
     total = updates if total_steps is None else total_steps
@@ -248,9 +308,7 @@ def resolve_training_contract(
     elif stage1_steps is not None:
         first = stage1_steps
     else:
-        default_frac = float(
-            getattr(_config, "STAGE1_FRACTION", getattr(_config, "V4_STAGE1_FRACTION", 0.06))
-        )
+        default_frac = float(prof["default_stage1_fraction"])
         frac = default_frac if stage1_fraction is None else stage1_fraction
         if (
             isinstance(frac, bool)
@@ -276,7 +334,7 @@ def resolve_training_contract(
         if spec.encoder is None
         else ("asymmetric_warmup_joint" if first == 0 else "short_warmstart_joint")
     )
-    return {
+    result = {
         **dataset,
         "total_steps": total,
         "stage1_steps": first,
@@ -285,6 +343,11 @@ def resolve_training_contract(
         "num_epochs": resolved_epochs,
         "schedule_mode": schedule_mode,
     }
+    if prof["profile"] == "v4":
+        result["profile"] = "v4"
+        result["batch_size"] = batch_size
+        result["accumulation"] = accumulation
+    return result
 
 
 def run_matrix_stage(
@@ -959,7 +1022,7 @@ def run_matrix_training(
     *,
     token: str | None = None,
     mo: Any = None,
-    output_root: str | Path = f"outputs/matrix/{MATRIX_RUN_NAMESPACE}",
+    output_root: str | Path | None = None,
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
@@ -968,17 +1031,24 @@ def run_matrix_training(
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     stage1_fraction: float | None = None,
-    num_epochs: int | float = 1,
+    num_epochs: int | float | None = None,
     loss_reduction: str | None = None,
     length_cap: int | None = None,
     force_fresh: bool = False,
     pool_directory: str | Path | None = None,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Execute complete matrix training run with short warm-start or 0%-freeze asymmetric warmup."""
     ensure_hardware_memory_guards()
     patch_matrix_tokenization()
     if model_key not in MATRIX_MODELS:
         raise ValueError(f"Unknown model_key {model_key!r}. Choose from {list(MATRIX_MODELS)}.")
+    prof = _resolve_profile_settings(profile)
+    resolved_output_root = (
+        output_root if output_root is not None else f"outputs/matrix/{prof['run_namespace']}"
+    )
+    resolved_batch_size = int(prof["batch_size"])
+    resolved_accumulation = int(prof["accumulation"])
     cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
     policy = unified_recipe(cfg["family"])
@@ -996,6 +1066,7 @@ def run_matrix_training(
         stage1_fraction=stage1_fraction,
         num_epochs=num_epochs,
         pool_directory=pool_directory,
+        profile=profile,
     )
     resolved_total, resolved_stage1, resolved_stage2 = (
         contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps")
@@ -1010,7 +1081,7 @@ def run_matrix_training(
         length_cap if length_cap is not None else int(getattr(_config, "LOSS_LENGTH_CAP", 256))
     )
 
-    root = (Path(output_root) / model_key / "train").resolve()
+    root = (Path(resolved_output_root) / model_key / "train").resolve()
     root.mkdir(parents=True, exist_ok=True)
     prefix = f"{subfolder}/{spec.name}/train"
 
@@ -1119,8 +1190,8 @@ def run_matrix_training(
         "total_steps": resolved_total,
         "stage1_steps": resolved_stage1,
         "stage2_steps": resolved_stage2,
-        "batch_size": BATCH_SIZE,
-        "accumulation": ACCUMULATION,
+        "batch_size": resolved_batch_size,
+        "accumulation": resolved_accumulation,
         "model_key": model_key,
         "repo": repo,
         "subfolder": subfolder,
@@ -1221,10 +1292,19 @@ def run_matrix_training(
         progress({"stage": "configured_cross_attention", **cross_info})
 
     # Prepare curated dataset
-    pool = Path(pool_directory) if pool_directory is not None else Path(cache) / "dataset" / COLLECTION
+    pool = (
+        Path(pool_directory)
+        if pool_directory is not None
+        else Path(cache) / "dataset" / contract["collection"]
+    )
     if pool_directory is None:
         fetch_collection(
-            DATASET_REPO, DATASET_REVISION, COLLECTION, pool, expected_role="train", token=token
+            contract["dataset_repo"],
+            contract["dataset_revision"],
+            contract["collection"],
+            pool,
+            expected_role="train",
+            token=token,
         )
     train_data, dev_data, manifest = prepare_curated_training(
         spec,
@@ -1248,7 +1328,7 @@ def run_matrix_training(
             "pool_fingerprint": manifest["pool_fingerprint"],
         },
         seed=17,
-        effective_batch=BATCH_SIZE * ACCUMULATION,
+        effective_batch=resolved_batch_size * resolved_accumulation,
         num_epochs=resolved_epochs,
     )
     if resolved_total > shared_schedule.total_updates:
@@ -1284,8 +1364,8 @@ def run_matrix_training(
         "data_fingerprint": manifest["fingerprint"],
         "matched_target_fingerprints": manifest["matched_target_fingerprints"],
         "seed": 17,
-        "batch_size": BATCH_SIZE,
-        "accumulation": ACCUMULATION,
+        "batch_size": resolved_batch_size,
+        "accumulation": resolved_accumulation,
         "num_epochs": resolved_epochs,
         "schedule_signature": shared_schedule.signature,
         "schedule_total_updates": shared_schedule.total_updates,
@@ -1349,8 +1429,8 @@ def run_matrix_training(
                 run_dir=root,
                 compatibility=compatibility,
                 start_global_step=0,
-                batch_size=BATCH_SIZE,
-                accumulation=ACCUMULATION,
+                batch_size=resolved_batch_size,
+                accumulation=resolved_accumulation,
                 clip_norm=1.0,
                 seed=17,
                 progress=progress,
@@ -1388,8 +1468,8 @@ def run_matrix_training(
                 run_dir=root,
                 compatibility=compatibility,
                 start_global_step=0,
-                batch_size=BATCH_SIZE,
-                accumulation=ACCUMULATION,
+                batch_size=resolved_batch_size,
+                accumulation=resolved_accumulation,
                 clip_norm=1.0,
                 seed=17,
                 progress=progress,
@@ -1429,8 +1509,8 @@ def run_matrix_training(
                 run_dir=root,
                 compatibility=compatibility,
                 start_global_step=resolved_stage1,
-                batch_size=BATCH_SIZE,
-                accumulation=ACCUMULATION,
+                batch_size=resolved_batch_size,
+                accumulation=resolved_accumulation,
                 clip_norm=1.0,
                 seed=17,
                 progress=progress,
@@ -1527,8 +1607,8 @@ def run_matrix_training(
         "subfolder": subfolder,
         "spec": spec.to_dict(),
         "global_step": resolved_total,
-        "batch_size": BATCH_SIZE,
-        "accumulation": ACCUMULATION,
+        "batch_size": resolved_batch_size,
+        "accumulation": resolved_accumulation,
         "provenance": provenance,
         "schedule_signature": shared_schedule.signature,
         "schedule_total_examples": shared_schedule.total_examples,
@@ -1567,7 +1647,7 @@ def run_matrix_benchmark(
     *,
     token: str | None = None,
     mo: Any = None,
-    output_root: str | Path = f"outputs/matrix/{MATRIX_RUN_NAMESPACE}",
+    output_root: str | Path | None = None,
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
@@ -1576,17 +1656,38 @@ def run_matrix_benchmark(
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     stage1_fraction: float | None = None,
-    num_epochs: int | float = 1,
+    num_epochs: int | float | None = None,
     force_fresh: bool = False,
     pool_directory: str | Path | None = None,
+    profile: str | None = None,
+    benchmark_suite: list[dict[str, Any]] | None = None,
+    context_mode: str | None = None,
 ) -> dict[str, Any]:
-    """Execute 8-benchmark suite (6 full first + 2 deterministic 100-sample last) with dynamic batching."""
+    """Execute matrix benchmark suite (8-benchmark v3 or 10-benchmark v4) with dynamic batching."""
     ensure_hardware_memory_guards()
     patch_matrix_tokenization()
     if model_key not in MATRIX_MODELS:
         raise ValueError(f"Unknown model_key {model_key!r}. Choose from {list(MATRIX_MODELS)}.")
+    prof = _resolve_profile_settings(profile)
+    resolved_output_root = (
+        output_root if output_root is not None else f"outputs/matrix/{prof['run_namespace']}"
+    )
+    resolved_batch_size = int(prof["batch_size"])
+    resolved_accumulation = int(prof["accumulation"])
+    active_benchmarks = (
+        list(benchmark_suite) if benchmark_suite is not None else list(prof["benchmarks"])
+    )
     cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
+    resolved_context_mode = (
+        context_mode
+        if context_mode is not None
+        else (
+            ("disjoint" if spec.encoder is not None else "full")
+            if prof["profile"] == "v4"
+            else None
+        )
+    )
     policy = unified_recipe(cfg["family"])
     repo = (
         (repo_id.strip() if repo_id and repo_id.strip() else None)
@@ -1602,12 +1703,13 @@ def run_matrix_benchmark(
         stage1_fraction=stage1_fraction,
         num_epochs=num_epochs,
         pool_directory=pool_directory,
+        profile=profile,
     )
     resolved_total, resolved_stage1, resolved_stage2 = (
         contract[key] for key in ("total_steps", "stage1_steps", "stage2_steps")
     )
 
-    root = (Path(output_root) / model_key / "train").resolve()
+    root = (Path(resolved_output_root) / model_key / "train").resolve()
     prefix = f"{subfolder}/{spec.name}/train"
 
     dashboard = (
@@ -1646,8 +1748,8 @@ def run_matrix_benchmark(
         "total_steps": resolved_total,
         "stage1_steps": resolved_stage1,
         "stage2_steps": resolved_stage2,
-        "batch_size": BATCH_SIZE,
-        "accumulation": ACCUMULATION,
+        "batch_size": resolved_batch_size,
+        "accumulation": resolved_accumulation,
         "model_key": model_key,
         "repo": repo,
         "subfolder": subfolder,
@@ -1723,7 +1825,7 @@ def run_matrix_benchmark(
     missing_jobs = []
     active_scorer_fp = scorer_fingerprint()
 
-    for item in BENCHMARKS:
+    for item in active_benchmarks:
         settings = {
             "benchmark": item,
             "execution": True,
@@ -1733,6 +1835,7 @@ def run_matrix_benchmark(
             "scorer_fingerprint": active_scorer_fp,
             "snapshot": "trained",
             "checkpoint_identity": checkpoint_identity,
+            **({"context_mode": resolved_context_mode} if resolved_context_mode is not None else {}),
         }
         dest = root / "benchmarks" / benchmark_directory_name(settings)
         stage_key = f"benchmark_{item['collection']}"
@@ -1758,7 +1861,7 @@ def run_matrix_benchmark(
             {
                 "stage": "benchmark_completed",
                 "items_done": len(reports),
-                "items_total": len(BENCHMARKS),
+                "items_total": len(active_benchmarks),
             }
         )
         return {
@@ -1777,12 +1880,15 @@ def run_matrix_benchmark(
     load_matrix_adapters_for_inference(model, checkpoint_path)
 
     device = next(model.parameters()).device
+    bench_repo = prof["dataset_repo"]
+    bench_revision = prof["dataset_revision"]
     for item, settings, destination in missing_jobs:
-        collection_dir = Path(cache) / "benchmarks" / item["collection"]
+        source_collection = str(item.get("source_collection") or item["collection"])
+        collection_dir = Path(cache) / "benchmarks" / source_collection
         fetch_collection(
-            DATASET_REPO,
-            DATASET_REVISION,
-            item["collection"],
+            bench_repo,
+            bench_revision,
+            source_collection,
             collection_dir,
             expected_role="eval",
             include_gold=True,
@@ -1807,6 +1913,8 @@ def run_matrix_benchmark(
             prediction_callback=lambda: snapshot(),
             upload_every=100,
             use_cache=True,
+            context_mode=resolved_context_mode,
+            repair_mode=item.get("repair_mode"),
         )
         reports.append(report)
         ledger.finish(
@@ -1826,7 +1934,7 @@ def run_matrix_benchmark(
         {
             "stage": "benchmark_completed",
             "items_done": len(reports),
-            "items_total": len(BENCHMARKS),
+            "items_total": len(active_benchmarks),
         }
     )
 
@@ -1849,7 +1957,7 @@ def run_matrix_training_and_benchmark(
     *,
     token: str | None = None,
     mo: Any = None,
-    output_root: str | Path = f"outputs/matrix/{MATRIX_RUN_NAMESPACE}",
+    output_root: str | Path | None = None,
     cache: str | Path = "outputs/v2_cache",
     upload: bool = True,
     monitor: Any = None,
@@ -1858,13 +1966,16 @@ def run_matrix_training_and_benchmark(
     total_steps: int | None = None,
     stage1_steps: int | None = None,
     stage1_fraction: float | None = None,
-    num_epochs: int | float = 1,
+    num_epochs: int | float | None = None,
     loss_reduction: str | None = None,
     length_cap: int | None = None,
     force_fresh: bool = False,
     pool_directory: str | Path | None = None,
+    profile: str | None = None,
+    benchmark_suite: list[dict[str, Any]] | None = None,
+    context_mode: str | None = None,
 ) -> dict[str, Any]:
-    """Notebook entry point: execute matrix training curriculum, then run 8-benchmark suite."""
+    """Notebook entry point: execute matrix training curriculum, then run benchmark suite."""
     training_res = run_matrix_training(
         model_key,
         token=token,
@@ -1883,6 +1994,7 @@ def run_matrix_training_and_benchmark(
         length_cap=length_cap,
         force_fresh=force_fresh,
         pool_directory=pool_directory,
+        profile=profile,
     )
     gc.collect()
     if torch.cuda.is_available():
@@ -1903,6 +2015,9 @@ def run_matrix_training_and_benchmark(
         num_epochs=num_epochs,
         force_fresh=force_fresh,
         pool_directory=pool_directory,
+        profile=profile,
+        benchmark_suite=benchmark_suite,
+        context_mode=context_mode,
     )
     return {
         "status": evaluation_res["status"],

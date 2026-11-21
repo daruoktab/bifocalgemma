@@ -176,22 +176,22 @@ def render_notebook(model_key: str, manifest: dict[str, str]) -> str:
     if is_baseline:
         cell1_md = f"""        # {title}
 
-        Pelatihan dan evaluasi terpadu Molab: Baseline Decoder-Only Causal LM (Full Decoder SFT).
+        Pelatihan dan evaluasi terpadu Molab (V4): Baseline Decoder-Only Causal LM (Full Decoder SFT).
         - **Model:** `{model_key}` ({config_type}: Decoder `{dec_dim}`) · **HF:** [{repo_id}](https://huggingface.co/{repo_id}) (`{subfolder}/`)
         - **Backbone:** Decoder `{decoder_id}` (rev `{decoder_rev}`)
-        - **Kurikulum:** Full Decoder SFT = 11,102 steps terbuka penuh dari awal tanpa pembagian tahap (Batch=2, Accum=2)
-        - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
+        - **Kurikulum V4:** Full Decoder SFT = 4,494 steps terbuka penuh (1.5 epoch, Batch=2, Accum=8, Eff=16, 47,932 contoh)
+        - **Benchmarks (10 V4):** 8 Full (longcodeqa, reponiah 4k-32k, humanevalfix full & diff, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-500 (crosscodelong chunk/func)"""
         ready_message = (
             "**Runtime Baseline siap** · Full Decoder SFT & dynamic benchmark batching aktif."
         )
     else:
         cell1_md = f"""        # {title}
 
-        Pelatihan dan evaluasi terpadu Molab: SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
+        Pelatihan dan evaluasi terpadu Molab (V4): SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
         - **Model:** `{model_key}` ({config_type}: {enc_dim} -> {dec_dim}) · **HF:** [{repo_id}](https://huggingface.co/{repo_id}) (`{subfolder}/`)
         - **Backbones:** Encoder `{encoder_id}` (rev `{encoder_rev}`) | Decoder `{decoder_id}` (rev `{decoder_rev}`)
-        - **Kurikulum:** Stage 1 Warmup + Stage 2 Joint SFT = 11,102 steps (Batch=2, Accum=2)
-        - **Benchmarks:** 6 Full (longcodeqa, humanevalfix, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-100 (crosscodelong chunk/func)"""
+        - **Kurikulum V4:** Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps (1.5 epoch, Batch=2, Accum=8, Eff=16)
+        - **Benchmarks (10 V4):** 8 Full (longcodeqa, reponiah 4k-32k, humanevalfix full & diff, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-500 (crosscodelong chunk/func)"""
         ready_message = "**Runtime BifocalGemma siap** · SwiGLUDualGateBridge & dynamic benchmark batching aktif."
 
     code = f'''# /// script
@@ -347,7 +347,7 @@ def _(dependency_runtime, mo, runtime_root):
         [
             mo.md(
                 f"**Model:** `{{MODEL_KEY}}` · **HF Otomatis:** `{{HF_REPO_ID}}` (subfolder `{{HF_SUBFOLDER}}`)\\n"
-                f"Pelatihan {{MODEL_KEY}} dan 8 benchmark berjalan terpadu dengan auto-save & auto-resume.\\n"
+                f"Pelatihan V4 {{MODEL_KEY}} dan 10 benchmark berjalan terpadu dengan auto-save & auto-resume.\\n"
                 "Token di bawah hanya diperlukan jika `HF_TOKEN` belum tersedia di environment."
             ),
             token_form,
@@ -376,7 +376,7 @@ def _(HF_REPO_ID, MODEL_KEY, live_monitor, mo, token_form):
         not token,
         mo.md(
             "Isi HF token di atas dan tekan **Jalankan**, atau sediakan `HF_TOKEN` lalu Run.\\n"
-            "Training: 11,102 steps dan dilanjutkan 8 benchmark."
+            "Training V4: 4,494 steps (1.5 epoch, Eff=16) dan dilanjutkan 10 benchmark."
         ),
     )
     ms = __import__("importlib").import_module("tools.molab_matrix_support")
@@ -387,6 +387,7 @@ def _(HF_REPO_ID, MODEL_KEY, live_monitor, mo, token_form):
         repo_id=HF_REPO_ID,
         mo=mo,
         monitor=live_monitor,
+        profile="v4",
     )
     mo.vstack(
         [
