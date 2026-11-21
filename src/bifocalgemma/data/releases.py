@@ -528,7 +528,7 @@ def unpack_archive(archive_path, descriptor, destination):
                 not path.resolve().is_relative_to(root)
                 or info.is_dir()
                 or info.file_size != item["bytes"]
-                or info.file_size > 2_000_000_000
+                or info.file_size > 16_000_000_000
             ):
                 raise ValueError("release_archive_path_or_size")
             path.parent.mkdir(parents=True, exist_ok=True)
