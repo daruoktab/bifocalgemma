@@ -9,8 +9,17 @@ from typing import Any, cast
 
 
 def ensure_hardware_memory_guards() -> dict[str, Any]:
-    """Configure CUDA expandable segments, guard optional multimodal imports, and return active settings."""
+    """Configure CUDA expandable segments, TF32 Tensor Cores, guard optional imports, and return active settings."""
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.set_float32_matmul_precision("high")
+    except Exception:
+        pass
     if "torchvision" not in sys.modules or sys.modules["torchvision"] is not None:
         try:
             import torch

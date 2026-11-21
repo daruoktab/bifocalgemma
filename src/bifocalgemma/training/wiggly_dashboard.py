@@ -179,10 +179,41 @@ class WigglyDashboard(TrainingDashboard):
             value = state.get(key)
             return "—" if value is None else f"{value:,.4g}"
 
+        gpu_util_str = (
+            f"{state['gpu_util_pct']:.0f}% SM / {state.get('gpu_mem_util_pct', 0.0):.0f}% Mem"
+            + (f" · {state['gpu_power_w']:.0f}W" if state.get("gpu_power_w") is not None else "")
+            if state.get("gpu_util_pct") is not None
+            else "—"
+        )
+        speed_str = (
+            f"{state['step_seconds']:.1f}s/step · {state.get('samples_per_second', 0.0):.2f} ex/s"
+            if state.get("step_seconds") is not None
+            else "—"
+        )
+        breakdown_str = (
+            f"{state.get('data_seconds', 0.0):.2f}s / "
+            f"{state.get('fwd_bwd_seconds', 0.0):.2f}s / "
+            f"{state.get('opt_seconds', 0.0):.2f}s"
+            if state.get("fwd_bwd_seconds") is not None
+            else "—"
+        )
+        mb_str = (
+            f"{state['micro_batches']} mb (max {state.get('max_microbatch_size', '—')}) · "
+            f"pad {state.get('pad_efficiency_pct', 0.0):.1f}%"
+            if state.get("micro_batches") is not None
+            else str(state.get("batch_size", "—")) + " / " + str(state.get("accumulation", "—"))
+        )
         cards = {
             "Tahap": stage_display,
             "Train CE": number("train_loss"),
             "Dev CE": number("dev_loss"),
+            "GPU Compute / Mem BW": gpu_util_str,
+            "Kecepatan (step / ex/s)": speed_str,
+            "Input / Target tok/detik": number("input_tokens_per_second")
+            + " / "
+            + number("target_tokens_per_second"),
+            "Breakdown (data / fwd+bwd / opt)": breakdown_str,
+            "Microbatch / Pad eff": mb_str,
             "Aktif teramati training": format_duration(state.get("elapsed_seconds")),
             "Sesi training ini": format_duration(state.get("segment_seconds")),
             "Aktif benchmark ini (lintas sesi)": format_duration(
@@ -190,7 +221,6 @@ class WigglyDashboard(TrainingDashboard):
             ),
             "Jeda tidak teramati": format_duration(state.get("unobserved_gap_seconds")),
             "ETA optimizer saja": format_duration(state.get("eta_train_seconds")),
-            "Target token/detik": number("target_tokens_per_second"),
             "Gradient norm": number("gradient_norm"),
             "Learning rates": state.get("learning_rates", "—"),
             "GPU allocated / free (GiB)": number("gpu_allocated_gib")
@@ -199,9 +229,6 @@ class WigglyDashboard(TrainingDashboard):
             "GPU reserved / peak allocated (GiB)": number("gpu_reserved_gib")
             + " / "
             + number("gpu_peak_allocated_gib"),
-            "Microbatch / accumulation": str(state.get("batch_size", "—"))
-            + " / "
-            + str(state.get("accumulation", "—")),
             "Attention / query chunk": str(state.get("attention_backend", "—"))
             + " / "
             + str(state.get("query_chunk_size", "—")),

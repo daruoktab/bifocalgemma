@@ -1,14 +1,89 @@
 """Read-only resource samples, durable events, and a dependency-light marimo monitor."""
 
 import html
+import importlib
 import json
 import math
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import torch
+
+_GPU_UTIL_CACHE: dict[int, tuple[float, dict[str, float]]] = {}
+
+
+def _gpu_utilization_snapshot(device: Any) -> dict[str, float]:
+    """Read GPU SM/compute & memory controller utilization with zero-overhead caching."""
+    try:
+        dev = torch.device(device)
+        if dev.type != "cuda" or not torch.cuda.is_available():
+            return {}
+        idx = dev.index if dev.index is not None else torch.cuda.current_device()
+    except Exception:
+        return {}
+
+    now = time.monotonic()
+    cached = _GPU_UTIL_CACHE.get(idx)
+    if cached is not None and now - cached[0] < 1.5:
+        return dict(cached[1])
+
+    metrics: dict[str, float] = {}
+    # 1. Fastest path: NVML via pynvml or torch.cuda.utilization
+    try:
+        pynvml: Any = importlib.import_module("pynvml")
+
+        pynvml.nvmlInit()
+        handle = pynvml.nvmlDeviceGetHandleByIndex(idx)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        metrics["gpu_util_pct"] = float(util.gpu)
+        metrics["gpu_mem_util_pct"] = float(util.memory)
+        try:
+            metrics["gpu_power_w"] = float(pynvml.nvmlDeviceGetPowerUsage(handle)) / 1000.0
+        except Exception:
+            pass
+        try:
+            metrics["gpu_temp_c"] = float(
+                pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            )
+        except Exception:
+            pass
+    except Exception:
+        try:
+            if hasattr(torch.cuda, "utilization"):
+                metrics["gpu_util_pct"] = float(torch.cuda.utilization(idx))
+        except Exception:
+            pass
+
+    # 2. Lightweight throttled nvidia-smi fallback when pynvml isn't installed
+    if "gpu_mem_util_pct" not in metrics:
+        try:
+            out = subprocess.check_output(
+                [
+                    "nvidia-smi",
+                    f"--id={idx}",
+                    "--query-gpu=utilization.gpu,utilization.memory,power.draw,temperature.gpu",
+                    "--format=csv,noheader,nounits",
+                ],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=1.5,
+            ).strip()
+            parts = [p.strip() for p in out.splitlines()[0].split(",")] if out else []
+            if len(parts) >= 2:
+                metrics["gpu_util_pct"] = float(parts[0])
+                metrics["gpu_mem_util_pct"] = float(parts[1])
+            if len(parts) >= 3 and parts[2] not in {"", "N/A", "[N/A]"}:
+                metrics["gpu_power_w"] = float(parts[2])
+            if len(parts) >= 4 and parts[3] not in {"", "N/A", "[N/A]"}:
+                metrics["gpu_temp_c"] = float(parts[3])
+        except Exception:
+            pass
+
+    _GPU_UTIL_CACHE[idx] = (now, dict(metrics))
+    return metrics
 
 
 def resource_snapshot(device=None):
@@ -39,6 +114,7 @@ def resource_snapshot(device=None):
             gpu_peak_reserved_gib=torch.cuda.max_memory_reserved(device) / 2**30,
             gpu_free_gib=free / 2**30,
             gpu_total_gib=total / 2**30,
+            **_gpu_utilization_snapshot(device),
         )
     # Linux container limits can be much smaller than the host RAM reported by psutil.
     for limit_path, usage_path in (

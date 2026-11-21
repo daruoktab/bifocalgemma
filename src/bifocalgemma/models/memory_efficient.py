@@ -22,7 +22,38 @@ DEFAULT_MEMORY_POLICY = {
 }
 
 
-def mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window):
+def _kv_slice_bounds(
+    attention_mask,
+    encoder_valid,
+    start: int,
+    stop: int,
+    k_len: int,
+    window: int | None,
+) -> tuple[int, int]:
+    """Return exact `[k_start, k_stop)` key bounds outside which visibility is guaranteed False."""
+    if encoder_valid is not None or not isinstance(attention_mask, dict) or attention_mask.get("cross"):
+        return 0, k_len
+    bidirectional = bool(attention_mask.get("bidirectional", False))
+    if window:
+        if bidirectional:
+            return max(0, start - window), min(k_len, stop + window)
+        return max(0, start - window + 1), min(k_len, stop)
+    if not bidirectional:
+        return 0, min(k_len, stop)
+    return 0, k_len
+
+
+def mask_tile(
+    attention_mask,
+    encoder_valid,
+    decoder_valid,
+    start,
+    stop,
+    window,
+    *,
+    k_start: int = 0,
+    k_stop: int | None = None,
+):
     if encoder_valid is not None:
         return joint_visibility_tile(encoder_valid, decoder_valid, start, stop, window)
     if isinstance(attention_mask, dict):
@@ -34,17 +65,18 @@ def mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window)
                 mask = mask & q_valid[:, None, start:stop, None].bool()
             return mask
         valid = attention_mask["valid"]
-        positions = torch.arange(valid.shape[1], device=valid.device)
-        queries = positions[start:stop, None]
-        visible = torch.ones((stop - start, valid.shape[1]), device=valid.device, dtype=torch.bool)
+        eff_k_stop = valid.shape[1] if k_stop is None else k_stop
+        q_pos = torch.arange(start, stop, device=valid.device)[:, None]
+        k_pos = torch.arange(k_start, eff_k_stop, device=valid.device)[None, :]
+        visible = torch.ones((stop - start, eff_k_stop - k_start), device=valid.device, dtype=torch.bool)
         if not attention_mask["bidirectional"]:
-            visible &= positions[None, :] <= queries
+            visible &= k_pos <= q_pos
         if window:
-            distance = (positions[None, :] - queries).abs()
+            distance = (k_pos - q_pos).abs()
             visible &= distance <= window if attention_mask["bidirectional"] else distance < window
         return (
             visible[None, None]
-            & valid[:, None, None, :].bool()
+            & valid[:, None, None, k_start:eff_k_stop].bool()
             & valid[:, None, start:stop, None].bool()
         )
     return attention_mask[..., start:stop, :] if attention_mask is not None else None
@@ -149,16 +181,29 @@ class _TiledAttention(torch.autograd.Function):
             or isinstance(attention_mask, dict)
             or (isinstance(attention_mask, torch.Tensor) and attention_mask.dtype == torch.bool)
         )
+        k_len = key.shape[2]
         for start in range(0, query.shape[2], chunk_size):
             stop = min(start + chunk_size, query.shape[2])
-            mask = mask_tile(attention_mask, encoder_valid, decoder_valid, start, stop, window)
+            k_start, k_stop = _kv_slice_bounds(
+                attention_mask, encoder_valid, start, stop, k_len, window
+            )
+            mask = mask_tile(
+                attention_mask,
+                encoder_valid,
+                decoder_valid,
+                start,
+                stop,
+                window,
+                k_start=k_start,
+                k_stop=k_stop,
+            )
             if isinstance(mask, torch.Tensor) and mask.device != query.device:
                 mask = mask.to(query.device)
             pieces.append(
                 attention_tile(
                     query[:, :, start:stop],
-                    key,
-                    value,
+                    key[:, :, k_start:k_stop],
+                    value[:, :, k_start:k_stop],
                     mask,
                     scaling,
                     0.0,
@@ -188,16 +233,29 @@ class _TiledAttention(torch.autograd.Function):
                 and ctx.attention_mask.dtype == torch.bool
             )
         )
+        k_len = key.shape[2]
         for start in range(0, length, ctx.chunk_size):
             stop = min(start + ctx.chunk_size, length)
             q = query[:, :, start:stop]
             grad = grad_output[:, :, start:stop]
+            k_start, k_stop = _kv_slice_bounds(
+                ctx.attention_mask, ctx.encoder_valid, start, stop, k_len, ctx.window
+            )
+            k_slice = repeated_key[:, :, k_start:k_stop]
+            v_slice = repeated_value[:, :, k_start:k_stop]
             mask = mask_tile(
-                ctx.attention_mask, ctx.encoder_valid, ctx.decoder_valid, start, stop, ctx.window
+                ctx.attention_mask,
+                ctx.encoder_valid,
+                ctx.decoder_valid,
+                start,
+                stop,
+                ctx.window,
+                k_start=k_start,
+                k_stop=k_stop,
             )
             if isinstance(mask, torch.Tensor) and mask.device != query.device:
                 mask = mask.to(query.device)
-            scores = torch.matmul(q, repeated_key.transpose(-1, -2)) * ctx.scaling
+            scores = torch.matmul(q, k_slice.transpose(-1, -2)) * ctx.scaling
             if mask is not None:
                 if merged:
                     scores = scores.masked_fill(~mask, float("-inf"))
@@ -211,7 +269,7 @@ class _TiledAttention(torch.autograd.Function):
             if mask is not None and merged:
                 probabilities = probabilities.masked_fill(~mask, 0)
             # dP has native matmul dtype; softmax backward uses native FP32 precision.
-            dp = torch.matmul(grad, repeated_value.transpose(-1, -2))
+            dp = torch.matmul(grad, v_slice.transpose(-1, -2))
             if mask is not None and merged:
                 dp = dp.masked_fill(~mask, 0)
             ds = torch.ops.aten._softmax_backward_data(
@@ -221,12 +279,12 @@ class _TiledAttention(torch.autograd.Function):
             if mask is not None and merged:
                 ds = ds.masked_fill(~mask, 0)
             ds = ds * ctx.scaling
-            dq[:, :, start:stop] = torch.matmul(ds, repeated_key)
+            dq[:, :, start:stop] = torch.matmul(ds, k_slice)
             # Sum partial query reductions in FP32 instead of repeated BF16 adds.
-            dk.add_(
+            dk[:, :, k_start:k_stop].add_(
                 torch.matmul(ds.to(accumulation_dtype).transpose(-1, -2), q.to(accumulation_dtype))
             )
-            dv.add_(
+            dv[:, :, k_start:k_stop].add_(
                 torch.matmul(
                     probabilities.to(accumulation_dtype).transpose(-1, -2),
                     grad.to(accumulation_dtype),
@@ -514,9 +572,35 @@ def sdpa_attention(
                     out = torch.cat(pieces, dim=2)
                 return out.masked_fill(~(has_any & q_valid), 0.0)
 
+            if (
+                not bidirectional
+                and not window
+                and q_len == k_len
+                and query.device.type == "cuda"
+                and max_dim <= 256
+                and bool(valid.all())
+            ):
+                return F.scaled_dot_product_attention(
+                    query,
+                    k_cast,
+                    v_cast,
+                    attn_mask=None,
+                    dropout_p=dropout,
+                    is_causal=True,
+                    scale=scaling,
+                    enable_gqa=enable_gqa,
+                )
+
+            # Use large SDPA tiles for Flash/MemEfficient-eligible head_dim <= 256 so 32K sliding
+            # windows execute in 16-32 fused CUDA launches instead of 256 Python loop iterations.
+            sdpa_tile_chunk = (
+                max(eff_chunk, 2048 if not torch.is_grad_enabled() else 1024)
+                if max_dim <= 256
+                else eff_chunk
+            )
             pieces = []
-            for start in range(0, q_len, eff_chunk):
-                stop = min(q_len, start + eff_chunk)
+            for start in range(0, q_len, sdpa_tile_chunk):
+                stop = min(q_len, start + sdpa_tile_chunk)
                 q_pos = positions[start:stop, None]
                 if window:
                     if bidirectional:

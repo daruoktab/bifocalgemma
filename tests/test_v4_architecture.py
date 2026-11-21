@@ -852,3 +852,68 @@ def test_full_cross_cached_attention_sdpa_guard_fallback_and_non_left_padded_ste
     finally:
         layer0.float()
         object.__setattr__(layer0, "__class__", orig_cls)
+
+
+@pytest.mark.parametrize(
+    ("bidirectional", "window"),
+    [
+        (False, None),
+        (False, 5),
+        (True, 5),
+    ],
+)
+def test_kv_sliced_tiled_and_sdpa_attention_exact_forward_backward_parity(
+    bidirectional: bool, window: int | None
+):
+    """KV-sliced _TiledAttention and sdpa_attention must match dense exact attention in fwd + bwd."""
+    from bifocalgemma.models.memory_efficient import attention_tile, mask_tile
+
+    torch.manual_seed(123)
+    batch, heads, kv_heads, seq_len, head_dim = 2, 4, 2, 19, 16
+    scaling = head_dim**-0.5
+    q0 = torch.randn(batch, heads, seq_len, head_dim, dtype=torch.float32)
+    k0 = torch.randn(batch, kv_heads, seq_len, head_dim, dtype=torch.float32)
+    v0 = torch.randn(batch, kv_heads, seq_len, head_dim, dtype=torch.float32)
+    grad_out = torch.randn(batch, heads, seq_len, head_dim, dtype=torch.float32)
+
+    valid = torch.ones(batch, seq_len, dtype=torch.bool)
+    valid[0, :3] = False  # left-padded row
+    valid[1, -2:] = False  # right-padded row
+    mask_dict = {"valid": valid, "bidirectional": bidirectional}
+
+    # Dense exact reference (no KV slicing, single full mask)
+    full_mask = mask_tile(mask_dict, None, None, 0, seq_len, window)
+    q_ref = q0.clone().requires_grad_(True)
+    k_ref = k0.clone().requires_grad_(True)
+    v_ref = v0.clone().requires_grad_(True)
+    out_ref = attention_tile(q_ref, k_ref, v_ref, full_mask, scaling, 0.0, True)
+    (out_ref * grad_out).sum().backward()
+
+    # 1. KV-sliced _TiledAttention (small chunk=4 to stress tile boundaries)
+    q_t = q0.clone().requires_grad_(True)
+    k_t = k0.clone().requires_grad_(True)
+    v_t = v0.clone().requires_grad_(True)
+    out_t = tiled_attention(
+        q_t, k_t, v_t, chunk_size=4, scaling=scaling, attention_mask=mask_dict, window=window
+    )
+    (out_t * grad_out).sum().backward()
+    torch.testing.assert_close(out_t, out_ref, atol=1e-5, rtol=1e-5)
+    assert q_t.grad is not None and k_t.grad is not None and v_t.grad is not None
+    assert q_ref.grad is not None and k_ref.grad is not None and v_ref.grad is not None
+    torch.testing.assert_close(q_t.grad, q_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(k_t.grad, k_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(v_t.grad, v_ref.grad, atol=1e-5, rtol=1e-5)
+
+    # 2. SDPA fast path
+    q_s = q0.clone().requires_grad_(True)
+    k_s = k0.clone().requires_grad_(True)
+    v_s = v0.clone().requires_grad_(True)
+    out_s = sdpa_attention(
+        q_s, k_s, v_s, chunk_size=4, scaling=scaling, attention_mask=mask_dict, window=window
+    )
+    (out_s * grad_out).sum().backward()
+    torch.testing.assert_close(out_s, out_ref, atol=1e-5, rtol=1e-5)
+    assert q_s.grad is not None and k_s.grad is not None and v_s.grad is not None
+    torch.testing.assert_close(q_s.grad, q_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(k_s.grad, k_ref.grad, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(v_s.grad, v_ref.grad, atol=1e-5, rtol=1e-5)

@@ -33,6 +33,7 @@ from bifocalgemma.config import (
     TOTAL_STEPS,
     V4_BENCHMARKS,
     V4_COLLECTION,
+    V4_MEMORY_POLICY,
     V4_TRAIN_MICROBATCH_PROFILE,
     make_experiment_spec,
 )
@@ -101,7 +102,7 @@ from bifocalgemma.training.stages import (
     atomic_json,
     latest_checkpoint,
 )
-from bifocalgemma.training.telemetry import TrainingDashboard
+from bifocalgemma.training.telemetry import TrainingDashboard, resource_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -559,8 +560,18 @@ def run_matrix_stage(
         raise ValueError("A later stage requires the preceding trained checkpoint.")
 
     model.train()
+    stage_started = time.perf_counter()
     last_save_time = time.monotonic()
     collator = RepairCollator()
+    recent_step_seconds: list[float] = []
+    cuda_empty_cache_threshold = (
+        int(torch.cuda.get_device_properties(device).total_memory * 0.85)
+        if device.type == "cuda"
+        else 0
+    )
+    mem_policy = getattr(model, "memory_policy", None) or {}
+    active_attn_backend = mem_policy.get("attention_backend", "tiled_eager_fp32")
+    active_query_chunk = mem_policy.get("query_chunk_size", 128)
 
     for step in range(start_step, max_steps):
         global_step = start_global_step + step + 1
@@ -596,6 +607,7 @@ def run_matrix_stage(
                 for offset in range(0, len(scheduled_records), batch_size)
             ]
         micro_batches = [collator(items) for items in raw_item_groups]
+        data_seconds = time.perf_counter() - step_started
 
         token_count = sum(int((b.labels != -100).sum()) for b in micro_batches)
         if not token_count:
@@ -659,6 +671,7 @@ def run_matrix_stage(
                 del step_loss, batch
             return loss_value
 
+        fwd_bwd_started = time.perf_counter()
         optimizer.zero_grad(set_to_none=True)
         torch_rng = torch.get_rng_state()
         python_rng = random.getstate()
@@ -687,7 +700,9 @@ def run_matrix_stage(
                     active_item_groups, active_record_groups
                 )
                 active_batches = [collator(items) for items in active_item_groups]
+        fwd_bwd_seconds = time.perf_counter() - fwd_bwd_started
 
+        opt_started = time.perf_counter()
         if effective_freeze_decoder:
             leaked = [
                 n
@@ -713,22 +728,59 @@ def run_matrix_stage(
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
 
-        if device.type == "cuda" and torch.cuda.memory_reserved(device) > 28 * 2**30:
+        if (
+            device.type == "cuda"
+            and cuda_empty_cache_threshold > 0
+            and torch.cuda.memory_reserved(device) > cuda_empty_cache_threshold
+        ):
             torch.cuda.empty_cache()
+        opt_seconds = time.perf_counter() - opt_started
 
         step_seconds = time.perf_counter() - step_started
+        recent_step_seconds.append(step_seconds)
+        if len(recent_step_seconds) > 20:
+            recent_step_seconds.pop(0)
+        mean_recent_step = sum(recent_step_seconds) / len(recent_step_seconds)
+        horizon_steps = total_steps if total_steps is not None else TOTAL_STEPS
+        remaining_steps = max(0, horizon_steps - global_step)
+        real_input_tokens = sum(
+            len(item.encoder_ids) + len(item.decoder_prefix_ids) + len(item.target_ids)
+            for item in drawn_items
+        )
+        padded_input_tokens = sum(
+            (b.encoder_input_ids.shape[1] + b.decoder_input_ids.shape[1])
+            * b.decoder_input_ids.shape[0]
+            for b in active_batches
+        )
+        pad_efficiency_pct = round(100.0 * real_input_tokens / max(1, padded_input_tokens), 1)
+        segment_seconds = time.perf_counter() - stage_started
+        resources = resource_snapshot(device)
         row = {
             "step": global_step,
             "stage_step": step + 1,
             "stage": stage_name,
             "freeze_decoder": effective_freeze_decoder,
-            "max_steps": total_steps if total_steps is not None else TOTAL_STEPS,
+            "max_steps": horizon_steps,
             "train_loss": mean_loss,
             "target_tokens": token_count,
+            "real_input_tokens": real_input_tokens,
+            "padded_input_tokens": padded_input_tokens,
+            "pad_efficiency_pct": pad_efficiency_pct,
             "gradient_norm": grad_norm,
             "group_gradient_norms": group_grad_norms,
             "learning_rates": rates,
             "step_seconds": step_seconds,
+            "data_seconds": data_seconds,
+            "fwd_bwd_seconds": fwd_bwd_seconds,
+            "opt_seconds": opt_seconds,
+            "samples_per_second": round(len(drawn_items) / max(1e-6, step_seconds), 3),
+            "input_tokens_per_second": round(real_input_tokens / max(1e-6, step_seconds), 1),
+            "target_tokens_per_second": round(token_count / max(1e-6, step_seconds), 1),
+            "segment_seconds": segment_seconds,
+            "elapsed_seconds": segment_seconds,
+            "eta_train_seconds": mean_recent_step * remaining_steps,
+            "attention_backend": active_attn_backend,
+            "query_chunk_size": active_query_chunk,
             "batch_size": batch_size,
             "accumulation": accumulation,
             "micro_batches": len(active_item_groups),
@@ -751,6 +803,7 @@ def run_matrix_stage(
             "peak_allocated_gib": (
                 torch.cuda.max_memory_allocated(device) / 2**30 if device.type == "cuda" else 0.0
             ),
+            **resources,
         }
         history.append(row)
 
@@ -1408,7 +1461,8 @@ def run_matrix_training(
     # Download model backbone
     model, provenance = download_model(spec, cache, token, progress)
     configure_policy_model(model, copy.deepcopy(policy))
-    configure_memory_efficient_training(model)
+    v4_mem_policy = dict(V4_MEMORY_POLICY) if prof["profile"] == "v4" else None
+    configure_memory_efficient_training(model, policy=v4_mem_policy)
     cross_info = configure_full_rank_cross_attention(model)
     if spec.encoder is None:
         progress({"stage": "configured_decoder_baseline", **cross_info})
@@ -2005,7 +2059,8 @@ def run_matrix_benchmark(
     # Load model for inference
     model, _ = download_model(spec, cache, token, progress)
     configure_policy_model(model, copy.deepcopy(policy))
-    configure_memory_efficient_training(model)
+    v4_mem_policy = dict(V4_MEMORY_POLICY) if prof["profile"] == "v4" else None
+    configure_memory_efficient_training(model, policy=v4_mem_policy)
     configure_full_rank_cross_attention(model)
     load_matrix_adapters_for_inference(model, checkpoint_path)
 

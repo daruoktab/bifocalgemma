@@ -605,18 +605,25 @@ MODEL_EVAL_FOOTPRINT: dict[str, dict[str, float]] = {
 }
 
 # Intra-window length-grouped micro-batch budgets calibrated from 95 GiB Molab VRAM peaks
-# (keeps effective_batch=16 and gradients mathematically identical while cutting padding waste).
+# (keeps effective_batch=16 and gradients mathematically identical while maximizing SM/bandwidth/VRAM
+# without exceeding 95 GiB even on the largest E4B+E4B pair; backed by gradual OOM backoff).
+V4_MEMORY_POLICY: dict[str, Any] = {
+    "attention_backend": "sdpa",
+    "query_chunk_size": 512,
+    "loss_chunk_size": 512,
+}
+
 V4_TRAIN_MICROBATCH_PROFILE: dict[str, dict[str, int]] = {
-    "e2b-it": {"max_microbatch_size": 8, "max_microbatch_tokens": 32768},
-    "e4b-it": {"max_microbatch_size": 6, "max_microbatch_tokens": 24576},
-    "2base-2it": {"max_microbatch_size": 6, "max_microbatch_tokens": 24576},
-    "2it-2it": {"max_microbatch_size": 6, "max_microbatch_tokens": 24576},
-    "4base-2it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
-    "4it-2it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
-    "2base-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
-    "2it-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
-    "4base-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 16384},
-    "4it-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 16384},
+    "e2b-it": {"max_microbatch_size": 16, "max_microbatch_tokens": 65536},
+    "e4b-it": {"max_microbatch_size": 16, "max_microbatch_tokens": 49152},
+    "2base-2it": {"max_microbatch_size": 12, "max_microbatch_tokens": 49152},
+    "2it-2it": {"max_microbatch_size": 12, "max_microbatch_tokens": 49152},
+    "4base-2it": {"max_microbatch_size": 8, "max_microbatch_tokens": 36864},
+    "4it-2it": {"max_microbatch_size": 8, "max_microbatch_tokens": 36864},
+    "2base-4it": {"max_microbatch_size": 8, "max_microbatch_tokens": 36864},
+    "2it-4it": {"max_microbatch_size": 8, "max_microbatch_tokens": 36864},
+    "4base-4it": {"max_microbatch_size": 8, "max_microbatch_tokens": 28672},
+    "4it-4it": {"max_microbatch_size": 8, "max_microbatch_tokens": 28672},
 }
 
 BENCHMARK_TIER_CONFIG: dict[str, dict[str, float | int]] = {
