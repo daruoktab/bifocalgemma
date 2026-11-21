@@ -604,6 +604,21 @@ MODEL_EVAL_FOOTPRINT: dict[str, dict[str, float]] = {
     "4it-4it": {"weights_gib": 16.5, "scale_factor": 0.75},
 }
 
+# Intra-window length-grouped micro-batch budgets calibrated from 95 GiB Molab VRAM peaks
+# (keeps effective_batch=16 and gradients mathematically identical while cutting padding waste).
+V4_TRAIN_MICROBATCH_PROFILE: dict[str, dict[str, int]] = {
+    "e2b-it": {"max_microbatch_size": 8, "max_microbatch_tokens": 32768},
+    "e4b-it": {"max_microbatch_size": 6, "max_microbatch_tokens": 24576},
+    "2base-2it": {"max_microbatch_size": 6, "max_microbatch_tokens": 24576},
+    "2it-2it": {"max_microbatch_size": 6, "max_microbatch_tokens": 24576},
+    "4base-2it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
+    "4it-2it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
+    "2base-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
+    "2it-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 20480},
+    "4base-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 16384},
+    "4it-4it": {"max_microbatch_size": 4, "max_microbatch_tokens": 16384},
+}
+
 BENCHMARK_TIER_CONFIG: dict[str, dict[str, float | int]] = {
     "light": {"per_sample_gib": 2.4, "base_batch": 10, "max_batch": 16},
     "medium": {"per_sample_gib": 3.6, "base_batch": 6, "max_batch": 12},

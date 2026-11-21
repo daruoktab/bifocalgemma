@@ -752,3 +752,149 @@ def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_
     assert trace[2]["learning_rates"]["bridge_mlp"] == pytest.approx(
         trace[1]["learning_rates"]["bridge_mlp"]
     )
+
+
+def test_length_grouped_microbatch_packing_preserves_gradients_and_backoff(tmp_path, monkeypatch):
+    import bifocalgemma.training.matrix as matrix
+    from bifocalgemma.training.matrix import pack_window_microbatches
+
+    # Build 8 varied-length examples (4 short + 2 medium + 2 long) in a single effective_batch=8 window.
+    lengths = [6, 40, 8, 20, 7, 50, 9, 22]
+    raw: list[dict[str, Any]] = [
+        {
+            "instance_id": f"len-{i}",
+            "instruction": f"Task {i}",
+            "context": "x " * ln,
+            "target_text": f"out {i}",
+            "source": "fixture",
+            "task_type": "repair" if i % 2 else "completion",
+            "token_lengths": {"encoder": ln},
+        }
+        for i, ln in enumerate(lengths)
+    ]
+    examples = [
+        TokenizedRepairExample(
+            row["instance_id"],
+            (2, *(10 + (j % 20) for j in range(ln))),
+            (2, 30, 31),
+            (50 + i, 60, 107),
+            metadata={"task_type": row["task_type"], "source": row["source"]},
+        )
+        for i, (row, ln) in enumerate(zip(raw, lengths, strict=True))
+    ]
+    schedule = build_shared_schedule(
+        canonical_schedule_records(raw),
+        dataset_identity={"fixture": "length_pack"},
+        effective_batch=8,
+    )
+    window_items = [examples[i] for i in schedule.window(0)]
+    window_records = list(schedule.records[:8])
+
+    item_groups, record_groups = pack_window_microbatches(
+        window_items,
+        window_records,
+        max_microbatch_size=4,
+        max_microbatch_tokens=64,
+    )
+    # 4 short items pack into one 4-item micro-batch; medium pair packs together; long items go solo.
+    assert [len(g) for g in item_groups] == [4, 2, 1, 1]
+    assert {item.instance_id for g in item_groups for item in g} == {
+        item.instance_id for item in window_items
+    }
+    assert len(record_groups) == len(item_groups)
+
+    # Verify exact mathematical equivalence of loss, grad norm, and weights vs batch_size=1 accumulation=8.
+    model, policy = fixture_model("2base-2it")
+    initial = copy.deepcopy(model.state_dict())
+    bs1_trace: list[dict[str, Any]] = []
+    run_matrix_stage(
+        model,
+        examples,
+        [],
+        "joint",
+        policy=copy.deepcopy(policy),
+        max_steps=1,
+        freeze_decoder=False,
+        start_global_step=0,
+        batch_size=1,
+        accumulation=8,
+        run_dir=tmp_path / "bs1",
+        compatibility={"model_key": "2base-2it"},
+        shared_schedule=schedule,
+        progress=bs1_trace.append,
+    )
+    expected = copy.deepcopy(model.state_dict())
+
+    model.load_state_dict(initial)
+    trace: list[dict[str, Any]] = []
+    run_matrix_stage(
+        model,
+        examples,
+        [],
+        "joint",
+        policy=copy.deepcopy(policy),
+        max_steps=1,
+        freeze_decoder=False,
+        start_global_step=0,
+        batch_size=2,
+        accumulation=4,
+        max_microbatch_size=4,
+        max_microbatch_tokens=64,
+        run_dir=tmp_path / "packed",
+        compatibility={"model_key": "2base-2it"},
+        shared_schedule=schedule,
+        progress=trace.append,
+    )
+    assert trace[0]["instance_ids"] == [r.instance_id for r in window_records]
+    assert trace[0]["micro_batches"] == 4
+    assert trace[0]["max_microbatch_size"] == 4
+    assert trace[0]["train_loss"] == pytest.approx(bs1_trace[0]["train_loss"], rel=1e-5, abs=1e-6)
+    assert trace[0]["gradient_norm"] == pytest.approx(
+        bs1_trace[0]["gradient_norm"], rel=1e-4, abs=1e-5
+    )
+    for name, actual in model.state_dict().items():
+        torch.testing.assert_close(actual, expected[name], rtol=1e-3, atol=5e-4)
+
+    # Verify gradual OOM backoff (4 -> 2 -> ok without dropping all the way to 1) preserves weights.
+    model.load_state_dict(initial)
+    original_loss = matrix.compute_step_loss
+    oom_injected = [False]
+
+    def fail_on_bs4(*args, **kwargs):
+        batch = args[1]
+        if not oom_injected[0] and batch.labels.shape[0] >= 4:
+            oom_injected[0] = True
+            raise torch.cuda.OutOfMemoryError("simulated OOM on bs=4")
+        return original_loss(*args, **kwargs)
+
+    monkeypatch.setattr(matrix, "compute_step_loss", fail_on_bs4)
+    oom_trace: list[dict[str, Any]] = []
+    run_matrix_stage(
+        model,
+        examples,
+        [],
+        "joint",
+        policy=copy.deepcopy(policy),
+        max_steps=1,
+        freeze_decoder=False,
+        start_global_step=0,
+        batch_size=2,
+        accumulation=4,
+        max_microbatch_size=4,
+        max_microbatch_tokens=64,
+        run_dir=tmp_path / "oom_backoff",
+        compatibility={"model_key": "2base-2it"},
+        shared_schedule=schedule,
+        progress=oom_trace.append,
+    )
+    assert oom_injected[0]
+    assert oom_trace[0]["max_microbatch_size"] == 2
+    assert oom_trace[0]["micro_batches"] == 6
+    assert oom_trace[0]["train_loss"] == pytest.approx(
+        bs1_trace[0]["train_loss"], rel=1e-5, abs=1e-6
+    )
+    assert oom_trace[0]["gradient_norm"] == pytest.approx(
+        bs1_trace[0]["gradient_norm"], rel=1e-4, abs=1e-5
+    )
+    for name, actual in model.state_dict().items():
+        torch.testing.assert_close(actual, expected[name], rtol=1e-3, atol=5e-4)

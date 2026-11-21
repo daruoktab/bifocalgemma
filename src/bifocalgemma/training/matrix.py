@@ -33,6 +33,7 @@ from bifocalgemma.config import (
     TOTAL_STEPS,
     V4_BENCHMARKS,
     V4_COLLECTION,
+    V4_TRAIN_MICROBATCH_PROFILE,
     make_experiment_spec,
 )
 from bifocalgemma.data.collator import RepairCollator
@@ -350,6 +351,97 @@ def resolve_training_contract(
     return result
 
 
+def _example_sequence_lengths(item: Any) -> tuple[int, int]:
+    """Return `(encoder_tokens, decoder_total_tokens)` for length-grouped micro-batch packing."""
+    enc_len = len(item.encoder_ids)
+    dec_len = len(item.decoder_prefix_ids) + len(item.target_ids)
+    return enc_len, dec_len
+
+
+def pack_window_microbatches(
+    items: list[Any],
+    records: list[Any],
+    *,
+    max_microbatch_size: int,
+    max_microbatch_tokens: int,
+) -> tuple[list[list[Any]], list[list[Any]]]:
+    """Group a window's examples by length into padding-minimal micro-batches within a token budget.
+
+    Preserves the exact multiset of examples in the window so weighted gradient accumulation across
+    the window is mathematically invariant to partitioning.
+    """
+    if len(items) != len(records):
+        raise ValueError("Window items and records length mismatch.")
+    if not items:
+        return [], []
+    eff_max_bs = max(1, max_microbatch_size)
+    eff_max_toks = max(1, max_microbatch_tokens)
+
+    # Sort deterministically by total sequence length so similar-length examples share micro-batches.
+    indexed = sorted(
+        range(len(items)),
+        key=lambda idx: (
+            sum(_example_sequence_lengths(items[idx])),
+            _example_sequence_lengths(items[idx])[1],
+            idx,
+        ),
+    )
+    item_groups: list[list[Any]] = []
+    record_groups: list[list[Any]] = []
+
+    cur_items: list[Any] = []
+    cur_records: list[Any] = []
+    cur_max_enc = 0
+    cur_max_dec = 0
+
+    for idx in indexed:
+        item = items[idx]
+        rec = records[idx]
+        enc_len, dec_len = _example_sequence_lengths(item)
+        cand_len = len(cur_items) + 1
+        cand_max_enc = max(cur_max_enc, enc_len)
+        cand_max_dec = max(cur_max_dec, dec_len)
+        cand_padded_tokens = (cand_max_enc + cand_max_dec) * cand_len
+
+        if cur_items and (cand_len > eff_max_bs or cand_padded_tokens > eff_max_toks):
+            item_groups.append(cur_items)
+            record_groups.append(cur_records)
+            cur_items = [item]
+            cur_records = [rec]
+            cur_max_enc = enc_len
+            cur_max_dec = dec_len
+        else:
+            cur_items.append(item)
+            cur_records.append(rec)
+            cur_max_enc = cand_max_enc
+            cur_max_dec = cand_max_dec
+
+    if cur_items:
+        item_groups.append(cur_items)
+        record_groups.append(cur_records)
+    return item_groups, record_groups
+
+
+def _split_microbatch_groups(
+    item_groups: list[list[Any]],
+    record_groups: list[list[Any]],
+) -> tuple[list[list[Any]], list[list[Any]]]:
+    """Halve every micro-batch group larger than 1 for gradual OOM backoff."""
+    next_items: list[list[Any]] = []
+    next_records: list[list[Any]] = []
+    for items_slice, records_slice in zip(item_groups, record_groups, strict=True):
+        if len(items_slice) <= 1:
+            next_items.append(items_slice)
+            next_records.append(records_slice)
+        else:
+            mid = len(items_slice) // 2
+            next_items.append(items_slice[:mid])
+            next_items.append(items_slice[mid:])
+            next_records.append(records_slice[:mid])
+            next_records.append(records_slice[mid:])
+    return next_items, next_records
+
+
 def run_matrix_stage(
     model: Any,
     train_examples: Any,
@@ -378,6 +470,8 @@ def run_matrix_stage(
     asymmetric_warmup: bool | None = None,
     loss_reduction: str | None = None,
     length_cap: int | None = None,
+    max_microbatch_size: int | None = None,
+    max_microbatch_tokens: int | None = None,
 ) -> dict[str, Any]:
     """Execute one training stage (Stage 1 warm-start or Stage 2 / Step-0 joint) with v4 AdamW."""
     ensure_hardware_memory_guards()
@@ -472,23 +566,36 @@ def run_matrix_stage(
         global_step = start_global_step + step + 1
         step_started = time.perf_counter()
 
-        raw_item_groups: list[list[Any]] = []
-        raw_record_groups: list[list[Any]] = []
-        micro_batches = []
         window_indices = shared_schedule.window(global_step - 1)
-        scheduled_records = shared_schedule.records[
-            (global_step - 1) * shared_schedule.effective_batch : global_step * shared_schedule.effective_batch
-        ]
-        for offset in range(0, len(window_indices), batch_size):
-            indices = window_indices[offset : offset + batch_size]
-            items = [train_examples[i] for i in indices]
-            records_slice = list(scheduled_records[offset : offset + batch_size])
-            raw_item_groups.append(items)
-            raw_record_groups.append(records_slice)
-            micro_batches.append(collator(items))
-        drawn_items = [item for items in raw_item_groups for item in items]
-        if [item.instance_id for item in drawn_items] != [record.instance_id for record in scheduled_records]:
+        scheduled_records = list(
+            shared_schedule.records[
+                (global_step - 1) * shared_schedule.effective_batch : global_step
+                * shared_schedule.effective_batch
+            ]
+        )
+        drawn_items = [train_examples[i] for i in window_indices]
+        if [item.instance_id for item in drawn_items] != [
+            record.instance_id for record in scheduled_records
+        ]:
             raise ValueError("Tokenized loader order disagrees with the canonical shared schedule.")
+
+        if max_microbatch_size is not None and max_microbatch_tokens is not None:
+            raw_item_groups, raw_record_groups = pack_window_microbatches(
+                drawn_items,
+                scheduled_records,
+                max_microbatch_size=max_microbatch_size,
+                max_microbatch_tokens=max_microbatch_tokens,
+            )
+        else:
+            raw_item_groups = [
+                drawn_items[offset : offset + batch_size]
+                for offset in range(0, len(drawn_items), batch_size)
+            ]
+            raw_record_groups = [
+                scheduled_records[offset : offset + batch_size]
+                for offset in range(0, len(scheduled_records), batch_size)
+            ]
+        micro_batches = [collator(items) for items in raw_item_groups]
 
         token_count = sum(int((b.labels != -100).sum()) for b in micro_batches)
         if not token_count:
@@ -556,24 +663,30 @@ def run_matrix_stage(
         torch_rng = torch.get_rng_state()
         python_rng = random.getstate()
         cuda_rng = torch.cuda.get_rng_state_all() if device.type == "cuda" else []
-        try:
-            mean_loss = backward_window(micro_batches, raw_item_groups, raw_record_groups)
-        except torch.cuda.OutOfMemoryError:
-            # Replay the complete update: a failed backward may have written partial
-            # gradients. No parameter/optimizer/cursor advance happens on failure.
-            optimizer.zero_grad(set_to_none=True)
-            if not any(len(items) > 1 for items in raw_item_groups):
-                raise
-            torch.set_rng_state(torch_rng)
-            random.setstate(python_rng)
-            if device.type == "cuda":
-                torch.cuda.set_rng_state_all(cuda_rng)
-                torch.cuda.empty_cache()
-            mean_loss = backward_window(
-                [collator([item]) for item in drawn_items],
-                [[item] for item in drawn_items],
-                [[record] for record in scheduled_records],
-            )
+        active_item_groups = raw_item_groups
+        active_record_groups = raw_record_groups
+        active_batches = micro_batches
+        while True:
+            try:
+                mean_loss = backward_window(
+                    active_batches, active_item_groups, active_record_groups
+                )
+                break
+            except torch.cuda.OutOfMemoryError:
+                # Replay the complete update: a failed backward may have written partial
+                # gradients. No parameter/optimizer/cursor advance happens on failure.
+                optimizer.zero_grad(set_to_none=True)
+                if not any(len(items) > 1 for items in active_item_groups):
+                    raise
+                torch.set_rng_state(torch_rng)
+                random.setstate(python_rng)
+                if device.type == "cuda":
+                    torch.cuda.set_rng_state_all(cuda_rng)
+                    torch.cuda.empty_cache()
+                active_item_groups, active_record_groups = _split_microbatch_groups(
+                    active_item_groups, active_record_groups
+                )
+                active_batches = [collator(items) for items in active_item_groups]
 
         if effective_freeze_decoder:
             leaked = [
@@ -618,7 +731,9 @@ def run_matrix_stage(
             "step_seconds": step_seconds,
             "batch_size": batch_size,
             "accumulation": accumulation,
-            "instance_ids": [item.instance_id for items in raw_item_groups for item in items],
+            "micro_batches": len(active_item_groups),
+            "max_microbatch_size": max(len(g) for g in active_item_groups),
+            "instance_ids": [item.instance_id for item in drawn_items],
             "schedule_signature": shared_schedule.signature,
             "example_cursor": shared_schedule.validate_cursor(global_step),
             "target_tokens_by_task": {
@@ -1049,6 +1164,15 @@ def run_matrix_training(
     )
     resolved_batch_size = int(prof["batch_size"])
     resolved_accumulation = int(prof["accumulation"])
+    mb_profile = (
+        V4_TRAIN_MICROBATCH_PROFILE.get(model_key) if prof["profile"] == "v4" else None
+    )
+    resolved_max_microbatch_size = (
+        mb_profile["max_microbatch_size"] if mb_profile is not None else None
+    )
+    resolved_max_microbatch_tokens = (
+        mb_profile["max_microbatch_tokens"] if mb_profile is not None else None
+    )
     cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
     policy = unified_recipe(cfg["family"])
@@ -1441,6 +1565,8 @@ def run_matrix_training(
                 shared_schedule=shared_schedule,
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
+                max_microbatch_size=resolved_max_microbatch_size,
+                max_microbatch_tokens=resolved_max_microbatch_tokens,
             )
             progress(
                 {
@@ -1480,6 +1606,8 @@ def run_matrix_training(
                 shared_schedule=shared_schedule,
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
+                max_microbatch_size=resolved_max_microbatch_size,
+                max_microbatch_tokens=resolved_max_microbatch_tokens,
             )
             progress(
                 {
@@ -1522,6 +1650,8 @@ def run_matrix_training(
                 asymmetric_warmup=(resolved_stage1 == 0),
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
+                max_microbatch_size=resolved_max_microbatch_size,
+                max_microbatch_tokens=resolved_max_microbatch_tokens,
             )
             progress(
                 {
