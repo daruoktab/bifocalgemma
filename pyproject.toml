@@ -76,6 +76,15 @@ search-path = ["src", "tools", "."]
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
 
+[tool.ruff.format]
+# curated_sft.py hashes raw file text of these 3 prompt-source modules into
+# packed-token cache_identity and checkpoint data_fingerprint.
+exclude = [
+    "src/bifocalgemma/data/context_tasks.py",
+    "src/bifocalgemma/data/tokenization.py",
+    "src/bifocalgemma/training/repository_sft.py",
+]
+
 [tool.setuptools.package-data]
 bifocalgemma = ["assets/*.json"]
 

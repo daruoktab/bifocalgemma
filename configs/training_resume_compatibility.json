@@ -3,8 +3,8 @@
   "reason": "New training identity for raw unified-diff target whitespace preservation, cross-attention scale freezing, and isolated matrix output paths. The MCQ diagnostic prefers an explicit terminal final answer. Earlier checkpoints retain their original training identity and need their pinned runtime and run directory.",
   "baseline_runtime_sha256": "94b69c37e9f25c7b27443ff0bfb4cec6870f7a400a6be993f6803177a806ac67",
   "baseline_training_semantics_sha256": "50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153",
-  "approved_source_semantics_sha256": "23f0daf2d3df6a4fd4824146aea8c7dede1f48d61d4951a600bd143ea2b24419",
-  "source_semantics_sha256": "23f0daf2d3df6a4fd4824146aea8c7dede1f48d61d4951a600bd143ea2b24419",
+  "approved_source_semantics_sha256": "47ce481e8c61c3bf2d5e75d9a1d5b7e69bed4fa9d3434ff33499effca11f66f5",
+  "source_semantics_sha256": "47ce481e8c61c3bf2d5e75d9a1d5b7e69bed4fa9d3434ff33499effca11f66f5",
   "reviewed_changed_files": {
     "__main__.py": {
       "after": "9acf221ea73a468b91bf2ed56d2258895361b8b013a2bb5bb6f26f5179874db1"
@@ -19,7 +19,7 @@
       "after": "fa9cd778e6e79447718de4f12d648ae38c5804789c39201ac4018ff75a7c45b5"
     },
     "data/context_tasks.py": {
-      "after": "209384239e2a7a4b4063e173458d7eedee6d2b6848b0ce9d5bf37048aec84203"
+      "after": "f9fd17e7179aecd3224c707da5c555a0f3ac2c1aec29bd2da7a5d6fd154adfbf"
     },
     "data/curriculum.py": {
       "after": "a94619cc9421e827f2e51129eeea241ea33a8adbff77f2ac950d1db5117cb0a8"
@@ -79,7 +79,7 @@
       "after": "ed3ce184d7cc9faa15bb6a380924ecb5b9a78a0bcd771061733ee83c128d3b81"
     },
     "training/matrix.py": {
-      "after": "b70a69675f5dec337880c6b4f6db4d7a54a5da624bcca50c50550562f659dc51"
+      "after": "287555cca722e4c9ebdc3523aa5ab0c81a012dcee2f42c70121a9571d266680a"
     },
     "training/objectives.py": {
       "after": "69fe813d2311ccb9126228d66c0b0b814ad506271a477ba624a48806be5de723"

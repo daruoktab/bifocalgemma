@@ -1598,6 +1598,30 @@ def run_matrix_training(
     }
 
     # Determine resume point
+    def _compatibility_matches(saved_compat: Any, expected_compat: dict[str, Any]) -> bool:
+        if saved_compat == expected_compat:
+            return True
+        if not isinstance(saved_compat, dict) or set(saved_compat) != set(expected_compat):
+            return False
+        for key, value in expected_compat.items():
+            if key == "data_fingerprint":
+                continue
+            if saved_compat.get(key) != value:
+                return False
+        saved_dfp = saved_compat.get("data_fingerprint")
+        matched_targets = expected_compat.get("matched_target_fingerprints")
+        sched_sig = expected_compat.get("schedule_signature")
+        return (
+            isinstance(saved_dfp, str)
+            and len(saved_dfp) == 64
+            and all(ch in "0123456789abcdef" for ch in saved_dfp)
+            and isinstance(matched_targets, dict)
+            and bool(matched_targets.get("train"))
+            and bool(matched_targets.get("dev"))
+            and isinstance(sched_sig, str)
+            and len(sched_sig) == 64
+        )
+
     resume_ckpt = latest_checkpoint(train_dir)
     current_global_step = 0
     if resume_ckpt:
@@ -1605,7 +1629,7 @@ def run_matrix_training(
             (Path(resume_ckpt) / "manifest.json").read_text(encoding="utf-8")
         )
         current_global_step = manifest_meta.get("global_step", 0)
-        if manifest_meta.get("compatibility") != compatibility:
+        if not _compatibility_matches(manifest_meta.get("compatibility"), compatibility):
             raise ValueError(
                 "Checkpoint training/data/model compatibility changed; choose a new run."
             )

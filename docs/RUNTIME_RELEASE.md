@@ -187,3 +187,20 @@ overflow fallback + protocol signature tracking, `recount_functional_pass_rate`
 denominator fix, and `data/patches.py` header parsing fix). Anonymous read-back
 verification, `--check --require-published`, and the matrix runtime loader suite
 passed.
+
+## Prompt-source byte parity & resume hotfix, 2026-11-27
+
+- Repository: `daruokta/bifocalgemma-2026-11-02` (public model repository).
+- Immutable revision: `5ca52298e8ba18129579cc8a6b9e4c9cb6e766f1`.
+- Archive: `runtime/runtime-42125aab6f57b42a.zip`.
+- SHA-256: `42125aab6f57b42a451175c6e1dcfe4fcf0d67f5ac37a9ee5d17e668f6a75800`.
+- Approved `source_semantics_sha256`: `47ce481e8c61c3bf2d5e75d9a1d5b7e69bed4fa9d3434ff33499effca11f66f5`
+  (retaining `baseline_training_semantics_sha256`: `50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153`).
+
+Restores exact pre-format UTF-8 bytes on `src/bifocalgemma/data/context_tasks.py`
+(and excludes the three raw-text-hashed `prompt_sources` modules from `ruff format`)
+so resuming `e4b-it` and `2it-2it` hits the existing packed token cache and exact
+`data_fingerprint`, while also accepting token-identical `data_fingerprint` variants
+when `matched_target_fingerprints`, `schedule_signature`, and all 25 other
+compatibility fields match (preserving future resume for `4it-4it` started on
+`c05f7ccaa583f739`).

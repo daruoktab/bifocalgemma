@@ -257,3 +257,46 @@ def test_dataset_release_lock_matches_v4():
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     assert lock["revision"] == V4_DATASET_REVISION
     assert lock["ready_training_collection"] == V4_COLLECTION
+
+
+def test_matrix_resume_accepts_token_identical_prompt_source_reformat(tmp_path: Path, monkeypatch):
+    """Formatting-only data_fingerprint shifts must resume only when targets and schedule match."""
+    import bifocalgemma.training.matrix as mat
+
+    src = Path(mat.__file__).read_text(encoding="utf-8")
+    assert "def _compatibility_matches(" in src
+    ns: dict[str, object] = {"Any": object}
+    block_start = src.index("    def _compatibility_matches(")
+    block_end = src.index("    resume_ckpt = latest_checkpoint(train_dir)", block_start)
+    import textwrap
+
+    exec(textwrap.dedent(src[block_start:block_end]), ns)
+    matches = ns["_compatibility_matches"]
+
+    expected = {
+        "recipe_version": "bifocalgemma_shared_schedule_2026_11_12",
+        "data_fingerprint": "a" * 64,
+        "matched_target_fingerprints": {"train": "1" * 64, "dev": "2" * 64},
+        "schedule_signature": "3" * 64,
+        "training_semantics_sha256": "5" * 64,
+    }
+    assert matches(dict(expected), expected) is True
+    assert matches({**expected, "data_fingerprint": "b" * 64}, expected) is True
+    assert matches({**expected, "data_fingerprint": "tampered"}, expected) is False
+    assert (
+        matches(
+            {
+                **expected,
+                "data_fingerprint": "b" * 64,
+                "matched_target_fingerprints": {"train": "9" * 64, "dev": "2" * 64},
+            },
+            expected,
+        )
+        is False
+    )
+    assert (
+        matches(
+            {**expected, "data_fingerprint": "b" * 64, "schedule_signature": "9" * 64}, expected
+        )
+        is False
+    )
