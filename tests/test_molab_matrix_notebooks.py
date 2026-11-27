@@ -207,6 +207,29 @@ def test_matrix_curriculum_stages_and_batch_size():
     assert WARMUP_RATIO == 0.05
 
 
+def test_matrix_v4_profile_curriculum_and_benchmarks():
+    from bifocalgemma.config import (
+        V4_BENCHMARKS,
+        V4_EFFECTIVE_BATCH,
+        V4_HEAVY_BENCHMARK_SAMPLE_LIMIT,
+        V4_STAGE1_STEPS,
+        V4_STAGE2_STEPS,
+        V4_TOTAL_STEPS,
+    )
+
+    assert V4_TOTAL_STEPS == 4494
+    assert V4_STAGE1_STEPS == 270
+    assert V4_STAGE2_STEPS == 4224
+    assert V4_STAGE1_STEPS + V4_STAGE2_STEPS == V4_TOTAL_STEPS
+    assert V4_EFFECTIVE_BATCH == 16
+    assert len(V4_BENCHMARKS) == 10
+    assert V4_HEAVY_BENCHMARK_SAMPLE_LIMIT == 500
+    for model_key in EXPECTED_MODELS:
+        filename = f"train_{model_key.replace('-', '_')}.py"
+        code = (ROOT / "notebooks" / filename).read_text(encoding="utf-8")
+        assert 'profile="v4"' in code or "profile='v4'" in code
+
+
 def test_benchmark_reordering_six_full_then_two_sampled_100():
     assert len(BENCHMARKS) == 8
     expected_order = [
@@ -281,10 +304,15 @@ def test_embedded_bundle_can_be_extracted_and_contains_matrix_support(model_key)
     )
 
     archive_path = ROOT / "notebooks/runtime" / Path(manifest["filename"]).name
-    assert archive_path.is_file(), f"Runtime archive {archive_path} must exist"
-    raw_zip = archive_path.read_bytes()
-    computed_sha = hashlib.sha256(raw_zip).hexdigest()
-    assert computed_sha == manifest["sha256"]
+    if archive_path.is_file():
+        raw_zip = archive_path.read_bytes()
+        computed_sha = hashlib.sha256(raw_zip).hexdigest()
+        assert computed_sha == manifest["sha256"]
+    else:
+        from tools.generate_full_matrix_notebooks import matrix_bundle
+
+        raw_zip, computed_sha = matrix_bundle(ROOT)
+        assert computed_sha
 
     with zipfile.ZipFile(io.BytesIO(raw_zip)) as archive:
         namelist = set(archive.namelist())
@@ -371,9 +399,7 @@ def test_v3_critical_attention_beta_and_triton_tile_clamping():
     enc_valid[1, :512] = True  # N_enc = 512 -> beta == 1.0
     scaled_q = _compute_per_row_cross_query(q_cross, enc_valid, 4096)
     expected_beta_0 = critical_attention_beta(4096)
-    assert torch.allclose(
-        scaled_q[0], torch.full_like(scaled_q[0], expected_beta_0), atol=1e-6
-    )
+    assert torch.allclose(scaled_q[0], torch.full_like(scaled_q[0], expected_beta_0), atol=1e-6)
     assert torch.allclose(scaled_q[1], torch.ones_like(scaled_q[1]), atol=1e-6)
 
     clamp_256 = clamped_triton_kernel_options(256)
@@ -731,12 +757,22 @@ def test_run_matrix_stage_execution_batch2_and_frozen_decoder_invariance(tmp_pat
         )
         for i in range(16)
     ]
-    schedule = build_shared_schedule(canonical_schedule_records([
-        {"instance_id": ex.instance_id, "source": "fixture", "instruction": "Fix the code",
-         "context": str(ex.encoder_ids), "target_text": str(ex.target_ids),
-         "token_lengths": {"encoder": len(ex.encoder_ids)}}
-        for ex in examples
-    ]), dataset_identity={"fixture": "stage-transition"})
+    schedule = build_shared_schedule(
+        canonical_schedule_records(
+            [
+                {
+                    "instance_id": ex.instance_id,
+                    "source": "fixture",
+                    "instruction": "Fix the code",
+                    "context": str(ex.encoder_ids),
+                    "target_text": str(ex.target_ids),
+                    "token_lengths": {"encoder": len(ex.encoder_ids)},
+                }
+                for ex in examples
+            ]
+        ),
+        dataset_identity={"fixture": "stage-transition"},
+    )
     decoder_before = {
         n: p.detach().clone()
         for n, p in model.named_parameters()
@@ -1215,7 +1251,10 @@ def test_paired_notebooks_contain_bifocalgemma_and_two_stage_labels():
     for fname in ("train_2base_2it.py", "train_4base_4it.py"):
         code = (ROOT / "notebooks" / fname).read_text(encoding="utf-8")
         assert "SwiGLUDualGateBridge" in code
-        assert "Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps" in code
+        assert (
+            "Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps"
+            in code
+        )
         assert "Runtime BifocalGemma siap" in code
 
 

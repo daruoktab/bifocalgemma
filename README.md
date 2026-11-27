@@ -16,7 +16,7 @@ training and evaluation; passing engineering checks does not establish model qua
 
 ## Ten-model experiment matrix
 
-Each notebook runs one configuration, then its eight configured benchmarks.
+Each notebook runs one configuration under the active `v4` profile, then its ten configured benchmarks.
 
 | Encoder | E2B-IT decoder | E4B-IT decoder |
 | --- | --- | --- |
@@ -26,17 +26,20 @@ Each notebook runs one configuration, then its eight configured benchmarks.
 | E4B IT | [4it–2it](notebooks/train_4it_2it.py) | [4it–4it](notebooks/train_4it_4it.py) |
 | Decoder-only | [E2B-IT baseline](notebooks/train_e2b_it.py) | [E4B-IT baseline](notebooks/train_e4b_it.py) |
 
-The paired configurations use 5,551 alignment steps followed by 5,551 joint SFT
-steps. Decoder-only baselines use one continuous 11,102-step SFT stage. Batch size
-2 and gradient accumulation 2 give an effective batch of 4 over 44,408 training
-examples. The immutable schedule and checkpoint identity govern resume behavior.
-The six-model construction registry used by `inspect` and `validate-config`
-remains separate from this ten-model training matrix.
+The active `v4` paired configurations use 270 Stage-1 alignment steps followed by
+4,224 Stage-2 joint SFT steps (4,494 total steps, 1.5 epochs). Decoder-only
+baselines use one continuous 4,494-step SFT stage. Micro-batch size 2 and
+gradient accumulation 8 give an effective batch of 16 over 47,932 curated
+training examples (`mixed_context_enc32k_dec8k_v4`, revision `4b8d6b36…`). The
+immutable schedule and checkpoint identity govern resume behavior. The
+six-model construction registry used by `inspect` and `validate-config` remains
+separate from this ten-model training matrix.
 
-The benchmark suite covers LongCodeQA, HumanEvalFix, SWE-QA oracle/noisy, GSM8K
-0/8-shot, and CrossCodeLong chunk/function completion. The first six use their
-configured full cohorts; the two CrossCodeLong variants use deterministic
-100-example cohorts.
+The active `v4` benchmark suite covers ten tasks: LongCodeQA, HumanEvalFix
+(unified-diff and full-function modes), SWE-QA oracle/noisy, GSM8K 0/8-shot,
+CrossCodeLong chunk/function completion, and RepoNIAH retrieval. Heavy
+completion cohorts sample 500 eligible cases deterministically; the remaining
+cohorts use their configured full sets.
 
 ## Run a standalone notebook
 

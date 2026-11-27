@@ -145,7 +145,9 @@ def test_tokenize_context_task_preserves_target_indentation_and_newlines():
         def apply_chat_template(
             self, messages, *, tokenize=False, add_generation_prompt=False, enable_thinking=False
         ):
-            assert add_generation_prompt is True, "Target text must never pass through | trim chat template"
+            assert add_generation_prompt is True, (
+                "Target text must never pass through | trim chat template"
+            )
             return "<bos><|turn>user\n" + messages[0]["content"] + "<turn|>\n<|turn>model\n"
 
         def encode(self, text, add_special_tokens=False):
@@ -236,7 +238,10 @@ def test_patch_matrix_tokenization_preserves_target_whitespace_and_collator_alig
         )
     monkeypatch.setattr(eval_ctx_mod, "prompt_ids", eval_ctx_mod.prompt_ids)
     monkeypatch.setattr(
-        tok_mod, "_matrix_bos_patched", getattr(tok_mod, "_matrix_bos_patched", False), raising=False
+        tok_mod,
+        "_matrix_bos_patched",
+        getattr(tok_mod, "_matrix_bos_patched", False),
+        raising=False,
     )
     monkeypatch.setattr(
         ct_mod, "_matrix_bos_patched", getattr(ct_mod, "_matrix_bos_patched", False), raising=False
@@ -311,7 +316,8 @@ def test_patch_matrix_tokenization_preserves_target_whitespace_and_collator_alig
         assert tok.decode(supervised, skip_special_tokens=True) == target
 
     cached_it = (
-        Path(__file__).resolve().parents[1] / "outputs/context_tokenizers/raw/google__gemma-4-E2B-it"
+        Path(__file__).resolve().parents[1]
+        / "outputs/context_tokenizers/raw/google__gemma-4-E2B-it"
     )
     decoder = tok
     if cached_it.is_dir():

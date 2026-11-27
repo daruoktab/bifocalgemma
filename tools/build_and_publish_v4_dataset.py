@@ -183,7 +183,9 @@ def _extract_python_fim_from_code(
         masked_code = "\n".join(masked_lines)
         if target in masked_code or masked_code.count("# <MISSING_CODE>") != 1:
             continue
-        instruction = f"Complete the missing Python function body for `{func_name}` in `{file_path}`."
+        instruction = (
+            f"Complete the missing Python function body for `{func_name}` in `{file_path}`."
+        )
         context = f"### Instruction\n{instruction}\n\n### File: {file_path}\n{masked_code}"
         if target in context or context.count("# <MISSING_CODE>") != 1:
             continue
@@ -509,7 +511,14 @@ def fetch_all_v4_sources(*, force: bool = False) -> dict[str, Path]:
                 max_target_tokens=4096,
             )
             if (idx + 1) % 2000 == 0:
-                _log({"stage": "fetch_progress", "source": "longalign", "scanned": idx + 1, "taken": len(rows)})
+                _log(
+                    {
+                        "stage": "fetch_progress",
+                        "source": "longalign",
+                        "scanned": idx + 1,
+                        "taken": len(rows),
+                    }
+                )
         _log({"stage": "fetch", "source": "longalign", "taken": len(rows)})
         paths["longalign"] = _write_fetched_source(
             "longalign", rows, {"dataset_id": "zai-org/LongAlign-10k", "license": "apache-2.0"}
@@ -571,7 +580,11 @@ def fetch_all_v4_sources(*, force: bool = False) -> dict[str, Path]:
         paths["smoltalk_longalign"] = _write_fetched_source(
             "smoltalk_longalign",
             rows,
-            {"dataset_id": "HuggingFaceTB/smoltalk", "config": "longalign", "license": "apache-2.0"},
+            {
+                "dataset_id": "HuggingFaceTB/smoltalk",
+                "config": "longalign",
+                "license": "apache-2.0",
+            },
         )
     else:
         paths["smoltalk_longalign"] = V4_FETCH_DIR / "smoltalk_longalign.jsonl"
@@ -712,9 +725,7 @@ def fetch_all_v4_sources(*, force: bool = False) -> dict[str, Path]:
     # 8. smoltalk_metamathqa (Apache-2.0, retention bucket, GSM8K-deduped in mix)
     if force or not _source_ready("smoltalk_metamathqa"):
         rows = []
-        ds = load_dataset(
-            "HuggingFaceTB/smoltalk", "metamathqa-50k", split="train", streaming=True
-        )
+        ds = load_dataset("HuggingFaceTB/smoltalk", "metamathqa-50k", split="train", streaming=True)
         for idx, item in enumerate(ds):
             if len(rows) >= 4000 or idx >= 15000:
                 break
@@ -815,9 +826,7 @@ def build_and_verify_mixed_pool(
     context_pool_dir = V4_CONTEXT_POOL_FULL if V4_CONTEXT_POOL_FULL.is_dir() else V4_CONTEXT_POOL
     if not context_pool_dir.is_dir():
         raise FileNotFoundError(f"Missing local v4 context pool: {context_pool_dir}")
-    v4_sources = {
-        key: rows for key, path in source_paths.items() if (rows := _iter_jsonl(path))
-    }
+    v4_sources = {key: rows for key, path in source_paths.items() if (rows := _iter_jsonl(path))}
     auto_sigs, auto_gsm = _collect_benchmark_quarantine_assets(
         V4_BENCHMARK_ROOT,
         cache_hf=ROOT / "outputs/context_sources/hf_cache",
@@ -1042,7 +1051,9 @@ def _prepare_reponiah_collection() -> Path:
 def build_and_verify_release() -> dict[str, Any]:
     """Package mixed_context_enc32k_dec8k_v4 plus all 9 eval cohorts (incl. RepoNIAH) and verify 100% view parity."""
     _prepare_reponiah_collection()
-    v3_spec = json.loads((ROOT / "configs/dataset_release.context32k.json").read_text(encoding="utf-8"))
+    v3_spec = json.loads(
+        (ROOT / "configs/dataset_release.context32k.json").read_text(encoding="utf-8")
+    )
     eval_collections = [c for c in v3_spec["collections"] if c["kind"] != "curated_pool"]
     if not any(c["name"] == "reponiah_gemma32k_dec8k_v1" for c in eval_collections):
         eval_collections.append(
@@ -1089,7 +1100,11 @@ def build_and_verify_release() -> dict[str, Any]:
         "collections": collections,
         "notices": list(merged_notices.values()),
         "audits": [
-            *[a for a in v3_spec.get("audits", []) if a["name"] not in {"mixed_pool_v3", "source_notice_inventory"}],
+            *[
+                a
+                for a in v3_spec.get("audits", [])
+                if a["name"] not in {"mixed_pool_v3", "source_notice_inventory"}
+            ],
             {"name": "source_notice_inventory_v4", "file": inv_path.relative_to(ROOT).as_posix()},
         ],
     }
@@ -1166,6 +1181,18 @@ def main() -> None:
             expected_parent=EXPECTED_PARENT_REVISION,
         )
         atomic_json(V4_PUBLICATION_RECEIPT, receipt)
+        atomic_json(
+            ROOT / "configs/dataset_release.lock.json",
+            {
+                "repo_id": receipt["repo_id"],
+                "revision": receipt["revision"],
+                "private": receipt["private"],
+                "release_fingerprint": receipt["release_fingerprint"],
+                "date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                "ready_training_collection": "mixed_context_enc32k_dec8k_v4",
+                "supersedes_revision": EXPECTED_PARENT_REVISION,
+            },
+        )
         _log({"stage": "published", **receipt})
 
 

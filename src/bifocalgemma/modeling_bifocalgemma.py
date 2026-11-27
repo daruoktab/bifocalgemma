@@ -178,7 +178,11 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         self._tied_weights_keys = {}
         if config.tie_word_embeddings:
             self._tied_weights_keys["lm_head.weight"] = "decoder.embed_tokens.weight"
-        if self.encoder is not None and config.tie_encoder_decoder_words and config.d_enc == config.d_dec:
+        if (
+            self.encoder is not None
+            and config.tie_encoder_decoder_words
+            and config.d_enc == config.d_dec
+        ):
             self._tied_weights_keys["encoder.embed_tokens.weight"] = "decoder.embed_tokens.weight"
 
         # 4. Run HF post_init BEFORE configuring bridge & cross-attention so _init_weights
@@ -600,7 +604,6 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         return CausalLMOutputWithPast(
             loss=cast(Any, loss),
             logits=cast(Any, logits),
-            past_key_values=None,
             hidden_states=None,
             attentions=None,
         )
@@ -609,8 +612,10 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         """Bridge compatibility helper for legacy training loops."""
         result = self.forward(batch=batch, shift_labels=False)
         if isinstance(result, tuple):
-            loss = result[0] if len(result) > 1 else None
-            logits = result[1] if len(result) > 1 else result[0]
+            if len(result) >= 3:
+                loss, logits = result[0], result[1]
+            else:
+                loss, logits = None, result[0]
             return ModelOutput(loss=loss, logits=logits)
         return ModelOutput(loss=result.loss, logits=result.logits)
 
@@ -666,9 +671,7 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                 )
             )
 
-            raw_dec_mask = (
-                attention_mask if attention_mask is not None else decoder_attention_mask
-            )
+            raw_dec_mask = attention_mask if attention_mask is not None else decoder_attention_mask
             if raw_dec_mask is None:
                 current_mask = torch.ones_like(input_ids, dtype=torch.bool)
             else:
@@ -703,13 +706,28 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
             current_ids = input_ids.clone()
             finished = torch.zeros(bsz, dtype=torch.bool, device=device)
 
+            # Left-align right-padded or non-contiguously padded rows so index -1 is always
+            # the last valid token and both cached and uncached paths stay consistent.
+            if current_ids.shape[1] > 1 and not (
+                bool(current_mask[:, -1].all())
+                and bool((current_mask.int().diff(dim=-1) >= 0).all())
+            ):
+                aligned_ids = torch.full_like(current_ids, resolved_pad_id)
+                aligned_mask = torch.zeros_like(current_mask)
+                seq_len = current_ids.shape[1]
+                for row_idx in range(bsz):
+                    valid_toks = current_ids[row_idx][current_mask[row_idx]]
+                    n_valid = valid_toks.numel()
+                    if n_valid > 0:
+                        aligned_ids[row_idx, seq_len - n_valid :] = valid_toks
+                        aligned_mask[row_idx, seq_len - n_valid :] = True
+                current_ids = aligned_ids
+                current_mask = aligned_mask
+
             is_left_padded_or_full = bool(
                 current_ids.shape[1] > 0
                 and current_mask[:, -1].all()
-                and (
-                    current_mask.shape[1] == 1
-                    or (current_mask.int().diff(dim=-1) >= 0).all()
-                )
+                and (current_mask.shape[1] == 1 or (current_mask.int().diff(dim=-1) >= 0).all())
             )
             can_use_cached = use_cache and is_left_padded_or_full
 
@@ -753,13 +771,9 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                         next_token = logits[:, -1, :].argmax(dim=-1, keepdim=True)
                         if bool(finished.any()):
                             fill_tok = torch.full_like(next_token, resolved_pad_id)
-                            next_token = torch.where(
-                                finished.unsqueeze(-1), fill_tok, next_token
-                            )
+                            next_token = torch.where(finished.unsqueeze(-1), fill_tok, next_token)
                         if eos_tensor is not None:
-                            finished = finished | torch.isin(
-                                next_token.squeeze(-1), eos_tensor
-                            )
+                            finished = finished | torch.isin(next_token.squeeze(-1), eos_tensor)
                         current_ids = torch.cat([current_ids, next_token], dim=1)
                         current_mask = torch.cat(
                             [
@@ -810,14 +824,33 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         tokenizer: Any = None,
         copy_default_tokenizer: bool = True,
         distributed_checkpoint: bool = False,
+        merge_lora: bool = True,
         **kwargs: Any,
     ) -> None:
-        """Save complete pre-trained model artifact after merging active LoRA adapters."""
+        """Save complete pre-trained model artifact, exporting merged LoRA weights without mutating self."""
         save_dir = Path(save_directory)
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Consolidate and merge all LoRA adapters into standard parameters
-        self.merge_and_unload()
+        # 1. Build non-mutating merged state_dict if ProbeLoRALinear adapters are active
+        if state_dict is None and merge_lora:
+            raw_state = self.state_dict()
+            merged_state: dict[str, torch.Tensor] = dict(raw_state)
+            for name, module in self.named_modules():
+                if isinstance(module, ProbeLoRALinear):
+                    prefix = f"{name}." if name else ""
+                    base_w = merged_state.pop(f"{prefix}base.weight", module.base.weight.detach())
+                    merged_state.pop(f"{prefix}lora_A", None)
+                    merged_state.pop(f"{prefix}lora_B", None)
+                    with torch.no_grad():
+                        delta_w = (
+                            module.lora_B.data.float() @ module.lora_A.data.float()
+                        ) * module.scaling
+                        merged_state[f"{prefix}weight"] = (
+                            base_w.detach().clone().add_(delta_w.to(base_w.dtype))
+                        )
+                    if f"{prefix}base.bias" in merged_state:
+                        merged_state[f"{prefix}bias"] = merged_state.pop(f"{prefix}base.bias")
+            state_dict = merged_state
 
         # 2. Save Hugging Face configuration
         self.config.save_pretrained(save_dir)
@@ -951,7 +984,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
         cache_dir: str | Path | None = None,
         torch_dtype: torch.dtype | str | None = None,
         device_map: str | dict[str, Any] | None = None,
-        strict: bool = False,
+        strict: bool | None = None,
         **kwargs: Any,
     ) -> BifocalGemmaForCausalLM:
         """Load an intact BifocalGemma pre-trained model from local path or Hub."""
@@ -1003,7 +1036,7 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                     )
                 state_dict.update(load_file(str(shard_path), device="cpu"))
         elif bin_path.is_file():
-            state_dict = torch.load(str(bin_path), map_location="cpu")
+            state_dict = torch.load(str(bin_path), map_location="cpu", weights_only=True)
         elif bin_index_path.is_file():
             index_data = json.loads(bin_index_path.read_text(encoding="utf-8"))
             weight_map = index_data.get("weight_map") or {}
@@ -1019,28 +1052,38 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                     raise FileNotFoundError(
                         f"Missing binary weight shard {shard_path} referenced by {bin_index_path}"
                     )
-                state_dict.update(torch.load(str(shard_path), map_location="cpu"))
+                state_dict.update(
+                    torch.load(str(shard_path), map_location="cpu", weights_only=True)
+                )
         else:
             raise FileNotFoundError(
                 f"No pretrained model weights (model.safetensors, model.safetensors.index.json, "
                 f"pytorch_model.bin, or pytorch_model.bin.index.json) found in {model_path}"
             )
 
-        load_result = model.load_state_dict(state_dict, strict=strict)
+        load_result = model.load_state_dict(state_dict, strict=bool(strict))
         if load_result.missing_keys:
             logger.warning(
                 "from_pretrained: missing keys when loading state_dict: %s",
                 load_result.missing_keys,
             )
-            critical_missing = [
-                k
-                for k in load_result.missing_keys
-                if "decoder.embed_tokens" in k or "decoder.layers.0." in k
-            ]
-            if critical_missing:
-                raise ValueError(
-                    f"Checkpoint in {model_path} is missing critical backbone weights: {critical_missing}"
+            if strict is not False:
+                critical_prefixes = (
+                    "decoder.embed_tokens",
+                    "decoder.layers.",
+                    "encoder.layers.",
+                    "encoder_projection.",
+                    "cross_",
                 )
+                critical_missing = [
+                    k
+                    for k in load_result.missing_keys
+                    if any(tok in k for tok in critical_prefixes)
+                ]
+                if critical_missing:
+                    raise ValueError(
+                        f"Checkpoint in {model_path} is missing critical weights: {critical_missing}"
+                    )
         if load_result.unexpected_keys:
             logger.warning(
                 "from_pretrained: unexpected keys in state_dict: %s", load_result.unexpected_keys
@@ -1053,8 +1096,30 @@ via a SwiGLU dual-gate manifold bridge and decoupled cross-attention.
                 cast(Any, model).to(dtype=torch_dtype)
 
         if device_map is not None:
-            if isinstance(device_map, (str, torch.device)):
+            if isinstance(device_map, dict):
+                unique_devices = {str(v) for v in device_map.values()}
+                if len(device_map) == 1 and "" in device_map:
+                    target_dev = next(iter(device_map.values()))
+                elif len(unique_devices) == 1 and len(device_map) > 0:
+                    target_dev = next(iter(device_map.values()))
+                else:
+                    raise ValueError(
+                        f"Unsupported multi-target device_map {device_map!r}; "
+                        "pass a single device string/torch.device or {'': device}."
+                    )
+                if isinstance(target_dev, int):
+                    target_dev = f"cuda:{target_dev}"
+                cast(Any, model).to(device=target_dev)
+            elif isinstance(device_map, str):
+                if device_map.lower() in {"auto", "balanced", "balanced_low_0", "sequential"}:
+                    raise ValueError(
+                        f"device_map={device_map!r} is not supported; pass an explicit device such as 'cpu' or 'cuda:0'."
+                    )
                 cast(Any, model).to(device=device_map)
+            elif isinstance(device_map, torch.device):
+                cast(Any, model).to(device=device_map)
+            else:
+                raise ValueError(f"Unsupported device_map type: {type(device_map).__name__}")
 
         model._tie_words()
         model.eval()
@@ -1240,9 +1305,7 @@ def export_matrix_pretrained_model(
             and getattr(layer.self_attn, "owns_cross_kv", False)
             for layer in dec_layers
         )
-        first_scale = (
-            getattr(dec_layers[0].self_attn, "cross_scale", None) if dec_layers else None
-        )
+        first_scale = getattr(dec_layers[0].self_attn, "cross_scale", None) if dec_layers else None
         inferred_learnable_scale = (
             first_scale.requires_grad
             if isinstance(first_scale, torch.Tensor)
@@ -1417,13 +1480,14 @@ class NativeMergedAttention(Gemma4TextAttention):
         attention_mask,
         shared_kv_states,
         past_key_values=None,
+        cache=None,
         *,
         encoder_hidden_states=None,
         encoder_valid=None,
         decoder_valid=None,
         **kwargs,
     ):
-        if past_key_values is not None:
+        if past_key_values is not None or cache is not None:
             raise ValueError("Native tiny merged attention does not support temporal cache.")
         if encoder_hidden_states is None or encoder_valid is None or decoder_valid is None:
             raise ValueError(
@@ -1611,7 +1675,9 @@ class NativeTinyModel(nn.Module):
             input_ids, decoder_mask, encoder_states, encoder_mask, last_token_only=True
         )
 
-    def forward(self, batch: Seq2SeqBatch, *, return_logits=True) -> ModelOutput:  # nn.Module.forward is annotated Callable.
+    def forward(
+        self, batch: Seq2SeqBatch, *, return_logits=True
+    ) -> ModelOutput:  # nn.Module.forward is annotated Callable.
         if self.encoder is None:
             if batch.encoder_input_ids.shape[1] != 0:
                 raise ValueError("Baseline requires an empty encoder sequence.")

@@ -48,8 +48,14 @@ def prepare_curated_training(
             "context_mixture_v4_disjoint" if use_disjoint else "context_mixture_v2_grounded"
         ),
         "prompt_sources": {
-            name: stable_fingerprint((Path(__file__).resolve().parents[1] / name).read_text(encoding="utf-8"))
-            for name in ("training/repository_sft.py", "data/context_tasks.py", "data/tokenization.py")
+            name: stable_fingerprint(
+                (Path(__file__).resolve().parents[1] / name).read_text(encoding="utf-8")
+            )
+            for name in (
+                "training/repository_sft.py",
+                "data/context_tasks.py",
+                "data/tokenization.py",
+            )
         },
     }
     if use_disjoint or decoder_local_only:
@@ -155,7 +161,14 @@ def fit_curated_sft(
     from bifocalgemma.training.offline_sft import fit_offline_sft
     from bifocalgemma.training.policy import configure_policy_model, default_training_profiles
 
-    if isinstance(epochs, bool) or epochs <= 0 or batch_size < 1 or accumulation < 1 or not train or not dev:
+    if (
+        isinstance(epochs, bool)
+        or epochs <= 0
+        or batch_size < 1
+        or accumulation < 1
+        or not train
+        or not dev
+    ):
         raise ValueError("Invalid complete-epoch budget.")
     base_updates = math.ceil(len(train) / (batch_size * accumulation))
     planned_updates = (

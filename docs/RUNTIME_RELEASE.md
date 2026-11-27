@@ -156,3 +156,34 @@ Read-back download verification from revision `8ffae5e550e290b6d60ff6f5530d34010
 generator `--check --require-published`, strict Marimo checks across all 14 active
 notebooks, static diagnostics (`ruff`, `ty`, `pyrefly`), and offline pytest suites
 all passed.
+
+## Eval overflow & transient LFS retry release, 2026-11-26
+
+- Repository: `daruokta/bifocalgemma-2026-11-02` (public model repository).
+- Immutable revision: `27468d81fd606c0fcf24f537139597d188cfd26b`.
+- Archive: `runtime/runtime-a2873bf19eb153e5.zip`.
+- SHA-256: `a2873bf19eb153e55fee026e7843ea07d934c7a144cda0b0fdc827e2eced84a2`.
+
+This release adds unnumbered-line overflow fallback in evaluation context
+formatting and retry handling for transient Hugging Face Hub HTTP 400 LFS
+pointer propagation errors, while preserving `baseline_training_semantics_sha256`
+(`50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153`) for existing
+v4 runs.
+
+## Audit remediation release, 2026-11-27
+
+- Repository: `daruokta/bifocalgemma-2026-11-02` (public model repository).
+- Immutable revision: `110cdedab8292cb832a70f52027d683f1e705c62`.
+- Archive: `runtime/runtime-c05f7ccaa583f739.zip`.
+- SHA-256: `c05f7ccaa583f739bbc2272dd5eed834ee50125ead45bdd41cee1b43a0a58f47`.
+- Approved `source_semantics_sha256`: `23f0daf2d3df6a4fd4824146aea8c7dede1f48d61d4951a600bd143ea2b24419`
+  (retaining `baseline_training_semantics_sha256`: `50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153`).
+
+Bundles the full external-review remediation (dual `transformers` 5.22.1/5.24.1
+compatibility, v4 milestone checkpoint pruning fix, `weights_only=True` hardening,
+right-padded `generate()` fix, non-mutating `save_pretrained()`, per-layer
+`CachedAttention` dispatch, `from_pretrained()` validation, section-aware
+overflow fallback + protocol signature tracking, `recount_functional_pass_rate`
+denominator fix, and `data/patches.py` header parsing fix). Anonymous read-back
+verification, `--check --require-published`, and the matrix runtime loader suite
+passed.

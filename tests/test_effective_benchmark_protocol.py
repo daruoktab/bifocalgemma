@@ -191,7 +191,12 @@ def test_all_ten_batched_runners_execute_shared_allowance_and_reject_changed_gol
     state.unlink()
     with pytest.raises(ValueError, match="no protocol identity"):
         benchmark.run_batched_context_benchmark(
-            torch.nn.Linear(1, 1), make_experiment_spec(key), root, tmp_path / key, tmp_path, **kwargs
+            torch.nn.Linear(1, 1),
+            make_experiment_spec(key),
+            root,
+            tmp_path / key,
+            tmp_path,
+            **kwargs,
         )
     assert not state.exists() and journal.read_bytes() == saved_journal
     state.write_bytes(saved_state)
@@ -200,7 +205,12 @@ def test_all_ten_batched_runners_execute_shared_allowance_and_reject_changed_gol
     journal.write_text(json.dumps(record) + "\n")
     with pytest.raises(ValueError, match="journal protocol signature mismatch"):
         benchmark.run_batched_context_benchmark(
-            torch.nn.Linear(1, 1), make_experiment_spec(key), root, tmp_path / key, tmp_path, **kwargs
+            torch.nn.Linear(1, 1),
+            make_experiment_spec(key),
+            root,
+            tmp_path / key,
+            tmp_path,
+            **kwargs,
         )
     journal.write_bytes(saved_journal)
     gold_path.write_text(json.dumps({"instance_id": "case", "answer": "C"}) + "\n")

@@ -266,9 +266,7 @@ def build_shared_schedule(
     if not items:
         raise ValueError("Cannot build an empty training schedule.")
 
-    use_balanced = (
-        balance_strata or task_weights is not None or length_bin_weights is not None
-    )
+    use_balanced = balance_strata or task_weights is not None or length_bin_weights is not None
     stratification_json: str | None = None
     if use_balanced:
         strat_payload: dict[str, Any] = {"balance_strata": balance_strata}
@@ -287,14 +285,18 @@ def build_shared_schedule(
         stratification_json = _json(strat_payload)
 
     base_count = len(items)
-    total_scheduled = base_count if epochs_value == 1.0 else max(1, round(base_count * epochs_value))
+    total_scheduled = (
+        base_count if epochs_value == 1.0 else max(1, round(base_count * epochs_value))
+    )
     num_passes = max(1, math.ceil(total_scheduled / base_count))
 
     scheduled_items: list[tuple[int, ScheduleRecord]] = []
     for pass_idx in range(num_passes):
         pass_seed: Any = seed if pass_idx == 0 else [seed, pass_idx]
         if not use_balanced:
-            buckets: dict[tuple[str, str, str], list[tuple[int, ScheduleRecord]]] = defaultdict(list)
+            buckets: dict[tuple[str, str, str], list[tuple[int, ScheduleRecord]]] = defaultdict(
+                list
+            )
             for index, record in items:
                 buckets[(record.task, record.source, record.length_bin)].append((index, record))
             ranked: list[tuple[Fraction, str, int, ScheduleRecord]] = []

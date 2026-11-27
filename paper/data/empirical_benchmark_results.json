@@ -1,4 +1,10 @@
 {
+  "_provenance": {
+    "status": "historical_pre_unification_baseline_pilot_fixture",
+    "commit": "7722d62338eff036567e5c471bdd088699d8406a",
+    "date": "2026-11-07",
+    "note": "Historical pre-unification v2/v3 baseline-2b pilot numbers retained for schema/regression testing; not active v4 matrix results."
+  },
   "sweqa_clean_oracle": {
     "accuracy": 0.7388,
     "n": 9072

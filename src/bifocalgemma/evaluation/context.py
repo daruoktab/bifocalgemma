@@ -259,12 +259,38 @@ def _context_already_includes_instruction(context: str, instruction: str) -> boo
     return False
 
 
+_SECTION_LINE_NUMBER_RE = re.compile(r"^(\d+): ?(.*)$")
+
+
+def _strip_rendered_line_numbers(text: str) -> str:
+    """Remove only the outermost line-number prefix added inside ``### `` code sections."""
+    if not text:
+        return text
+    out_lines: list[str] = []
+    in_section = False
+    for line in text.split("\n"):
+        if line.startswith("### "):
+            in_section = True
+            out_lines.append(line)
+            continue
+        if in_section:
+            match = _SECTION_LINE_NUMBER_RE.match(line)
+            if match:
+                out_lines.append(match.group(2))
+                continue
+            if line:
+                in_section = False
+        out_lines.append(line)
+    return "\n".join(out_lines)
+
+
 def split_context_for_mode(
     row: dict[str, Any],
     *,
     context_mode: str,
     repair_mode: str | None = None,
     local_window_lines: int = DEFAULT_LOCAL_CURSOR_WINDOW_LINES,
+    number_lines: bool = True,
 ) -> tuple[str, str]:
     """Return ``(decoder_text, encoder_text)`` for ``full``, ``disjoint``, or ``local_only``."""
     if context_mode not in VALID_CONTEXT_MODES:
@@ -274,9 +300,7 @@ def split_context_for_mode(
     context = _deduplicate_longcodeqa_headers(
         _normalize_fim_cursor_marker(str(row.get("context") or ""))
     )
-    is_repair = (
-        row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
-    )
+    is_repair = row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
     if is_repair:
         eff_repair_mode = _resolve_repair_mode(row, repair_mode)
         repair_prefix = (
@@ -296,21 +320,30 @@ def split_context_for_mode(
             "context": clean_ctx,
         }
         split = split_disjoint_context(split_row, local_window_lines=local_window_lines)
+        full_ctx = (
+            split.full_context if number_lines else _strip_rendered_line_numbers(split.full_context)
+        )
+        dec_local_ctx = (
+            split.decoder_local_context
+            if number_lines
+            else _strip_rendered_line_numbers(split.decoder_local_context)
+        )
+        enc_body = (
+            split.encoder_context
+            if number_lines
+            else _strip_rendered_line_numbers(split.encoder_context)
+        )
         target_file = _single_repair_target_file(row) or split.cursor_path
         if context_mode == "full":
             header = f"{repair_prefix}\n\n{instruction}"
-            dec_text = f"{header}\n\n{split.full_context}" if split.full_context else header
+            dec_text = f"{header}\n\n{full_ctx}" if full_ctx else header
             return dec_text, ""
         banner = f"Target file: {target_file}\n\n" if target_file else ""
         header = f"{repair_prefix}\n\n{banner}{instruction}"
-        dec_text = (
-            f"{header}\n\n{split.decoder_local_context}"
-            if split.decoder_local_context
-            else header
-        )
+        dec_text = f"{header}\n\n{dec_local_ctx}" if dec_local_ctx else header
         if context_mode == "local_only":
             return dec_text, ""
-        enc_text = split.encoder_context or f"### Issue\n{instruction}"
+        enc_text = enc_body or f"### Issue\n{instruction}"
         return dec_text, enc_text
 
     has_structured_context = (
@@ -328,17 +361,26 @@ def split_context_for_mode(
             "context": context,
         }
         split = split_disjoint_context(split_row, local_window_lines=local_window_lines)
-        if context_mode == "full":
-            dec_text = f"{instruction}\n\n{split.full_context}" if split.full_context else instruction
-            return dec_text, ""
-        dec_text = (
-            f"{instruction}\n\n{split.decoder_local_context}"
-            if split.decoder_local_context
-            else instruction
+        full_ctx = (
+            split.full_context if number_lines else _strip_rendered_line_numbers(split.full_context)
         )
+        dec_local_ctx = (
+            split.decoder_local_context
+            if number_lines
+            else _strip_rendered_line_numbers(split.decoder_local_context)
+        )
+        enc_body = (
+            split.encoder_context
+            if number_lines
+            else _strip_rendered_line_numbers(split.encoder_context)
+        )
+        if context_mode == "full":
+            dec_text = f"{instruction}\n\n{full_ctx}" if full_ctx else instruction
+            return dec_text, ""
+        dec_text = f"{instruction}\n\n{dec_local_ctx}" if dec_local_ctx else instruction
         if context_mode == "local_only":
             return dec_text, ""
-        enc_text = split.encoder_context or instruction
+        enc_text = enc_body or instruction
         return dec_text, enc_text
 
     if context_mode == "full":
@@ -374,11 +416,15 @@ def encoder_context(
     paired: bool,
     context_mode: str | None = None,
     repair_mode: str | None = None,
+    number_lines: bool = True,
 ) -> str:
     """Return the encoder input string for the requested mode without duplicating local context."""
     if context_mode is not None:
         return split_context_for_mode(
-            row, context_mode=context_mode, repair_mode=repair_mode
+            row,
+            context_mode=context_mode,
+            repair_mode=repair_mode,
+            number_lines=number_lines,
         )[1]
     if not paired:
         return ""
@@ -387,7 +433,10 @@ def encoder_context(
     )
     if _has_disjoint_structured_context(raw_context):
         return split_context_for_mode(
-            row, context_mode="disjoint", repair_mode=repair_mode
+            row,
+            context_mode="disjoint",
+            repair_mode=repair_mode,
+            number_lines=number_lines,
         )[1]
     return raw_context
 
@@ -398,15 +447,22 @@ def decoder_prompt(
     paired,
     context_mode: str | None = None,
     repair_mode: str | None = None,
+    number_lines: bool = True,
 ):
     """One prompt renderer for actual decoding and the shared output allowance."""
     if context_mode is not None:
         return split_context_for_mode(
-            row, context_mode=context_mode, repair_mode=repair_mode
+            row,
+            context_mode=context_mode,
+            repair_mode=repair_mode,
+            number_lines=number_lines,
         )[0]
     if not paired:
         return split_context_for_mode(
-            row, context_mode="full", repair_mode=repair_mode
+            row,
+            context_mode="full",
+            repair_mode=repair_mode,
+            number_lines=number_lines,
         )[0]
 
     raw_context = _deduplicate_longcodeqa_headers(
@@ -414,13 +470,14 @@ def decoder_prompt(
     )
     if _has_disjoint_structured_context(raw_context):
         return split_context_for_mode(
-            row, context_mode="disjoint", repair_mode=repair_mode
+            row,
+            context_mode="disjoint",
+            repair_mode=repair_mode,
+            number_lines=number_lines,
         )[0]
 
     instruction = _deduplicate_longcodeqa_headers(str(row["instruction"]))
-    is_repair = (
-        row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
-    )
+    is_repair = row.get("record_type") == "repository_patch_v1" or row.get("task_type") == "repair"
     if is_repair:
         eff_repair_mode = _resolve_repair_mode(row, repair_mode)
         repair_prefix = (
@@ -440,7 +497,7 @@ def decoder_prompt(
     return instruction
 
 
-def _prompt_ids_impl(
+def _prompt_ids_with_metadata(
     row,
     spec,
     encoder,
@@ -449,7 +506,8 @@ def _prompt_ids_impl(
     encoder_limit,
     context_mode: str | None = None,
     repair_mode: str | None = None,
-):
+    number_lines: bool = True,
+) -> tuple[tuple[int, ...], tuple[int, ...], bool]:
     selection = row.get("context_selection")
     if (
         row.get("role") != "eval"
@@ -472,18 +530,31 @@ def _prompt_ids_impl(
             paired=True,
             context_mode=context_mode,
             repair_mode=repair_mode,
+            number_lines=number_lines,
         )
         enc = tuple(encoder.encode(enc_text, add_special_tokens=True)) if enc_text else ()
         enc_bos = getattr(encoder, "bos_token_id", None)
         if enc and enc_bos is not None and enc[0] != enc_bos:
             enc = (enc_bos, *enc)
         if len(enc) > encoder_limit:
+            if number_lines:
+                return _prompt_ids_with_metadata(
+                    row,
+                    spec,
+                    encoder,
+                    decoder,
+                    encoder_limit=encoder_limit,
+                    context_mode=context_mode,
+                    repair_mode=repair_mode,
+                    number_lines=False,
+                )
             raise ValueError("encoder_context_overflow")
     prompt = decoder_prompt(
         row,
         paired=use_encoder,
         context_mode=context_mode,
         repair_mode=repair_mode,
+        number_lines=number_lines,
     )
     try:
         text = decoder.apply_chat_template(
@@ -501,6 +572,30 @@ def _prompt_ids_impl(
     prefix = tuple(decoder.encode(text, add_special_tokens=False))
     if not prefix or (decoder.bos_token_id is not None and prefix[0] != decoder.bos_token_id):
         raise ValueError("benchmark_bos_policy")
+    return enc, prefix, number_lines
+
+
+def _prompt_ids_impl(
+    row,
+    spec,
+    encoder,
+    decoder,
+    *,
+    encoder_limit,
+    context_mode: str | None = None,
+    repair_mode: str | None = None,
+    number_lines: bool = True,
+):
+    enc, prefix, _ = _prompt_ids_with_metadata(
+        row,
+        spec,
+        encoder,
+        decoder,
+        encoder_limit=encoder_limit,
+        context_mode=context_mode,
+        repair_mode=repair_mode,
+        number_lines=number_lines,
+    )
     return enc, prefix
 
 
@@ -694,9 +789,7 @@ def _strip_markdown_fences(text: str) -> str:
         if closed_match:
             return closed_match.group(1)
         return re.sub(r"^```[A-Za-z0-9_+-]*[ \t]*\r?\n?", "", stripped, count=1)
-    preamble_guard = (
-        r"(?!(?:def|class|import|from|return|if|for|while|with|try|except)\b|@)"
-    )
+    preamble_guard = r"(?!(?:def|class|import|from|return|if|for|while|with|try|except)\b|@)"
     preamble_match = re.match(
         rf"{preamble_guard}[^\n`]{{0,160}}\r?\n\s*```[A-Za-z0-9_+-]*[ \t]*\r?\n(.*?)\r?\n?```[ \t]*(?:\r?\n.*)?\Z",
         stripped,
@@ -740,7 +833,11 @@ def _strip_echoed_suffix(text: str, suffix: str | None) -> str:
                 continue
             if trimmed_text.endswith(prefix):
                 before_idx = len(trimmed_text) - len(prefix)
-                if before_idx == 0 or trimmed_text[before_idx - 1] == "\n" or not norm_suffix.startswith("\n"):
+                if (
+                    before_idx == 0
+                    or trimmed_text[before_idx - 1] == "\n"
+                    or not norm_suffix.startswith("\n")
+                ):
                     return trimmed_text[:before_idx].rstrip("\n")
     return text
 
@@ -845,9 +942,7 @@ def _merge_full_function_into_file(before: str, candidate: str) -> str:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
     cand_funcs = [
-        node
-        for node in cand_tree.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        node for node in cand_tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
     # Only splice when the completion consists solely of existing top-level functions and
     # the original file has additional top-level statements (imports, constants, helpers).
@@ -865,9 +960,13 @@ def _merge_full_function_into_file(before: str, candidate: str) -> str:
             reverse=True,
         )
         for old_node, new_node in replacements:
-            start = (old_node.decorator_list[0].lineno if old_node.decorator_list else old_node.lineno) - 1
+            start = (
+                old_node.decorator_list[0].lineno if old_node.decorator_list else old_node.lineno
+            ) - 1
             end = old_node.end_lineno or old_node.lineno
-            new_start = (new_node.decorator_list[0].lineno if new_node.decorator_list else new_node.lineno) - 1
+            new_start = (
+                new_node.decorator_list[0].lineno if new_node.decorator_list else new_node.lineno
+            ) - 1
             new_end = new_node.end_lineno or new_node.lineno
             snippet = "".join(cand_lines[new_start:new_end])
             if not snippet.endswith("\n"):
@@ -1273,10 +1372,53 @@ def run_context_benchmark(
             {**case_info, "stage": "benchmark_case_started", "generated_tokens": 0}, force=True
         )
         cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
-        if context_mode is None and repair_mode is None:
-            enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
-        else:
-            enc, prefix = _prompt_ids_impl(
+        enc, prefix, used_number_lines = _prompt_ids_with_metadata(
+            row,
+            spec,
+            encoder,
+            decoder,
+            encoder_limit=cap,
+            context_mode=context_mode,
+            repair_mode=repair_mode,
+        )
+
+        def _paired_budget_for(*, number_lines: bool) -> tuple[int, int]:
+            # Same output allowance for pairs and baselines: reserve the paired IT prefix.
+            paired_budget_mode = "disjoint" if context_mode in ("disjoint", "local_only") else None
+            paired_prompt = decoder_prompt(
+                row,
+                paired=True,
+                context_mode=paired_budget_mode,
+                repair_mode=repair_mode,
+                number_lines=number_lines,
+            )
+            try:
+                paired_rendered = decoder.apply_chat_template(
+                    [{"role": "user", "content": paired_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                )
+            except TypeError:
+                paired_rendered = decoder.apply_chat_template(
+                    [{"role": "user", "content": paired_prompt}],
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            paired_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
+            budget = effective_generation_budget(
+                max_new_tokens,
+                row_cap=row.get("max_new_tokens"),
+                paired_prefix_tokens=paired_size,
+                decoder_limit=decoder_limit,
+            )
+            return paired_size, budget
+
+        paired_prefix_size, new_tokens = _paired_budget_for(number_lines=used_number_lines)
+        uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
+        total = decoder_limit if uses_encoder else cap + decoder_limit + 512
+        if len(prefix) + new_tokens > total and not uses_encoder and used_number_lines:
+            enc, prefix, used_number_lines = _prompt_ids_with_metadata(
                 row,
                 spec,
                 encoder,
@@ -1284,39 +1426,9 @@ def run_context_benchmark(
                 encoder_limit=cap,
                 context_mode=context_mode,
                 repair_mode=repair_mode,
+                number_lines=False,
             )
-        # Same output allowance for pairs and baselines: reserve the paired IT prefix.
-        paired_budget_mode = (
-            "disjoint" if context_mode in ("disjoint", "local_only") else None
-        )
-        paired_prompt = decoder_prompt(
-            row,
-            paired=True,
-            context_mode=paired_budget_mode,
-            repair_mode=repair_mode,
-        )
-        try:
-            paired_rendered = decoder.apply_chat_template(
-                [{"role": "user", "content": paired_prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
-        except TypeError:
-            paired_rendered = decoder.apply_chat_template(
-                [{"role": "user", "content": paired_prompt}],
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
-        new_tokens = effective_generation_budget(
-            max_new_tokens,
-            row_cap=row.get("max_new_tokens"),
-            paired_prefix_tokens=paired_prefix_size,
-            decoder_limit=decoder_limit,
-        )
-        uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
-        total = decoder_limit if uses_encoder else cap + decoder_limit + 512
+            paired_prefix_size, new_tokens = _paired_budget_for(number_lines=False)
         if len(prefix) + new_tokens > total:
             raise ValueError("benchmark_decoder_prefix_exceeds_budget")
         generated = greedy_decode(
@@ -1357,6 +1469,8 @@ def run_context_benchmark(
             "paired_decoder_prefix_tokens": paired_prefix_size,
             "generation_max_new_tokens": new_tokens,
             "generated_tokens": len(tokens),
+            "number_lines": used_number_lines,
+            "overflow_unnumbered_fallback": not used_number_lines,
             "case_seconds": time.monotonic() - case_started,
             **scoring,
         }
@@ -1406,6 +1520,9 @@ def run_context_benchmark(
         "score_available": scored,
         "statuses": dict(Counter(r["status"] for r in completed)),
         "generation_length_limit": sum(r["stop_reason"] == "length_limit" for r in completed),
+        "unnumbered_fallback_count": sum(
+            bool(r.get("overflow_unnumbered_fallback")) for r in completed
+        ),
         "segment_seconds": time.perf_counter() - started,
         "timing": clock.summary(),
         "official_protocol": False,
@@ -1415,7 +1532,7 @@ def run_context_benchmark(
         "primary_metric": "task_specific_accuracy",
         "accuracy_alias": "task_specific_accuracy",
         "protocol": ("greedy_cached" if use_cache else "greedy_no_temporal_cache")
-        + "; fixed eligible cohort; no context truncation",
+        + "; fixed eligible cohort; unnumbered line-prefix fallback on overflow (no token truncation)",
         "resources": resource_snapshot(next(model.parameters()).device),
     }
     report.update(mcq_report_metrics(completed))
@@ -1468,7 +1585,10 @@ def format_crosscodelong_summary(records: list[dict[str, Any]]) -> dict[str, flo
         / n
     )
     norm_em = (
-        sum(float(bool(r.get("normalized_exact_match", r.get("exact_match", False)))) for r in records)
+        sum(
+            float(bool(r.get("normalized_exact_match", r.get("exact_match", False))))
+            for r in records
+        )
         / n
     )
     return {
@@ -1567,7 +1687,9 @@ def generate_repo_niah_haystack(
     """Construct a synthetic repository haystack <= target_tokens with needle embedded at depth_ratio."""
     needle_block = f"\n# --- System Security Configuration ---\n{needle_line}\n# ---------------------------------------\n"
     needle_tokens = _count_niah_tokens(needle_block, tokenizer)
-    special_overhead = len(tokenizer.encode("", add_special_tokens=True)) if tokenizer is not None else 0
+    special_overhead = (
+        len(tokenizer.encode("", add_special_tokens=True)) if tokenizer is not None else 0
+    )
     if tokenizer is not None and getattr(tokenizer, "bos_token_id", None) is not None:
         special_overhead = max(special_overhead, 1)
     eff_reserved = max(0, reserved_tokens)
@@ -1632,9 +1754,7 @@ def build_repo_niah_case(
     needle_line = f'{key_name} = "{needle_value}"'
     instruction = f"What is the value of {key_name} in the codebase? Return only the value."
     eff_target = (
-        min(context_tokens, max_prompt_tokens)
-        if max_prompt_tokens is not None
-        else context_tokens
+        min(context_tokens, max_prompt_tokens) if max_prompt_tokens is not None else context_tokens
     )
     if reserved_tokens is None:
         if tokenizer is not None:

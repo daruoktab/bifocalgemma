@@ -92,12 +92,14 @@ def _synthetic_cohort(
         if task == "repair":
             # Include real unified-diff tokens (hunk header + add + del + context) within tiny vocab
             base_tokens = [43, 42, 41]
-            target_ids = tuple((base_tokens + [50 + (j % 30) for j in range(t_len)])[: max(3, t_len)])
+            target_ids = tuple(
+                (base_tokens + [50 + (j % 30) for j in range(t_len)])[: max(3, t_len)]
+            )
         else:
             # Deliberately include '+' / '-' tokens in non-repair tasks to prove zero leakage
-            target_ids = tuple(
-                [41, 42] + [60 + ((i + j) % 30) for j in range(max(1, t_len - 2))]
-            )[: max(2, t_len)]
+            target_ids = tuple([41, 42] + [60 + ((i + j) % 30) for j in range(max(1, t_len - 2))])[
+                : max(2, t_len)
+            ]
         raw.append(
             {
                 "instance_id": f"v4-item-{i}",
@@ -321,7 +323,10 @@ def test_training_contract_eliminates_50_50_freeze_and_supports_asymmetric_and_m
     c_zero_frac = resolve_training_contract(paired_spec, total_steps=1000, stage1_fraction=0.0)
     assert c_zero_steps["stage1_steps"] == 0 and c_zero_steps["stage2_steps"] == 1000
     assert c_zero_steps["schedule_mode"] == "asymmetric_warmup_joint"
-    assert c_zero_frac["stage1_steps"] == 0 and c_zero_frac["schedule_mode"] == "asymmetric_warmup_joint"
+    assert (
+        c_zero_frac["stage1_steps"] == 0
+        and c_zero_frac["schedule_mode"] == "asymmetric_warmup_joint"
+    )
 
     # Baseline decoder_only always uses full horizon in stage1
     base_contract = resolve_training_contract(base_spec, total_steps=1000)
@@ -419,7 +424,9 @@ def test_zero_freeze_asymmetric_warmup_mode():
     assert by_name["decoder_lora"]["warmup_steps"] == 10
 
     opt = build_bifocalgemma_adamw(groups, policy=policy)
-    r_step2 = update_policy_learning_rates(opt, 2)  # step 3 of 100 -> alignment at 100%, decoder at 30%
+    r_step2 = update_policy_learning_rates(
+        opt, 2
+    )  # step 3 of 100 -> alignment at 100%, decoder at 30%
     r_step9 = update_policy_learning_rates(opt, 9)  # step 10 of 100 -> decoder reaches 100%
     for name in ALIGNMENT_GROUP_NAMES:
         assert r_step2[name] == pytest.approx(policy["groups"][name]["lr"])
@@ -513,9 +520,7 @@ def test_per_example_mean_and_length_capped_eliminate_short_target_starvation():
         ).item()
     )
     loss_per_ex_dense = float(
-        differential_diff_cross_entropy(
-            logits, labels, loss_reduction="per_example_mean"
-        ).item()
+        differential_diff_cross_entropy(logits, labels, loss_reduction="per_example_mean").item()
     )
     expected_per_ex = 0.5 * (row0_ce + row1_ce)
     assert loss_per_ex == pytest.approx(expected_per_ex, rel=1e-5)
@@ -747,9 +752,7 @@ def test_fast_pipeline_respects_learnable_cross_scale_default_and_override(
             n.endswith(".cross_scale") for g in opt1.param_groups for n in g["param_names"]
         )
         # Other cross-attention params remain trainable
-        assert any(
-            n.endswith(".cross_gate") for g in opt1.param_groups for n in g["param_names"]
-        )
+        assert any(n.endswith(".cross_gate") for g in opt1.param_groups for n in g["param_names"])
 
         opt2 = pipeline.configure_stage2()
         assert all(p.requires_grad is False for p in scales)
@@ -786,7 +789,9 @@ def test_fast_pipeline_respects_learnable_cross_scale_default_and_override(
 
     # 3. Dynamic config.LEARNABLE_CROSS_SCALE=True when cfg.learnable_cross_scale is None
     monkeypatch.setattr(config_mod, "LEARNABLE_CROSS_SCALE", True)
-    pipeline_global = FastTrainingPipeline(FastTrainingConfig(model_choice="bifocalgemma-2b", tiny=True))
+    pipeline_global = FastTrainingPipeline(
+        FastTrainingConfig(model_choice="bifocalgemma-2b", tiny=True)
+    )
     assert pipeline_global.model_config.learnable_cross_scale is True
     pipeline_global.configure_stage1()
     assert all(

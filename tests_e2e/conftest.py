@@ -68,7 +68,7 @@ def sample_crosscode_row() -> Dict[str, Any]:
 
 @pytest.fixture
 def authoritative_empirical_results() -> Dict[str, Any]:
-    """Authoritative empirical benchmark results verified across existing runs."""
+    """Historical pre-unification (commit 7722d623, 2026-11-07) baseline-2b pilot fixture for schema/regression tests."""
     return {
         "sweqa_clean_oracle": {
             "accuracy": 0.7388,

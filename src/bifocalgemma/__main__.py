@@ -24,7 +24,9 @@ def _initialization_plan(spec: ExperimentSpec) -> dict[str, Any]:
     return {
         "experiment": spec.name,
         "encoder_body_source": encoder_source,
-        "encoder_words_source": decoder_source if spec.tie_encoder_decoder_words else encoder_source,
+        "encoder_words_source": decoder_source
+        if spec.tie_encoder_decoder_words
+        else encoder_source,
         "encoder_ple_source": encoder_source,
         "decoder_source": decoder_source,
         "shared_word_anchor": decoder_source if spec.tie_encoder_decoder_words else None,
@@ -54,12 +56,16 @@ def main(argv: list[str] | None = None) -> int:
     inspect.add_argument("--experiment", choices=EXPERIMENT_NAMES, default=EXPERIMENT_NAMES[0])
     validate = sub.add_parser("validate-config", help="Validate the checked-in six-model matrix.")
     validate.add_argument("--config", type=Path, default=Path("configs/experiments.json"))
-    smoke = sub.add_parser("smoke", help="Tiny native forward/backward smoke.")
+    smoke = sub.add_parser(
+        "smoke", help="Tiny native forward/backward smoke (first 4 core experiment specs)."
+    )
     smoke.add_argument(
         "--experiment", choices=(*EXPERIMENT_NAMES[:4], "all"), default=EXPERIMENT_NAMES[0]
     )
     smoke.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
-    native = sub.add_parser("smoke-native", help="Native full-depth tiny forward/backward.")
+    native = sub.add_parser(
+        "smoke-native", help="Tiny native forward/backward smoke across all 6 experiment specs."
+    )
     native.add_argument("--experiment", choices=(*EXPERIMENT_NAMES, "all"), default="all")
     native.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     train = sub.add_parser("train", help="Documented production placeholder.")

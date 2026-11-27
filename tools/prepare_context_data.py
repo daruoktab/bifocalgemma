@@ -831,11 +831,7 @@ def normalize_math_question(text: str) -> str:
 
 def build_gsm8k_fingerprints(questions) -> set[str]:
     """Build normalized question fingerprints for GSM8K test-set deduplication."""
-    return {
-        fp
-        for q in questions
-        if (fp := normalize_math_question(q))
-    }
+    return {fp for q in questions if (fp := normalize_math_question(q))}
 
 
 def _extract_row_license(raw: dict[str, Any], source_key: str) -> str:
@@ -869,7 +865,13 @@ def _extract_repo_from_v4_row(raw: dict[str, Any]) -> str:
         meta.get("repo"),
     ):
         if isinstance(val, str) and val.strip():
-            cleaned = val.strip().removeprefix("https://github.com/").removeprefix("http://github.com/").removesuffix(".git").strip("/")
+            cleaned = (
+                val.strip()
+                .removeprefix("https://github.com/")
+                .removeprefix("http://github.com/")
+                .removesuffix(".git")
+                .strip("/")
+            )
             if "/" in cleaned:
                 parts = cleaned.split("/")
                 return f"{parts[0]}/{parts[1]}".lower()
@@ -1025,8 +1027,10 @@ def adapt_v4_row(
             canonical_repo = repo_str
     if entry.get("quarantine_repos", True) and canonical_repo:
         slug_prefix = canonical_repo.replace("/", "-")
-        if canonical_repo in blocked_repos or slug_prefix in blocked_slugs or any(
-            s.startswith(slug_prefix + "-") for s in blocked_slugs
+        if (
+            canonical_repo in blocked_repos
+            or slug_prefix in blocked_slugs
+            or any(s.startswith(slug_prefix + "-") for s in blocked_slugs)
         ):
             raise ValueError("benchmark_repository_quarantine")
 
@@ -1059,16 +1063,21 @@ def adapt_v4_row(
         if task_type == "completion" and target in context:
             raise ValueError("completion_target_visible_in_context")
         path_hint = str(raw.get("path") or raw.get("old_file") or "")
-        if path_hint and "### File:" not in context and task_type in {"repair", "completion", "localization"}:
+        if (
+            path_hint
+            and "### File:" not in context
+            and task_type in {"repair", "completion", "localization"}
+        ):
             context = f"### Instruction\n{instr}\n\n### File: {path_hint}\n{context}"
         visible_paths = [
-            m.group(1).strip()
-            for m in re.finditer(r"^### File:\s*([^\n(]+)", context, re.M)
+            m.group(1).strip() for m in re.finditer(r"^### File:\s*([^\n(]+)", context, re.M)
         ] or [path_hint or "context.txt"]
 
     if entry.get("dedup_gsm8k") and gsm8k_fingerprints:
         q_norm = normalize_math_question(instr)
-        if q_norm in gsm8k_fingerprints or any(fp in q_norm for fp in gsm8k_fingerprints if len(fp) >= 24):
+        if q_norm in gsm8k_fingerprints or any(
+            fp in q_norm for fp in gsm8k_fingerprints if len(fp) >= 24
+        ):
             raise ValueError("gsm8k_test_overlap")
 
     if code_signatures:
@@ -1093,7 +1102,11 @@ def adapt_v4_row(
 
     snap_sha = hashlib.sha256(context.encode("utf-8")).hexdigest()
     raw_id = str(raw.get("instance_id") or "")
-    inst_id = raw_id if raw_id else f"v4-{source_key}-" + stable_fingerprint([source_key, instr, context, target])[:24]
+    inst_id = (
+        raw_id
+        if raw_id
+        else f"v4-{source_key}-" + stable_fingerprint([source_key, instr, context, target])[:24]
+    )
     lic_sha = hashlib.sha256(f"{entry['dataset_id']}:{raw_license}".encode("utf-8")).hexdigest()
     repo_label = canonical_repo or f"dataset/{source_key}"
     record: dict[str, Any] = {
@@ -1113,7 +1126,9 @@ def adapt_v4_row(
         "source_key": source_key,
         "source_revision": str(raw.get("source_revision") or "pinned"),
         "snapshot_sha256": snap_sha,
-        "commit": str(raw.get("base_commit") or raw.get("commit_hash") or raw.get("commit") or snap_sha[:40]),
+        "commit": str(
+            raw.get("base_commit") or raw.get("commit_hash") or raw.get("commit") or snap_sha[:40]
+        ),
         "repos": repo_label,
         "license": evidence_lic,
         "dataset_license": normalized_lic,
@@ -1215,7 +1230,10 @@ def _collect_benchmark_quarantine_assets(
             for inp_path in (directory / "eval_inputs.jsonl", directory / "inputs.jsonl"):
                 if inp_path.is_file():
                     for row in read_source_rows(inp_path):
-                        if "gsm8k" in directory.name.lower() or str(row.get("benchmark") or "").lower() == "gsm8k":
+                        if (
+                            "gsm8k" in directory.name.lower()
+                            or str(row.get("benchmark") or "").lower() == "gsm8k"
+                        ):
                             q = row.get("question")
                             if isinstance(q, str) and q.strip():
                                 gsm8k_questions.append(q)
@@ -1327,7 +1345,11 @@ def mixed_pool_v4(
         for row in old_rows["train"] + old_rows["dev"]:
             src = str(row.get("source") or "")
             src_lower = src.lower()
-            if src == "microsoft/NextCoderDataset" or src_lower == "nextcoder" or src in BLOCKED_V4_DATASETS:
+            if (
+                src == "microsoft/NextCoderDataset"
+                or src_lower == "nextcoder"
+                or src in BLOCKED_V4_DATASETS
+            ):
                 rejection_counts["dropped_nextcoder_or_blocked"] += 1
                 continue
             if cap_counts[src] >= foundation_edit_cap:
@@ -1352,7 +1374,11 @@ def mixed_pool_v4(
                 reason = str(err)
                 rejection_counts[reason.split(":")[0]] += 1
                 rejected.append(
-                    {"source_key": f"foundation:{src_key}", "instance_id": row.get("instance_id"), "reason": reason}
+                    {
+                        "source_key": f"foundation:{src_key}",
+                        "instance_id": row.get("instance_id"),
+                        "reason": reason,
+                    }
                 )
                 continue
             if adapted["instance_id"] not in seen_ids:
@@ -1365,25 +1391,31 @@ def mixed_pool_v4(
         for row in ctx_rows["train"] + ctx_rows["dev"]:
             src = str(row.get("source") or "")
             src_key = str(row.get("source_key") or "")
-            if (
-                src in BLOCKED_V4_DATASETS
-                or src.lower() == "nextcoder"
-                or src_key == "nextcoder"
-            ):
+            if src in BLOCKED_V4_DATASETS or src.lower() == "nextcoder" or src_key == "nextcoder":
                 rejection_counts["blocked_v4_dataset"] += 1
                 rejected.append(
-                    {"source_key": f"context:{src_key or src}", "instance_id": row.get("instance_id"), "reason": "blocked_v4_dataset"}
+                    {
+                        "source_key": f"context:{src_key or src}",
+                        "instance_id": row.get("instance_id"),
+                        "reason": "blocked_v4_dataset",
+                    }
                 )
                 continue
             if _is_quarantined_repo(_row_repo_candidates(row), blocked, slugs):
                 rejection_counts["benchmark_repository_quarantine"] += 1
                 rejected.append(
-                    {"source_key": f"context:{src_key or src}", "instance_id": row.get("instance_id"), "reason": "benchmark_repository_quarantine"}
+                    {
+                        "source_key": f"context:{src_key or src}",
+                        "instance_id": row.get("instance_id"),
+                        "reason": "benchmark_repository_quarantine",
+                    }
                 )
                 continue
             if sigs:
                 ctx_sigs = (
-                    _all_code_fragment_signatures(str(row.get("target_text") or row.get("target_patch") or ""))
+                    _all_code_fragment_signatures(
+                        str(row.get("target_text") or row.get("target_patch") or "")
+                    )
                     | _all_code_fragment_signatures(str(row.get("before") or ""))
                     | _all_code_fragment_signatures(str(row.get("after") or ""))
                     | _all_code_fragment_signatures(str(row.get("context") or ""))
@@ -1391,7 +1423,11 @@ def mixed_pool_v4(
                 if ctx_sigs & sigs:
                     rejection_counts["benchmark_code_overlap"] += 1
                     rejected.append(
-                        {"source_key": f"context:{src_key or src}", "instance_id": row.get("instance_id"), "reason": "benchmark_code_overlap"}
+                        {
+                            "source_key": f"context:{src_key or src}",
+                            "instance_id": row.get("instance_id"),
+                            "reason": "benchmark_code_overlap",
+                        }
                     )
                     continue
             enriched: dict[str, Any] = {**row, "context_format": "v4", "disjoint_context": True}
@@ -1431,9 +1467,7 @@ def mixed_pool_v4(
             except ValueError as err:
                 reason = str(err)
                 rejection_counts[reason.split(":")[0]] += 1
-                rejected.append(
-                    {"source_key": source_key, "offset": idx, "reason": reason}
-                )
+                rejected.append({"source_key": source_key, "offset": idx, "reason": reason})
                 continue
             if adapted["instance_id"] in seen_ids:
                 rejection_counts["duplicate_instance_id"] += 1
@@ -1519,10 +1553,10 @@ def mixed_pool_v4(
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("stage", choices=["benchmarks", "repository", "tasks", "mix", "mix-v4"])
     parser.add_argument(
-        "stage", choices=["benchmarks", "repository", "tasks", "mix", "mix-v4"]
+        "--source-key", choices=["swe_rebench_v2", "swe_fixer"], default="swe_rebench_v2"
     )
-    parser.add_argument("--source-key", choices=["swe_rebench_v2", "swe_fixer"], default="swe_rebench_v2")
     parser.add_argument("--target-count", type=int, default=0, help="0 = all admitted candidates")
     parser.add_argument("--per-repo-limit", type=int, default=0, help="0 = no repository quota")
     parser.add_argument(
@@ -1566,9 +1600,7 @@ def main():
             disjoint_context=True,
         )
     elif args.stage == "mix-v4":
-        code_sigs, gsm8k_qs = _collect_benchmark_quarantine_assets(
-            output, cache_hf=cache / "hf"
-        )
+        code_sigs, gsm8k_qs = _collect_benchmark_quarantine_assets(output, cache_hf=cache / "hf")
         mixed_pool_v4(
             {},
             output,

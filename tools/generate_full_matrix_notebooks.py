@@ -450,10 +450,13 @@ def main():
         "--check", action="store_true", help="Check existing files match generated code"
     )
     mode.add_argument(
-        "--publish", action="store_true", help="Publish an immutable runtime bundle without changing runtime/latest.zip"
+        "--publish",
+        action="store_true",
+        help="Publish an immutable runtime bundle without changing runtime/latest.zip",
     )
     parser.add_argument(
-        "--require-published", action="store_true",
+        "--require-published",
+        action="store_true",
         help="With --check, require an immutable Hub revision instead of LOCAL-PREVIEW.",
     )
     args = parser.parse_args()
@@ -484,7 +487,9 @@ def main():
             commit_message="Publish immutable BifocalGemma matrix notebook runtime",
         )
         print(f"Uploaded commit: {commit.oid}")
-        remote = hf_hub_download(repo_id, filename, revision=commit.oid, token=False, force_download=True)
+        remote = hf_hub_download(
+            repo_id, filename, revision=commit.oid, token=False, force_download=True
+        )
         if hashlib.sha256(Path(remote).read_bytes()).hexdigest() != bundle_sha:
             raise ValueError("Published runtime checksum mismatch.")
         manifest = {
@@ -504,7 +509,9 @@ def main():
         if args.require_published and not (
             len(revision) == 40 and all(c in "0123456789abcdef" for c in revision)
         ):
-            raise SystemExit("Runtime is not published at an immutable revision; run with --publish before shipping notebooks.")
+            raise SystemExit(
+                "Runtime is not published at an immutable revision; run with --publish before shipping notebooks."
+            )
         if manifest.get("sha256") != bundle_sha:
             raise SystemExit(
                 f"Source bundle hash ({bundle_sha}) does not match manifest ({manifest.get('sha256')}). "

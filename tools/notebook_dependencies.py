@@ -130,7 +130,6 @@ def bootstrap_notebook_dependencies(
     import subprocess
     import sys
     import tempfile
-    import urllib.request
     from pathlib import Path
     from uuid import uuid4
 
@@ -293,27 +292,34 @@ def bootstrap_notebook_dependencies(
         if name in sys.modules
     ]
     uv = shutil.which("uv")
-    if uv is None:
-        candidate = Path.home() / ".local/bin" / ("uv.exe" if os.name == "nt" else "uv")
-        if candidate.is_file():
-            uv = str(candidate)
-        elif os.name == "posix":
-            print("Installing uv using the official standalone installer.", flush=True)
-            with urllib.request.urlopen("https://astral.sh/uv/install.sh", timeout=60) as response:
-                installer = response.read()
-            subprocess.run(
-                ["sh"],
-                input=installer,
-                check=True,
-                env={**os.environ, "UV_NO_MODIFY_PATH": "1"},
-            )
-            if not candidate.is_file():
-                raise RuntimeError("uv installer completed but its executable was not found.")
-            uv = str(candidate)
+    uv_cmd: list[str]
+    if uv is not None:
+        uv_cmd = [uv]
+    else:
+        exe_name = "uv.exe" if os.name == "nt" else "uv"
+        candidates = (
+            Path(sys.executable).parent / exe_name,
+            Path.home() / ".local/bin" / exe_name,
+        )
+        found = next((c for c in candidates if c.is_file()), None)
+        if found is not None:
+            uv_cmd = [str(found)]
         else:
-            raise RuntimeError("Install uv in the chosen environment before running this cell.")
+            print("Installing pinned uv==0.13.10 into the current Python environment.", flush=True)
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--no-cache-dir", "uv==0.13.10"],
+                check=True,
+            )
+            uv = shutil.which("uv")
+            found = next((c for c in candidates if c.is_file()), None)
+            if uv is not None:
+                uv_cmd = [uv]
+            elif found is not None:
+                uv_cmd = [str(found)]
+            else:
+                uv_cmd = [sys.executable, "-m", "uv"]
 
-    common = [uv, "pip", "install", "--python", sys.executable]
+    common = [*uv_cmd, "pip", "install", "--python", sys.executable]
     if reinstall:
         common.append("--reinstall")
     print(f"Dependency setup targets the current kernel: {sys.executable}", flush=True)

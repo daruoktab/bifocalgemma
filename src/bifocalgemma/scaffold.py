@@ -12,9 +12,7 @@ class BuildBlock:
 
 
 BUILD_BLOCKS = (
-    BuildBlock(
-        "C01", "implemented", "config.py", "Six-model and ten-model matrix registry"
-    ),
+    BuildBlock("C01", "implemented", "config.py", "Six-model and ten-model matrix registry"),
     BuildBlock(
         "D01", "implemented", "contracts.py", "Repository, example, batch and prediction contracts"
     ),

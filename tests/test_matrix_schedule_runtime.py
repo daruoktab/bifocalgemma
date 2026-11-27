@@ -532,7 +532,9 @@ def test_recovered_completed_training_and_benchmark_resume_skip_completed_work(
     monkeypatch.setattr(
         matrix,
         "prepare_curated_training",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("prepare_curated_training must not run")),
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("prepare_curated_training must not run")
+        ),
     )
     monkeypatch.setattr(
         pretrained,
@@ -548,7 +550,12 @@ def test_recovered_completed_training_and_benchmark_resume_skip_completed_work(
     test_benchmarks = [
         {"collection": "bench_one", "encoder_limit": 32, "decoder_limit": 32, "max_new_tokens": 8},
         {"collection": "bench_two", "encoder_limit": 32, "decoder_limit": 32, "max_new_tokens": 8},
-        {"collection": "bench_three", "encoder_limit": 32, "decoder_limit": 32, "max_new_tokens": 8},
+        {
+            "collection": "bench_three",
+            "encoder_limit": 32,
+            "decoder_limit": 32,
+            "max_new_tokens": 8,
+        },
     ]
     monkeypatch.setattr(matrix, "BENCHMARKS", test_benchmarks)
     monkeypatch.setattr(matrix, "download_model", download)
@@ -737,7 +744,9 @@ def test_stage1_to_stage2_continuous_warmup_offset_and_per_group_grad_norms(tmp_
     assert [row["step"] for row in trace] == [1, 2, 3, 4]
     for row in trace:
         group_norms = row["group_gradient_norms"]
-        assert row["gradient_norm"] == pytest.approx(math.sqrt(sum(v * v for v in group_norms.values())))
+        assert row["gradient_norm"] == pytest.approx(
+            math.sqrt(sum(v * v for v in group_norms.values()))
+        )
     assert set(trace[2]["group_gradient_norms"]) == {
         "cross_gate_scalars",
         "cross_gate_proj",

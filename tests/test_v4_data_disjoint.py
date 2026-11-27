@@ -84,9 +84,7 @@ class _CharTokenizer:
 
     def decode(self, token_ids, skip_special_tokens=False) -> str:
         inv = {v: k for k, v in self.vocab.items()}
-        return "".join(
-            inv[i] for i in token_ids if not (skip_special_tokens and i in (1, 2, 106))
-        )
+        return "".join(inv[i] for i in token_ids if not (skip_special_tokens and i in (1, 2, 106)))
 
 
 def _numbered_line_numbers(text: str) -> list[int]:
@@ -177,10 +175,22 @@ def test_disjoint_split_completion_zero_overlap_and_three_way_parity():
     # Tokenize all 3 modes cleanly
     tok = _CharTokenizer()
     ex_bifocal = tokenize_context_task(
-        row, EXPERIMENT_SPECS[0], tok, tok, encoder_limit=8192, decoder_limit=4096, local_window_lines=32
+        row,
+        EXPERIMENT_SPECS[0],
+        tok,
+        tok,
+        encoder_limit=8192,
+        decoder_limit=4096,
+        local_window_lines=32,
     )
     ex_baseline = tokenize_context_task(
-        row, EXPERIMENT_SPECS[4], None, tok, encoder_limit=8192, decoder_limit=16384, local_window_lines=32
+        row,
+        EXPERIMENT_SPECS[4],
+        None,
+        tok,
+        encoder_limit=8192,
+        decoder_limit=16384,
+        local_window_lines=32,
     )
     ex_local_only = tokenize_context_task(
         row,
@@ -219,10 +229,22 @@ def test_disjoint_split_crosscodelong_repair_and_qa_layouts():
     }
     ccl_split = split_disjoint_context(ccl_row, local_window_lines=32)
     assert "remote_api" in ccl_split.encoder_context
-    assert "pre_1 = 1" in ccl_split.encoder_context and "pre_1 = 1" not in ccl_split.decoder_local_context
-    assert "pre_79 = 79" in ccl_split.decoder_local_context and "pre_79 = 79" not in ccl_split.encoder_context
-    assert "suf_1 = 1" in ccl_split.decoder_local_context and "suf_1 = 1" not in ccl_split.encoder_context
-    assert "suf_79 = 79" in ccl_split.encoder_context and "suf_79 = 79" not in ccl_split.decoder_local_context
+    assert (
+        "pre_1 = 1" in ccl_split.encoder_context
+        and "pre_1 = 1" not in ccl_split.decoder_local_context
+    )
+    assert (
+        "pre_79 = 79" in ccl_split.decoder_local_context
+        and "pre_79 = 79" not in ccl_split.encoder_context
+    )
+    assert (
+        "suf_1 = 1" in ccl_split.decoder_local_context
+        and "suf_1 = 1" not in ccl_split.encoder_context
+    )
+    assert (
+        "suf_79 = 79" in ccl_split.encoder_context
+        and "suf_79 = 79" not in ccl_split.decoder_local_context
+    )
 
     # Multi-file repair with explicit line window offset
     rep_row = {
@@ -230,11 +252,12 @@ def test_disjoint_split_crosscodelong_repair_and_qa_layouts():
         "instruction": "Fix target_calc off-by-one in app/calc.py",
         "context": (
             "### Issue\nFix target_calc off-by-one in app/calc.py\n\n"
-            "### File: app/utils.py (lines 1-5)\n" + "\n".join(f"u_{i} = {i}" for i in range(1, 6)) + "\n\n"
+            "### File: app/utils.py (lines 1-5)\n"
+            + "\n".join(f"u_{i} = {i}" for i in range(1, 6))
+            + "\n\n"
             "### File: app/calc.py (lines 10-70)\n"
             + "\n".join(
-                "def target_calc(x):" if i == 30 else f"line_{i} = {i}"
-                for i in range(10, 71)
+                "def target_calc(x):" if i == 30 else f"line_{i} = {i}" for i in range(10, 71)
             )
         ),
     }
@@ -310,7 +333,9 @@ def test_v4_quarantine_licenses_dedup_and_nextcoder_rejection():
     mod = _load_prepare_module()
     blocked_repos = {"blocked/bench-repo"}
     blocked_slugs = {"cross-slug"}
-    sigs = mod.code_fragment_signatures("def leaked_bench():\n    x = 1\n    y = 2\n    return x + y\n" * 4)
+    sigs = mod.code_fragment_signatures(
+        "def leaked_bench():\n    x = 1\n    y = 2\n    return x + y\n" * 4
+    )
     gsm8k_fps = mod.build_gsm8k_fingerprints(["Janet has 16 eggs per day. How much does she make?"])
 
     # 1. NextCoderDataset explicitly dropped/blocked
@@ -381,7 +406,8 @@ def test_v4_quarantine_licenses_dedup_and_nextcoder_rejection():
             "opc_sft_stage2",
             {
                 "instruction": "Implement helper",
-                "context": "### File: a.py\n" + ("def leaked_bench():\n    x = 1\n    y = 2\n    return x + y\n" * 4),
+                "context": "### File: a.py\n"
+                + ("def leaked_bench():\n    x = 1\n    y = 2\n    return x + y\n" * 4),
                 "target_text": "pass",
             },
             code_signatures=sigs,
@@ -403,7 +429,12 @@ def test_v4_quarantine_licenses_dedup_and_nextcoder_rejection():
     with pytest.raises(ValueError, match="v4_context_exceeds_max_tokens"):
         mod.adapt_v4_row(
             "longalign",
-            {"instruction": "Summarize", "context": "x " * 100, "output": "ok", "encoder_tokens": 40000},
+            {
+                "instruction": "Summarize",
+                "context": "x " * 100,
+                "output": "ok",
+                "encoder_tokens": 40000,
+            },
         )
     with pytest.raises(ValueError, match="gsm8k_test_overlap"):
         mod.adapt_v4_row(
@@ -504,11 +535,15 @@ def test_mixed_pool_v4_curriculum_grounded_and_curated_sft(tmp_path):
     assert len(rows["train"]) > 0 and len(rows["dev"]) > 0
     assert all(r["source"] != "microsoft/NextCoderDataset" for r in rows["train"] + rows["dev"])
     # Verify grounded tasks generated and placed cleanly in their parent's split
-    assert any(r.get("record_type") == "grounded_context_sft_v1" for r in rows["train"] + rows["dev"])
+    assert any(
+        r.get("record_type") == "grounded_context_sft_v1" for r in rows["train"] + rows["dev"]
+    )
     assert set(loaded_manifest["report"]["bucket_counts"]) <= set(V4_DEFAULT_MIX)
 
     # Check curriculum directly
-    selected, c_stats = build_v4_curriculum(rows["train"], target_count=16, min_long_context_ratio=0.40)
+    selected, c_stats = build_v4_curriculum(
+        rows["train"], target_count=16, min_long_context_ratio=0.40
+    )
     assert len(selected) == 16
     assert c_stats["long_context_ratio"] >= 0.40
     assert {classify_v4_bucket(r) for r in selected} == set(V4_DEFAULT_MIX)
@@ -578,7 +613,9 @@ def test_multi_epoch_and_stratified_balanced_schedule(tmp_path):
     assert s2.ordered_ids[20:] != s1.ordered_ids
 
     # Input-order invariance on multi-epoch & balanced schedules
-    s15_rev = build_shared_schedule(list(reversed(records)), dataset_identity=identity, num_epochs=1.5)
+    s15_rev = build_shared_schedule(
+        list(reversed(records)), dataset_identity=identity, num_epochs=1.5
+    )
     assert s15_rev.ordered_ids == s15.ordered_ids
     assert s15_rev.signature == s15.signature
     assert [records[i]["instance_id"] for i in s15.ordered_indices] == list(s15.ordered_ids)

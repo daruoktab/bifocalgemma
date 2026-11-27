@@ -60,12 +60,19 @@ def patch_paths(patch: str) -> tuple[str, ...]:
         if old != new:
             raise ValueError("unsupported_rename")
         paths.append(safe_repo_path(old))
-    for prefix, name in re.findall(r"^(---|\+\+\+) (.+)$", patch, re.M):
-        if name == "/dev/null":
+    sections = re.split(r"(?=^diff --git )", patch, flags=re.M)
+    for section in sections:
+        if not section.startswith("diff --git "):
             continue
-        expected = "a/" if prefix == "---" else "b/"
-        if not name.startswith(expected) or safe_repo_path(name[2:]) not in paths:
-            raise ValueError("patch_header_path_mismatch")
+        preamble = re.split(
+            r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", section, maxsplit=1, flags=re.M
+        )[0]
+        for prefix, name in re.findall(r"^(---|\+\+\+) (.+)$", preamble, re.M):
+            if name == "/dev/null":
+                continue
+            expected = "a/" if prefix == "---" else "b/"
+            if not name.startswith(expected) or safe_repo_path(name[2:]) not in paths:
+                raise ValueError("patch_header_path_mismatch")
     if len(set(paths)) != len(paths) or len({p.casefold() for p in paths}) != len(paths):
         raise ValueError("duplicate_or_case_colliding_patch_path")
     if not re.search(r"^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@", patch, re.M):
@@ -230,7 +237,9 @@ def _add_missing_git_headers(body: str) -> str | None:
             old_path = _strip_diff_header_path(lines[i][4:], "a/")
             new_path = _strip_diff_header_path(lines[i + 1][4:], "b/")
             rel = new_path if old_path is None else old_path
-            if rel is None or (old_path is not None and new_path is not None and old_path != new_path):
+            if rel is None or (
+                old_path is not None and new_path is not None and old_path != new_path
+            ):
                 raise ValueError("unsupported_rename")
             rel = safe_repo_path(rel)
             out.append(f"diff --git a/{rel} b/{rel}")

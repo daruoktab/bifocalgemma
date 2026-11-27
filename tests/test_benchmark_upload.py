@@ -136,3 +136,24 @@ def test_parent_conflict_refreshes_but_keeps_retry_bounded(monkeypatch):
     with pytest.raises(HfHubHTTPError):
         hub.synchronize_run("fixture/model", "root", "prefix", token="fixture")
     assert len(calls) == 3
+
+
+def test_transient_lfs_pointer_400_is_retryable_while_other_400_is_fatal(tmp_path):
+    from huggingface_hub.errors import BadRequestError
+
+    request = httpx.Request("POST", "https://huggingface.co/api/models/fixture/commit/main")
+    lfs_resp = httpx.Response(
+        400,
+        text="Your push was rejected because an LFS pointer pointed to a file that does not exist.",
+        request=request,
+    )
+    lfs_err = BadRequestError("Bad request", response=lfs_resp)
+    assert retry_delay(lfs_err, 1, 1000) == 60
+
+    other_resp = httpx.Response(400, text="Invalid commit operation", request=request)
+    other_err = BadRequestError("Invalid commit operation", response=other_resp)
+    assert retry_delay(other_err, 1, 1000) is None
+
+    queue = BenchmarkUploadQueue(tmp_path, backoff_path=tmp_path / "backoff", clock=lambda: 1000.0)
+    assert queue.attempt(lambda: (_ for _ in ()).throw(lfs_err)) is None
+    assert queue.state["status"] == "DEFERRED" and queue.state["pending"]

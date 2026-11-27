@@ -191,13 +191,17 @@ def restore_matrix_checkpoint(
     checkpoint_dir = Path(checkpoint_dir).resolve()
     validate_checkpoint_files(checkpoint_dir)
     manifest = json.loads((checkpoint_dir / "manifest.json").read_text(encoding="utf-8"))
-    if expected_compatibility is not None and manifest.get("compatibility") != expected_compatibility:
+    if (
+        expected_compatibility is not None
+        and manifest.get("compatibility") != expected_compatibility
+    ):
         raise ValueError("Checkpoint training/data/model compatibility changed; choose a new run.")
 
     weights = load_file(str(checkpoint_dir / "adapters.safetensors"), device="cpu")
     parameters = dict(model.named_parameters())
     expected_names = {
-        name for name in parameters
+        name
+        for name in parameters
         if is_cross_bridge_parameter(name) or name.endswith((".lora_A", ".lora_B"))
     }
     if set(weights) != expected_names:
@@ -206,15 +210,19 @@ def restore_matrix_checkpoint(
         if parameters[name].shape != tensor.shape:
             raise ValueError(f"Checkpoint adapter shape mismatch: {name}.")
     trainer_payload = torch.load(
-        checkpoint_dir / "trainer_state.pt", map_location="cpu", weights_only=False
+        checkpoint_dir / "trainer_state.pt", map_location="cpu", weights_only=True
     )
     state = trainer_payload.get("training_state", {})
-    if state.get("global_step") != manifest.get("global_step") or state.get("stage") != manifest.get("stage"):
+    if state.get("global_step") != manifest.get("global_step") or state.get(
+        "stage"
+    ) != manifest.get("stage"):
         raise ValueError("Checkpoint trainer cursor disagrees with its manifest.")
     if expected_schedule is not None:
         if state.get("schedule_signature") != expected_schedule.signature:
             raise ValueError("Checkpoint shared schedule changed.")
-        expected_schedule.validate_cursor(state["global_step"], example_cursor=state.get("example_cursor", -1))
+        expected_schedule.validate_cursor(
+            state["global_step"], example_cursor=state.get("example_cursor", -1)
+        )
     if expected_stage is not None:
         name, start, steps = expected_stage
         if state.get("stage") == name:
@@ -255,7 +263,20 @@ def restore_matrix_checkpoint(
     }
 
 
-def prune_matrix_checkpoints(train_dir: Path, keep_limit: int = 2) -> list[str]:
+def _milestone_checkpoint_names(stage1_steps: int, total_steps: int) -> set[str]:
+    names = {f"checkpoint-{total_steps:06d}"}
+    if stage1_steps > 0:
+        names.add(f"checkpoint-{stage1_steps:06d}")
+    return names
+
+
+def prune_matrix_checkpoints(
+    train_dir: Path,
+    keep_limit: int = 2,
+    *,
+    stage1_steps: int = STAGE1_STEPS,
+    total_steps: int = TOTAL_STEPS,
+) -> list[str]:
     """Keep milestone checkpoints and the last keep_limit checkpoints."""
     train_dir = Path(train_dir).resolve()
     candidates = sorted(
@@ -264,11 +285,8 @@ def prune_matrix_checkpoints(train_dir: Path, keep_limit: int = 2) -> list[str]:
     )
     if len(candidates) <= keep_limit:
         return [p.name for p in candidates]
-    milestone = {
-        p
-        for p in candidates
-        if p.name in {f"checkpoint-{STAGE1_STEPS:06d}", f"checkpoint-{TOTAL_STEPS:06d}"}
-    }
+    milestone_names = _milestone_checkpoint_names(stage1_steps, total_steps)
+    milestone = {p for p in candidates if p.name in milestone_names}
     latest = set(candidates[-keep_limit:])
     keep = milestone | latest
     for p in candidates:
@@ -289,6 +307,8 @@ def synchronize_matrix(
     require_checkpoint: bool = True,
     max_retries: int = 10,
     base_delay: float = 0.05,
+    stage1_steps: int = STAGE1_STEPS,
+    total_steps: int = TOTAL_STEPS,
 ) -> dict[str, Any]:
     """Synchronize verified checkpoints and benchmarks to a shared multi-model Hub repo with contention retry."""
     import re
@@ -296,6 +316,7 @@ def synchronize_matrix(
     from huggingface_hub import CommitOperationAdd, CommitOperationDelete, HfApi, hf_hub_download
     from huggingface_hub.errors import HfHubHTTPError
 
+    from bifocalgemma.training.benchmark_upload import is_transient_lfs_pointer_error
     from bifocalgemma.training.hub import checked_prefix
 
     checked_prefix(prefix)
@@ -308,7 +329,7 @@ def synchronize_matrix(
     for p in checkpoints:
         validate_checkpoint_files(p)
 
-    milestone_names = {f"checkpoint-{STAGE1_STEPS:06d}", f"checkpoint-{TOTAL_STEPS:06d}"}
+    milestone_names = _milestone_checkpoint_names(stage1_steps, total_steps)
     retained_set = set(checkpoints[-2:]) | {p for p in checkpoints if p.name in milestone_names}
     retained = sorted(retained_set)
     if not retained and require_checkpoint:
@@ -369,10 +390,15 @@ def synchronize_matrix(
             break
         except HfHubHTTPError as error:
             status_code = getattr(getattr(error, "response", None), "status_code", None)
-            if status_code not in retryable_codes or attempt == max_retries - 1:
+            transient_lfs = is_transient_lfs_pointer_error(error, status_code)
+            if (
+                status_code not in retryable_codes and not transient_lfs
+            ) or attempt == max_retries - 1:
                 raise
-            if status_code == 409:
-                delay = min(60.0, max(2.0, 2.0 * (2 ** min(attempt, 4)))) * (0.8 + 0.4 * random.random())
+            if status_code == 409 or transient_lfs:
+                delay = min(60.0, max(2.0, 2.0 * (2 ** min(attempt, 4)))) * (
+                    0.8 + 0.4 * random.random()
+                )
             elif base_delay > 0:
                 delay = base_delay * (1.5 ** min(attempt, 6)) * (0.5 + random.random())
             else:
@@ -414,7 +440,9 @@ def synchronize_matrix(
                 if status_code not in retryable_codes or attempt == max_retries - 1:
                     raise
                 if status_code == 409:
-                    delay = min(60.0, max(2.0, 2.0 * (2 ** min(attempt, 4)))) * (0.8 + 0.4 * random.random())
+                    delay = min(60.0, max(2.0, 2.0 * (2 ** min(attempt, 4)))) * (
+                        0.8 + 0.4 * random.random()
+                    )
                 elif base_delay > 0:
                     delay = base_delay * (1.5 ** min(attempt, 6)) * (0.5 + random.random())
                 else:

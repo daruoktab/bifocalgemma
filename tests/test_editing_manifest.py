@@ -141,7 +141,10 @@ def test_generated_preparation_consumes_frozen_raw_repository_pool(tmp_path, ind
     assert manifest["pool_fingerprint"] == pool["fingerprint"]
     assert manifest["instances"] == pool["record_ids"]
     expected_tokens = {
-        split: [(item.instance_id, item.encoder_ids, item.decoder_prefix_ids, item.target_ids) for item in items]
+        split: [
+            (item.instance_id, item.encoder_ids, item.decoder_prefix_ids, item.target_ids)
+            for item in items
+        ]
         for split, items in (("train", train), ("dev", dev))
     }
     assert manifest["tokenized_fingerprint"] == stable_fingerprint(expected_tokens)
@@ -158,10 +161,14 @@ def test_generated_preparation_consumes_frozen_raw_repository_pool(tmp_path, ind
             }
         ]
         entry = editing_manifest(rows[split])[0]
-        assert entry["pair_hash"] == hashlib.sha256(
-            (original["snapshot_sha256"] + "\0" + original["target_patch"]).encode()
-        ).hexdigest()
-        assert entry["instruction_hash"] == hashlib.sha256(
-            original["instruction"].strip().encode()
-        ).hexdigest()
+        assert (
+            entry["pair_hash"]
+            == hashlib.sha256(
+                (original["snapshot_sha256"] + "\0" + original["target_patch"]).encode()
+            ).hexdigest()
+        )
+        assert (
+            entry["instruction_hash"]
+            == hashlib.sha256(original["instruction"].strip().encode()).hexdigest()
+        )
     assert {p.name: p.read_bytes() for p in root.iterdir()} == original_bytes

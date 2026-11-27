@@ -62,7 +62,9 @@ def test_v4_config_constants_and_external_registry():
     assert v4_by_col["humanevalfix_python_full_v1"]["repair_mode"] == "full_function"
     assert v4_by_col["crosscodelong_chunk_gemma32k_dec8k_v1"]["sample_limit"] == 500
     assert v4_by_col["crosscodelong_function_gemma32k_dec8k_v1"]["sample_limit"] == 500
-    assert infer_benchmark_weight_tier({"collection": "reponiah_gemma32k_dec8k_v1"}) == "medium_long"
+    assert (
+        infer_benchmark_weight_tier({"collection": "reponiah_gemma32k_dec8k_v1"}) == "medium_long"
+    )
 
 
 def test_gsm8k_no_space_hash_fix_and_resilient_accuracy_surfacing():
@@ -167,7 +169,9 @@ def test_humanevalfix_full_function_pass_at_1_and_recount_diagnostic(tmp_path: P
     row, gold = _write_repair_fixture(tmp_path)
 
     # 1. Full-function pass@1 with fenced single-function output (spliced cleanly with imports/helpers)
-    single_fn_fix = "```python\ndef add_one(xs: List[int]) -> List[int]:\n    return [x + 1 for x in xs]\n```"
+    single_fn_fix = (
+        "```python\ndef add_one(xs: List[int]) -> List[int]:\n    return [x + 1 for x in xs]\n```"
+    )
     res_pass = score_context_case(
         row,
         gold,
@@ -378,7 +382,7 @@ class MockQwenTokenizer:
     chat_template = "qwen-chat"
     all_special_tokens = ("<|im_end|>", "<|endoftext|>")
 
-    def __init__(self, *, support_enable_thinking: bool = True, completion_text: str = '####18'):
+    def __init__(self, *, support_enable_thinking: bool = True, completion_text: str = "####18"):
         self.support_enable_thinking = support_enable_thinking
         self.completion_text = completion_text
         self.chat_calls: list[dict] = []
@@ -446,7 +450,9 @@ def test_external_runner_qwen_bos_none_and_eos_handling(tmp_path: Path):
     assert eos_ids == (151645, 151643)
     assert 1 not in eos_ids
 
-    kept, stop_reason = external_runner.extract_generated_tokens([42, 1, 43, 151645, 151643], eos_ids)
+    kept, stop_reason = external_runner.extract_generated_tokens(
+        [42, 1, 43, 151645, 151643], eos_ids
+    )
     assert kept == (42, 1, 43)
     assert stop_reason == "eos"
 
@@ -518,7 +524,10 @@ def test_eval_external_baselines_cli_dry_run(capsys):
     assert payload["context_mode"] == "local_only"
     assert payload["models"] == ["qwen3-4b-instruct-2507", "qwen2.5-coder-3b-instruct"]
     assert payload["benchmarks"] == ["reponiah_gemma32k_dec8k_v1", "humanevalfix_python_full_v1"]
-    assert payload["results"]["qwen3-4b-instruct-2507"]["reponiah_gemma32k_dec8k_v1"]["planned_cases"] == 100
+    assert (
+        payload["results"]["qwen3-4b-instruct-2507"]["reponiah_gemma32k_dec8k_v1"]["planned_cases"]
+        == 100
+    )
 
     # Also verify eval_code v4 table helper runs cleanly without mutating REFERENCE_BASELINES
     assert set(eval_code.REFERENCE_BASELINES) == {"Gemma-4-E2B-IT", "Gemma-4-E4B-IT"}
@@ -536,7 +545,9 @@ class _ProportionalTokenizer:
         self.pad_token_id = 151643 if bos_token_id is None else 0
         self.unk_token_id = None
         self.chat_template = "chatml" if has_system_chat_template else "gemma"
-        self.all_special_tokens = ("<|im_end|>", "<|endoftext|>") if bos_token_id is None else ("<eos>",)
+        self.all_special_tokens = (
+            ("<|im_end|>", "<|endoftext|>") if bos_token_id is None else ("<eos>",)
+        )
 
     def get_vocab(self):
         return (
@@ -554,7 +565,11 @@ class _ProportionalTokenizer:
             if self.chat_template == "chatml"
             else "<bos><|turn>user\n"
         )
-        suffix = "<|im_end|>\n<|im_start|>assistant\n" if self.chat_template == "chatml" else "<turn|>\n<|turn>model\n"
+        suffix = (
+            "<|im_end|>\n<|im_start|>assistant\n"
+            if self.chat_template == "chatml"
+            else "<turn|>\n<|turn>model\n"
+        )
         return f"{sys_banner}<|im_start|>user\n{messages[0]['content']}{suffix}"
 
     def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
@@ -615,7 +630,9 @@ def test_reponiah_32k_zero_overflow_for_bifocalgemma_and_qwen25(tmp_path: Path):
     assert report["total"] == 2
     preds = [
         json.loads(line)
-        for line in (tmp_path / "reponiah_qwen25/predictions.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "reponiah_qwen25/predictions.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
     for pred in preds:
         assert pred["decoder_prefix_tokens"] + pred["generation_max_new_tokens"] <= 32768
@@ -670,7 +687,9 @@ def test_windowed_file_section_disjoint_split_and_train_eval_parity():
         },
     }
     b_full, _ = split_context_for_mode(big_window_row, context_mode="full", local_window_lines=10)
-    b_dec, b_enc = split_context_for_mode(big_window_row, context_mode="disjoint", local_window_lines=10)
+    b_dec, b_enc = split_context_for_mode(
+        big_window_row, context_mode="disjoint", local_window_lines=10
+    )
     train_split = split_disjoint_context(big_window_row, local_window_lines=10)
 
     assert b_enc == train_split.encoder_context

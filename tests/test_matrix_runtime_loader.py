@@ -32,17 +32,29 @@ def loader(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "path", list(sys.path))
     rendered = generator.render_notebook("2base-2it", {})
     tree = ast.parse(rendered)
-    function = next(node for node in ast.walk(tree)
-                    if isinstance(node, ast.FunctionDef) and node.name == "load_runtime")
+    function = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "load_runtime"
+    )
     namespace: dict[str, Any] = {}
-    exec(compile(ast.Module(body=[function], type_ignores=[]), "generated_runtime_loader.py", "exec"), namespace)
+    exec(
+        compile(
+            ast.Module(body=[function], type_ignores=[]), "generated_runtime_loader.py", "exec"
+        ),
+        namespace,
+    )
     return namespace["load_runtime"]
 
 
 def settings(payload, revision=REVISION):
     digest = hashlib.sha256(payload).hexdigest()
-    return dict(repo_id="example/runtime", filename=f"runtime/runtime-{digest[:16]}.zip",
-                revision=revision, expected_sha=digest)
+    return dict(
+        repo_id="example/runtime",
+        filename=f"runtime/runtime-{digest[:16]}.zip",
+        revision=revision,
+        expected_sha=digest,
+    )
 
 
 def no_network(*args, **kwargs):
@@ -53,8 +65,10 @@ def test_local_preview_missing_archive_explains_publication_without_network(monk
     load = loader(monkeypatch, tmp_path)
     monkeypatch.setattr(urllib.request, "urlopen", no_network)
     with pytest.raises(ValueError, match="unpublished LOCAL-PREVIEW"):
-        load(**settings(archive_bytes(), revision="LOCAL-PREVIEW"),
-             notebook_file="/tmp/marimo_167/__marimo__cell_MJUe_.py")
+        load(
+            **settings(archive_bytes(), revision="LOCAL-PREVIEW"),
+            notebook_file="/tmp/marimo_167/__marimo__cell_MJUe_.py",
+        )
     assert not (tmp_path / "outputs").exists()
 
 
@@ -93,7 +107,9 @@ def test_corrupt_local_archive_uses_verified_cache(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("first_url_fails", [False, True])
-def test_standalone_molab_cell_downloads_pinned_verified_runtime(monkeypatch, tmp_path, first_url_fails):
+def test_standalone_molab_cell_downloads_pinned_verified_runtime(
+    monkeypatch, tmp_path, first_url_fails
+):
     load = loader(monkeypatch, tmp_path)
     payload = archive_bytes()
     kwargs = settings(payload)
@@ -189,14 +205,23 @@ def test_publication_only_adds_verified_immutable_runtime(monkeypatch, tmp_path,
         assert notebook_path.read_bytes() == previous_notebook
         return str(downloaded)
 
-    monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(
-        HfApi=Api, hf_hub_download=download,
-    ))
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(
+            HfApi=Api,
+            hf_hub_download=download,
+        ),
+    )
     monkeypatch.setattr(generator, "ROOT", tmp_path)
     monkeypatch.setattr(generator, "matrix_bundle", lambda root: (payload, digest))
-    monkeypatch.setattr(generator, "MATRIX_NOTEBOOK_SPECS", {
-        "2base-2it": generator.MATRIX_NOTEBOOK_SPECS["2base-2it"],
-    })
+    monkeypatch.setattr(
+        generator,
+        "MATRIX_NOTEBOOK_SPECS",
+        {
+            "2base-2it": generator.MATRIX_NOTEBOOK_SPECS["2base-2it"],
+        },
+    )
     monkeypatch.setattr(generator, "format_code", lambda code, filename: code)
     monkeypatch.setattr(sys, "argv", ["generator", "--publish"])
 
@@ -215,20 +240,24 @@ def test_publication_only_adds_verified_immutable_runtime(monkeypatch, tmp_path,
             "sha256": digest,
         }
         assert json.loads(manifest_path.read_text(encoding="utf-8")) == manifest
-        assert notebook_path.read_text(encoding="utf-8") == generator.render_notebook("2base-2it", manifest)
+        assert notebook_path.read_text(encoding="utf-8") == generator.render_notebook(
+            "2base-2it", manifest
+        )
         assert (runtime_dir / Path(filename).name).read_bytes() == payload
 
     assert len(uploads) == 1
     assert uploads[0]["repo_id"] == generator.CENTRALIZED_HF_REPO
     assert uploads[0]["path_in_repo"] == filename
     assert uploads[0]["path_or_fileobj"] == payload
-    assert downloads == [{
-        "repo_id": generator.CENTRALIZED_HF_REPO,
-        "filename": filename,
-        "revision": REVISION,
-        "token": False,
-        "force_download": True,
-    }]
+    assert downloads == [
+        {
+            "repo_id": generator.CENTRALIZED_HF_REPO,
+            "filename": filename,
+            "revision": REVISION,
+            "token": False,
+            "force_download": True,
+        }
+    ]
     assert previous_runtime.read_bytes() == b"previous runtime"
     assert latest_runtime.read_bytes() == b"legacy latest runtime"
 
@@ -237,9 +266,15 @@ def test_checked_in_matrix_notebooks_require_published_runtime():
     for key in generator.MATRIX_NOTEBOOK_SPECS:
         path = generator.ROOT / "notebooks" / f"train_{key.replace('-', '_')}.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        assignment = next(node for node in ast.walk(tree) if isinstance(node, ast.Assign)
-                          and any(isinstance(target, ast.Name) and target.id == "runtime_manifest"
-                                  for target in node.targets))
+        assignment = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "runtime_manifest"
+                for target in node.targets
+            )
+        )
         revision = ast.literal_eval(assignment.value)["revision"]
         assert len(revision) == 40 and all(c in "0123456789abcdef" for c in revision), (
             f"{path.name} cannot ship a LOCAL-PREVIEW runtime to Molab; publish before push."
@@ -292,7 +327,9 @@ def test_notebook_launcher_handles_bifocalgemma_workspace_name_and_tools_provena
     monkeypatch.setattr(
         notebook_launcher.runpy,
         "run_path",
-        lambda path: {"bootstrap_notebook_dependencies": lambda pins, reinstall=False: {"status": "READY"}},
+        lambda path: {
+            "bootstrap_notebook_dependencies": lambda pins, reinstall=False: {"status": "READY"}
+        },
     )
     prep_result = notebook_launcher.prepare_runtime(runtime_root)
     assert prep_result == {"status": "READY"}

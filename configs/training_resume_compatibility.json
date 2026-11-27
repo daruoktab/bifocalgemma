@@ -3,11 +3,14 @@
   "reason": "New training identity for raw unified-diff target whitespace preservation, cross-attention scale freezing, and isolated matrix output paths. The MCQ diagnostic prefers an explicit terminal final answer. Earlier checkpoints retain their original training identity and need their pinned runtime and run directory.",
   "baseline_runtime_sha256": "94b69c37e9f25c7b27443ff0bfb4cec6870f7a400a6be993f6803177a806ac67",
   "baseline_training_semantics_sha256": "50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153",
-  "approved_source_semantics_sha256": "50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153",
-  "source_semantics_sha256": "50972e2a262f4297aa98ecf8178171c3dea13b124a6e56cf4e4f5f1c7440f153",
+  "approved_source_semantics_sha256": "23f0daf2d3df6a4fd4824146aea8c7dede1f48d61d4951a600bd143ea2b24419",
+  "source_semantics_sha256": "23f0daf2d3df6a4fd4824146aea8c7dede1f48d61d4951a600bd143ea2b24419",
   "reviewed_changed_files": {
+    "__main__.py": {
+      "after": "9acf221ea73a468b91bf2ed56d2258895361b8b013a2bb5bb6f26f5179874db1"
+    },
     "config.py": {
-      "after": "c7c67ca5b2307ebd73936bb4dab9295bd4a9eae7d04ba995cc6d2121679f608d"
+      "after": "4674179b4b1bc6d743e8fc6f6b9e262e2ad21b927d5a8a5c607da7fd6a81ba7e"
     },
     "configuration_bifocalgemma.py": {
       "after": "1eab7d244b8a25a9bb9352eaf11143625c03887e0d512dcb79ea9396cac1b27d"
@@ -16,61 +19,85 @@
       "after": "fa9cd778e6e79447718de4f12d648ae38c5804789c39201ac4018ff75a7c45b5"
     },
     "data/context_tasks.py": {
-      "after": "9165a3aa04f5f5ea44c57ab4c002d0d8a356db9243dbad41e3567d8c5fdafad6"
+      "after": "209384239e2a7a4b4063e173458d7eedee6d2b6848b0ce9d5bf37048aec84203"
+    },
+    "data/curriculum.py": {
+      "after": "a94619cc9421e827f2e51129eeea241ea33a8adbff77f2ac950d1db5117cb0a8"
     },
     "data/patches.py": {
-      "after": "895503ac18725ed2dbe13f0fa2595cd6db17cf9af1f060d7c8267bcb16c3aceb"
+      "after": "de61046fbee159da8ee7084b42a99c7a33866067d28980f7f5aa536b77f27907"
+    },
+    "data/releases.py": {
+      "after": "5d858e61d240e2d89b3309ca1f8cb3d65ab2223e13303744ff8d56c7f8f0da0c"
     },
     "evaluation/benchmark.py": {
-      "after": "18d2df1752019bc0724d5618cc80c79bff52566057ee1e680d4c1b88e3830757"
+      "after": "b395fba27ec624ee76fb4f89d28668754312fea83de7a935d9f6b84a0d1e1956"
     },
     "evaluation/context.py": {
-      "after": "0170286c5f1ad87df954751c57d3419e74e882475117e31de7ec66761c3c0210"
+      "after": "8e4e2329157713977c2e2c8e436c59f1e9574a47abf0caecb00c1859bd05e757"
     },
     "evaluation/external_runner.py": {
-      "after": "198c31573d259b5c38564d128bb48ffc5ec21cad48aaf6c3fbd444b5b3097079"
+      "after": "30189d442841a238155b3a9935765d2315a0db445c99d3f692a3c588fe1a50d9"
     },
     "evaluation/gsm8k.py": {
-      "after": "f3495d0cd72ff6b65867f952851c8dac67ed71ae2c5b958a33515b93e281c7f2"
+      "after": "faabe58e1545569f246bb06687addefa4ce1191b19a9904d293e05df67cf246a"
     },
     "evaluation/protocol.py": {
-      "after": "6a65e1c1c3486b64e7ed86a9541716f8ba210fa2e5d02541e7ab440e128c669d"
+      "after": "f51989af2a2764e87009c7de6aa38ea222eebf174e829685fe8216365bf2bcbd"
     },
     "modeling_bifocalgemma.py": {
-      "after": "c3ce7e22bc5ce23bbf6f251c078a23a90f9ce88e82fcc0169f3c6f17726ad045"
+      "after": "b251a055d50e9233a805723437d9899414e00d6fd554bf560613c558dd325af8"
     },
     "models/bridge.py": {
-      "after": "dc394c7bdd9b27393322c03e3fb63c549b5d62690c14983ddc50ac6feaa16c3d"
+      "after": "c39a414ad5373da1d0739d0e255f4b5ae3390e5264249f605bd82ef4fca6e0b2"
     },
     "models/cross_attention.py": {
-      "after": "519bd8244726618f4d797c5b70acf8f4bae4c4bf260f588721f79f5d8351af60"
+      "after": "4b589f75614f2e39571f91a01a4efac5eb84908c202db32a5aaa94e6e6243fc3"
+    },
+    "models/inference_cache.py": {
+      "after": "70bad81ff8820dfae463af942d3e686ab308760442ecedf4c40c66c3ef97fe55"
     },
     "models/memory_efficient.py": {
-      "after": "16352f05b45343eafe8333a011bc2000fba9a3391b290db0be2ea9d4f264691b"
+      "after": "804895b893632672a9cddfd9508e53040c61a4369342f2439f24ee123b38d1d9"
+    },
+    "scaffold.py": {
+      "after": "29244dc8d4e430c0a9424ab00d513881c64ee3bf3665ffe25d7d1a2b03a4b12e"
+    },
+    "training/benchmark_upload.py": {
+      "after": "16f4054f4bd2ce659700db9ff513f14760401303dc9be4badbbd1ae2158f648f"
+    },
+    "training/checkpoint.py": {
+      "after": "91a51800f8c1efaeb92440bada22ae1c834bde090fa5a2d1316a88b969ae54ce"
+    },
+    "training/curated_sft.py": {
+      "after": "6563727bf948386bcaaa8f51504d5fced3a808f44ae1190827010429f18aa0e1"
     },
     "training/fast_pipeline.py": {
-      "after": "6109288e28044a3b378e13f6cbb854ebdcde47fd4f322f00d40c913f68eeef39"
+      "after": "b6174ab423443bae454f84ecbb47c1965b72d481f5d16c81a3ed7138887fb3aa"
     },
     "training/hub.py": {
-      "after": "3359ef06a966b0b888f0f9382cfa74a90819cf7a83b8e4bd8782a8cc966321b0"
+      "after": "ed3ce184d7cc9faa15bb6a380924ecb5b9a78a0bcd771061733ee83c128d3b81"
     },
     "training/matrix.py": {
-      "after": "101fa0f1e186936dde216270a6773579eb5bfc820d55919fc30e615ebe86298b"
+      "after": "b70a69675f5dec337880c6b4f6db4d7a54a5da624bcca50c50550562f659dc51"
     },
     "training/objectives.py": {
-      "after": "50dc3b88996ee91cb3aa8d737c6b4665e9322f40bee7375c10ce0eb73729a2f6"
+      "after": "69fe813d2311ccb9126228d66c0b0b814ad506271a477ba624a48806be5de723"
     },
     "training/policy.py": {
-      "after": "36aff633dc0c0cc3922e38f55f05c3add1dd6b5c758541fb7a768db6a5906f22"
+      "after": "9ad89eaf8e6e4cb9e1700b131b2b6006f4cacd7ca1ceb203fa4ca680a62e1398"
     },
     "training/repository_sft.py": {
-      "after": "f664600675469c40016f2056cd91aa14874c5cbf3bc8b5f74ebfbbfb912442af"
+      "after": "3e8eac396fd024d10b99b6c19aefb6862f82d5883581db595f1a887d9f669348"
     },
     "training/runtime.py": {
-      "after": "d4ddcd1a1d7317f918b316dd52c6a932515e38db21bb44557dac1d301e4f3bc4"
+      "after": "c91078b1d6caa83f1bfeb99269bbccf40062db99711c41310faeac9db4410932"
+    },
+    "training/schedule.py": {
+      "after": "66c55cf2e5925f25ea4baa7e9bccc5bbdb52145d12cc692107a42acddd220b3c"
     },
     "training/stage.py": {
-      "after": "19a308ab3977cbf3fe7cd632a9981e4fd18b2b0ebd2683fc40badd355183b875"
+      "after": "b9262445f47e5343666a30f94c04e1dd31de9feb0513788fe8f1736a2fc9e1fd"
     }
   }
 }

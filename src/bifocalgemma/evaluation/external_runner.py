@@ -9,6 +9,7 @@ when supported).
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections import Counter
 from pathlib import Path
@@ -21,6 +22,7 @@ from bifocalgemma.config import (
     EXTERNAL_COMPARISON_MODELS,
     V4_BENCHMARKS,
 )
+from bifocalgemma.data.curation import stable_fingerprint
 from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.benchmark import prepare_sampled_benchmark_collection
 from bifocalgemma.evaluation.context import (
@@ -79,9 +81,7 @@ def resolve_external_benchmarks(names: list[str] | None = None) -> list[dict[str
         if len(matches) == 1:
             resolved.append(dict(matches[0]))
             continue
-        raise ValueError(
-            f"Unknown benchmark {raw!r}. Available: {list(by_name)}."
-        )
+        raise ValueError(f"Unknown benchmark {raw!r}. Available: {list(by_name)}.")
     return resolved
 
 
@@ -101,7 +101,9 @@ def resolve_external_eos_ids(tokenizer: Any, model: Any = None) -> tuple[int, ..
     eos_ids: list[int] = []
     _collect_int_ids(getattr(tokenizer, "eos_token_id", None), eos_ids)
     if model is not None:
-        _collect_int_ids(getattr(getattr(model, "generation_config", None), "eos_token_id", None), eos_ids)
+        _collect_int_ids(
+            getattr(getattr(model, "generation_config", None), "eos_token_id", None), eos_ids
+        )
         _collect_int_ids(getattr(getattr(model, "config", None), "eos_token_id", None), eos_ids)
 
     unk_id = getattr(tokenizer, "unk_token_id", None)
@@ -132,6 +134,7 @@ def format_external_prompt(
     context_mode: str = "full",
     repair_mode: str | None = None,
     enable_thinking: bool | None = False,
+    number_lines: bool = True,
 ) -> tuple[str, tuple[int, ...]]:
     """Render and tokenize an external decoder-only prompt without BOS assertions."""
     if context_mode not in EXTERNAL_CONTEXT_MODES:
@@ -143,6 +146,7 @@ def format_external_prompt(
         paired=False,
         context_mode=context_mode,
         repair_mode=repair_mode,
+        number_lines=number_lines,
     )
     messages = [{"role": "user", "content": prompt}]
     has_template = getattr(tokenizer, "chat_template", None) is not None
@@ -291,9 +295,7 @@ def _build_reponiah_cohort(
     seed = int(benchmark_item.get("seed", 42))
     suite_cap = int(benchmark_item.get("max_new_tokens", 128))
     max_prompt_tokens = (
-        max(1, max_position_embeddings - suite_cap)
-        if max_position_embeddings is not None
-        else None
+        max(1, max_position_embeddings - suite_cap) if max_position_embeddings is not None else None
     )
     public: list[dict[str, Any]] = []
     gold: list[dict[str, Any]] = []
@@ -394,9 +396,10 @@ def run_external_benchmark(
     out_path = Path(output_dir)
 
     if dry_run:
-        cohort_exists = "reponiah" in collection.lower() or (
-            root_path / str(benchmark_item.get("source_collection") or collection)
-        ).exists()
+        cohort_exists = (
+            "reponiah" in collection.lower()
+            or (root_path / str(benchmark_item.get("source_collection") or collection)).exists()
+        )
         sample_count = None
         if cohort_exists:
             _, pub, _ = _load_benchmark_cohort(
@@ -445,26 +448,92 @@ def run_external_benchmark(
     gold_by_id = {r["instance_id"]: r for r in hidden}
 
     out_path.mkdir(parents=True, exist_ok=True)
+    signature = stable_fingerprint(
+        {
+            "model_key": model_cfg["key"],
+            "model_id": model_cfg["model_id"],
+            "revision": model_cfg["revision"],
+            "collection": collection,
+            "context_mode": context_mode,
+            "repair_mode": eff_repair_mode,
+            "allow_execution": allow_execution,
+            "max_position_embeddings": max_pos,
+            "suite_cap": suite_cap,
+            "decoder_limit": decoder_limit,
+            "enable_thinking": enable_thinking,
+            "line_number_overflow_fallback": "unnumbered_on_overflow",
+            "scorer_fingerprint": scorer_fingerprint(),
+            "ids": ids,
+        }
+    )
+    state_path = out_path / "evaluation_state.json"
+    if state_path.exists():
+        if json.loads(state_path.read_text(encoding="utf-8")).get("signature") != signature:
+            raise ValueError("External benchmark/model/protocol changed; choose a new output.")
+    else:
+        if (out_path / "predictions.jsonl").exists():
+            raise ValueError("Prediction journal has no protocol identity; choose a new output.")
+        atomic_json(state_path, {"signature": signature, "total": len(ids)})
+
     predictions_path = out_path / "predictions.jsonl"
     completed: list[dict[str, Any]] = []
+    if predictions_path.exists():
+        with predictions_path.open("rb+") as stream:
+            offset = 0
+            for line in stream:
+                if not line.endswith(b"\n"):
+                    if stream.read():
+                        raise ValueError("Corrupt prediction journal before final record.")
+                    stream.truncate(offset)
+                    break
+                try:
+                    value = json.loads(line)
+                except ValueError:
+                    if stream.read():
+                        raise ValueError("Corrupt prediction journal before final record.")
+                    stream.truncate(offset)
+                    break
+                completed.append(value)
+                offset += len(line)
+    completed_ids = [r["instance_id"] for r in completed]
+    if completed_ids != ids[: len(completed_ids)]:
+        raise ValueError("Prediction journal identity/order mismatch.")
+    if any(record.get("protocol_signature") != signature for record in completed):
+        raise ValueError("Prediction journal protocol signature mismatch.")
+
+    remaining_public = public[len(completed) :]
     started = time.perf_counter()
 
     step_batch = max(1, batch_size)
-    with predictions_path.open("w", encoding="utf-8", newline="\n") as stream:
-        for start in range(0, len(public), step_batch):
-            chunk = public[start : start + step_batch]
+    with predictions_path.open("a", encoding="utf-8", newline="\n") as stream:
+        for start in range(0, len(remaining_public), step_batch):
+            chunk = remaining_public[start : start + step_batch]
             prompts_ids: list[tuple[int, ...]] = []
             budgets: list[int] = []
+            used_number_lines_list: list[bool] = []
             for row in chunk:
+                used_number_lines = True
                 _, pref = format_external_prompt(
                     row,
                     tokenizer,
                     context_mode=context_mode,
                     repair_mode=eff_repair_mode,
                     enable_thinking=enable_thinking,
+                    number_lines=True,
                 )
                 row_cap = row.get("max_new_tokens")
                 budget = min(suite_cap, row_cap) if row_cap else suite_cap
+                if len(pref) + budget > max_pos:
+                    _, pref_unnumbered = format_external_prompt(
+                        row,
+                        tokenizer,
+                        context_mode=context_mode,
+                        repair_mode=eff_repair_mode,
+                        enable_thinking=enable_thinking,
+                        number_lines=False,
+                    )
+                    pref = pref_unnumbered
+                    used_number_lines = False
                 if len(pref) + budget > max_pos:
                     remaining = max_pos - len(pref)
                     if remaining < 1:
@@ -472,6 +541,7 @@ def run_external_benchmark(
                     budget = remaining
                 prompts_ids.append(pref)
                 budgets.append(budget)
+                used_number_lines_list.append(used_number_lines)
 
             chunk_started = time.monotonic()
             outputs = generate_external_batch(
@@ -482,8 +552,8 @@ def run_external_benchmark(
                 eos_ids=eos_ids,
             )
             per_case_seconds = (time.monotonic() - chunk_started) / max(1, len(chunk))
-            for row, pref, budget, (gen_ids, stop_reason, completion) in zip(
-                chunk, prompts_ids, budgets, outputs, strict=True
+            for row, pref, budget, used_number_lines, (gen_ids, stop_reason, completion) in zip(
+                chunk, prompts_ids, budgets, used_number_lines_list, outputs, strict=True
             ):
                 row_repair_mode = _resolve_repair_mode(
                     {**row, "collection": collection}, eff_repair_mode
@@ -501,6 +571,7 @@ def run_external_benchmark(
                         repair_mode=row_repair_mode,
                     )
                 record = {
+                    "protocol_signature": signature,
                     "instance_id": row["instance_id"],
                     "model_key": model_cfg["key"],
                     "model_id": model_cfg["model_id"],
@@ -511,6 +582,8 @@ def run_external_benchmark(
                     "decoder_prefix_tokens": len(pref),
                     "generation_max_new_tokens": budget,
                     "generated_tokens": len(gen_ids),
+                    "number_lines": used_number_lines,
+                    "overflow_unnumbered_fallback": not used_number_lines,
                     "eos_ids_used": list(eos_ids),
                     "case_seconds": per_case_seconds,
                     **scoring,
@@ -518,10 +591,12 @@ def run_external_benchmark(
                 stream.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
                 completed.append(record)
             stream.flush()
+            os.fsync(stream.fileno())
 
     scored = all(r["correct"] is not None for r in completed)
     report: dict[str, Any] = {
         "status": "COMPLETED",
+        "signature": signature,
         "model_key": model_cfg["key"],
         "model_id": model_cfg["model_id"],
         "revision": model_cfg["revision"],
@@ -537,6 +612,9 @@ def run_external_benchmark(
         "score_available": scored,
         "statuses": dict(Counter(r["status"] for r in completed)),
         "generation_length_limit": sum(r["stop_reason"] == "length_limit" for r in completed),
+        "unnumbered_fallback_count": sum(
+            bool(r.get("overflow_unnumbered_fallback")) for r in completed
+        ),
         "segment_seconds": time.perf_counter() - started,
         "decoder_limit": decoder_limit,
     }

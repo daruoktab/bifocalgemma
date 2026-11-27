@@ -64,7 +64,9 @@ def test_standalone_export_requires_matching_remote_contents(
     elif remote_case == "zero_byte":
         next(entry for entry in siblings if entry.rfilename.endswith(shards[0])).size = 0
     elif remote_case == "corrupt_digest":
-        next(entry for entry in siblings if entry.rfilename.endswith(shards[0])).lfs.sha256 = "0" * 64
+        next(entry for entry in siblings if entry.rfilename.endswith(shards[0])).lfs.sha256 = (
+            "0" * 64
+        )
     elif remote_case == "missing_shard":
         siblings = [entry for entry in siblings if not entry.rfilename.endswith(shards[1])]
     elif remote_case == "missing_local":
@@ -81,9 +83,12 @@ def test_standalone_export_requires_matching_remote_contents(
             return SimpleNamespace(siblings=siblings)
 
     monkeypatch.setattr(huggingface_hub, "HfApi", Api)
-    assert _standalone_export_exists(
-        export, upload=True, token="fixture", repo="fixture/model", subfolder="latest"
-    ) is expected
+    assert (
+        _standalone_export_exists(
+            export, upload=True, token="fixture", repo="fixture/model", subfolder="latest"
+        )
+        is expected
+    )
 
 
 def checkpoint(root, step):

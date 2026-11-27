@@ -30,6 +30,7 @@ from bifocalgemma.config import (
     DATASET_REVISION,
     MATRIX_MODELS,
     MATRIX_RUN_NAMESPACE,
+    STAGE1_STEPS,
     TOTAL_STEPS,
     V4_BENCHMARKS,
     V4_COLLECTION,
@@ -184,7 +185,11 @@ def _build_schedule_for_epochs(
         records=trimmed_records,
         ordered_indices=trimmed_indices,
         dataset_identity_json=json.dumps(
-            epoch_identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+            epoch_identity,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
         ),
         seed=seed,
         effective_batch=effective_batch,
@@ -227,7 +232,9 @@ def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
             ),
             "default_stage1_fraction": float(getattr(_config, "V4_STAGE1_FRACTION", 0.06)),
             "benchmarks": list(getattr(_config, "V4_BENCHMARKS", V4_BENCHMARKS)),
-            "run_namespace": str(getattr(_config, "V4_MATRIX_RUN_NAMESPACE", "versionless-repair-v4")),
+            "run_namespace": str(
+                getattr(_config, "V4_MATRIX_RUN_NAMESPACE", "versionless-repair-v4")
+            ),
         }
     return {
         "profile": "v3",
@@ -237,7 +244,9 @@ def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
         "batch_size": BATCH_SIZE,
         "accumulation": ACCUMULATION,
         "default_epochs": 1,
-        "base_examples": int(getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * BATCH_SIZE * ACCUMULATION)),
+        "base_examples": int(
+            getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * BATCH_SIZE * ACCUMULATION)
+        ),
         "default_stage1_fraction": float(
             getattr(_config, "STAGE1_FRACTION", getattr(_config, "V4_STAGE1_FRACTION", 0.06))
         ),
@@ -271,11 +280,9 @@ def resolve_training_contract(
     eff_batch = batch_size * accumulation
     if pool_directory is not None:
         manifest = json.loads((Path(pool_directory) / "manifest.json").read_text(encoding="utf-8"))
-        if (
-            manifest.get("format") != "bifocalgemma_curated_pool_v1"
-            or stable_fingerprint({k: v for k, v in manifest.items() if k != "fingerprint"})
-            != manifest.get("fingerprint")
-        ):
+        if manifest.get("format") != "bifocalgemma_curated_pool_v1" or stable_fingerprint(
+            {k: v for k, v in manifest.items() if k != "fingerprint"}
+        ) != manifest.get("fingerprint"):
             raise ValueError("Local pool manifest integrity failed.")
         size = len(manifest["record_ids"]["train"])
         if size < 1:
@@ -468,6 +475,7 @@ def run_matrix_stage(
     decoder: Any = None,
     diff_token_ids: dict[str, tuple[int, ...]] | None = None,
     total_steps: int | None = None,
+    stage1_steps: int | None = None,
     asymmetric_warmup: bool | None = None,
     loss_reduction: str | None = None,
     length_cap: int | None = None,
@@ -831,7 +839,17 @@ def run_matrix_stage(
                 },
             )
             last_save_time = time.monotonic()
-            prune_matrix_checkpoints(train_dir, keep_limit=2)
+            prune_stage1 = (
+                stage1_steps
+                if stage1_steps is not None
+                else int(compatibility.get("stage1_steps", STAGE1_STEPS))
+            )
+            prune_matrix_checkpoints(
+                train_dir,
+                keep_limit=2,
+                stage1_steps=prune_stage1,
+                total_steps=horizon_steps,
+            )
             if checkpoint_callback:
                 checkpoint_callback(ckpt_path)
 
@@ -889,7 +907,11 @@ def run_matrix_stage(
 def _schedule_signature_matches(train_dir: Path, expected_signature: Any) -> bool:
     """Return True when the persisted schedule file matches and validates records against its signature."""
     sched_file = train_dir / "shared_schedule.json"
-    if not isinstance(expected_signature, str) or not expected_signature or not sched_file.is_file():
+    if (
+        not isinstance(expected_signature, str)
+        or not expected_signature
+        or not sched_file.is_file()
+    ):
         return False
     try:
         sched_data = json.loads(sched_file.read_text(encoding="utf-8"))
@@ -1034,7 +1056,9 @@ def _standalone_export_exists(
                 names.add("model.safetensors")
             else:
                 names.add("model.safetensors.index.json")
-                index = json.loads((export_dir / "model.safetensors.index.json").read_text(encoding="utf-8"))
+                index = json.loads(
+                    (export_dir / "model.safetensors.index.json").read_text(encoding="utf-8")
+                )
                 names.update(index["weight_map"].values())
             for name in names:
                 path = export_dir / name
@@ -1093,7 +1117,10 @@ def _backfill_final_stage(
         ckpt_meta = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception:
         return False
-    if ckpt_meta.get("global_step") != resolved_total or ckpt_meta.get("stage") != expected_ckpt_stage:
+    if (
+        ckpt_meta.get("global_step") != resolved_total
+        or ckpt_meta.get("stage") != expected_ckpt_stage
+    ):
         return False
     ckpt_files = [p for p in ckpt_dir.glob("*") if p.is_file()]
     if not ckpt_files:
@@ -1217,9 +1244,7 @@ def run_matrix_training(
     )
     resolved_batch_size = int(prof["batch_size"])
     resolved_accumulation = int(prof["accumulation"])
-    mb_profile = (
-        V4_TRAIN_MICROBATCH_PROFILE.get(model_key) if prof["profile"] == "v4" else None
-    )
+    mb_profile = V4_TRAIN_MICROBATCH_PROFILE.get(model_key) if prof["profile"] == "v4" else None
     resolved_max_microbatch_size = (
         mb_profile["max_microbatch_size"] if mb_profile is not None else None
     )
@@ -1405,8 +1430,16 @@ def run_matrix_training(
         if not upload or not token:
             return None
         queue.mark_pending()
+        import inspect
+
+        sync_params = inspect.signature(synchronize_matrix).parameters
+        sync_kwargs: dict[str, Any] = {"token": token, "require_checkpoint": True}
+        if "stage1_steps" in sync_params:
+            sync_kwargs["stage1_steps"] = 0 if spec.encoder is None else resolved_stage1
+        if "total_steps" in sync_params:
+            sync_kwargs["total_steps"] = resolved_total
         result = queue.attempt(
-            lambda: synchronize_matrix(repo, root, prefix, token=token, require_checkpoint=True),
+            lambda: synchronize_matrix(repo, root, prefix, **sync_kwargs),
             final=final,
         )
         if result and heartbeat:
@@ -1573,7 +1606,9 @@ def run_matrix_training(
         )
         current_global_step = manifest_meta.get("global_step", 0)
         if manifest_meta.get("compatibility") != compatibility:
-            raise ValueError("Checkpoint training/data/model compatibility changed; choose a new run.")
+            raise ValueError(
+                "Checkpoint training/data/model compatibility changed; choose a new run."
+            )
         if not 0 <= current_global_step <= resolved_total:
             raise ValueError("Checkpoint cursor exceeds this run's horizon.")
 
@@ -1616,6 +1651,7 @@ def run_matrix_training(
                 resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
+                stage1_steps=resolved_stage1,
                 shared_schedule=shared_schedule,
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
@@ -1657,6 +1693,7 @@ def run_matrix_training(
                 resume_from_checkpoint=resume_ckpt if current_global_step > 0 else None,
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
+                stage1_steps=resolved_stage1,
                 shared_schedule=shared_schedule,
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
@@ -1700,6 +1737,7 @@ def run_matrix_training(
                 resume_from_checkpoint=resume_ckpt,
                 decoder=decoder_tokenizer,
                 total_steps=resolved_total,
+                stage1_steps=resolved_stage1,
                 shared_schedule=shared_schedule,
                 asymmetric_warmup=(resolved_stage1 == 0),
                 loss_reduction=resolved_loss_reduction,
@@ -1960,8 +1998,16 @@ def run_matrix_benchmark(
         if not upload or not token:
             return None
         queue.mark_pending()
+        import inspect
+
+        sync_params = inspect.signature(synchronize_matrix).parameters
+        sync_kwargs: dict[str, Any] = {"token": token, "require_checkpoint": True}
+        if "stage1_steps" in sync_params:
+            sync_kwargs["stage1_steps"] = 0 if spec.encoder is None else resolved_stage1
+        if "total_steps" in sync_params:
+            sync_kwargs["total_steps"] = resolved_total
         result = queue.attempt(
-            lambda: synchronize_matrix(repo, root, prefix, token=token, require_checkpoint=True),
+            lambda: synchronize_matrix(repo, root, prefix, **sync_kwargs),
             final=final,
         )
         if result and heartbeat:
@@ -1997,7 +2043,9 @@ def run_matrix_benchmark(
                 or compat.get("training_semantics_sha256") != identity["training_semantics_sha256"]
                 or m_data.get("global_step") != resolved_total
             ):
-                raise ValueError("Benchmark checkpoint does not match the completed training protocol.")
+                raise ValueError(
+                    "Benchmark checkpoint does not match the completed training protocol."
+                )
         except json.JSONDecodeError:
             raise ValueError(f"Corrupt manifest in {manifest_file}.")
 
@@ -2019,7 +2067,9 @@ def run_matrix_benchmark(
             "scorer_fingerprint": active_scorer_fp,
             "snapshot": "trained",
             "checkpoint_identity": checkpoint_identity,
-            **({"context_mode": resolved_context_mode} if resolved_context_mode is not None else {}),
+            **(
+                {"context_mode": resolved_context_mode} if resolved_context_mode is not None else {}
+            ),
         }
         dest = root / "benchmarks" / benchmark_directory_name(settings)
         stage_key = f"benchmark_{item['collection']}"

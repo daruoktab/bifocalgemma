@@ -31,7 +31,11 @@ def _kv_slice_bounds(
     window: int | None,
 ) -> tuple[int, int]:
     """Return exact `[k_start, k_stop)` key bounds outside which visibility is guaranteed False."""
-    if encoder_valid is not None or not isinstance(attention_mask, dict) or attention_mask.get("cross"):
+    if (
+        encoder_valid is not None
+        or not isinstance(attention_mask, dict)
+        or attention_mask.get("cross")
+    ):
         return 0, k_len
     bidirectional = bool(attention_mask.get("bidirectional", False))
     if window:
@@ -68,7 +72,9 @@ def mask_tile(
         eff_k_stop = valid.shape[1] if k_stop is None else k_stop
         q_pos = torch.arange(start, stop, device=valid.device)[:, None]
         k_pos = torch.arange(k_start, eff_k_stop, device=valid.device)[None, :]
-        visible = torch.ones((stop - start, eff_k_stop - k_start), device=valid.device, dtype=torch.bool)
+        visible = torch.ones(
+            (stop - start, eff_k_stop - k_start), device=valid.device, dtype=torch.bool
+        )
         if not attention_mask["bidirectional"]:
             visible &= k_pos <= q_pos
         if window:
@@ -460,19 +466,43 @@ def sdpa_attention(
     """
     if not _sdpa_supported(query, key, value):
         return _TiledAttention.apply(
-            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+            query,
+            key,
+            value,
+            attention_mask,
+            encoder_valid,
+            decoder_valid,
+            chunk_size,
+            scaling,
+            window,
         )
     # Non-boolean custom float additive masks fall back cleanly to tiled eager FP32.
     if isinstance(attention_mask, torch.Tensor) and attention_mask.dtype != torch.bool:
         return _TiledAttention.apply(
-            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+            query,
+            key,
+            value,
+            attention_mask,
+            encoder_valid,
+            decoder_valid,
+            chunk_size,
+            scaling,
+            window,
         )
 
     batch, heads, q_len, width = query.shape
     max_dim = max(width, value.shape[-1])
     if torch.is_grad_enabled() and max_dim > 256 and dropout == 0.0:
         return _TiledAttention.apply(
-            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+            query,
+            key,
+            value,
+            attention_mask,
+            encoder_valid,
+            decoder_valid,
+            chunk_size,
+            scaling,
+            window,
         )
     k_len = key.shape[2]
     k_cast = key.to(query.dtype)
@@ -652,6 +682,12 @@ def sdpa_attention(
             return torch.cat(pieces, dim=2)
 
         # Boolean tensor mask
+        if attention_mask.ndim == 2:
+            attention_mask = attention_mask[:, None, None, :]
+        elif attention_mask.ndim == 3:
+            attention_mask = attention_mask[:, None, :, :]
+        elif attention_mask.ndim < 2 or attention_mask.ndim > 4:
+            raise ValueError(f"Expected 2D-4D attention_mask, got {attention_mask.ndim}D.")
         pieces = []
         for start in range(0, q_len, eff_chunk):
             stop = min(q_len, start + eff_chunk)
@@ -663,7 +699,15 @@ def sdpa_attention(
         return torch.cat(pieces, dim=2)
     except (RuntimeError, TypeError):
         return _TiledAttention.apply(
-            query, key, value, attention_mask, encoder_valid, decoder_valid, chunk_size, scaling, window
+            query,
+            key,
+            value,
+            attention_mask,
+            encoder_valid,
+            decoder_valid,
+            chunk_size,
+            scaling,
+            window,
         )
 
 
@@ -728,9 +772,10 @@ class TiledEncoderAttention(Gemma4TextAttention):
         attention_mask,
         shared_kv_states,
         past_key_values=None,
+        cache=None,
         **kwargs,
     ):
-        if past_key_values is not None:
+        if past_key_values is not None or cache is not None:
             raise ValueError("Tiled training attention does not support temporal cache.")
         batch, length, _ = hidden_states.shape
         shape = (batch, length, -1, self.head_dim)
@@ -784,13 +829,14 @@ class TiledMergedAttention(TiledEncoderAttention):
         attention_mask,
         shared_kv_states,
         past_key_values=None,
+        cache=None,
         *,
         encoder_hidden_states=None,
         encoder_valid=None,
         decoder_valid=None,
         **kwargs,
     ):
-        if past_key_values is not None:
+        if past_key_values is not None or cache is not None:
             raise ValueError("Tiled training attention does not support temporal cache.")
         if encoder_hidden_states is None or encoder_valid is None or decoder_valid is None:
             raise ValueError("Merged attention requires encoder states and validity masks.")

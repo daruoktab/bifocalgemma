@@ -35,7 +35,9 @@ with open(typ_path, "w", encoding="utf-8") as f:
         '#set page(width: 1050pt, height: 930pt, margin: 0pt)\n#image("fig1_transformer_architecture.svg", width: 100%, height: 100%)\n'
     )
 
-res = subprocess.run(["typst", "compile", str(typ_path), str(pdf_out)], capture_output=True, text=True)
+res = subprocess.run(
+    ["typst", "compile", str(typ_path), str(pdf_out)], capture_output=True, text=True
+)
 print("Typst returncode:", res.returncode)
 if res.returncode != 0:
     print("Typst stderr:", res.stderr)

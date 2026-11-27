@@ -294,7 +294,10 @@ def build_anti_forgetting_curriculum(
 
     # Interleave comprehension examples uniformly across the epoch; in Stage 1 also front-load warmup
     curriculum: list[TokenizedRepairExample] = []
-    if stage_name in ("frozen_decoder", "stage1", "stage1_bridge_warmup") and len(selected_comp) >= 4:
+    if (
+        stage_name in ("frozen_decoder", "stage1", "stage1_bridge_warmup")
+        and len(selected_comp) >= 4
+    ):
         front_count = max(1, len(selected_comp) // 3)
         curriculum.extend(selected_comp[:front_count])
         rest_comp = selected_comp[front_count:]
@@ -414,7 +417,10 @@ def build_v4_curriculum(
         quota = min(len(items), quotas[bucket])
         long_pool = [r for r in items if _encoder_token_count(r) >= long_context_threshold]
         short_pool = [r for r in items if _encoder_token_count(r) < long_context_threshold]
-        want_long = min(len(long_pool), max(1 if long_pool and quota > 0 else 0, round(quota * min_long_context_ratio)))
+        want_long = min(
+            len(long_pool),
+            max(1 if long_pool and quota > 0 else 0, round(quota * min_long_context_ratio)),
+        )
         if long_selected < long_target:
             want_long = min(len(long_pool), max(want_long, quota))
         chosen = long_pool[:want_long]
@@ -432,11 +438,7 @@ def build_v4_curriculum(
 
     # Fill any remaining shortfall up to `total` prioritizing long-context items
     if len(selected) < total:
-        leftovers = [
-            row
-            for row in records
-            if str(row.get("instance_id", id(row))) not in used_ids
-        ]
+        leftovers = [row for row in records if str(row.get("instance_id", id(row))) not in used_ids]
         leftovers.sort(
             key=lambda r: (
                 -(_encoder_token_count(r) >= long_context_threshold),

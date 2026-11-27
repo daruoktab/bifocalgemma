@@ -331,3 +331,96 @@ def test_generate_multi_eos_per_row_stopping_and_cache_parity(monkeypatch: pytes
         use_cache=False,
     )
     assert torch.equal(gen_cached, gen_uncached)
+
+
+def test_generate_right_padded_matches_left_padded():
+    torch.manual_seed(31)
+    cfg = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    model = BifocalGemmaForCausalLM(cfg).eval()
+    enc_ids = torch.randint(5, 50, (2, 4))
+
+    left_ids = torch.tensor([[0, 0, 2, 10], [2, 11, 12, 13]])
+    left_mask = torch.tensor([[False, False, True, True], [True, True, True, True]])
+    right_ids = torch.tensor([[2, 10, 0, 0], [2, 11, 12, 13]])
+    right_mask = torch.tensor([[True, True, False, False], [True, True, True, True]])
+
+    gen_left = model.generate(
+        input_ids=left_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=left_mask,
+        max_new_tokens=4,
+        pad_token_id=0,
+        use_cache=True,
+    )
+    gen_right_cached = model.generate(
+        input_ids=right_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=right_mask,
+        max_new_tokens=4,
+        pad_token_id=0,
+        use_cache=True,
+    )
+    gen_right_uncached = model.generate(
+        input_ids=right_ids,
+        encoder_input_ids=enc_ids,
+        attention_mask=right_mask,
+        max_new_tokens=4,
+        pad_token_id=0,
+        use_cache=False,
+    )
+    assert torch.equal(gen_left, gen_right_cached)
+    assert torch.equal(gen_left, gen_right_uncached)
+
+
+def test_cached_logits_decoder_only_not_polluted_by_cross_attention(tmp_path: Path):
+    from bifocalgemma.models import inference_cache as inference_cache_mod
+    from bifocalgemma.models.inference_cache import InferenceCache, cached_logits
+
+    cfg_full = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    _ = BifocalGemmaForCausalLM(cfg_full).eval()
+    assert inference_cache_mod.CachedAttention.__name__ == "CachedAttention"
+
+    cfg_dec = BifocalGemmaConfig(encoder_size="none", decoder_size="E2B", tiny=True)
+    dec_model = BifocalGemmaForCausalLM(cfg_dec).eval()
+    with torch.inference_mode():
+        cache = InferenceCache()
+        logits = cached_logits(dec_model, torch.tensor([[2, 3, 4]]), cache)
+        assert logits.shape == (1, 1, cfg_dec.vocab_size)
+        gen = dec_model.generate(
+            input_ids=torch.tensor([[2, 3], [2, 4]]),
+            max_new_tokens=3,
+            use_cache=True,
+        )
+        assert gen.shape == (2, 5)
+
+
+def test_from_pretrained_device_map_and_missing_bridge_validation(tmp_path: Path):
+    cfg = BifocalGemmaConfig(encoder_size="E2B", decoder_size="E2B", tiny=True)
+    model = BifocalGemmaForCausalLM(cfg).eval()
+    export_dir = tmp_path / "export"
+    model.save_pretrained(export_dir)
+
+    loaded_dict = BifocalGemmaForCausalLM.from_pretrained(export_dir, device_map={"": "cpu"})
+    assert next(loaded_dict.parameters()).device.type == "cpu"
+
+    with pytest.raises(ValueError, match="not supported"):
+        BifocalGemmaForCausalLM.from_pretrained(export_dir, device_map="auto")
+    with pytest.raises(ValueError, match="multi-target"):
+        BifocalGemmaForCausalLM.from_pretrained(
+            export_dir, device_map={"encoder": "cpu", "decoder": "cuda:0"}
+        )
+
+    from safetensors.torch import load_file, save_file
+
+    state = load_file(str(export_dir / "model.safetensors"), device="cpu")
+    stripped = {k: v for k, v in state.items() if not k.startswith("encoder_projection.")}
+    stripped_dir = tmp_path / "stripped"
+    stripped_dir.mkdir()
+    cfg.to_json_file(stripped_dir / "config.json")
+    save_file(stripped, str(stripped_dir / "model.safetensors"))
+
+    with pytest.raises(ValueError, match="missing critical weights"):
+        BifocalGemmaForCausalLM.from_pretrained(stripped_dir)
+    # Explicit strict=False still allows loading with warning
+    loaded_relaxed = BifocalGemmaForCausalLM.from_pretrained(stripped_dir, strict=False)
+    assert isinstance(loaded_relaxed, BifocalGemmaForCausalLM)

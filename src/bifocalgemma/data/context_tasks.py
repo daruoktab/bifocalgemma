@@ -258,13 +258,21 @@ def is_permissive_license(license_name: str | None, *, code_only: bool = True) -
     normalized = license_name.strip().lower().replace("_", "-")
     if any(
         bad in normalized
-        for bad in ("-nc", "noncommercial", "non-commercial", "-nd", "gpl", "agpl", "proprietary", "unknown", "sspl")
+        for bad in (
+            "-nc",
+            "noncommercial",
+            "non-commercial",
+            "-nd",
+            "gpl",
+            "agpl",
+            "proprietary",
+            "unknown",
+            "sspl",
+        )
     ):
         return False
     parts = [
-        p.strip("() \t")
-        for p in re.split(r"\s+and\s+|\s+or\s+|,", normalized)
-        if p.strip("() \t")
+        p.strip("() \t") for p in re.split(r"\s+and\s+|\s+or\s+|,", normalized) if p.strip("() \t")
     ]
     allowed = PERMITTED_V4_CODE_LICENSES if code_only else PERMITTED_V4_DATASET_LICENSES
     return bool(parts) and all(part in allowed for part in parts)
@@ -398,7 +406,8 @@ def _split_crosscodelong_context(
     encoder_parts: list[str] = []
     if cross_text.strip():
         encoder_parts.append(
-            "### Cross-File Context\n" + format_numbered_code(cross_text.strip("\n"), start_line=1, skip_if_numbered=True)
+            "### Cross-File Context\n"
+            + format_numbered_code(cross_text.strip("\n"), start_line=1, skip_if_numbered=True)
         )
     if distant_pre:
         encoder_parts.append(
@@ -436,7 +445,22 @@ def _anchor_index_for_repair(
     terms = {
         tok.lower()
         for tok in re.findall(r"[A-Za-z_][A-Za-z_0-9]{2,}", instruction)
-        if tok.lower() not in {"the", "and", "for", "with", "that", "this", "from", "fix", "bug", "error", "code", "file", "function"}
+        if tok.lower()
+        not in {
+            "the",
+            "and",
+            "for",
+            "with",
+            "that",
+            "this",
+            "from",
+            "fix",
+            "bug",
+            "error",
+            "code",
+            "file",
+            "function",
+        }
     }
     if not terms or not entries:
         return 0
@@ -560,14 +584,20 @@ def split_disjoint_context(
             re.finditer(r"\[start of ([^\]]+)\]\n(.*?)\n\[end of [^\]]+\]", body, re.S)
         )
         if lqa_matches:
-            sections = [
-                (m.group(1).strip(), 1, m.group(2).rstrip("\n")) for m in lqa_matches
-            ]
+            sections = [(m.group(1).strip(), 1, m.group(2).rstrip("\n")) for m in lqa_matches]
             preamble = ""
         elif body.strip():
             fallback_path = row.get("path")
-            if not isinstance(fallback_path, str) or not fallback_path or fallback_path == "repository_context":
-                fallback_path = "target.py" if task_type in {"repair", "completion", "localization"} else "context.txt"
+            if (
+                not isinstance(fallback_path, str)
+                or not fallback_path
+                or fallback_path == "repository_context"
+            ):
+                fallback_path = (
+                    "target.py"
+                    if task_type in {"repair", "completion", "localization"}
+                    else "context.txt"
+                )
             sections = [(fallback_path, 1, body.rstrip("\n"))]
             preamble = ""
 
@@ -619,7 +649,11 @@ def split_disjoint_context(
 
     selection = row.get("context_selection")
     sel_windows = (
-        [w for w in selection.get("windows", ()) if isinstance(w, dict) and isinstance(w.get("path"), str)]
+        [
+            w
+            for w in selection.get("windows", ())
+            if isinstance(w, dict) and isinstance(w.get("path"), str)
+        ]
         if isinstance(selection, dict) and selection.get("gold_used") is not True
         else []
     )
@@ -659,9 +693,9 @@ def split_disjoint_context(
         else:
             # Never touch gold/target fields! Match path, non-gold window path, or instruction keywords only.
             hint_path = row.get("path")
-            if (not isinstance(hint_path, str) or not hint_path or hint_path == "repository_context") and len(
-                {w["path"] for w in sel_windows}
-            ) == 1:
+            if (
+                not isinstance(hint_path, str) or not hint_path or hint_path == "repository_context"
+            ) and len({w["path"] for w in sel_windows}) == 1:
                 hint_path = sel_windows[0]["path"]
             if isinstance(hint_path, str) and hint_path and hint_path != "repository_context":
                 for sec_idx, (path, _) in enumerate(section_entries):
@@ -671,7 +705,10 @@ def split_disjoint_context(
             else:
                 lowered_instr = instruction.lower()
                 for sec_idx, (path, _) in enumerate(section_entries):
-                    if path.lower() in lowered_instr or path.rsplit("/", 1)[-1].lower() in lowered_instr:
+                    if (
+                        path.lower() in lowered_instr
+                        or path.rsplit("/", 1)[-1].lower() in lowered_instr
+                    ):
                         cursor_sec_idx = sec_idx
                         break
             _, target_entries = section_entries[cursor_sec_idx]
@@ -816,9 +853,7 @@ def normalize_context_task(row):
         "swe_fixer": "internlm/SWE-Fixer-Train-110K",
     }
     expected_sources = (
-        {k: v["dataset_id"] for k, v in V4_DATASET_REGISTRY.items()}
-        if is_v4
-        else legacy_sources
+        {k: v["dataset_id"] for k, v in V4_DATASET_REGISTRY.items()} if is_v4 else legacy_sources
     )
     if row.get("source_key") not in expected_sources:
         raise ValueError("benchmark_source_cannot_enter_context_training")
@@ -883,9 +918,7 @@ def task_prompt(
     header = TASK_INSTRUCTIONS[kind] + "\n\n" + row["instruction"]
     if decoder_local_only or paired:
         return (
-            f"{header}\n\n{split.decoder_local_context}"
-            if split.decoder_local_context
-            else header
+            f"{header}\n\n{split.decoder_local_context}" if split.decoder_local_context else header
         )
     return f"{header}\n\n{split.full_context}" if split.full_context else header
 

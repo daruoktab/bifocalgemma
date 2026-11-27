@@ -62,7 +62,9 @@ def validate_training_policy(policy, model=None):
         policy.get("version") not in {"attention_lora_policy_v1", "unified_v2", "unified_v4"}
         or policy.get("phase") != "joint"
     ):
-        raise ValueError("Only joint attention LoRA policy v1, unified_v2, or unified_v4 is supported.")
+        raise ValueError(
+            "Only joint attention LoRA policy v1, unified_v2, or unified_v4 is supported."
+        )
     if policy.get("freeze_words") is not True or policy.get("freeze_ple") is not True:
         raise ValueError("Word/PLE training needs a separately validated policy.")
     if type(policy.get("rank")) is not int or policy["rank"] < 1:

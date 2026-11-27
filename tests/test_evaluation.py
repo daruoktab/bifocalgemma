@@ -108,9 +108,7 @@ def test_crosscodelong_normalize_completion_prediction_strips_fences_and_suffix_
     assert metrics["normalized_sequence_similarity"] == 1.0
     assert metrics["normalized_regex_f1"] == 1.0
 
-    inside_fence = (
-        "```python\n### MISSING CODE\n    return a + b\n### SUFFIX\n    return c\n```"
-    )
+    inside_fence = "```python\n### MISSING CODE\n    return a + b\n### SUFFIX\n    return c\n```"
     assert normalize_completion_prediction(inside_fence, suffix="\n    return c") == (
         "    return a + b"
     )
@@ -155,7 +153,9 @@ def test_decoder_prompt_baseline_zero_duplication_and_paired_gsm8k_parity():
     )
 
     longcode_instruction = "Answer about repo.\nQuestion:\nWhat does run() return?"
-    longcode_context = "Answer about repo.\n\ndef run(): return 7\n\nQuestion:\nWhat does run() return?"
+    longcode_context = (
+        "Answer about repo.\n\ndef run(): return 7\n\nQuestion:\nWhat does run() return?"
+    )
     assert (
         decoder_prompt(
             {"task_type": "mcq", "instruction": longcode_instruction, "context": longcode_context},

@@ -117,6 +117,8 @@ def test_bifocalgemma_save_and_from_pretrained_roundtrip(tmp_path):
 
     export_dir = tmp_path / "bifocalgemma_export"
     model.save_pretrained(export_dir)
+    # Finding #10: save_pretrained must not mutate ProbeLoRALinear wrappers in-place
+    assert isinstance(mlp.gate_proj, ProbeLoRALinear)
 
     assert (export_dir / "config.json").is_file()
     assert (export_dir / "model.safetensors").is_file()

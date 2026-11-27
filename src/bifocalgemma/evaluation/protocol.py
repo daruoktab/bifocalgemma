@@ -163,6 +163,7 @@ def build_effective_benchmark_spec(
         "decoder_limit": min(decoder_limit, MAX_DECODER_TOKENS),
         "prefix": "actual_paired_chat_template_enable_thinking_false",
         "decoding": "greedy_cached" if use_cache else "greedy_no_temporal_cache",
+        "line_number_overflow_fallback": "unnumbered_on_overflow",
     }
     if context_mode is not None:
         generation_cfg["context_mode"] = context_mode
@@ -241,7 +242,8 @@ def gsm8k_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
     gsm = [
         record
         for record in records
-        if record.get("primary_metric") in {"gsm8k_strict_accuracy", "release_regex_string_accuracy"}
+        if record.get("primary_metric")
+        in {"gsm8k_strict_accuracy", "release_regex_string_accuracy"}
     ]
     if not gsm:
         return {}
@@ -268,11 +270,16 @@ def repair_report_metrics(records: list[dict[str, Any]]) -> dict[str, Any]:
         out["recount_patch_apply_rate"] = sum(
             bool(r["recount_patch_applied"]) for r in recount_rows
         ) / len(recount_rows)
-        recount_pass_rows = [r for r in recount_rows if r.get("recount_functional_pass") is not None]
+        recount_pass_rows = [
+            r for r in recount_rows if r.get("recount_functional_pass") is not None
+        ]
         if recount_pass_rows:
-            out["recount_functional_pass_rate"] = sum(
-                bool(r["recount_functional_pass"]) for r in recount_pass_rows
-            ) / len(recount_rows)
+            out["recount_functional_pass_rate"] = (
+                sum(bool(r["recount_functional_pass"]) for r in recount_pass_rows)
+                / len(recount_pass_rows)
+                if len(recount_pass_rows) == len(recount_rows)
+                else None
+            )
     if any("pass_at_1" in r for r in records):
         scored_pass = [r for r in records if r.get("pass_at_1") is not None]
         out["repair_mode"] = "full_function"

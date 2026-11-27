@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import copy
 import math
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 import torch
 import torch.utils.checkpoint
@@ -100,22 +100,13 @@ def _project_cross_kv(
     return cross_k, cross_v
 
 
-if TYPE_CHECKING:
-    _ORIGINAL_CACHED_ATTENTION = inference_cache_mod.CachedAttention
-else:
-    _ORIGINAL_CACHED_ATTENTION = getattr(
-        inference_cache_mod, "_orig_cached_attention", inference_cache_mod.CachedAttention
-    )
-setattr(inference_cache_mod, "_orig_cached_attention", _ORIGINAL_CACHED_ATTENTION)
-
-
 def _norm_weight_dtype(norm: Any, default: torch.dtype) -> torch.dtype:
     """Return norm.weight.dtype if weight parameter exists, else default."""
     w = getattr(norm, "weight", None)
     return w.dtype if isinstance(w, torch.Tensor) else default
 
 
-class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
+class FullCrossCachedAttention(inference_cache_mod.CachedAttention):
     """Cached inference attention matching FullCrossTiledAttention with static cross-KV cache and batched left-pad support."""
 
     def _apply(self: Any, fn: Any, recurse: bool = True) -> Any:
@@ -136,13 +127,14 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                     param.grad.data = param.grad.data.float()
         return self
 
-    def forward(  # ty: ignore[incompatible-method-override]  # type: ignore[override]
+    def forward(  # type: ignore[override]
         self: Any,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         attention_mask: Any,
         shared_kv_states: dict[str, Any],
         past_key_values: Any = None,
+        cache: Any = None,
         *,
         inference_cache: Any = None,
         encoder_hidden_states: torch.Tensor | None = None,
@@ -162,6 +154,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                 attention_mask,
                 shared_kv_states,
                 past_key_values=past_key_values,
+                cache=cache,
                 inference_cache=inference_cache,
                 encoder_hidden_states=encoder_hidden_states,
                 encoder_valid=encoder_valid,
@@ -183,16 +176,18 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
             if has_full_cross and hasattr(self, "cross_q_norm")
             else None
         )
-        cache = inference_cache
-        if cache is None:
+        inf_cache = inference_cache
+        if inf_cache is None:
             raise ValueError("Explicit inference cache required.")
-        positions = torch.arange(cache.offset, cache.offset + length, device=query_self.device)
+        positions = torch.arange(
+            inf_cache.offset, inf_cache.offset + length, device=query_self.device
+        )
         owns_cross_kv = has_full_cross and _owns_cross_kv(self)
         if self.is_kv_shared_layer:
             key_self, value_self, shared_cross, key_valid = shared_kv_states[self.layer_type]
-            key_positions, self_length = cache.shared_positions[self.layer_type]
+            key_positions, self_length = inf_cache.shared_positions[self.layer_type]
             if owns_cross_kv:
-                previous = cache.layers.get(self.layer_idx)
+                previous = inf_cache.layers.get(self.layer_idx)
                 cross = previous[3] if previous is not None else None
                 if (
                     encoder_hidden_states is not None
@@ -200,7 +195,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                     and cross is None
                 ):
                     cross = _project_cross_kv(self, encoder_hidden_states, query_self.dtype)
-                    cache.layers[self.layer_idx] = (None, None, None, cross, None)
+                    inf_cache.layers[self.layer_idx] = (None, None, None, cross, None)
             else:
                 cross = shared_cross
         else:
@@ -212,7 +207,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                 self.k_norm(raw_key), cos, sin, unsqueeze_dim=2
             ).transpose(1, 2)
             value_self = self.v_norm(raw_value).transpose(1, 2)
-            previous = cache.layers.get(self.layer_idx)
+            previous = inf_cache.layers.get(self.layer_idx)
             key_positions = positions
             key_valid = step_valid
             if previous is not None:
@@ -237,7 +232,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
                 and cross is None
             ):
                 cross = _project_cross_kv(self, encoder_hidden_states, query_self.dtype)
-            cache.layers[self.layer_idx] = (
+            inf_cache.layers[self.layer_idx] = (
                 stored_key,
                 stored_value,
                 stored_positions,
@@ -247,7 +242,7 @@ class FullCrossCachedAttention(_ORIGINAL_CACHED_ATTENTION):
             self_length = key_self.shape[2]
         if self.store_full_length_kv:
             shared_kv_states[self.layer_type] = (key_self, value_self, cross, key_valid)
-            cache.shared_positions[self.layer_type] = (key_positions, self_length)
+            inf_cache.shared_positions[self.layer_type] = (key_positions, self_length)
 
         self_pieces = []
         use_sdpa_self = (not getattr(self, "_force_eager_self", False)) and _sdpa_supported(
@@ -397,20 +392,21 @@ class FullCrossTiledAttention(TiledMergedAttention):
                     param.grad.data = param.grad.data.float()
         return self
 
-    def forward(  # ty: ignore[incompatible-method-override]  # type: ignore[override]
+    def forward(  # type: ignore[override]
         self: Any,
         hidden_states: torch.Tensor,
         position_embeddings: tuple[torch.Tensor, torch.Tensor],
         attention_mask: Any,
         shared_kv_states: dict[str, Any],
         past_key_values: Any = None,
+        cache: Any = None,
         *,
         encoder_hidden_states: torch.Tensor | None = None,
         encoder_valid: torch.Tensor | None = None,
         decoder_valid: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> tuple[torch.Tensor, None]:
-        if past_key_values is not None:
+        if past_key_values is not None or cache is not None:
             raise ValueError("Tiled training attention does not support temporal cache.")
         if encoder_hidden_states is None or encoder_valid is None or decoder_valid is None:
             raise ValueError("Merged attention requires encoder states and validity masks.")
@@ -546,7 +542,6 @@ def configure_full_rank_cross_attention(
 ) -> dict[str, Any]:
     """Attach SwiGLUDualGateBridge, full-rank BF16 cross-attention projections, decoupled upper full-attn cross-KV, and gated cross-attn."""
     ensure_hardware_memory_guards()
-    setattr(inference_cache_mod, "CachedAttention", FullCrossCachedAttention)
 
     if getattr(model, "encoder", None) is None:
         return {
@@ -635,7 +630,11 @@ def configure_full_rank_cross_attention(
             attn.cross_v_norm = copy.deepcopy(attn.v_norm).float().to(dev)
             attn.owns_cross_kv = True
             kv_owner_layers += 1
-        elif resolved_decouple_full_attn and is_full_attn and full_attn_kv_owner is not None:
+        elif resolved_decouple_full_attn and is_full_attn:
+            if full_attn_kv_owner is None:
+                raise ValueError(
+                    f"KV-shared full_attention layer {getattr(attn, 'layer_idx', '?')} precedes any full_attention KV owner."
+                )
             v_source = (
                 full_attn_kv_owner.v_proj
                 if getattr(full_attn_kv_owner, "v_proj", None) is not None

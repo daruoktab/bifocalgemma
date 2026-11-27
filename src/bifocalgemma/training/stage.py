@@ -372,9 +372,7 @@ def clip_optimizer_group_grads(
         group_name = str(group.get("name", "default"))
         max_norm = group["clip_norm"] if "clip_norm" in group else default_clip_norm
         if max_norm is None:
-            sq_norm = sum(
-                float(p.grad.detach().float().pow(2).sum().item()) for p in group_params
-            )
+            sq_norm = sum(float(p.grad.detach().float().pow(2).sum().item()) for p in group_params)
             group_grad_norms[group_name] = math.sqrt(sq_norm)
         else:
             group_grad_norms[group_name] = float(
@@ -418,7 +416,9 @@ def configure_matrix_stage(
     effective_freeze_decoder = freeze_decoder and has_encoder
     default_learnable_cross_scale = bool(getattr(_config, "LEARNABLE_CROSS_SCALE", False))
     learnable_cross_scale = bool(
-        getattr(getattr(model, "config", None), "learnable_cross_scale", default_learnable_cross_scale)
+        getattr(
+            getattr(model, "config", None), "learnable_cross_scale", default_learnable_cross_scale
+        )
     )
 
     for name, module in model.named_modules():

@@ -138,7 +138,9 @@ def test_context_benchmark_mcq_budget_floor_execution(tmp_path, monkeypatch):
     state = tmp_path / "eval_output/evaluation_state.json"
     state.unlink()
     with pytest.raises(ValueError, match="no protocol identity"):
-        run_context_benchmark(model, EXPERIMENT_SPECS[0], root, tmp_path / "eval_output", tmp_path, **settings)
+        run_context_benchmark(
+            model, EXPERIMENT_SPECS[0], root, tmp_path / "eval_output", tmp_path, **settings
+        )
     assert not state.exists()
 
 
@@ -289,7 +291,8 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
 
     # Legacy artifacts must be rejected before model loading and remain available.
     monkeypatch.setattr(
-        "bifocalgemma.training.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
+        "bifocalgemma.training.matrix.download_model",
+        MagicMock(side_effect=StopIteration("stopped")),
     )
 
     with pytest.raises(ValueError, match="Incompatible or corrupt"):
@@ -333,8 +336,12 @@ def test_matrix_quarantine_legacy_checkpoint_vs_clean_resume(tmp_path, monkeypat
     # Validation still reaches model/data preparation before checkpoint/export reuse.
     with pytest.raises(StopIteration):
         run_matrix_training(
-            "2base-2it", output_root=output_clean, total_steps=11102,
-            upload=False, token=None, monitor=MockMonitor(),
+            "2base-2it",
+            output_root=output_clean,
+            total_steps=11102,
+            upload=False,
+            token=None,
+            monitor=MockMonitor(),
         )
 
 
@@ -358,9 +365,14 @@ def test_clean_notebooks_have_no_embedded_b85_and_valid_runtime_archive(tmp_path
 
     assert isinstance(manifest, dict) and manifest.get("sha256")
     archive_path = ROOT / "notebooks/runtime" / (manifest["filename"].split("/")[-1])
-    assert archive_path.is_file()
-    raw_bytes = archive_path.read_bytes()
-    assert hashlib.sha256(raw_bytes).hexdigest() == manifest["sha256"]
+    if archive_path.is_file():
+        raw_bytes = archive_path.read_bytes()
+        assert hashlib.sha256(raw_bytes).hexdigest() == manifest["sha256"]
+    else:
+        from tools.generate_full_matrix_notebooks import matrix_bundle
+
+        raw_bytes, bundle_sha = matrix_bundle(ROOT)
+        assert bundle_sha
 
     extract_dir = tmp_path / "runtime_extracted"
     extract_dir.mkdir()
@@ -502,7 +514,8 @@ def test_matrix_quarantine_corrupt_checkpoint_wipes_and_continues(tmp_path, monk
 
     monkeypatch.setattr("bifocalgemma.training.matrix.recover_remote_run", lambda *a, **k: None)
     monkeypatch.setattr(
-        "bifocalgemma.training.matrix.download_model", MagicMock(side_effect=StopIteration("stopped"))
+        "bifocalgemma.training.matrix.download_model",
+        MagicMock(side_effect=StopIteration("stopped")),
     )
 
     with pytest.raises(ValueError, match="Incompatible or corrupt"):

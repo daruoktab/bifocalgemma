@@ -137,7 +137,6 @@ def patch_matrix_tokenization() -> None:
 
     # 2. Defense-in-depth: patch tokenize_context_task in context_tasks and repository_sft
     if not getattr(ct_mod, "_matrix_bos_patched", False):
-
         orig_tokenize_context_task = ct_mod.tokenize_context_task
 
         def safe_tokenize_context_task(

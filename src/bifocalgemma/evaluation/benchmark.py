@@ -26,9 +26,8 @@ from bifocalgemma.data.repository import read_source_rows
 from bifocalgemma.evaluation.context import (
     EVALUATION_PROTOCOL,
     V2_EVALUATION_PROTOCOL,
-    _prompt_ids_impl,
+    _prompt_ids_with_metadata,
     decoder_prompt,
-    prompt_ids,
     score_context_case,
 )
 from bifocalgemma.evaluation.protocol import (
@@ -178,7 +177,8 @@ def prepare_sampled_benchmark_collection(
                 existing_meta.get("sampled_instance_ids") == sampled_ids
                 and existing_meta.get("inputs_sha256") == expected_inputs_sha256
                 and existing_meta.get("gold_sha256") == expected_gold_sha256
-                and stable_fingerprint(list(read_source_rows(dest_inputs))) == expected_inputs_sha256
+                and stable_fingerprint(list(read_source_rows(dest_inputs)))
+                == expected_inputs_sha256
                 and stable_fingerprint(list(read_source_rows(dest_gold))) == expected_gold_sha256
             ):
                 return dest_dir
@@ -612,14 +612,61 @@ def run_batched_context_benchmark(
         batch_pref: list[tuple[int, ...]] = []
         batch_budgets: list[int] = []
         batch_paired_prefix_sizes: list[int] = []
+        batch_number_lines: list[bool] = []
         max_total_dec = 0
 
         for row in chunk_rows:
             cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
-            if context_mode is None and repair_mode is None:
-                enc, prefix = prompt_ids(row, spec, encoder, decoder, encoder_limit=cap)
-            else:
-                enc, prefix = _prompt_ids_impl(
+            enc, prefix, used_number_lines = _prompt_ids_with_metadata(
+                row,
+                spec,
+                encoder,
+                decoder,
+                encoder_limit=cap,
+                context_mode=context_mode,
+                repair_mode=repair_mode,
+            )
+
+            def _paired_budget_for(*, number_lines: bool) -> tuple[int, int]:
+                paired_budget_mode = (
+                    "disjoint" if context_mode in ("disjoint", "local_only") else None
+                )
+                paired_prompt = decoder_prompt(
+                    row,
+                    paired=True,
+                    context_mode=paired_budget_mode,
+                    repair_mode=repair_mode,
+                    number_lines=number_lines,
+                )
+                try:
+                    paired_rendered = decoder.apply_chat_template(
+                        [{"role": "user", "content": paired_prompt}],
+                        tokenize=False,
+                        add_generation_prompt=True,
+                        enable_thinking=False,
+                    )
+                except TypeError:
+                    paired_rendered = decoder.apply_chat_template(
+                        [{"role": "user", "content": paired_prompt}],
+                        tokenize=False,
+                        add_generation_prompt=True,
+                    )
+                paired_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
+                budget = effective_generation_budget(
+                    max_new_tokens,
+                    row_cap=row.get("max_new_tokens"),
+                    paired_prefix_tokens=paired_size,
+                    decoder_limit=decoder_limit,
+                )
+                return paired_size, budget
+
+            paired_prefix_size, new_tokens = _paired_budget_for(number_lines=used_number_lines)
+            uses_encoder = (
+                bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
+            )
+            total = decoder_limit if uses_encoder else cap + decoder_limit + 512
+            if len(prefix) + new_tokens > total and not uses_encoder and used_number_lines:
+                enc, prefix, used_number_lines = _prompt_ids_with_metadata(
                     row,
                     spec,
                     encoder,
@@ -627,44 +674,16 @@ def run_batched_context_benchmark(
                     encoder_limit=cap,
                     context_mode=context_mode,
                     repair_mode=repair_mode,
+                    number_lines=False,
                 )
-            paired_budget_mode = (
-                "disjoint" if context_mode in ("disjoint", "local_only") else None
-            )
-            paired_prompt = decoder_prompt(
-                row,
-                paired=True,
-                context_mode=paired_budget_mode,
-                repair_mode=repair_mode,
-            )
-            try:
-                paired_rendered = decoder.apply_chat_template(
-                    [{"role": "user", "content": paired_prompt}],
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=False,
-                )
-            except TypeError:
-                paired_rendered = decoder.apply_chat_template(
-                    [{"role": "user", "content": paired_prompt}],
-                    tokenize=False,
-                    add_generation_prompt=True,
-                )
-            paired_prefix_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
-            new_tokens = effective_generation_budget(
-                max_new_tokens,
-                row_cap=row.get("max_new_tokens"),
-                paired_prefix_tokens=paired_prefix_size,
-                decoder_limit=decoder_limit,
-            )
-            uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
-            total = decoder_limit if uses_encoder else cap + decoder_limit + 512
+                paired_prefix_size, new_tokens = _paired_budget_for(number_lines=False)
             if len(prefix) + new_tokens > total:
                 raise ValueError("benchmark_decoder_prefix_exceeds_budget")
             batch_enc.append(enc)
             batch_pref.append(prefix)
             batch_budgets.append(new_tokens)
             batch_paired_prefix_sizes.append(paired_prefix_size)
+            batch_number_lines.append(used_number_lines)
             max_total_dec = max(max_total_dec, total)
 
         activity(
@@ -708,13 +727,14 @@ def run_batched_context_benchmark(
             raise
 
         per_item_seconds = (time.monotonic() - chunk_started) / max(1, len(chunk_rows))
-        for row, generated, enc, prefix, budget, paired_prefix_size in zip(
+        for row, generated, enc, prefix, budget, paired_prefix_size, used_number_lines in zip(
             chunk_rows,
             generations,
             batch_enc,
             batch_pref,
             batch_budgets,
             batch_paired_prefix_sizes,
+            batch_number_lines,
             strict=True,
         ):
             index = len(completed) + 1
@@ -742,6 +762,8 @@ def run_batched_context_benchmark(
                 "paired_decoder_prefix_tokens": paired_prefix_size,
                 "generation_max_new_tokens": budget,
                 "generated_tokens": len(tokens),
+                "number_lines": used_number_lines,
+                "overflow_unnumbered_fallback": not used_number_lines,
                 "case_seconds": per_item_seconds,
                 "eval_batch_size": len(chunk_rows),
                 **scoring,
@@ -789,6 +811,9 @@ def run_batched_context_benchmark(
         "score_available": scored,
         "statuses": dict(Counter(r["status"] for r in completed)),
         "generation_length_limit": sum(r["stop_reason"] == "length_limit" for r in completed),
+        "unnumbered_fallback_count": sum(
+            bool(r.get("overflow_unnumbered_fallback")) for r in completed
+        ),
         "segment_seconds": time.perf_counter() - started,
         "timing": clock.summary(),
         "official_protocol": False,
@@ -798,7 +823,7 @@ def run_batched_context_benchmark(
         "primary_metric": "task_specific_accuracy",
         "accuracy_alias": "task_specific_accuracy",
         "protocol": ("greedy_cached" if use_cache else "greedy_no_temporal_cache")
-        + "; fixed eligible cohort; no context truncation",
+        + "; fixed eligible cohort; unnumbered line-prefix fallback on overflow (no token truncation)",
         "resources": resource_snapshot(device),
     }
     report.update(mcq_report_metrics(completed))

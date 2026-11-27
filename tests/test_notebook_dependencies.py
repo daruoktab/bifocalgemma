@@ -217,7 +217,9 @@ def test_source_bundle_checksum_failure_does_not_activate_source(tmp_path):
 
 def test_active_matrix_notebooks_pin_dependencies_and_gate_bifocalgemma_imports():
     root = Path(__file__).resolve().parents[1]
-    notebooks = sorted(p for p in (root / "notebooks").glob("train_*.py") if p.name != "train_bifocalgemma_fast.py")
+    notebooks = sorted(
+        p for p in (root / "notebooks").glob("train_*.py") if p.name != "train_bifocalgemma_fast.py"
+    )
     assert len(notebooks) == 10
     for path in notebooks:
         text = path.read_text(encoding="utf-8")
@@ -231,4 +233,6 @@ def test_active_matrix_notebooks_pin_dependencies_and_gate_bifocalgemma_imports(
             if isinstance(node, ast.ImportFrom):
                 assert not (node.module or "").startswith("bifocalgemma"), path.name
             elif isinstance(node, ast.Import):
-                assert not any(alias.name.startswith("bifocalgemma") for alias in node.names), path.name
+                assert not any(alias.name.startswith("bifocalgemma") for alias in node.names), (
+                    path.name
+                )

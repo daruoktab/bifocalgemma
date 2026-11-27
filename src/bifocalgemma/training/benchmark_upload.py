@@ -16,12 +16,33 @@ from bifocalgemma.training.stages import atomic_json
 from bifocalgemma.training.telemetry import append_event
 
 
+def is_transient_lfs_pointer_error(error: BaseException, code: int | None = None) -> bool:
+    """Return True when Hub rejects a commit due to transient LFS pointer propagation lag."""
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None) if code is None else code
+    if status_code != 400:
+        return False
+    message = str(error).lower()
+    if "lfs pointer pointed to a file that does not exist" in message:
+        return True
+    try:
+        body = getattr(response, "text", "") or ""
+    except Exception:
+        body = ""
+    return "lfs pointer pointed to a file that does not exist" in body.lower()
+
+
 def retry_delay(error, failures, now):
     """None means fatal; do not hide permissions, disk, or integrity errors."""
     response = getattr(error, "response", None)
     code = getattr(response, "status_code", None)
-    if code not in {408, 409, 412, 429, 500, 502, 503, 504} and not isinstance(
-        error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+    transient_lfs = is_transient_lfs_pointer_error(error, code)
+    if (
+        code not in {408, 409, 412, 429, 500, 502, 503, 504}
+        and not transient_lfs
+        and not isinstance(
+            error, (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError)
+        )
     ):
         return None
     if code == 409:

@@ -219,15 +219,20 @@ def test_warmup_cosine_learning_rate_schedule():
     pipeline = FastTrainingPipeline(cfg)
     opt = pipeline.configure_stage1()
 
-    # Step 0: Warmup start (factor = 0.0)
+    # Step 0: Warmup start (factor = (0 + 1) / 10 = 0.1)
     pipeline._update_learning_rates(opt, global_step=0)
     for g in opt.param_groups:
-        assert g["lr"] == 0.0
+        assert g["lr"] == pytest.approx(g["base_lr"] * 0.1)
 
-    # Step 5: Mid-warmup (factor = 0.5)
+    # Step 5: Mid-warmup (factor = (5 + 1) / 10 = 0.6)
     pipeline._update_learning_rates(opt, global_step=5)
     for g in opt.param_groups:
-        assert g["lr"] == pytest.approx(g["base_lr"] * 0.5)
+        assert g["lr"] == pytest.approx(g["base_lr"] * 0.6)
+
+    # Step 9: Final warmup step (factor = 1.0)
+    pipeline._update_learning_rates(opt, global_step=9)
+    for g in opt.param_groups:
+        assert g["lr"] == pytest.approx(g["base_lr"] * 1.0)
 
     # Step 10: Peak of warmup (factor = 1.0)
     pipeline._update_learning_rates(opt, global_step=10)
@@ -408,7 +413,7 @@ def test_checkpoint_save_and_resume_lora_scaling(tmp_path: Path):
     ckpt_file = pipeline.save_checkpoint(2, "stage1_bridge_warmup")
     assert ckpt_file.is_file()
 
-    payload = torch.load(str(ckpt_file), map_location="cpu", weights_only=False)
+    payload = torch.load(str(ckpt_file), map_location="cpu", weights_only=True)
     assert payload["has_lora"] is True
     assert payload["global_step"] == 2
     assert payload["stage"] == "stage1_bridge_warmup"

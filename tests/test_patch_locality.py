@@ -54,12 +54,10 @@ def test_missing_old_file_is_still_rejected():
 def test_diagnose_patch_application_rescues_recount_without_weakening_strict():
     snapshot = RepositorySnapshot("fixture/repo", "a" * 40, (RepositoryFile("a.py", "x=0\n"),))
     bad_count_patch = (
-        "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
-        "@@ -1,99 +1,99 @@\n-x=0\n+x=2\n"
+        "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,99 +1,99 @@\n-x=0\n+x=2\n"
     )
     fenced_headerless_patch = (
-        "```patch\n--- a/a.py\n+++ b/a.py\n"
-        "@@ -1,99 +1,99 @@\n-x=0\n+x=2\n```\n"
+        "```patch\n--- a/a.py\n+++ b/a.py\n@@ -1,99 +1,99 @@\n-x=0\n+x=2\n```\n"
     )
     hunk_only_patch = "@@ -1,99 +1,99 @@\n-x=0\n+x=2\n"
 

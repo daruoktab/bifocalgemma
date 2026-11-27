@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-svg_code = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 620" width="1060" height="620" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+svg_code = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 620" width="1060" height="620" style="background:#ffffff; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <rect width="1060" height="620" fill="#ffffff"/>
 
   <!-- Title & Subtitle -->
@@ -34,13 +34,14 @@ svg_code = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 620" wid
 
     <rect x="630" y="-12" width="350" height="24" rx="5" fill="#ecfdf5" stroke="#059669" stroke-width="1.2"/>
     <text x="805" y="4" text-anchor="middle" font-size="11" font-weight="bold" fill="#065f46">Cross-KV Cache Reduction: 57.14% (20 / 35 Layers)</text>
-'''
+"""
 
 # Generate E2B grid (35 layers total: Row 1 = 18 layers, Row 2 = 17 layers)
 # E2B: Full indices = [4, 9, 14, 19, 24, 29, 34]
 # Owners = 0..14 (15 layers)
 # Anchors = [13 (sliding), 14 (full)]
 # Shared = 15..34 (20 layers)
+
 
 def get_e2b_layer(i):
     is_full = i in [4, 9, 14, 19, 24, 29, 34]
@@ -60,6 +61,7 @@ def get_e2b_layer(i):
         tag = "Slide Own"
     return fill, stroke, sw, dash, txtcol, tag
 
+
 e2b_nodes = []
 for i in range(35):
     row = 0 if i < 18 else 1
@@ -67,16 +69,16 @@ for i in range(35):
     x = 23 + col * 53
     y = 26 + row * 52
     fill, stroke, sw, dash, txtcol, tag = get_e2b_layer(i)
-    dash_attr = f'stroke-dasharray="{dash}"' if dash != "none" else ''
+    dash_attr = f'stroke-dasharray="{dash}"' if dash != "none" else ""
     node = f'''    <rect x="{x}" y="{y}" width="48" height="46" rx="5" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" {dash_attr}/>
-    <text x="{x+24}" y="{y+18}" text-anchor="middle" font-size="11" font-weight="bold" fill="{txtcol}">L{i:02d}</text>
-    <text x="{x+24}" y="{y+34}" text-anchor="middle" font-size="8.5" font-weight="600" fill="{txtcol}">{tag}</text>'''
+    <text x="{x + 24}" y="{y + 18}" text-anchor="middle" font-size="11" font-weight="bold" fill="{txtcol}">L{i:02d}</text>
+    <text x="{x + 24}" y="{y + 34}" text-anchor="middle" font-size="8.5" font-weight="600" fill="{txtcol}">{tag}</text>'''
     e2b_nodes.append(node)
 
 svg_code += "\n".join(e2b_nodes)
 
 # Annotation Banner for Panel A
-svg_code += '''
+svg_code += """
     <!-- Annotation & Routing Banner -->
     <rect x="23" y="140" width="954" height="74" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
 
@@ -95,10 +97,10 @@ svg_code += '''
     <text x="280" y="185" font-size="10.5" fill="#475569">Sliding layers reuse L13 Cross-KV; Global layers (L19, L24, L29, L34) reuse L14 Cross-KV. States computed once during prefill.</text>
     <text x="280" y="199" font-size="10" font-weight="600" fill="#059669">Result: 57.14% reduction in cross-attention KV-cache memory footprint with zero quality degradation.</text>
   </g>
-'''
+"""
 
 # Panel B: Gemma 4 E4B Decoder Stack (42 Layers: 24 Owner + 18 Shared)
-svg_code += '''
+svg_code += """
   <!-- ========================================================================= -->
   <!-- PANEL B: GEMMA 4 E4B DECODER STACK (42 Layers · 24 KV-Owners / 18 Shared) -->
   <!-- ========================================================================= -->
@@ -110,7 +112,8 @@ svg_code += '''
 
     <rect x="630" y="-12" width="350" height="24" rx="5" fill="#ecfdf5" stroke="#059669" stroke-width="1.2"/>
     <text x="805" y="4" text-anchor="middle" font-size="11" font-weight="bold" fill="#065f46">Cross-KV Cache Reduction: 42.86% (18 / 42 Layers)</text>
-'''
+"""
+
 
 def get_e4b_layer(i):
     is_full = i in [5, 11, 17, 23, 29, 35, 41]
@@ -130,6 +133,7 @@ def get_e4b_layer(i):
         tag = "Slide Own"
     return fill, stroke, sw, dash, txtcol, tag
 
+
 e4b_nodes = []
 for i in range(42):
     row = 0 if i < 21 else 1
@@ -137,16 +141,16 @@ for i in range(42):
     x = 28 + col * 45
     y = 26 + row * 52
     fill, stroke, sw, dash, txtcol, tag = get_e4b_layer(i)
-    dash_attr = f'stroke-dasharray="{dash}"' if dash != "none" else ''
+    dash_attr = f'stroke-dasharray="{dash}"' if dash != "none" else ""
     node = f'''    <rect x="{x}" y="{y}" width="40" height="46" rx="5" fill="{fill}" stroke="{stroke}" stroke-width="{sw}" {dash_attr}/>
-    <text x="{x+20}" y="{y+18}" text-anchor="middle" font-size="10.5" font-weight="bold" fill="{txtcol}">L{i:02d}</text>
-    <text x="{x+20}" y="{y+34}" text-anchor="middle" font-size="8" font-weight="600" fill="{txtcol}">{tag}</text>'''
+    <text x="{x + 20}" y="{y + 18}" text-anchor="middle" font-size="10.5" font-weight="bold" fill="{txtcol}">L{i:02d}</text>
+    <text x="{x + 20}" y="{y + 34}" text-anchor="middle" font-size="8" font-weight="600" fill="{txtcol}">{tag}</text>'''
     e4b_nodes.append(node)
 
 svg_code += "\n".join(e4b_nodes)
 
 # Annotation Banner for Panel B
-svg_code += '''
+svg_code += """
     <!-- Annotation & Routing Banner -->
     <rect x="23" y="140" width="954" height="74" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.2"/>
 
@@ -166,7 +170,7 @@ svg_code += '''
     <text x="280" y="199" font-size="10" font-weight="600" fill="#059669">Result: 42.86% reduction in cross-attention KV-cache memory footprint with zero quality degradation.</text>
   </g>
 </svg>
-'''
+"""
 
 svg_path = r"d:\Codings\bifocalgemma\paper\figures\fig2_layer_topology.svg"
 pdf_path = r"d:\Codings\bifocalgemma\paper\figures\fig2_layer_topology.pdf"
@@ -177,7 +181,9 @@ with open(svg_path, "w", encoding="utf-8") as f:
 print("Saved:", svg_path)
 
 with open(typ_path, "w", encoding="utf-8") as f:
-    f.write('#set page(width: 1060pt, height: 620pt, margin: 0pt)\n#image("fig2_layer_topology.svg", width: 100%, height: 100%)\n')
+    f.write(
+        '#set page(width: 1060pt, height: 620pt, margin: 0pt)\n#image("fig2_layer_topology.svg", width: 100%, height: 100%)\n'
+    )
 
 res = subprocess.run(["typst", "compile", typ_path, pdf_path], capture_output=True, text=True)
 print("Typst returncode:", res.returncode)

@@ -19,7 +19,11 @@ def main():
     parser.add_argument("--pool", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--stage1-updates", type=int)
-    parser.add_argument("--local", action="store_true", help="Use the explicit local-pool identity instead of the pinned main release.")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use the explicit local-pool identity instead of the pinned main release.",
+    )
     args = parser.parse_args()
     rows, manifest = load_curated_pool(args.pool)
     schedule = build_shared_schedule(

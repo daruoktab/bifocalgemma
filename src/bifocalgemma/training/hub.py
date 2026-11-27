@@ -255,7 +255,9 @@ def recover_remote_run(repo_id, root, prefix, *, token):
                 actual_digest = file_digest(target_p)
                 if actual_digest != digest:
                     if "checkpoint-" in relative:
-                        raise ValueError(f"Remote run receipt hash mismatch for checkpoint: {relative}")
+                        raise ValueError(
+                            f"Remote run receipt hash mismatch for checkpoint: {relative}"
+                        )
                     else:
                         logger.warning(
                             "Remote run receipt hash mismatch for non-checkpoint file %s (expected %s, got %s)",
@@ -485,4 +487,3 @@ def download_model(spec, cache, token, progress):
     )
     source.update(source_identity_verified=True, verified_sources=provenance)
     return model, source
-

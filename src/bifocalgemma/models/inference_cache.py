@@ -20,6 +20,7 @@ class CachedAttention(Gemma4TextAttention):
         attention_mask,
         shared_kv_states,
         past_key_values=None,
+        cache=None,
         *,
         inference_cache=None,
         encoder_hidden_states=None,
@@ -28,18 +29,20 @@ class CachedAttention(Gemma4TextAttention):
     ):
         if self.training or torch.is_grad_enabled():
             raise ValueError("Inference cache requires eval and inference_mode/no_grad.")
+        if past_key_values is not None or cache is not None:
+            raise ValueError("CachedAttention uses explicit inference_cache, not temporal cache.")
         batch, length, _ = hidden_states.shape
         shape = (batch, length, -1, self.head_dim)
         cos, sin = position_embeddings
         query = self.q_norm(self.q_proj(hidden_states).view(shape))
         query = apply_rotary_pos_emb(query, cos, sin, unsqueeze_dim=2).transpose(1, 2)
-        cache = inference_cache
-        if cache is None:
+        inf_cache = inference_cache
+        if inf_cache is None:
             raise ValueError("Explicit inference cache required.")
-        positions = torch.arange(cache.offset, cache.offset + length, device=query.device)
+        positions = torch.arange(inf_cache.offset, inf_cache.offset + length, device=query.device)
         if self.is_kv_shared_layer:
             key, value = shared_kv_states[self.layer_type]
-            key_positions, self_length = cache.shared_positions[self.layer_type]
+            key_positions, self_length = inf_cache.shared_positions[self.layer_type]
         else:
             raw_key = self.k_proj(hidden_states).view(shape)
             raw_value = (
@@ -49,7 +52,7 @@ class CachedAttention(Gemma4TextAttention):
                 1, 2
             )
             value = self.v_norm(raw_value).transpose(1, 2)
-            previous = cache.layers.get(self.layer_idx)
+            previous = inf_cache.layers.get(self.layer_idx)
             key_positions = positions
             if previous is not None:
                 key = torch.cat((previous[0], key), dim=2)
@@ -78,14 +81,14 @@ class CachedAttention(Gemma4TextAttention):
                         1, 2
                     ),
                 )
-            cache.layers[self.layer_idx] = (stored_key, stored_value, stored_positions, cross)
+            inf_cache.layers[self.layer_idx] = (stored_key, stored_value, stored_positions, cross)
             self_length = key.shape[2]
             if cross is not None:
                 key = torch.cat((key, cross[0]), dim=2)
                 value = torch.cat((value, cross[1]), dim=2)
         if self.store_full_length_kv:
             shared_kv_states[self.layer_type] = (key, value)
-            cache.shared_positions[self.layer_type] = (key_positions, self_length)
+            inf_cache.shared_positions[self.layer_type] = (key_positions, self_length)
         pieces = []
         for start in range(0, length, 128):
             stop = min(length, start + 128)
@@ -123,9 +126,17 @@ def cached_logits(model, ids, cache, encoder_states=None, encoder_mask=None):
     if model.training or torch.is_grad_enabled():
         raise ValueError("Cached decoding requires eval and inference_mode/no_grad.")
     original = [layer.self_attn.__class__ for layer in model.decoder.layers]
+    full_cross_cls = None
     try:
         for layer in model.decoder.layers:
-            layer.self_attn.__class__ = CachedAttention
+            if getattr(layer.self_attn, "full_rank_cross_attention", False):
+                if full_cross_cls is None:
+                    from bifocalgemma.models.cross_attention import FullCrossCachedAttention
+
+                    full_cross_cls = FullCrossCachedAttention
+                object.__setattr__(layer.self_attn, "__class__", full_cross_cls)
+            else:
+                object.__setattr__(layer.self_attn, "__class__", CachedAttention)
         positions = torch.arange(cache.offset, cache.offset + ids.shape[1], device=ids.device)[None]
         hidden = model.decoder(
             input_ids=ids,
@@ -144,4 +155,4 @@ def cached_logits(model, ids, cache, encoder_states=None, encoder_mask=None):
         return logits
     finally:
         for layer, cls in zip(model.decoder.layers, original, strict=True):
-            layer.self_attn.__class__ = cls
+            object.__setattr__(layer.self_attn, "__class__", cls)

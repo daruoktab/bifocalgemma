@@ -65,6 +65,7 @@ def test_compute_per_row_cross_query_vectorized_parity(
     dtype: torch.dtype, monkeypatch: pytest.MonkeyPatch
 ):
     """Vectorized on-device beta_N must match scalar critical_attention_beta without calling .tolist()."""
+
     # Guard at runtime that Tensor.tolist is never triggered
     def _forbid_tolist(self: torch.Tensor) -> Any:
         raise AssertionError("Tensor.tolist() must not be called in _compute_per_row_cross_query")
@@ -113,7 +114,9 @@ def test_compute_per_row_cross_query_on_cuda_stays_on_device():
     assert out.dtype == torch.bfloat16
     torch.testing.assert_close(out[0], q[0], atol=1e-3, rtol=1e-3)
     expected_b1 = critical_attention_beta(4096)
-    torch.testing.assert_close(out[1], (q[1].float() * expected_b1).to(torch.bfloat16), atol=2e-2, rtol=2e-2)
+    torch.testing.assert_close(
+        out[1], (q[1].float() * expected_b1).to(torch.bfloat16), atol=2e-2, rtol=2e-2
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -142,8 +145,12 @@ def test_sdpa_cross_attention_matches_eager_and_handles_all_masked_rows(
     dec_valid[2, :] = False  # wholly masked decoder row
 
     scale = head_dim**-0.5
-    sdpa_out = sdpa_cross_attention(q, k, v, enc_valid, dec_valid, scale, chunk_size=8, use_sdpa=True)
-    eager_out = sdpa_cross_attention(q, k, v, enc_valid, dec_valid, scale, chunk_size=8, use_sdpa=False)
+    sdpa_out = sdpa_cross_attention(
+        q, k, v, enc_valid, dec_valid, scale, chunk_size=8, use_sdpa=True
+    )
+    eager_out = sdpa_cross_attention(
+        q, k, v, enc_valid, dec_valid, scale, chunk_size=8, use_sdpa=False
+    )
 
     assert torch.isfinite(sdpa_out).all()
     assert torch.all(sdpa_out[1] == 0.0)
@@ -161,7 +168,9 @@ def test_sdpa_cross_attention_matches_eager_and_handles_all_masked_rows(
         if dtype == torch.float32:
             torch.testing.assert_close(g_sdpa, g_eager, atol=1e-4, rtol=1e-4)
         else:
-            rel_err = (g_sdpa.float() - g_eager.float()).norm() / g_eager.float().norm().clamp_min(1e-8)
+            rel_err = (g_sdpa.float() - g_eager.float()).norm() / g_eager.float().norm().clamp_min(
+                1e-8
+            )
             assert float(rel_err) < 0.03
 
 
@@ -183,7 +192,14 @@ def test_sdpa_attention_structured_masks_match_tiled_eager(
     scale = 64**-0.5
 
     ref = tiled_attention(
-        q, k, v, chunk_size=7, scaling=scale, attention_mask=mask, window=window, backend="tiled_eager_fp32"
+        q,
+        k,
+        v,
+        chunk_size=7,
+        scaling=scale,
+        attention_mask=mask,
+        window=window,
+        backend="tiled_eager_fp32",
     )
     actual = tiled_attention(
         q, k, v, chunk_size=7, scaling=scale, attention_mask=mask, window=window, backend="sdpa"
@@ -203,7 +219,13 @@ def test_sdpa_attention_safe_fallback_on_float64_and_custom_float_mask():
     mask_dict = {"valid": torch.ones(1, 8, dtype=torch.bool), "bidirectional": True}
     out64 = sdpa_attention(q64, k64, v64, chunk_size=4, scaling=16**-0.5, attention_mask=mask_dict)
     ref64 = tiled_attention(
-        q64, k64, v64, chunk_size=4, scaling=16**-0.5, attention_mask=mask_dict, backend="tiled_eager_fp32"
+        q64,
+        k64,
+        v64,
+        chunk_size=4,
+        scaling=16**-0.5,
+        attention_mask=mask_dict,
+        backend="tiled_eager_fp32",
     )
     torch.testing.assert_close(out64, ref64, atol=1e-7, rtol=1e-7)
 
@@ -217,7 +239,13 @@ def test_sdpa_attention_safe_fallback_on_float64_and_custom_float_mask():
         q32, k32, v32, chunk_size=4, scaling=16**-0.5, attention_mask=additive_mask
     )
     ref32 = tiled_attention(
-        q32, k32, v32, chunk_size=4, scaling=16**-0.5, attention_mask=additive_mask, backend="tiled_eager_fp32"
+        q32,
+        k32,
+        v32,
+        chunk_size=4,
+        scaling=16**-0.5,
+        attention_mask=additive_mask,
+        backend="tiled_eager_fp32",
     )
     torch.testing.assert_close(out32, ref32, atol=1e-6, rtol=1e-6)
 
@@ -548,7 +576,9 @@ def test_swiglu_bridge_loads_legacy_v3_checkpoint_folding_post_norm_weight():
     incompatible = reloaded.load_state_dict(legacy_sd, strict=True)
     assert incompatible.missing_keys == []
     assert incompatible.unexpected_keys == []
-    torch.testing.assert_close(reloaded.gamma_calib.detach(), gamma_w * post_w, atol=1e-6, rtol=1e-6)
+    torch.testing.assert_close(
+        reloaded.gamma_calib.detach(), gamma_w * post_w, atol=1e-6, rtol=1e-6
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -574,7 +604,10 @@ def test_cross_scale_frozen_by_default_and_configurable():
     dec_ids = torch.randint(5, 50, (1, 4))
     enc_h = model.encode_context(enc_ids, torch.ones_like(enc_ids, dtype=torch.bool))
     logits = model.decode_logits(
-        dec_ids, torch.ones_like(dec_ids, dtype=torch.bool), enc_h, torch.ones_like(enc_ids, dtype=torch.bool)
+        dec_ids,
+        torch.ones_like(dec_ids, dtype=torch.bool),
+        enc_h,
+        torch.ones_like(enc_ids, dtype=torch.bool),
     )
     logits.square().mean().backward()
     for layer in model.decoder.layers:
@@ -586,9 +619,7 @@ def test_cross_scale_frozen_by_default_and_configurable():
     # Explicit opt-in unfreezes cross_scale
     info_opt_in = configure_full_rank_cross_attention(model, learnable_cross_scale=True)
     assert info_opt_in["learnable_cross_scale"] is True
-    assert all(
-        p.requires_grad for n, p in model.named_parameters() if n.endswith(".cross_scale")
-    )
+    assert all(p.requires_grad for n, p in model.named_parameters() if n.endswith(".cross_scale"))
 
 
 def test_gate_init_tanh_resolution_dynamic_and_v4_fallback(monkeypatch: pytest.MonkeyPatch):
@@ -663,8 +694,12 @@ def test_head_dim_512_routes_training_to_tiled_recompute_and_keeps_eval_and_256_
     scale512 = 512**-0.5
 
     sdpa_calls = tiled_calls = 0
-    out_bi = sdpa_attention(q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_bi)
-    out_ca = sdpa_attention(q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_ca)
+    out_bi = sdpa_attention(
+        q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_bi
+    )
+    out_ca = sdpa_attention(
+        q512, k512, v512, chunk_size=6, scaling=scale512, attention_mask=mask_ca
+    )
     assert sdpa_calls == 0
     assert tiled_calls == 2
     assert torch.isfinite(out_bi).all() and torch.all(out_bi[1] == 0.0)

@@ -715,9 +715,7 @@ def compute_step_loss(
         else str(getattr(_config, "LOSS_REDUCTION", "per_example_mean"))
     )
     resolved_cap = (
-        length_cap
-        if length_cap is not None
-        else int(getattr(_config, "LOSS_LENGTH_CAP", 256))
+        length_cap if length_cap is not None else int(getattr(_config, "LOSS_LENGTH_CAP", 256))
     )
     if not hasattr(model, "_decode_hidden") or not hasattr(model, "lm_head"):
         output = model.forward_loss(batch) if hasattr(model, "forward_loss") else model(batch)
@@ -741,9 +739,7 @@ def compute_step_loss(
         task_types if task_types is not None else getattr(batch, "task_types", None)
     )
     effective_is_diff = (
-        is_unified_diff
-        if is_unified_diff is not None
-        else getattr(batch, "is_unified_diff", None)
+        is_unified_diff if is_unified_diff is not None else getattr(batch, "is_unified_diff", None)
     )
     token_weights = (
         None
