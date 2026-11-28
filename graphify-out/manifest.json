@@ -53,9 +53,9 @@
     "ast_empty": true
   },
   "configs/training_resume_compatibility.json": {
-    "mtime": 1795748495.565758,
-    "seen": 1795748778.9219651,
-    "ast_hash": "bdd3b2b884d3cb6e4a32f4a32ba4b948",
+    "mtime": 1795852879.0615833,
+    "seen": 1795854075.0284216,
+    "ast_hash": "7814e1907848b43b9b0f7bfb0e07cf82",
     "semantic_hash": ""
   },
   "docs/data/ai_runtime_upgrade_20261009.json": {
@@ -428,75 +428,75 @@
     "semantic_hash": ""
   },
   "notebooks/bifocalgemma_repository_study.py": {
-    "mtime": 1795748496.5535312,
-    "seen": 1795748778.9219651,
-    "ast_hash": "e3a6dd4371486c6241f6ccb885d0f98d",
+    "mtime": 1795854057.1413383,
+    "seen": 1795854075.0284216,
+    "ast_hash": "df671255149ffa8dc512ec1cef81e8ed",
     "semantic_hash": ""
   },
   "notebooks/runtime-manifest.json": {
-    "mtime": 1795748637.424436,
-    "seen": 1795748778.9219651,
-    "ast_hash": "020104595af43fafc37eecf787594d5c",
+    "mtime": 1795854069.8292499,
+    "seen": 1795854075.0284216,
+    "ast_hash": "8a8527882667174bd459b206630183bd",
     "semantic_hash": ""
   },
   "notebooks/train_2base_2it.py": {
-    "mtime": 1795748637.465684,
-    "seen": 1795748778.9219651,
-    "ast_hash": "2ecd0a5936a27e56b820c64ffe4f0909",
+    "mtime": 1795854069.8768191,
+    "seen": 1795854075.0284216,
+    "ast_hash": "72f99f9b218eb1c4684c295048b17ee9",
     "semantic_hash": ""
   },
   "notebooks/train_2base_4it.py": {
-    "mtime": 1795748637.6976361,
-    "seen": 1795748778.9219651,
-    "ast_hash": "e1eb1ea58f26752c56e88830a5a476cb",
+    "mtime": 1795854070.119526,
+    "seen": 1795854075.0284216,
+    "ast_hash": "721296ca51d5b925a05598955342a2a9",
     "semantic_hash": ""
   },
   "notebooks/train_2it_2it.py": {
-    "mtime": 1795748637.5038111,
-    "seen": 1795748778.9219651,
-    "ast_hash": "08f9ee90bcdfc704d8c7210d46c068bf",
+    "mtime": 1795854069.917448,
+    "seen": 1795854075.0284216,
+    "ast_hash": "f78d52fd22530b25f4e677cfa3cd443a",
     "semantic_hash": ""
   },
   "notebooks/train_2it_4it.py": {
-    "mtime": 1795748637.7359002,
-    "seen": 1795748778.9219651,
-    "ast_hash": "dcebeef9bece51583d65607012c0cb5d",
+    "mtime": 1795854070.160527,
+    "seen": 1795854075.0284216,
+    "ast_hash": "b1b1c9d56827164e53d30f5e0ed84caa",
     "semantic_hash": ""
   },
   "notebooks/train_4base_2it.py": {
-    "mtime": 1795748637.623153,
-    "seen": 1795748778.9219651,
-    "ast_hash": "e70ebbf0266579dafcb693dec2a13a73",
+    "mtime": 1795854070.0374188,
+    "seen": 1795854075.0284216,
+    "ast_hash": "937801aff4351fc04d1a0954ab5e9e61",
     "semantic_hash": ""
   },
   "notebooks/train_4base_4it.py": {
-    "mtime": 1795748637.5427213,
-    "seen": 1795748778.9219651,
-    "ast_hash": "2d9695df624b411b0d2bd06e79ab3796",
+    "mtime": 1795854069.9591198,
+    "seen": 1795854075.0284216,
+    "ast_hash": "f978e4d2283aad5f38e3a2ddb764b4b0",
     "semantic_hash": ""
   },
   "notebooks/train_4it_2it.py": {
-    "mtime": 1795748637.660585,
-    "seen": 1795748778.9219651,
-    "ast_hash": "8e9fab35d95d439a50bae4ac8b9bd44d",
+    "mtime": 1795854070.0790842,
+    "seen": 1795854075.0284216,
+    "ast_hash": "bb0da4980751ba996156b757c7dd3f96",
     "semantic_hash": ""
   },
   "notebooks/train_4it_4it.py": {
-    "mtime": 1795748637.5853047,
-    "seen": 1795748778.9219651,
-    "ast_hash": "736e5890591031503ff94c081027fda8",
+    "mtime": 1795854069.99583,
+    "seen": 1795854075.0284216,
+    "ast_hash": "4d6b640f9baa7a30b0e2a20c3da32454",
     "semantic_hash": ""
   },
   "notebooks/train_e2b_it.py": {
-    "mtime": 1795748637.7742102,
-    "seen": 1795748778.9219651,
-    "ast_hash": "3836d9cb45a53aad20a1a18b52d03f7c",
+    "mtime": 1795854070.1959367,
+    "seen": 1795854075.0284216,
+    "ast_hash": "cfc7e2cd463f4a60614892e84c23fe18",
     "semantic_hash": ""
   },
   "notebooks/train_e4b_it.py": {
-    "mtime": 1795748637.8122723,
-    "seen": 1795748778.9219651,
-    "ast_hash": "848c083ad4442ffe2f7022de1ba85487",
+    "mtime": 1795854070.2376683,
+    "seen": 1795854075.0284216,
+    "ast_hash": "9d71dc8ae1005a11000b3f909e01dbd7",
     "semantic_hash": ""
   },
   "pyproject.toml": {
@@ -564,9 +564,9 @@
     "ast_empty": true
   },
   "src/bifocalgemma/config.py": {
-    "mtime": 1795278736.8429372,
-    "seen": 1795279054.6415875,
-    "ast_hash": "73caf37abbf2cd5536df1fd507969339",
+    "mtime": 1795848879.7569785,
+    "seen": 1795848933.4922426,
+    "ast_hash": "b333a81f5cd6f56186dc8ab3962e778a",
     "semantic_hash": ""
   },
   "src/bifocalgemma/contracts.py": {
@@ -594,10 +594,10 @@
     "semantic_hash": "ea5fdf910855268567a407769478ceda"
   },
   "src/bifocalgemma/data/collator.py": {
-    "mtime": 1791220773.2034638,
-    "seen": 1793678904.1030583,
-    "ast_hash": "c85ac7a94d572f07bbb2317f5d036476",
-    "semantic_hash": "c85ac7a94d572f07bbb2317f5d036476"
+    "mtime": 1795842805.1354547,
+    "seen": 1795844286.8897052,
+    "ast_hash": "8da0516cc80740df78f9dfdbcf5f9bbc",
+    "semantic_hash": ""
   },
   "src/bifocalgemma/data/context.py": {
     "mtime": 1791394244.595863,
@@ -612,9 +612,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/data/context_tasks.py": {
-    "mtime": 1795748494.496929,
-    "seen": 1795748778.9229727,
-    "ast_hash": "1e2b40004066ae967fd83c16e72da626",
+    "mtime": 1795851823.724744,
+    "seen": 1795851938.9309964,
+    "ast_hash": "3bde2c737a08976100e1a712f5e28a84",
     "semantic_hash": ""
   },
   "src/bifocalgemma/data/curation.py": {
@@ -708,9 +708,9 @@
     "semantic_hash": "31ef895f282527d350d583ef29f838a3"
   },
   "src/bifocalgemma/evaluation/context.py": {
-    "mtime": 1795712710.9626844,
-    "seen": 1795712778.636284,
-    "ast_hash": "5e75be738ae65f23bc9733dc5766284e",
+    "mtime": 1795851825.050239,
+    "seen": 1795851938.9309964,
+    "ast_hash": "9495825d63e33d345568cba01cfb8539",
     "semantic_hash": ""
   },
   "src/bifocalgemma/evaluation/eval_code.py": {
@@ -774,9 +774,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/models/memory_efficient.py": {
-    "mtime": 1795712710.9570017,
-    "seen": 1795712778.636284,
-    "ast_hash": "690309341170ba15d4ddd05f15d44766",
+    "mtime": 1795842872.9748242,
+    "seen": 1795844286.8897052,
+    "ast_hash": "1643fee712ee52f0289d67235016459f",
     "semantic_hash": ""
   },
   "src/bifocalgemma/repository_study.py": {
@@ -810,15 +810,15 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/curated_sft.py": {
-    "mtime": 1795712710.9583385,
-    "seen": 1795712778.636284,
-    "ast_hash": "e2bc2c74f6cc92e74738e92b302aba95",
+    "mtime": 1795847527.7815485,
+    "seen": 1795848168.3647892,
+    "ast_hash": "9ffed97b961e798762aa9d56d994428d",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/hub.py": {
-    "mtime": 1795712710.9596634,
-    "seen": 1795712778.636284,
-    "ast_hash": "859f3aff30698cd7a3befaec06e72beb",
+    "mtime": 1795842821.5217068,
+    "seen": 1795844286.8897052,
+    "ast_hash": "023a6c012eb3398fc8c5010d62d1a27c",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/memory_probe.py": {
@@ -828,9 +828,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/objectives.py": {
-    "mtime": 1795712710.970275,
-    "seen": 1795712778.636284,
-    "ast_hash": "72ce8e633853def643619319e472b894",
+    "mtime": 1795848880.593169,
+    "seen": 1795848933.4922426,
+    "ast_hash": "93484b3f0a7e73dbd8a7dd42c8e5196b",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/offline_sft.py": {
@@ -985,9 +985,9 @@
     "semantic_hash": ""
   },
   "tests/test_construction_blocks.py": {
-    "mtime": 1794804116.8801339,
-    "seen": 1794804841.2181273,
-    "ast_hash": "648a9cb2521dc68f82a3cd1ce8bd7779",
+    "mtime": 1795844298.6995597,
+    "seen": 1795844934.5964415,
+    "ast_hash": "6b9183afdd8aef51949b9142f73a7728",
     "semantic_hash": ""
   },
   "tests/test_context_benchmark_resume.py": {
@@ -1057,9 +1057,9 @@
     "semantic_hash": ""
   },
   "tests/test_molab_matrix_notebooks.py": {
-    "mtime": 1795712710.9712842,
-    "seen": 1795712778.636284,
-    "ast_hash": "e40aae052dfdf59a374a7ec59430b597",
+    "mtime": 1795852165.3660471,
+    "seen": 1795852175.1614156,
+    "ast_hash": "4f8a51c23fb3c1496dd6250e9ee0520c",
     "semantic_hash": ""
   },
   "tests/test_native_integration.py": {
@@ -1135,9 +1135,9 @@
     "semantic_hash": ""
   },
   "tests/test_upload_recovery_receipts.py": {
-    "mtime": 1795712710.9626844,
-    "seen": 1795712778.636284,
-    "ast_hash": "73e17e148f16da6c18dff1c59bb392be",
+    "mtime": 1795842822.8446996,
+    "seen": 1795844286.8897052,
+    "ast_hash": "cdd87554b6b792b9e9ff1bbbb3e703cb",
     "semantic_hash": ""
   },
   "tools/audit_context_release.py": {
@@ -1165,9 +1165,9 @@
     "semantic_hash": "66b0312b0a7788210c1f5ab43b8dd4fa"
   },
   "tools/generate_full_matrix_notebooks.py": {
-    "mtime": 1795712710.9583385,
-    "seen": 1795712778.636284,
-    "ast_hash": "6484b321aa45bbb9218c181e3a93293e",
+    "mtime": 1795851835.8745427,
+    "seen": 1795851938.9309964,
+    "ast_hash": "e373357d9fd9458902b6f52d42cc3e89",
     "semantic_hash": ""
   },
   "tools/generate_repository_notebook.py": {
@@ -1183,9 +1183,9 @@
     "semantic_hash": "20fe078f99a055cf2d567d0942575fee"
   },
   "tools/molab_matrix_support.py": {
-    "mtime": 1795712172.1692042,
-    "seen": 1795712778.636284,
-    "ast_hash": "408b6a1cb0c9fa4b2745f733f6a2e104",
+    "mtime": 1795842833.3542707,
+    "seen": 1795844286.8897052,
+    "ast_hash": "d04145fd534fdc48cc764b8b081cabfe",
     "semantic_hash": ""
   },
   "tools/notebook_bundle.py": {
@@ -1693,9 +1693,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795712175.8207462,
-    "seen": 1795712778.636284,
-    "ast_hash": "e43bb557c4432f4debf53c0bd0a26788",
+    "mtime": 1795852872.2787194,
+    "seen": 1795854075.02944,
+    "ast_hash": "84ee20e42abe39fbb0bb430a90e81013",
     "semantic_hash": ""
   },
   "docs/ARCHITECTURE.md": {
@@ -1933,9 +1933,9 @@
     "semantic_hash": ""
   },
   "docs/TRAINING_NOTEBOOKS.md": {
-    "mtime": 1794968383.4293084,
-    "seen": 1794968557.8834167,
-    "ast_hash": "485dcdbee0d42db40291c67940a0b131",
+    "mtime": 1795852879.9575562,
+    "seen": 1795854075.02944,
+    "ast_hash": "a72def0373811e1f99d4957ea3c9db2b",
     "semantic_hash": ""
   },
   "docs/TRAINING_RECIPE_COMPARISON.md": {
@@ -2029,15 +2029,15 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/modeling_bifocalgemma.py": {
-    "mtime": 1795712710.9570017,
-    "seen": 1795712778.636284,
-    "ast_hash": "09a1320f858848dee6c79991975b5e1c",
+    "mtime": 1795842876.0542948,
+    "seen": 1795844286.8897052,
+    "ast_hash": "bc65848f6fef7759d05f6b8e23268183",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/fast_pipeline.py": {
-    "mtime": 1795712710.9570017,
-    "seen": 1795712778.636284,
-    "ast_hash": "72c3cb14f5e0347b2b260e1ecf2618c7",
+    "mtime": 1795847529.0449305,
+    "seen": 1795848168.3647892,
+    "ast_hash": "2adad3295a65ad26922c18e8c69c41e3",
     "semantic_hash": ""
   },
   "tests/test_pretrained_hf_model.py": {
@@ -2269,9 +2269,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/evaluation/benchmark.py": {
-    "mtime": 1795712710.9570017,
-    "seen": 1795712778.636284,
-    "ast_hash": "320b36fc8a56a5d66553ca97b375f0f5",
+    "mtime": 1795847523.0750449,
+    "seen": 1795848168.3647892,
+    "ast_hash": "d1a195c477dc79550805df449cdf0546",
     "semantic_hash": ""
   },
   "src/bifocalgemma/models/bridge.py": {
@@ -2305,9 +2305,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/matrix.py": {
-    "mtime": 1795748455.0520742,
-    "seen": 1795748778.9229727,
-    "ast_hash": "4fd62aafb7d56ba5705d2d386e5c3771",
+    "mtime": 1795851834.5464828,
+    "seen": 1795851938.9309964,
+    "ast_hash": "395606888f9df39e254d34d5e22bbaea",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/preflight.py": {
@@ -2317,9 +2317,9 @@
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/runtime.py": {
-    "mtime": 1795712710.9652557,
-    "seen": 1795712778.636284,
-    "ast_hash": "e84d4705ea592f68d97d53c6636b67ac",
+    "mtime": 1795848884.1730933,
+    "seen": 1795848933.4922426,
+    "ast_hash": "47158222ceafc107a9c7da6e98eed29d",
     "semantic_hash": ""
   },
   "src/bifocalgemma/training/stage.py": {
@@ -2461,9 +2461,9 @@
     "semantic_hash": ""
   },
   "tests/test_v4_eval_parity.py": {
-    "mtime": 1795712710.967893,
-    "seen": 1795712778.636284,
-    "ast_hash": "a6d6ae13d70ab94157e88c95b241f8e5",
+    "mtime": 1795844434.8204293,
+    "seen": 1795844934.5964415,
+    "ast_hash": "6774b7e42a3ab23a7a75950559968491",
     "semantic_hash": ""
   },
   "tests/test_v4_optimizer_schedule.py": {
@@ -2503,9 +2503,21 @@
     "semantic_hash": ""
   },
   "tests/test_v4_checkpoint_and_patches.py": {
-    "mtime": 1795748756.7006004,
-    "seen": 1795748778.9229727,
-    "ast_hash": "b11010170a902902ff2f70b661c0e7e6",
+    "mtime": 1795844879.276753,
+    "seen": 1795844934.5964415,
+    "ast_hash": "676fe64249be9aef44dd99536c6ae7cd",
+    "semantic_hash": ""
+  },
+  "tests/test_mixed_encoder_bypass.py": {
+    "mtime": 1795844905.999118,
+    "seen": 1795844934.5964415,
+    "ast_hash": "a3716a3b17832915a15477f37c2d75a8",
+    "semantic_hash": ""
+  },
+  "tests/test_sliding_bifocal_routing.py": {
+    "mtime": 1795852163.7138243,
+    "seen": 1795852175.1614156,
+    "ast_hash": "b77d5d78286e295fbdd697a6a80b36ff",
     "semantic_hash": ""
   }
 }

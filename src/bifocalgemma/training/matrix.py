@@ -75,6 +75,7 @@ from bifocalgemma.training.hub import (
 from bifocalgemma.training.objectives import (
     compute_example_loss_weights,
     compute_step_loss,
+    extract_trivial_token_ids,
     is_cross_bridge_parameter,
     resolve_diff_token_ids,
 )
@@ -207,7 +208,7 @@ def _build_schedule_for_epochs(
     )
 
 
-def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
+def _resolve_profile_settings(profile: str | None, *, family: str | None = None) -> dict[str, Any]:
     """Resolve dataset, batching, epoch, and benchmark defaults for v3 (legacy) or v4."""
     resolved = "v3" if profile is None else profile.strip().lower()
     if resolved not in {"v3", "v4"}:
@@ -215,6 +216,12 @@ def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
     if resolved == "v4":
         v4_batch = int(getattr(_config, "V4_BATCH_SIZE", BATCH_SIZE))
         v4_accum = int(getattr(_config, "V4_ACCUMULATION", ACCUMULATION))
+        is_bifocal = family is not None and family != "decoder_only"
+        v4_namespace = (
+            str(getattr(_config, "V4_BIFOCAL_RUN_NAMESPACE", "sliding-bifocal-v4"))
+            if is_bifocal
+            else str(getattr(_config, "V4_MATRIX_RUN_NAMESPACE", "versionless-repair-v4"))
+        )
         return {
             "profile": "v4",
             "dataset_repo": DATASET_REPO,
@@ -232,9 +239,7 @@ def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
             ),
             "default_stage1_fraction": float(getattr(_config, "V4_STAGE1_FRACTION", 0.06)),
             "benchmarks": list(getattr(_config, "V4_BENCHMARKS", V4_BENCHMARKS)),
-            "run_namespace": str(
-                getattr(_config, "V4_MATRIX_RUN_NAMESPACE", "versionless-repair-v4")
-            ),
+            "run_namespace": v4_namespace,
         }
     return {
         "profile": "v3",
@@ -247,9 +252,7 @@ def _resolve_profile_settings(profile: str | None) -> dict[str, Any]:
         "base_examples": int(
             getattr(_config, "TOTAL_EXAMPLES", TOTAL_STEPS * BATCH_SIZE * ACCUMULATION)
         ),
-        "default_stage1_fraction": float(
-            getattr(_config, "STAGE1_FRACTION", getattr(_config, "V4_STAGE1_FRACTION", 0.06))
-        ),
+        "default_stage1_fraction": float(getattr(_config, "STAGE1_FRACTION", 0.06)),
         "benchmarks": list(BENCHMARKS),
         "run_namespace": MATRIX_RUN_NAMESPACE,
     }
@@ -479,6 +482,7 @@ def run_matrix_stage(
     asymmetric_warmup: bool | None = None,
     loss_reduction: str | None = None,
     length_cap: int | None = None,
+    lambda_ptr: float | None = None,
     max_microbatch_size: int | None = None,
     max_microbatch_tokens: int | None = None,
 ) -> dict[str, Any]:
@@ -640,9 +644,15 @@ def run_matrix_stage(
                 )
                 for batch_cpu in batches
             ]
+            has_enc_flags = [bool(batch_cpu.encoder_attention_mask.any()) for batch_cpu in batches]
             total_weight = sum(batch_weights)
             if total_weight <= 0.0:
                 raise ValueError("Shared schedule window has zero effective loss weight.")
+            grad_total_weight = (
+                sum(w for w, has_enc in zip(batch_weights, has_enc_flags, strict=True) if has_enc)
+                if effective_freeze_decoder
+                else total_weight
+            )
             loss_value = 0.0
             for batch_cpu, items_slice, records_slice, batch_weight in zip(
                 batches, item_groups, record_groups, batch_weights, strict=True
@@ -650,7 +660,12 @@ def run_matrix_stage(
                 if batch_weight <= 0.0:
                     continue
                 batch = batch_cpu.to(device)
-                scale = batch_weight / total_weight
+                log_scale = batch_weight / total_weight
+                grad_scale = (
+                    batch_weight / grad_total_weight
+                    if effective_freeze_decoder and grad_total_weight > 0.0
+                    else log_scale
+                )
                 batch_task_types = [
                     (
                         item.metadata.get("task_type")
@@ -665,6 +680,7 @@ def run_matrix_stage(
                     model,
                     batch,
                     stage_name=stage_name,
+                    lambda_ptr=lambda_ptr,
                     diff_token_ids=active_diff_token_ids,
                     token_weighting="diff_marker_v1",
                     task_types=batch_task_types,
@@ -674,8 +690,9 @@ def run_matrix_stage(
                 )
                 if step_loss is None or not bool(torch.isfinite(step_loss)):
                     raise RuntimeError(f"Nonfinite loss at step {step + 1} (global {global_step})")
-                (step_loss * scale).backward()
-                loss_value += step_loss.detach().item() * scale
+                if not (effective_freeze_decoder and not step_loss.requires_grad):
+                    (step_loss * grad_scale).backward()
+                loss_value += step_loss.detach().item() * log_scale
                 del step_loss, batch
             return loss_value
 
@@ -726,15 +743,22 @@ def run_matrix_stage(
                 )
 
         grads = [p.grad for p in trainable_params if p.grad is not None]
-        if not grads or not all(bool(torch.isfinite(g).all()) for g in grads):
-            raise RuntimeError(f"Missing or nonfinite gradients at step {global_step}.")
-
-        grad_norm, group_grad_norms = clip_optimizer_group_grads(
-            optimizer, default_clip_norm=clip_norm
-        )
-        rates = update_policy_learning_rates(optimizer, global_step - 1)
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
+        if not grads:
+            if effective_freeze_decoder:
+                grad_norm = 0.0
+                group_grad_norms = {}
+                rates = update_policy_learning_rates(optimizer, global_step - 1)
+            else:
+                raise RuntimeError(f"Missing or nonfinite gradients at step {global_step}.")
+        else:
+            if not all(bool(torch.isfinite(g).all()) for g in grads):
+                raise RuntimeError(f"Missing or nonfinite gradients at step {global_step}.")
+            grad_norm, group_grad_norms = clip_optimizer_group_grads(
+                optimizer, default_clip_norm=clip_norm
+            )
+            rates = update_policy_learning_rates(optimizer, global_step - 1)
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
 
         if (
             device.type == "cuda"
@@ -1238,7 +1262,8 @@ def run_matrix_training(
     patch_matrix_tokenization()
     if model_key not in MATRIX_MODELS:
         raise ValueError(f"Unknown model_key {model_key!r}. Choose from {list(MATRIX_MODELS)}.")
-    prof = _resolve_profile_settings(profile)
+    cfg = MATRIX_MODELS[model_key]
+    prof = _resolve_profile_settings(profile, family=cfg["family"])
     resolved_output_root = (
         output_root if output_root is not None else f"outputs/matrix/{prof['run_namespace']}"
     )
@@ -1251,7 +1276,6 @@ def run_matrix_training(
     resolved_max_microbatch_tokens = (
         mb_profile["max_microbatch_tokens"] if mb_profile is not None else None
     )
-    cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
     policy = unified_recipe(cfg["family"])
     repo = (
@@ -1296,18 +1320,21 @@ def run_matrix_training(
 
     train_dir = root / "training"
     bench_dir = root / "benchmarks"
+    pretrained_dir = root / "pretrained_model"
     ledger_file = root / "pipeline_state.json"
     legacy_ledger_file = root / "ledger.json"
     rep_file = train_dir / "training_report.json"
 
     def wipe_stale_artifacts() -> None:
-        for target in (train_dir, bench_dir):
+        for target in (train_dir, bench_dir, pretrained_dir):
             if target.is_symlink() or target.resolve().parent != root:
                 raise ValueError("Refusing to clear artifacts outside the selected run directory.")
         if train_dir.exists():
             shutil.rmtree(train_dir, ignore_errors=True)
         if bench_dir.exists():
             shutil.rmtree(bench_dir, ignore_errors=True)
+        if pretrained_dir.exists():
+            shutil.rmtree(pretrained_dir, ignore_errors=True)
         if ledger_file.exists():
             ledger_file.unlink(missing_ok=True)
         if legacy_ledger_file.exists():
@@ -1558,6 +1585,19 @@ def run_matrix_training(
         )
     if not hasattr(model, "diff_token_ids") or getattr(model, "diff_token_ids", None) is None:
         object.__setattr__(model, "diff_token_ids", resolve_diff_token_ids(decoder_tokenizer))
+    if not hasattr(model, "trivial_token_ids") or getattr(model, "trivial_token_ids", None) is None:
+        object.__setattr__(model, "trivial_token_ids", extract_trivial_token_ids(decoder_tokenizer))
+
+    stage1_lambda_ptr = (
+        float(getattr(_config, "V4_LAMBDA_PTR_STAGE1", 0.10))
+        if prof["profile"] == "v4" and spec.encoder is not None
+        else 0.0
+    )
+    stage2_lambda_ptr = (
+        float(getattr(_config, "V4_LAMBDA_PTR_STAGE2", 0.03))
+        if prof["profile"] == "v4" and spec.encoder is not None
+        else 0.0
+    )
 
     compatibility = {
         "architecture": (
@@ -1595,6 +1635,14 @@ def run_matrix_training(
         "total_steps": resolved_total,
         "stage1_steps": resolved_stage1,
         "stage2_steps": resolved_stage2,
+        **(
+            {
+                "lambda_ptr_stage1": stage1_lambda_ptr,
+                "lambda_ptr_stage2": stage2_lambda_ptr,
+            }
+            if prof["profile"] == "v4" and spec.encoder is not None
+            else {}
+        ),
     }
 
     # Determine resume point
@@ -1679,6 +1727,7 @@ def run_matrix_training(
                 shared_schedule=shared_schedule,
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
+                lambda_ptr=0.0,
                 max_microbatch_size=resolved_max_microbatch_size,
                 max_microbatch_tokens=resolved_max_microbatch_tokens,
             )
@@ -1721,6 +1770,7 @@ def run_matrix_training(
                 shared_schedule=shared_schedule,
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
+                lambda_ptr=stage1_lambda_ptr,
                 max_microbatch_size=resolved_max_microbatch_size,
                 max_microbatch_tokens=resolved_max_microbatch_tokens,
             )
@@ -1766,6 +1816,7 @@ def run_matrix_training(
                 asymmetric_warmup=(resolved_stage1 == 0),
                 loss_reduction=resolved_loss_reduction,
                 length_cap=resolved_length_cap,
+                lambda_ptr=stage2_lambda_ptr,
                 max_microbatch_size=resolved_max_microbatch_size,
                 max_microbatch_tokens=resolved_max_microbatch_tokens,
             )
@@ -1914,7 +1965,8 @@ def run_matrix_benchmark(
     patch_matrix_tokenization()
     if model_key not in MATRIX_MODELS:
         raise ValueError(f"Unknown model_key {model_key!r}. Choose from {list(MATRIX_MODELS)}.")
-    prof = _resolve_profile_settings(profile)
+    cfg = MATRIX_MODELS[model_key]
+    prof = _resolve_profile_settings(profile, family=cfg["family"])
     resolved_output_root = (
         output_root if output_root is not None else f"outputs/matrix/{prof['run_namespace']}"
     )
@@ -1923,7 +1975,6 @@ def run_matrix_benchmark(
     active_benchmarks = (
         list(benchmark_suite) if benchmark_suite is not None else list(prof["benchmarks"])
     )
-    cfg = MATRIX_MODELS[model_key]
     spec = make_experiment_spec(model_key)
     resolved_context_mode = (
         context_mode

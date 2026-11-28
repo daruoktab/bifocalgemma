@@ -617,41 +617,55 @@ def run_batched_context_benchmark(
 
         for row in chunk_rows:
             cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
+            row_cap = row.get("max_new_tokens")
+            reserve_tokens = (
+                min(max_new_tokens, row_cap)
+                if isinstance(row_cap, int) and not isinstance(row_cap, bool) and row_cap > 0
+                else max_new_tokens
+            )
             enc, prefix, used_number_lines = _prompt_ids_with_metadata(
                 row,
                 spec,
                 encoder,
                 decoder,
                 encoder_limit=cap,
+                decoder_limit=decoder_limit,
+                max_new_tokens_reserve=reserve_tokens,
                 context_mode=context_mode,
                 repair_mode=repair_mode,
             )
+            uses_encoder = (
+                bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
+            )
 
             def _paired_budget_for(*, number_lines: bool) -> tuple[int, int]:
-                paired_budget_mode = (
-                    "disjoint" if context_mode in ("disjoint", "local_only") else None
-                )
-                paired_prompt = decoder_prompt(
-                    row,
-                    paired=True,
-                    context_mode=paired_budget_mode,
-                    repair_mode=repair_mode,
-                    number_lines=number_lines,
-                )
-                try:
-                    paired_rendered = decoder.apply_chat_template(
-                        [{"role": "user", "content": paired_prompt}],
-                        tokenize=False,
-                        add_generation_prompt=True,
-                        enable_thinking=False,
+                if uses_encoder and number_lines == used_number_lines:
+                    paired_size = len(prefix)
+                else:
+                    paired_budget_mode = (
+                        "disjoint" if context_mode in ("disjoint", "local_only") else None
                     )
-                except TypeError:
-                    paired_rendered = decoder.apply_chat_template(
-                        [{"role": "user", "content": paired_prompt}],
-                        tokenize=False,
-                        add_generation_prompt=True,
+                    paired_prompt = decoder_prompt(
+                        row,
+                        paired=True,
+                        context_mode=paired_budget_mode,
+                        repair_mode=repair_mode,
+                        number_lines=number_lines,
                     )
-                paired_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
+                    try:
+                        paired_rendered = decoder.apply_chat_template(
+                            [{"role": "user", "content": paired_prompt}],
+                            tokenize=False,
+                            add_generation_prompt=True,
+                            enable_thinking=False,
+                        )
+                    except TypeError:
+                        paired_rendered = decoder.apply_chat_template(
+                            [{"role": "user", "content": paired_prompt}],
+                            tokenize=False,
+                            add_generation_prompt=True,
+                        )
+                    paired_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
                 budget = effective_generation_budget(
                     max_new_tokens,
                     row_cap=row.get("max_new_tokens"),
@@ -661,9 +675,6 @@ def run_batched_context_benchmark(
                 return paired_size, budget
 
             paired_prefix_size, new_tokens = _paired_budget_for(number_lines=used_number_lines)
-            uses_encoder = (
-                bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
-            )
             total = decoder_limit if uses_encoder else cap + decoder_limit + 512
             if len(prefix) + new_tokens > total and not uses_encoder and used_number_lines:
                 enc, prefix, used_number_lines = _prompt_ids_with_metadata(
@@ -672,6 +683,8 @@ def run_batched_context_benchmark(
                     encoder,
                     decoder,
                     encoder_limit=cap,
+                    decoder_limit=decoder_limit,
+                    max_new_tokens_reserve=reserve_tokens,
                     context_mode=context_mode,
                     repair_mode=repair_mode,
                     number_lines=False,

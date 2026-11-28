@@ -14,7 +14,9 @@ from typing import Any
 
 from bifocalgemma.contracts import RepositoryFile, RepositorySnapshot
 from bifocalgemma.data.context_tasks import (
+    dynamic_sliding_bifocal_split,
     format_numbered_code,
+    reserved_output_token_budget,
 )
 from bifocalgemma.data.context_tasks import (
     split_disjoint_context as split_disjoint_context,
@@ -343,8 +345,7 @@ def split_context_for_mode(
         dec_text = f"{header}\n\n{dec_local_ctx}" if dec_local_ctx else header
         if context_mode == "local_only":
             return dec_text, ""
-        enc_text = enc_body or f"### Issue\n{instruction}"
-        return dec_text, enc_text
+        return dec_text, enc_body
 
     has_structured_context = (
         _parse_fim_sections(context) is not None
@@ -380,8 +381,7 @@ def split_context_for_mode(
         dec_text = f"{instruction}\n\n{dec_local_ctx}" if dec_local_ctx else instruction
         if context_mode == "local_only":
             return dec_text, ""
-        enc_text = enc_body or instruction
-        return dec_text, enc_text
+        return dec_text, enc_body
 
     if context_mode == "full":
         if _context_already_includes_instruction(context, instruction):
@@ -497,6 +497,104 @@ def decoder_prompt(
     return instruction
 
 
+def _render_chat_template(decoder, prompt: str) -> str:
+    try:
+        return decoder.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        return decoder.apply_chat_template(
+            [{"role": "user", "content": prompt}],
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+
+
+def _infer_eval_task_type(row: dict[str, Any]) -> str:
+    if row.get("record_type") == "repository_patch_v1":
+        return "repair"
+    raw_task = row.get("task_type")
+    if isinstance(raw_task, str) and raw_task.strip():
+        return raw_task.strip().lower()
+    bench = str(row.get("benchmark") or row.get("collection") or "").strip().lower()
+    if "gsm8k" in bench or "math" in bench:
+        return "math"
+    if "niah" in bench:
+        return "niah"
+    if "sweqa" in bench or "longcodeqa" in bench or "qa" in bench:
+        return "qa"
+    if "mcq" in bench:
+        return "mcq"
+    return "completion"
+
+
+def _strip_duplicate_longcodeqa_question(context: str, instruction: str) -> str:
+    if "\nQuestion:" not in instruction or not context:
+        return context
+    _, _, question_part = instruction.partition("\nQuestion:")
+    q_stripped = question_part.strip()
+    if not q_stripped:
+        return context
+    for marker in (
+        f"\n\nQuestion:\n{q_stripped}",
+        f"\n\nQuestion: {q_stripped}",
+        f"\n\nQuestion:{q_stripped}",
+        f"\nQuestion:\n{q_stripped}",
+        f"\nQuestion: {q_stripped}",
+    ):
+        if context.endswith(marker):
+            return context[: -len(marker)].rstrip("\n")
+    return context
+
+
+def _build_paired_eval_header_and_row(
+    row: dict[str, Any],
+    *,
+    repair_mode: str | None = None,
+) -> tuple[str, dict[str, Any], str]:
+    instruction = _deduplicate_longcodeqa_headers(str(row["instruction"]))
+    context = _deduplicate_longcodeqa_headers(
+        _normalize_fim_cursor_marker(str(row.get("context") or ""))
+    )
+    context = _strip_duplicate_longcodeqa_question(context, instruction)
+    task_type = _infer_eval_task_type(row)
+    is_repair = row.get("record_type") == "repository_patch_v1" or task_type == "repair"
+    if is_repair:
+        eff_repair_mode = _resolve_repair_mode(row, repair_mode)
+        repair_prefix = (
+            _FULL_FUNCTION_REPAIR_PREFIX
+            if eff_repair_mode == "full_function"
+            else _REPAIR_INSTRUCTION_PREFIX
+        )
+        clean_ctx = context
+        for pfx in (_REPAIR_INSTRUCTION_PREFIX, _FULL_FUNCTION_REPAIR_PREFIX):
+            if clean_ctx.startswith(pfx):
+                clean_ctx = clean_ctx[len(pfx) :].lstrip("\r\n")
+                break
+        target_file = _single_repair_target_file(row)
+        banner = f"Target file: {target_file}\n\n" if target_file else ""
+        header = f"{repair_prefix}\n\n{banner}{instruction}"
+        split_row = {
+            **row,
+            "task_type": "repair",
+            "instruction": instruction,
+            "context": clean_ctx,
+        }
+        return header, split_row, "repair"
+
+    header = instruction
+    split_row = {
+        **row,
+        "task_type": task_type,
+        "instruction": instruction,
+        "context": context,
+    }
+    return header, split_row, task_type
+
+
 def _prompt_ids_with_metadata(
     row,
     spec,
@@ -504,6 +602,8 @@ def _prompt_ids_with_metadata(
     decoder,
     *,
     encoder_limit,
+    decoder_limit: int = 8192,
+    max_new_tokens_reserve: int | None = None,
     context_mode: str | None = None,
     repair_mode: str | None = None,
     number_lines: bool = True,
@@ -521,55 +621,114 @@ def _prompt_ids_with_metadata(
         raise ValueError("disjoint_context_mode_requires_encoder")
 
     use_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
-    enc = ()
-    if use_encoder:
-        if encoder is None:
-            raise ValueError("benchmark_missing_encoder_tokenizer")
-        enc_text = encoder_context(
+    if not use_encoder:
+        prompt = decoder_prompt(
             row,
-            paired=True,
+            paired=False,
             context_mode=context_mode,
             repair_mode=repair_mode,
             number_lines=number_lines,
         )
-        enc = tuple(encoder.encode(enc_text, add_special_tokens=True)) if enc_text else ()
-        enc_bos = getattr(encoder, "bos_token_id", None)
-        if enc and enc_bos is not None and enc[0] != enc_bos:
-            enc = (enc_bos, *enc)
-        if len(enc) > encoder_limit:
-            if number_lines:
-                return _prompt_ids_with_metadata(
-                    row,
-                    spec,
-                    encoder,
-                    decoder,
-                    encoder_limit=encoder_limit,
-                    context_mode=context_mode,
-                    repair_mode=repair_mode,
-                    number_lines=False,
-                )
-            raise ValueError("encoder_context_overflow")
-    prompt = decoder_prompt(
-        row,
-        paired=use_encoder,
-        context_mode=context_mode,
-        repair_mode=repair_mode,
-        number_lines=number_lines,
+        text = _render_chat_template(decoder, prompt)
+        prefix = tuple(decoder.encode(text, add_special_tokens=False))
+        if not prefix or (decoder.bos_token_id is not None and prefix[0] != decoder.bos_token_id):
+            raise ValueError("benchmark_bos_policy")
+        return (), prefix, number_lines
+
+    if encoder is None:
+        raise ValueError("benchmark_missing_encoder_tokenizer")
+
+    if str(row.get("benchmark", "")).lower() == "gsm8k":
+        instruction = _deduplicate_longcodeqa_headers(str(row["instruction"]))
+        context = _deduplicate_longcodeqa_headers(str(row.get("context") or ""))
+        prompt = (
+            context
+            if _context_already_includes_instruction(context, instruction)
+            else (f"{instruction}\n\n{context}" if context else instruction)
+        )
+        text = _render_chat_template(decoder, prompt)
+        prefix = tuple(decoder.encode(text, add_special_tokens=False))
+        if len(prefix) <= max(1, decoder_limit - 128):
+            if not prefix or (
+                decoder.bos_token_id is not None and prefix[0] != decoder.bos_token_id
+            ):
+                raise ValueError("benchmark_bos_policy")
+            return (), prefix, number_lines
+
+    header, split_row, task_type = _build_paired_eval_header_and_row(row, repair_mode=repair_mode)
+    base_prefix_tokens = len(
+        decoder.encode(_render_chat_template(decoder, header), add_special_tokens=False)
     )
-    try:
-        text = decoder.apply_chat_template(
-            [{"role": "user", "content": prompt}],
-            tokenize=False,
-            add_generation_prompt=True,
-            enable_thinking=False,
+    task_reserve = reserved_output_token_budget(task_type, decoder_limit=decoder_limit)
+    if max_new_tokens_reserve is not None:
+        eff_reserve = max(task_reserve, min(max_new_tokens_reserve, decoder_limit // 2))
+    else:
+        eff_reserve = task_reserve
+    allow_lexical = not (
+        str(row.get("benchmark", "")).lower() == "reponiah" or task_type in {"niah", "retrieval"}
+    )
+    cur_dec_budget = max(0, decoder_limit - eff_reserve - base_prefix_tokens - 16)
+    cur_enc_budget = max(0, encoder_limit - 16)
+    max_allowed_prefix = max(1, decoder_limit - eff_reserve)
+    enc_bos = getattr(encoder, "bos_token_id", None)
+
+    enc: tuple[int, ...] = ()
+    prefix: tuple[int, ...] = ()
+    dropped_blocks = 0
+    for _ in range(4):
+        split = dynamic_sliding_bifocal_split(
+            split_row,
+            decoder_context_token_budget=cur_dec_budget,
+            encoder_token_budget=cur_enc_budget,
+            decoder_tokenizer=decoder,
+            encoder_tokenizer=encoder,
+            allow_lexical_routing=allow_lexical,
+            number_lines=number_lines,
         )
-    except TypeError:
-        text = decoder.apply_chat_template(
-            [{"role": "user", "content": prompt}],
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-    prefix = tuple(decoder.encode(text, add_special_tokens=False))
+        dropped_blocks = split.dropped_block_count
+        dec_local_ctx = split.decoder_local_context
+        enc_body = split.encoder_context
+
+        if enc_body.strip() == "":
+            enc = ()
+        else:
+            enc = tuple(encoder.encode(enc_body, add_special_tokens=True))
+            if enc and enc_bos is not None and enc[0] != enc_bos:
+                enc = (enc_bos, *enc)
+
+        prompt = f"{header}\n\n{dec_local_ctx}" if dec_local_ctx else header
+        text = _render_chat_template(decoder, prompt)
+        prefix = tuple(decoder.encode(text, add_special_tokens=False))
+
+        dec_overflow = len(prefix) - max_allowed_prefix
+        enc_overflow = len(enc) - encoder_limit
+        if dec_overflow <= 0 and enc_overflow <= 0:
+            break
+        if dec_overflow > 0 and cur_dec_budget > 0:
+            cur_dec_budget = max(0, cur_dec_budget - dec_overflow - 16)
+            continue
+        if enc_overflow > 0 and cur_enc_budget > 0:
+            cur_enc_budget = max(0, cur_enc_budget - enc_overflow - 16)
+            continue
+        break
+
+    if len(enc) > encoder_limit or (number_lines and dropped_blocks > 0):
+        if number_lines:
+            return _prompt_ids_with_metadata(
+                row,
+                spec,
+                encoder,
+                decoder,
+                encoder_limit=encoder_limit,
+                decoder_limit=decoder_limit,
+                max_new_tokens_reserve=max_new_tokens_reserve,
+                context_mode=context_mode,
+                repair_mode=repair_mode,
+                number_lines=False,
+            )
+        if len(enc) > encoder_limit:
+            raise ValueError("encoder_context_overflow")
+
     if not prefix or (decoder.bos_token_id is not None and prefix[0] != decoder.bos_token_id):
         raise ValueError("benchmark_bos_policy")
     return enc, prefix, number_lines
@@ -582,6 +741,8 @@ def _prompt_ids_impl(
     decoder,
     *,
     encoder_limit,
+    decoder_limit: int = 8192,
+    max_new_tokens_reserve: int | None = None,
     context_mode: str | None = None,
     repair_mode: str | None = None,
     number_lines: bool = True,
@@ -592,6 +753,8 @@ def _prompt_ids_impl(
         encoder,
         decoder,
         encoder_limit=encoder_limit,
+        decoder_limit=decoder_limit,
+        max_new_tokens_reserve=max_new_tokens_reserve,
         context_mode=context_mode,
         repair_mode=repair_mode,
         number_lines=number_lines,
@@ -606,6 +769,8 @@ def prompt_ids(
     decoder,
     *,
     encoder_limit,
+    decoder_limit: int = 8192,
+    max_new_tokens_reserve: int | None = None,
     context_mode: str | None = None,
     repair_mode: str | None = None,
 ):
@@ -615,6 +780,8 @@ def prompt_ids(
         encoder,
         decoder,
         encoder_limit=encoder_limit,
+        decoder_limit=decoder_limit,
+        max_new_tokens_reserve=max_new_tokens_reserve,
         context_mode=context_mode,
         repair_mode=repair_mode,
     )
@@ -1372,40 +1539,43 @@ def run_context_benchmark(
             {**case_info, "stage": "benchmark_case_started", "generated_tokens": 0}, force=True
         )
         cap = min(encoder_limit, row.get("max_encoder_tokens", encoder_limit))
+        row_cap = row.get("max_new_tokens")
+        reserve_tokens = (
+            min(max_new_tokens, row_cap)
+            if isinstance(row_cap, int) and not isinstance(row_cap, bool) and row_cap > 0
+            else max_new_tokens
+        )
         enc, prefix, used_number_lines = _prompt_ids_with_metadata(
             row,
             spec,
             encoder,
             decoder,
             encoder_limit=cap,
+            decoder_limit=decoder_limit,
+            max_new_tokens_reserve=reserve_tokens,
             context_mode=context_mode,
             repair_mode=repair_mode,
         )
 
+        uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
+
         def _paired_budget_for(*, number_lines: bool) -> tuple[int, int]:
             # Same output allowance for pairs and baselines: reserve the paired IT prefix.
-            paired_budget_mode = "disjoint" if context_mode in ("disjoint", "local_only") else None
-            paired_prompt = decoder_prompt(
-                row,
-                paired=True,
-                context_mode=paired_budget_mode,
-                repair_mode=repair_mode,
-                number_lines=number_lines,
-            )
-            try:
-                paired_rendered = decoder.apply_chat_template(
-                    [{"role": "user", "content": paired_prompt}],
-                    tokenize=False,
-                    add_generation_prompt=True,
-                    enable_thinking=False,
+            if uses_encoder and number_lines == used_number_lines:
+                paired_size = len(prefix)
+            else:
+                paired_budget_mode = (
+                    "disjoint" if context_mode in ("disjoint", "local_only") else None
                 )
-            except TypeError:
-                paired_rendered = decoder.apply_chat_template(
-                    [{"role": "user", "content": paired_prompt}],
-                    tokenize=False,
-                    add_generation_prompt=True,
+                paired_prompt = decoder_prompt(
+                    row,
+                    paired=True,
+                    context_mode=paired_budget_mode,
+                    repair_mode=repair_mode,
+                    number_lines=number_lines,
                 )
-            paired_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
+                paired_rendered = _render_chat_template(decoder, paired_prompt)
+                paired_size = len(decoder.encode(paired_rendered, add_special_tokens=False))
             budget = effective_generation_budget(
                 max_new_tokens,
                 row_cap=row.get("max_new_tokens"),
@@ -1415,7 +1585,6 @@ def run_context_benchmark(
             return paired_size, budget
 
         paired_prefix_size, new_tokens = _paired_budget_for(number_lines=used_number_lines)
-        uses_encoder = bool(spec.encoder) if context_mode is None else context_mode == "disjoint"
         total = decoder_limit if uses_encoder else cap + decoder_limit + 512
         if len(prefix) + new_tokens > total and not uses_encoder and used_number_lines:
             enc, prefix, used_number_lines = _prompt_ids_with_metadata(
@@ -1424,6 +1593,8 @@ def run_context_benchmark(
                 encoder,
                 decoder,
                 encoder_limit=cap,
+                decoder_limit=decoder_limit,
+                max_new_tokens_reserve=reserve_tokens,
                 context_mode=context_mode,
                 repair_mode=repair_mode,
                 number_lines=False,

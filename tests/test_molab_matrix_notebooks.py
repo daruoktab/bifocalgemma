@@ -77,7 +77,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2it-2it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -86,7 +86,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4base-4it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -95,7 +95,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4it-4it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -104,7 +104,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "symmetric",
         "repo": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4base-2it": {
         "encoder_id": "google/gemma-4-E4B",
@@ -113,7 +113,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4it-2it": {
         "encoder_id": "google/gemma-4-E4B-it",
@@ -122,7 +122,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "3e22461f65e89153144f8adb70e3b8c2cc9845a7",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2base-4it": {
         "encoder_id": "google/gemma-4-E2B",
@@ -131,7 +131,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2it-4it": {
         "encoder_id": "google/gemma-4-E2B-it",
@@ -140,7 +140,7 @@ EXPECTED_MODELS = {
         "decoder_rev": "ee0ef6023621cff504d758262d4e04895a5af4a2",
         "family": "asymmetric",
         "repo": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "e2b-it": {
         "encoder_id": None,
@@ -218,8 +218,8 @@ def test_matrix_v4_profile_curriculum_and_benchmarks():
     )
 
     assert V4_TOTAL_STEPS == 4494
-    assert V4_STAGE1_STEPS == 270
-    assert V4_STAGE2_STEPS == 4224
+    assert V4_STAGE1_STEPS == 899
+    assert V4_STAGE2_STEPS == 3595
     assert V4_STAGE1_STEPS + V4_STAGE2_STEPS == V4_TOTAL_STEPS
     assert V4_EFFECTIVE_BATCH == 16
     assert len(V4_BENCHMARKS) == 10
@@ -1095,7 +1095,12 @@ def test_matrix_tokenization_patch_it_encoder_and_query_prefix_contract():
     enc, _ = eval_ctx_mod.prompt_ids(
         eval_row, spec_it, MockITEncoder(), MockDecoder(), encoder_limit=1000
     )
-    assert enc == (2, 101, 102, 103)
+    assert enc == ()
+
+    enc_long, _ = eval_ctx_mod.prompt_ids(
+        eval_row, spec_it, MockITEncoder(), MockDecoder(), encoder_limit=1000, decoder_limit=10
+    )
+    assert enc_long == (2, 101, 102, 103)
 
 
 def test_pointer_loss_gradient_checkpointing_and_trivial_filtering():
@@ -1252,7 +1257,7 @@ def test_paired_notebooks_contain_bifocalgemma_and_two_stage_labels():
         code = (ROOT / "notebooks" / fname).read_text(encoding="utf-8")
         assert "SwiGLUDualGateBridge" in code
         assert (
-            "Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps"
+            "Stage 1 Warmup (20%, 899 steps) + Stage 2 Joint SFT (80%, 3,595 steps) = 4,494 steps"
             in code
         )
         assert "Runtime BifocalGemma siap" in code

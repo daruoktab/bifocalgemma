@@ -245,6 +245,57 @@ def test_recover_remote_run_tolerates_interrupted_recovery_and_rejects_local_onl
         recover_remote_run("fixture/model", unuploaded_pred, prefix, token="fixture")
 
 
+def test_recover_remote_run_ignores_dot_temp_and_heartbeat_files(tmp_path, monkeypatch):
+    remote = {}
+
+    class Api:
+        def __init__(self, token=None):
+            pass
+
+        def repo_exists(self, repo):
+            return True
+
+        def model_info(self, repo):
+            return SimpleNamespace(sha="d" * 40)
+
+        def list_repo_files(self, repo, revision=None):
+            return sorted(remote)
+
+    def download(repo, filename, **kwargs):
+        path = tmp_path / "dl" / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(remote[filename])
+        return str(path)
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", Api)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+
+    prefix = "latest/BifocalGemma-E2B-E2B-2it-2it/train"
+    remote[f"{prefix}/upload_complete.json"] = json.dumps({"files": {}}).encode("utf-8")
+    remote[f"{prefix}/pipeline_state.json"] = b'{"stage": "done"}\n'
+
+    # Leftover dot-prefixed temp file and heartbeat file do not block recovery.
+    recoverable = tmp_path / "recoverable"
+    recoverable.mkdir(parents=True)
+    (recoverable / ".pipeline_state.json.tmp123").write_text('{"partial": true}', encoding="utf-8")
+    (recoverable / "last_seen.json").write_text('{"step": 5}', encoding="utf-8")
+
+    recover_remote_run("fixture/model", recoverable, prefix, token="fixture")
+    assert (recoverable / "pipeline_state.json").read_bytes() == remote[
+        f"{prefix}/pipeline_state.json"
+    ]
+    assert not (recoverable / ".pipeline_state.json.tmp123").exists()
+
+    # Unreceipted real file under training/ still raises ValueError with offending path.
+    blocked = tmp_path / "blocked"
+    (blocked / "training").mkdir(parents=True)
+    (blocked / ".pipeline_state.json.tmp123").write_text('{"partial": true}', encoding="utf-8")
+    (blocked / "last_seen.json").write_text('{"step": 5}', encoding="utf-8")
+    (blocked / "training/unreceipted.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(ValueError, match="Local run has artifacts without a pipeline receipt"):
+        recover_remote_run("fixture/model", blocked, prefix, token="fixture")
+
+
 def test_reusable_training_report_backfills_missing_final_stage_when_verified(tmp_path):
     import torch
     from safetensors.torch import save_file

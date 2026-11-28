@@ -202,20 +202,23 @@ def _pointer_chunk_forward(
     if trivial_tensor is not None and trivial_tensor.numel() > 0:
         valid_t = valid_t & ~torch.isin(t_chunk, trivial_tensor)
 
+    enc_mask_3d = enc_valid_mask[:, None, :].bool()
+    has_any_enc = enc_mask_3d.any(dim=-1, keepdim=True)
+    safe_enc_mask = enc_mask_3d | ~has_any_enc
+
     scores = torch.bmm(q_chunk, k_ptr.transpose(1, 2)) * scale
-    scores = scores.masked_fill(~enc_valid_mask[:, None, :].bool(), float("-inf"))
+    scores = scores.masked_fill(~safe_enc_mask, float("-inf"))
     log_denom = torch.logsumexp(scores, dim=-1)
 
     match_mask = (
-        (t_chunk[:, :, None] == enc_token_ids[:, None, :])
-        & enc_valid_mask[:, None, :].bool()
-        & valid_t[:, :, None]
+        (t_chunk[:, :, None] == enc_token_ids[:, None, :]) & enc_mask_3d & valid_t[:, :, None]
     )
     has_copy_target = match_mask.any(dim=-1)
     if not bool(has_copy_target.any()):
         return q_chunk.sum() * 0.0, torch.tensor(0, dtype=torch.int64, device=q_chunk.device)
 
-    pos_scores = scores.masked_fill(~match_mask, float("-inf"))
+    safe_match_mask = match_mask | ~has_copy_target.unsqueeze(-1)
+    pos_scores = scores.masked_fill(~safe_match_mask, float("-inf"))
     log_num = torch.logsumexp(pos_scores, dim=-1)
     token_nll = -(log_num - log_denom)
     valid_nll = token_nll[has_copy_target]
@@ -331,10 +334,10 @@ def streaming_pointer_auxiliary_loss(
     """Parameter-free zero-materialization streaming pointer NLL aligning decoder hidden states to bridge states."""
     if z_enc is None or z_enc.shape[1] == 0 or not bool(enc_valid_mask.any()):
         return h_dec.sum() * 0.0
-    d_model = max(1, h_dec.shape[-1])
-    q_norm = F.normalize(h_dec.float(), dim=-1) * math.sqrt(float(d_model))
-    k_norm = F.normalize(z_enc.float(), dim=-1) * math.sqrt(float(d_model))
-    scale = 1.0 / math.sqrt(float(d_model))
+    q_norm = F.normalize(h_dec.float(), dim=-1)
+    k_norm = F.normalize(z_enc.float(), dim=-1)
+    # Calibrated dimension-invariant inverse temperature (tau = 0.10) across E2B and E4B.
+    scale = 10.0
     return _streaming_lse_pointer_nll(
         q_norm,
         k_norm,

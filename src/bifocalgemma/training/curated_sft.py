@@ -19,7 +19,7 @@ def prepare_curated_training(
     progress=None,
     disjoint_context: bool | None = None,
     decoder_local_only: bool = False,
-    local_window_lines: int = 48,
+    local_window_lines: int | None = None,
 ):
     """Consume all frozen IDs in order; no sampling, re-split or overflow dropping."""
     rows, pool = load_curated_pool(pool_directory)
@@ -61,21 +61,31 @@ def prepare_curated_training(
     if use_disjoint or decoder_local_only:
         cache_identity["disjoint_context"] = use_disjoint
         cache_identity["decoder_local_only"] = decoder_local_only
-        cache_identity["local_window_lines"] = local_window_lines
+        cache_identity["local_window_lines"] = (
+            48 if local_window_lines is None else local_window_lines
+        )
+    if spec.encoder is not None:
+        cache_identity["tokenization_policy"] = "dynamic_sliding_bifocal_v4"
 
-    def tokenize(row):
+    train_ids = {r["instance_id"] for r in rows["train"]}
+
+    def tokenize(row, *, is_train: bool | None = None):
+        split_is_train = (row["instance_id"] in train_ids) if is_train is None else is_train
         context = row.get("context") or (
             f"### Instruction\n{row['instruction']}\n\n### File: {row['path']}\n{row['before']}"
         )
         enriched = {**row, "context": context}
         if use_disjoint:
             enriched["disjoint_context"] = True
-            enriched["local_window_lines"] = local_window_lines
+            if local_window_lines is not None:
+                enriched["local_window_lines"] = local_window_lines
+            enriched["training_anti_shortcut"] = split_is_train and spec.encoder is not None
         elif disjoint_context is False:
             enriched["disjoint_context"] = False
         if decoder_local_only:
             enriched["decoder_local_only"] = True
-            enriched["local_window_lines"] = local_window_lines
+            if local_window_lines is not None:
+                enriched["local_window_lines"] = local_window_lines
         return tokenize_repository_record(
             enriched,
             spec,
@@ -98,7 +108,10 @@ def prepare_curated_training(
         )
         tokenized_fingerprint = stable_fingerprint(receipt)
     else:
-        outputs = {split: [tokenize(row) for row in items] for split, items in rows.items()}
+        outputs = {
+            split: [tokenize(row, is_train=(split == "train")) for row in items]
+            for split, items in rows.items()
+        }
         tokenized_fingerprint = stable_fingerprint(
             {
                 split: [

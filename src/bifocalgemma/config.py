@@ -175,17 +175,20 @@ DECOUPLE_FULL_ATTN_CROSS_KV = True
 
 # V4 training and benchmark parity constants (legacy v3 constants above retained for resume compat).
 V4_MATRIX_RUN_NAMESPACE = "versionless-repair-v4"
+V4_BIFOCAL_RUN_NAMESPACE = "sliding-bifocal-v4"
+V4_LAMBDA_PTR_STAGE1 = 0.10
+V4_LAMBDA_PTR_STAGE2 = 0.03
 V4_DATASET_REVISION = "4b8d6b366d68c4c89feaf450407ebe2b51e87379"
 V4_COLLECTION = "mixed_context_enc32k_dec8k_v4"
 V4_EFFECTIVE_BATCH = 16
 V4_BATCH_SIZE = 2
 V4_ACCUMULATION = 8
-V4_STAGE1_FRACTION = 0.06
+V4_STAGE1_FRACTION = 0.20
 V4_NUM_EPOCHS = 1.5
 V4_TOTAL_EXAMPLES = 47932
 V4_TOTAL_STEPS = 4494
-V4_STAGE1_STEPS = 270
-V4_STAGE2_STEPS = 4224
+V4_STAGE1_STEPS = 899
+V4_STAGE2_STEPS = 3595
 V4_HEAVY_BENCHMARK_SAMPLE_LIMIT = 500
 
 EXTERNAL_COMPARISON_MODELS: dict[str, dict[str, Any]] = {
@@ -254,7 +257,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2it-2it": {
         "title": "BifocalGemma · 2IT → 2IT (Symmetric)",
@@ -268,7 +271,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4base-4it": {
         "title": "BifocalGemma · 4Base → 4IT (Symmetric)",
@@ -282,7 +285,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4it-4it": {
         "title": "BifocalGemma · 4IT → 4IT (Symmetric)",
@@ -296,7 +299,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4base-2it": {
         "title": "BifocalGemma · 4Base → 2IT (Asymmetric)",
@@ -310,7 +313,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4it-2it": {
         "title": "BifocalGemma · 4IT → 2IT (Asymmetric)",
@@ -324,7 +327,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E2B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2base-4it": {
         "title": "BifocalGemma · 2Base → 4IT (Asymmetric)",
@@ -338,7 +341,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2it-4it": {
         "title": "BifocalGemma · 2IT → 4IT (Asymmetric)",
@@ -352,7 +355,7 @@ MATRIX_MODELS: dict[str, dict[str, Any]] = {
         "decoder_size": "E4B",
         "decoder_role": "decoder_it",
         "repo": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "e2b-it": {
         "title": "BifocalGemma · Baseline E2B-IT (Decoder-Only)",

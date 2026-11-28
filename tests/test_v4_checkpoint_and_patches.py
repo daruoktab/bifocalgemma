@@ -39,9 +39,9 @@ def _write_ready_ckpt(train_dir: Path, step: int) -> Path:
 
 
 def test_v4_milestone_checkpoints_survive_pruning_and_hub_retention(tmp_path: Path, monkeypatch):
-    """V4 stage1 (270) and total (4494) checkpoints must survive Stage 2 pruning and Hub sync."""
+    """V4 stage1 (899) and total (4494) checkpoints must survive Stage 2 pruning and Hub sync."""
     train_dir = tmp_path / "training"
-    for step in (270, 1000, 2000, 3000, 4494):
+    for step in (899, 1000, 2000, 3000, 4494):
         _write_ready_ckpt(train_dir, step)
 
     kept = prune_matrix_checkpoints(
@@ -50,13 +50,13 @@ def test_v4_milestone_checkpoints_survive_pruning_and_hub_retention(tmp_path: Pa
         stage1_steps=V4_STAGE1_STEPS,
         total_steps=V4_TOTAL_STEPS,
     )
-    assert kept == ["checkpoint-000270", "checkpoint-003000", "checkpoint-004494"]
-    assert (train_dir / "checkpoint-000270").is_dir()
+    assert kept == ["checkpoint-000899", "checkpoint-003000", "checkpoint-004494"]
+    assert (train_dir / "checkpoint-000899").is_dir()
     assert not (train_dir / "checkpoint-001000").exists()
     assert not (train_dir / "checkpoint-002000").exists()
     assert (train_dir / "checkpoint-004494").is_dir()
 
-    # Also verify synchronize_matrix retains 000270 & 004494 when given v4 horizons
+    # Also verify synchronize_matrix retains 000899 & 004494 when given v4 horizons
     import huggingface_hub
 
     import bifocalgemma.training.checkpoint as ckpt_mod
@@ -101,7 +101,7 @@ def test_v4_milestone_checkpoints_survive_pruning_and_hub_retention(tmp_path: Pa
         total_steps=V4_TOTAL_STEPS,
     )
     assert res["retained_checkpoints"] == [
-        "checkpoint-000270",
+        "checkpoint-000899",
         "checkpoint-003000",
         "checkpoint-004494",
     ]
@@ -265,7 +265,9 @@ def test_matrix_resume_accepts_token_identical_prompt_source_reformat(tmp_path: 
 
     src = Path(mat.__file__).read_text(encoding="utf-8")
     assert "def _compatibility_matches(" in src
-    ns: dict[str, object] = {"Any": object}
+    from typing import Any
+
+    ns: dict[str, Any] = {"Any": Any}
     block_start = src.index("    def _compatibility_matches(")
     block_end = src.index("    resume_ckpt = latest_checkpoint(train_dir)", block_start)
     import textwrap

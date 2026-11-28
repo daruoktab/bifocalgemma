@@ -32,7 +32,7 @@ def test_v4_config_constants_and_external_registry():
     assert config.V4_EFFECTIVE_BATCH == 16
     assert config.V4_ACCUMULATION == 8
     assert config.V4_BATCH_SIZE * config.V4_ACCUMULATION == config.V4_EFFECTIVE_BATCH
-    assert config.V4_STAGE1_FRACTION == pytest.approx(0.06)
+    assert config.V4_STAGE1_FRACTION == pytest.approx(0.20)
     assert config.V4_NUM_EPOCHS == pytest.approx(1.5)
     assert config.V4_COLLECTION == "mixed_context_enc32k_dec8k_v4"
     assert config.V4_HEAVY_BENCHMARK_SAMPLE_LIMIT == 500
@@ -358,14 +358,30 @@ def test_three_way_control_modes_longcodeqa_dedup_and_fim_marker():
     paired_spec = config.make_experiment_spec("2it-2it")
     baseline_spec = config.make_experiment_spec("e2b-it")
     spy = SpyTok()
-    enc_d, pref_d = _prompt_ids_impl(
+    enc_default, _ = _prompt_ids_impl(
         ccl_row, paired_spec, spy, spy, encoder_limit=4096, context_mode="disjoint"
     )
+    assert enc_default == ()
+    enc_d, pref_d = _prompt_ids_impl(
+        ccl_row,
+        paired_spec,
+        spy,
+        spy,
+        encoder_limit=4096,
+        decoder_limit=128,
+        context_mode="disjoint",
+    )
     enc_l, pref_l = _prompt_ids_impl(
-        ccl_row, paired_spec, spy, spy, encoder_limit=4096, context_mode="local_only"
+        ccl_row,
+        paired_spec,
+        spy,
+        spy,
+        encoder_limit=4096,
+        decoder_limit=128,
+        context_mode="local_only",
     )
     assert enc_d and enc_l == ()
-    assert pref_d == pref_l
+    assert len(pref_d) <= 128 and len(pref_d) <= len(pref_l)
     with pytest.raises(ValueError, match="disjoint_context_mode_requires_encoder"):
         _prompt_ids_impl(
             ccl_row, baseline_spec, None, spy, encoder_limit=4096, context_mode="disjoint"
@@ -606,8 +622,8 @@ def test_reponiah_32k_zero_overflow_for_bifocalgemma_and_qwen25(tmp_path: Path):
         pub, gold = build_repo_niah_case(32768, ratio, seed=42, tokenizer=gemma_tok)
         assert gold["needle"] in pub["context"]
         enc, pref = _prompt_ids_impl(pub, paired_spec, gemma_tok, gemma_tok, encoder_limit=32768)
-        assert len(enc) <= 32768
-        assert len(pref) <= 512
+        assert 0 < len(enc) <= 32768
+        assert len(pref) + 128 <= 8192
 
     # 3. External Qwen2.5-Coder (max_position_embeddings=32768) passes depth=32768 with full 128-token budget
     reponiah_32k = {

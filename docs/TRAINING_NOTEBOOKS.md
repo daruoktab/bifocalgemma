@@ -14,7 +14,7 @@ Dokumen [sequential training](SEQUENTIAL_TRAINING.md) serta
 1. Unggah satu notebook `train_*.py` dari matriks.
 2. Jalankan setup; loader memverifikasi ZIP runtime yang dipin dan dependency.
 3. Sediakan `HF_TOKEN` atau isi form token, lalu tekan **Jalankan**.
-4. Pipeline menjalankan training/resume, export/upload, dan delapan benchmark.
+4. Pipeline menjalankan training/resume, export/upload, dan sepuluh benchmark.
 5. Periksa dashboard, status sesi, serta receipt upload; status tertunda belum
    membuktikan artefak remote lengkap.
 
@@ -29,22 +29,30 @@ dan pemanggilan `run_matrix_training_and_benchmark`.
 Source utama berada di modul canonical, bukan disalin sebagai training loop
 di setiap notebook.
 
-Dataset dibaca dari koleksi beku `mixed_context_enc32k_dec8k_v3` pada revision
-immutable yang tercantum di [config.py](../src/bifocalgemma/config.py).
-Default 44.408 contoh training, batch 2, accumulation 2, menghasilkan 11.102
-optimizer steps. Schedule dibuat sekali dan dipakai sesuai identitas run;
-pipeline utama tidak mengganti contoh dengan comprehension replay.
+Dataset dibaca dari koleksi beku `mixed_context_enc32k_dec8k_v4` pada revision
+immutable `4b8d6b366d68c4c89feaf450407ebe2b51e87379` (tercantum di
+[config.py](../src/bifocalgemma/config.py)). Konfigurasi V4 menggunakan 47.932
+contoh training dan 7.098 contoh dev, `1.5` epoch, `batch_size=2`,
+`accumulation=8` (`effective_batch=16`), menghasilkan total 4.494 optimizer steps
+dengan dynamic length-grouped micro-batching. Schedule dibuat sekali dan
+dipakai sesuai identitas run; pipeline utama tidak mengganti contoh dengan
+comprehension replay.
 
-Pasangan encoder–decoder menjalankan 5.551 steps alignment dengan decoder
-dibekukan, lalu 5.551 steps joint SFT dengan decoder LoRA aktif.
-Baseline decoder-only memakai satu tahap 11.102 steps.
-Optimizer/scheduler meneruskan state sesuai kontrak transisi tahap.
+Delapan model paired BifocalGemma menjalankan Stage 1 frozen-decoder alignment
+20% (899 steps, `lambda_ptr=0.10`) diikuti Stage 2 joint SFT 80% (3.595 steps,
+`lambda_ptr=0.03`). Baseline decoder-only (`e2b-it`, `e4b-it`) menjalankan
+1-stage Full Decoder SFT selama 4.494 steps. Optimizer/scheduler meneruskan
+state sesuai kontrak transisi tahap.
 
 ## Evaluasi dan resume
 
-Enam konfigurasi benchmark penuh: LongCodeQA, HumanEvalFix, SWE-QA oracle,
-SWE-QA noisy, GSM8K 0-shot, dan GSM8K 8-shot. CrossCodeLong chunk/function
-masing-masing memakai sampel deterministik 100 contoh.
+Sepuluh suite benchmark V4 terdiri atas 8 suite penuh
+(`longcodeqa_gemma32k_dec8k_v1`, `reponiah_gemma32k_dec8k_v1` 4K–32K,
+`humanevalfix_python_full_v1`, `humanevalfix_python_v2`,
+`sweqa_oracle_gemma32k_dec8k_v1`, `sweqa_noisy_oracle_gemma32k_dec8k_v1`,
+`gsm8k_zero_shot_v2`, `gsm8k_eight_shot_v2`) dan 2 suite deterministik
+500 sampel (`crosscodelong_chunk_gemma32k_dec8k_v1`,
+`crosscodelong_function_gemma32k_dec8k_v1`).
 
 Reuse benchmark mengikat identitas settings dan checksum checkpoint.
 Export lokal harus tervalidasi; jika upload aktif, metadata konten remote juga
@@ -72,7 +80,7 @@ Publikasi hanya menambah ZIP immutable dan tidak mengganti `runtime/latest.zip`.
 
 ## Lokasi run matrix baru
 
-Konfigurasi matrix memakai folder HF `latest/` dan root lokal `outputs/matrix/versionless-repair-v1/`. Hasil lama disimpan di folder `archive/YYYY-MM-DD/` pada masing-masing repo model. Resume mencari checkpoint di lokasi yang sesuai dengan konfigurasi run. Run V3 lama memerlukan notebook, ZIP dan konfigurasi asli serta lokasi checkpoint yang sesuai. Untuk E4B V3 di step 7.462, notebook yang menunjuk ZIP kompatibel ada pada [commit 071b331](https://github.com/daruoktab/bifocalgemma/blob/071b331/notebooks/train_e4b_it.py).
+Konfigurasi matrix V4 memisahkan lokasi paired BifocalGemma (8 model) pada subfolder HF `sliding-v4/` dan root lokal `outputs/matrix/sliding-bifocal-v4/`, sedangkan baseline decoder-only (`e2b-it`, `e4b-it`) memakai subfolder HF `latest/` dan root lokal `outputs/matrix/versionless-repair-v4/`. Hasil lama disimpan di folder `archive/YYYY-MM-DD/` pada masing-masing repo model. Resume mencari checkpoint di lokasi yang sesuai dengan konfigurasi run. Run V3 lama memerlukan notebook, ZIP dan konfigurasi asli serta lokasi checkpoint yang sesuai. Untuk E4B V3 di step 7.462, notebook yang menunjuk ZIP kompatibel ada pada [commit 071b331](https://github.com/daruoktab/bifocalgemma/blob/071b331/notebooks/train_e4b_it.py).
 
 Runtime baru mempertahankan whitespace target unified diff saat menyusun label training. `learnable_cross_scale=False` membekukan skala cross-attention pada inisialisasi dan di kedua tahap training. Hash semantik run baru berbeda dari V3 dan dari rilis versionless sebelumnya.
 

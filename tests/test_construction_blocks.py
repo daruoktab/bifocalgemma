@@ -188,14 +188,16 @@ class TestDataAndLoss(unittest.TestCase):
         self.assertEqual(tuple(batch.encoder_attention_mask.shape), (1, 0))
         self.assertEqual(batch.labels[0].tolist(), [-100, -100, 18, 106])
 
-    def test_mixed_encoder_presence_is_rejected(self):
-        with self.assertRaises(ValueError):
-            RepairCollator()(
-                [
-                    TokenizedRepairExample("baseline", (), (2, 105), (18, 106)),
-                    TokenizedRepairExample("pair", (2, 12), (2, 105), (18, 106)),
-                ]
-            )
+    def test_mixed_encoder_presence_left_pads_safely(self):
+        batch = RepairCollator()(
+            [
+                TokenizedRepairExample("short_bypass", (), (2, 105), (18, 106)),
+                TokenizedRepairExample("pair_long", (2, 12, 13), (2, 105), (18, 106)),
+            ]
+        )
+        self.assertEqual(tuple(batch.encoder_input_ids.shape), (2, 3))
+        self.assertEqual(batch.encoder_attention_mask[0].tolist(), [False, False, False])
+        self.assertEqual(batch.encoder_attention_mask[1].tolist(), [True, True, True])
 
     def test_encoder_context_excludes_gold_patch(self):
         example = RepairExample(

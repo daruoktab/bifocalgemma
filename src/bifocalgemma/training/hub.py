@@ -197,21 +197,26 @@ def recover_remote_run(repo_id, root, prefix, *, token):
                 )
             if entry.is_file():
                 rel = entry.relative_to(root).as_posix()
-                if in_progress and (
-                    (entry.name.startswith(".recover-") and entry.name.endswith(".tmp"))
-                    or entry.name.startswith(".recovery_in_progress.json.")
+                if entry.name.startswith(".pipeline_state.json.") or (
+                    in_progress
+                    and (
+                        (entry.name.startswith(".recover-") and entry.name.endswith(".tmp"))
+                        or entry.name.startswith(".recovery_in_progress.json.")
+                    )
                 ):
                     temp_files.append(entry)
                     continue
                 local_files.append((rel, entry))
         unexpected = [
             rel
-            for rel, _ in local_files
-            if rel not in recoverable_sidecars and rel not in remote_relatives
+            for rel, entry in local_files
+            if rel not in recoverable_sidecars
+            and rel not in remote_relatives
+            and not any(part.startswith(".") for part in entry.relative_to(root).parts)
         ]
         if unexpected:
             raise ValueError(
-                "Local run has artifacts without a pipeline receipt; inspect before recovery."
+                f"Local run has artifacts without a pipeline receipt ({sorted(unexpected)[:5]}); inspect before recovery."
             )
         if not in_progress:
             remote_lookup = {rel: name for name, rel, _path in remote_items}

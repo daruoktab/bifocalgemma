@@ -147,6 +147,8 @@ def patch_matrix_tokenization() -> None:
                 or kwargs.get("decoder_local_only")
                 or row.get("disjoint_context")
                 or row.get("decoder_local_only")
+                or row.get("context_format") == "v4"
+                or row.get("record_type") == "context_sft_v4"
             ):
                 # v4 disjoint/local-only rows: delegate to the canonical tokenizer.
                 return orig_tokenize_context_task(

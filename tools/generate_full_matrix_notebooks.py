@@ -32,7 +32,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-2base-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2it-2it": {
         "title": "BifocalGemma · 2IT → 2IT (Symmetric)",
@@ -44,7 +44,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-2it-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4base-4it": {
         "title": "BifocalGemma · 4Base → 4IT (Symmetric)",
@@ -56,7 +56,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-4base-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4it-4it": {
         "title": "BifocalGemma · 4IT → 4IT (Symmetric)",
@@ -68,7 +68,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-4it-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4base-2it": {
         "title": "BifocalGemma · 4Base → 2IT (Asymmetric)",
@@ -80,7 +80,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-4base-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "4it-2it": {
         "title": "BifocalGemma · 4IT → 2IT (Asymmetric)",
@@ -92,7 +92,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 2560,
         "dec_dim": 1536,
         "repo_id": "daruokta/bifocalgemma-4it-2it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2base-4it": {
         "title": "BifocalGemma · 2Base → 4IT (Asymmetric)",
@@ -104,7 +104,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-2base-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "2it-4it": {
         "title": "BifocalGemma · 2IT → 4IT (Asymmetric)",
@@ -116,7 +116,7 @@ MATRIX_NOTEBOOK_SPECS = {
         "enc_dim": 1536,
         "dec_dim": 2560,
         "repo_id": "daruokta/bifocalgemma-2it-4it",
-        "subfolder": "latest",
+        "subfolder": "sliding-v4",
     },
     "e2b-it": {
         "title": "BifocalGemma · Baseline E2B-IT (Decoder-Only)",
@@ -190,7 +190,7 @@ def render_notebook(model_key: str, manifest: dict[str, str]) -> str:
         Pelatihan dan evaluasi terpadu Molab (V4): SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
         - **Model:** `{model_key}` ({config_type}: {enc_dim} -> {dec_dim}) · **HF:** [{repo_id}](https://huggingface.co/{repo_id}) (`{subfolder}/`)
         - **Backbones:** Encoder `{encoder_id}` (rev `{encoder_rev}`) | Decoder `{decoder_id}` (rev `{decoder_rev}`)
-        - **Kurikulum V4:** Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps (1.5 epoch, Eff=16, Dynamic Length-Grouped Micro-Batch)
+        - **Kurikulum V4:** Stage 1 Warmup (20%, 899 steps) + Stage 2 Joint SFT (80%, 3,595 steps) = 4,494 steps (1.5 epoch, Eff=16, Dynamic Length-Grouped Micro-Batch)
         - **Benchmarks (10 V4):** 8 Full (longcodeqa, reponiah 4k-32k, humanevalfix full & diff, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-500 (crosscodelong chunk/func)"""
         ready_message = "**Runtime BifocalGemma siap** · SwiGLUDualGateBridge & dynamic benchmark batching aktif."
 

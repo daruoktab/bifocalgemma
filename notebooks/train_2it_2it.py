@@ -33,9 +33,9 @@ def _():
         # BifocalGemma · 2IT → 2IT (Symmetric)
 
         Pelatihan dan evaluasi terpadu Molab (V4): SwiGLUDualGateBridge + Decoupled Full-Rank Cross-Attention.
-        - **Model:** `2it-2it` (Symmetric (2B -> 2B): 1536 -> 1536) · **HF:** [daruokta/bifocalgemma-2it-2it](https://huggingface.co/daruokta/bifocalgemma-2it-2it) (`latest/`)
+        - **Model:** `2it-2it` (Symmetric (2B -> 2B): 1536 -> 1536) · **HF:** [daruokta/bifocalgemma-2it-2it](https://huggingface.co/daruokta/bifocalgemma-2it-2it) (`sliding-v4/`)
         - **Backbones:** Encoder `google/gemma-4-E2B-it` (rev `3e22461f65e89153144f8adb70e3b8c2cc9845a7`) | Decoder `google/gemma-4-E2B-it` (rev `3e22461f65e89153144f8adb70e3b8c2cc9845a7`)
-        - **Kurikulum V4:** Stage 1 Warmup (6%, 270 steps) + Stage 2 Joint SFT (94%, 4,224 steps) = 4,494 steps (1.5 epoch, Eff=16, Dynamic Length-Grouped Micro-Batch)
+        - **Kurikulum V4:** Stage 1 Warmup (20%, 899 steps) + Stage 2 Joint SFT (80%, 3,595 steps) = 4,494 steps (1.5 epoch, Eff=16, Dynamic Length-Grouped Micro-Batch)
         - **Benchmarks (10 V4):** 8 Full (longcodeqa, reponiah 4k-32k, humanevalfix full & diff, sweqa oracle/noisy, gsm8k 0/8-shot) + 2 Sampled-500 (crosscodelong chunk/func)
         """
     )
@@ -127,9 +127,9 @@ def _(mo):
 
     runtime_manifest = {
         "repo_id": "daruokta/bifocalgemma-2026-11-02",
-        "filename": "runtime/runtime-42125aab6f57b42a.zip",
-        "revision": "5ca52298e8ba18129579cc8a6b9e4c9cb6e766f1",
-        "sha256": "42125aab6f57b42a451175c6e1dcfe4fcf0d67f5ac37a9ee5d17e668f6a75800",
+        "filename": "runtime/runtime-47670a020e0f713f.zip",
+        "revision": "db88112632f0167ad81ab0fe0c360d78ad4de1a2",
+        "sha256": "47670a020e0f713f1ec3ec83bc05d5a16020f101b0b73a8aacb0a693e321cdb8",
     }
     runtime_root = load_runtime(
         runtime_manifest["repo_id"],
@@ -151,7 +151,7 @@ def _(dependency_runtime, mo, runtime_root):
     assert dependency_runtime["status"] == "READY"
     MODEL_KEY = "2it-2it"
     HF_REPO_ID = "daruokta/bifocalgemma-2it-2it"
-    HF_SUBFOLDER = "latest"
+    HF_SUBFOLDER = "sliding-v4"
     token_form = mo.ui.dictionary(
         {
             "token": mo.ui.text(

@@ -923,7 +923,10 @@ def configure_memory_efficient_training(model, policy=None):
             )
             target.query_chunk_size = options["query_chunk_size"]
             target.attention_backend = options["attention_backend"]
-            target.structured_masks = model.spec.architecture_version == "normalized_merged_v2"
+            target.structured_masks = model.spec.architecture_version in {
+                "normalized_merged_v2",
+                "swiglu_dual_gate_decoupled_cross_v3",
+            }
             layer.self_attn = target
         if options["gradient_checkpointing"]:
             stack.gradient_checkpointing_enable(

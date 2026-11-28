@@ -13,9 +13,6 @@ class RepairCollator:
     def __call__(self, examples: list[TokenizedRepairExample]) -> Seq2SeqBatch:
         if not examples:
             raise ValueError("Cannot collate an empty batch.")
-        encoder_presence = [bool(example.encoder_ids) for example in examples]
-        if any(encoder_presence) and not all(encoder_presence):
-            raise ValueError("Do not mix decoder-only and encoder-decoder examples in one batch.")
         for example in examples:
             if not example.decoder_prefix_ids or not example.target_ids:
                 raise ValueError("Decoder prefix and target must each contain tokens.")
@@ -32,8 +29,10 @@ class RepairCollator:
         dec_mask = torch.zeros_like(decoder, dtype=torch.bool)
         labels = torch.full_like(decoder, self.ignore_index)
         for row, example in enumerate(examples):
-            encoder[row, -len(example.encoder_ids) :] = torch.tensor(example.encoder_ids)
-            enc_mask[row, -len(example.encoder_ids) :] = True
+            if example.encoder_ids:
+                n_enc = len(example.encoder_ids)
+                encoder[row, -n_enc:] = torch.tensor(example.encoder_ids, dtype=torch.long)
+                enc_mask[row, -n_enc:] = True
             combined = example.decoder_prefix_ids + example.target_ids
             inputs = combined[:-1]
             targets = list(combined[1:])

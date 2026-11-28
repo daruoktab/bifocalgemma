@@ -687,14 +687,14 @@ class FastTrainingPipeline:
             "model_choice": self.cfg.model_choice,
             "collection": self.cfg.collection,
             "dataset_revision": self.cfg.dataset_revision,
-            "total_steps": int(self.cfg.total_steps),
-            "stage1_steps": int(self.cfg.stage1_steps),
-            "batch_size": int(self.cfg.batch_size),
-            "gradient_accumulation_steps": int(self.cfg.gradient_accumulation_steps),
+            "total_steps": self.cfg.total_steps,
+            "stage1_steps": self.cfg.stage1_steps,
+            "batch_size": self.cfg.batch_size,
+            "gradient_accumulation_steps": self.cfg.gradient_accumulation_steps,
             "lr_bridge": float(self.cfg.lr_bridge),
             "lr_cross": float(self.cfg.lr_cross),
             "lr_lora": float(self.cfg.lr_lora),
-            "seed": int(self.cfg.seed),
+            "seed": self.cfg.seed,
         }
 
     def save_checkpoint(

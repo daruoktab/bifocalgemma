@@ -14,6 +14,13 @@ See [the module map](docs/REPO_LAYOUT.md), [notebook guide](docs/TRAINING_NOTEBO
 and [paper](paper/main.tex). Paper result placeholders remain pending measured
 training and evaluation; passing engineering checks does not establish model quality.
 
+### Dynamic Sliding Fovea + Periphery Routing
+
+- **Dynamic Sliding Routing:** `decoder_local_context` fills up to `decoder_limit - reserved_output` with zero-encoder bypass (`enc=()`) for short contexts.
+- **Stage-1 & Streaming Pointer Loss:** 20% Stage-1 alignment with parameter-free streaming pointer loss (`0.10` / `0.03`).
+- **Hub Subfolder Isolation:** `sliding-v4` Bifocal Hub subfolder preserves apple-to-apple `E2B-IT`/`E4B-IT` baselines.
+- **Matched Context Budget:** BifocalGemma pairs a 32,768-token bidirectional encoder with an 8,192-token causal decoder fovea (up to 40,960 disjoint tokens), matched against a 41,472-token full-context causal window on the decoder-only baselines.
+
 ## Ten-model experiment matrix
 
 Each notebook runs one configuration under the active `v4` profile, then its ten configured benchmarks.
@@ -26,8 +33,8 @@ Each notebook runs one configuration under the active `v4` profile, then its ten
 | E4B IT | [4it–2it](notebooks/train_4it_2it.py) | [4it–4it](notebooks/train_4it_4it.py) |
 | Decoder-only | [E2B-IT baseline](notebooks/train_e2b_it.py) | [E4B-IT baseline](notebooks/train_e4b_it.py) |
 
-The active `v4` paired configurations use 270 Stage-1 alignment steps followed by
-4,224 Stage-2 joint SFT steps (4,494 total steps, 1.5 epochs). Decoder-only
+The active `v4` paired configurations use 899 Stage-1 alignment steps (20%) followed by
+3,595 Stage-2 joint SFT steps (80%, 4,494 total steps, 1.5 epochs). Decoder-only
 baselines use one continuous 4,494-step SFT stage. Micro-batch size 2 and
 gradient accumulation 8 give an effective batch of 16 over 47,932 curated
 training examples (`mixed_context_enc32k_dec8k_v4`, revision `4b8d6b36…`). The

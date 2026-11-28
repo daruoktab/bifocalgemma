@@ -405,15 +405,16 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
         """Encode long context using the bidirectional encoder and SwiGLU manifold bridge."""
         if self.encoder is None or self.encoder_projection is None:
             raise ValueError("Decoder-only baseline model does not have an encoder.")
-        if input_ids.shape[1] == 0:
-            return self.decoder.embed_tokens.weight.new_empty(
-                input_ids.shape[0], 0, self.decoder.config.hidden_size
-            )
         eff_mask = attention_mask if attention_mask is not None else encoder_attention_mask
         if eff_mask is None:
             eff_mask = torch.ones(input_ids.shape, dtype=torch.bool, device=input_ids.device)
         else:
             eff_mask = eff_mask.bool().to(input_ids.device)
+        if input_ids.shape[1] == 0 or not bool(eff_mask.any()):
+            return self.decoder.embed_tokens.weight.new_zeros(
+                (input_ids.shape[0], input_ids.shape[1], self.decoder.config.hidden_size),
+                device=input_ids.device,
+            )
         pos_ids = self._positions(eff_mask)
         use_dict_mask = all(
             getattr(layer.self_attn, "structured_masks", False)
@@ -686,7 +687,11 @@ class BifocalGemmaForCausalLM(BifocalGemmaPreTrainedModel):
                         enc_mask = torch.ones(
                             encoder_hidden_states.shape[:2], dtype=torch.bool, device=device
                         )
-                elif encoder_input_ids is not None and encoder_input_ids.shape[1] > 0:
+                elif (
+                    encoder_input_ids is not None
+                    and encoder_input_ids.shape[1] > 0
+                    and (encoder_attention_mask is None or bool(encoder_attention_mask.any()))
+                ):
                     if encoder_attention_mask is not None:
                         enc_mask = encoder_attention_mask.bool().to(device)
                     else:
@@ -1587,9 +1592,15 @@ class NativeTinyModel(nn.Module):
     def encode_context(self, input_ids, attention_mask):
         if self.encoder is None or self.encoder_projection is None:
             raise ValueError("Decoder-only baseline has no encoder.")
-        if input_ids.shape[1] == 0:
-            return self.decoder.embed_tokens.weight.new_empty(
-                input_ids.shape[0], 0, self.decoder.config.hidden_size
+        eff_mask = (
+            torch.ones(input_ids.shape, dtype=torch.bool, device=input_ids.device)
+            if attention_mask is None
+            else attention_mask.bool().to(input_ids.device)
+        )
+        if input_ids.shape[1] == 0 or not bool(eff_mask.any()):
+            return self.decoder.embed_tokens.weight.new_zeros(
+                (input_ids.shape[0], input_ids.shape[1], self.decoder.config.hidden_size),
+                device=input_ids.device,
             )
         if self._stage_callback is not None:
             self._stage_callback({"stage": "encoder_forward"})
@@ -1598,15 +1609,16 @@ class NativeTinyModel(nn.Module):
             attention_mask=(
                 {"full_attention": None, "sliding_attention": None}
                 if hasattr(self, "memory_policy")
-                and self.spec.architecture_version == "normalized_merged_v2"
+                and self.spec.architecture_version
+                in {"normalized_merged_v2", "swiglu_dual_gate_decoupled_cross_v3"}
                 else attention_mask
             ),
-            self_valid=attention_mask,
-            position_ids=self._positions(attention_mask),
+            self_valid=eff_mask,
+            position_ids=self._positions(eff_mask),
             use_cache=False,
         ).last_hidden_state
         # No padding states enter K/V, including batches with wholly masked context.
-        return self.encoder_projection(hidden).masked_fill(~attention_mask.bool()[..., None], 0)
+        return self.encoder_projection(hidden).masked_fill(~eff_mask[..., None], 0)
 
     def _decode_hidden(
         self,
@@ -1640,7 +1652,8 @@ class NativeTinyModel(nn.Module):
             attention_mask=(
                 {"full_attention": None, "sliding_attention": None}
                 if hasattr(self, "memory_policy")
-                and self.spec.architecture_version == "normalized_merged_v2"
+                and self.spec.architecture_version
+                in {"normalized_merged_v2", "swiglu_dual_gate_decoupled_cross_v3"}
                 else decoder_mask
             ),
             self_valid=decoder_mask,
