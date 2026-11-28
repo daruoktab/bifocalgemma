@@ -549,3 +549,64 @@ def test_streaming_pointer_loss_is_dimension_invariant_and_calibrated():
     # Orthogonal distractors have ~0 cosine while exact match has cosine +1.0 scaled by 10.0
     assert float(loss_64.item()) < 0.05
     assert abs(float(loss_64.item()) - float(loss_256.item())) < 0.05
+
+
+def test_tokenize_context_task_long_target_overflow_shifts_to_encoder_without_error():
+    tok = _RecordingTokenizer()
+    spec = make_experiment_spec("2it-2it")
+    # Completion reserved_out is min(2304, decoder_limit // 2) = 512 when decoder_limit = 1024,
+    # leaving ~450 tokens of initial dec_ctx_budget. Put ~320 tokens of context (smaller than 450,
+    # triggering the old slack trap!) and a 760-token target (> 512) so total would be ~1100 > 1024.
+    code_lines = [f"var_{i} = func_{i}(arg_{i})" for i in range(1, 90)]
+    code_lines[40] = "# <MISSING_CODE>"
+    long_target = "\n".join(f"out_{i} = compute_{i}(val_{i}, extra_{i})" for i in range(1, 150))
+    row = {
+        "instance_id": "long-target-completion-1",
+        "task_type": "completion",
+        "source": "nebius/SWE-rebench-V2",
+        "instruction": "Fill in # <MISSING_CODE>.",
+        "context": "### File: big.py\n" + "\n".join(code_lines),
+        "target_text": long_target,
+        "disjoint_context": True,
+    }
+
+    ex = tokenize_context_task(
+        row,
+        spec,
+        tok,
+        tok,
+        encoder_limit=4096,
+        decoder_limit=1024,
+        disjoint_context=True,
+    )
+    assert len(ex.decoder_prefix_ids) + len(ex.target_ids) - 1 <= 1024
+    assert 0 < len(ex.encoder_ids) <= 4096
+
+
+def test_tokenize_context_task_encoder_overflow_falls_back_to_unnumbered():
+    tok = _RecordingTokenizer()
+    spec = make_experiment_spec("2it-2it")
+    code_lines = [f"x_{i} = y_{i}" for i in range(1, 121)]
+    code_lines[-1] = "TAIL_TOKEN_SENTINEL = 777"
+    row = {
+        "instance_id": "train-enc-unnumbered-1",
+        "task_type": "qa",
+        "source": "nebius/SWE-rebench-V2",
+        "instruction": "Inspect module",
+        "context": "### File: tail_mod.py\n" + "\n".join(code_lines),
+        "target_text": "TAIL_TOKEN_SENTINEL = 777",
+        "disjoint_context": True,
+    }
+
+    ex = tokenize_context_task(
+        row,
+        spec,
+        tok,
+        tok,
+        encoder_limit=340,
+        decoder_limit=180,
+        disjoint_context=True,
+    )
+    assert len(ex.decoder_prefix_ids) + len(ex.target_ids) - 1 <= 180
+    assert len(ex.encoder_ids) <= 340
+    assert any("TAIL_TOKEN_SENTINEL = 777" in t for t in tok.encoded_texts[-4:])

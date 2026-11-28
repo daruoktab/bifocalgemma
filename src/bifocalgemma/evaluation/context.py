@@ -675,7 +675,7 @@ def _prompt_ids_with_metadata(
     enc: tuple[int, ...] = ()
     prefix: tuple[int, ...] = ()
     dropped_blocks = 0
-    for _ in range(4):
+    for _ in range(8):
         split = dynamic_sliding_bifocal_split(
             split_row,
             decoder_context_token_budget=cur_dec_budget,
@@ -705,10 +705,11 @@ def _prompt_ids_with_metadata(
         if dec_overflow <= 0 and enc_overflow <= 0:
             break
         if dec_overflow > 0 and cur_dec_budget > 0:
-            cur_dec_budget = max(0, cur_dec_budget - dec_overflow - 16)
+            actual_dec_ctx = max(0, len(prefix) - base_prefix_tokens)
+            cur_dec_budget = max(0, min(cur_dec_budget, actual_dec_ctx) - dec_overflow - 16)
             continue
         if enc_overflow > 0 and cur_enc_budget > 0:
-            cur_enc_budget = max(0, cur_enc_budget - enc_overflow - 16)
+            cur_enc_budget = max(0, min(cur_enc_budget, len(enc)) - enc_overflow - 16)
             continue
         break
 

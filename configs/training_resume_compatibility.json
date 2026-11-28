@@ -2,9 +2,9 @@
   "version": "clean_sliding_bifocal_v4",
   "reason": "New training identity for Dynamic Sliding Bifocal routing (decoder_local_context up to decoder_limit - reserved_output with zero-encoder bypass for short contexts), 20% Stage-1 + parameter-free streaming pointer loss (0.10/0.03), and sliding-v4 subfolder isolation (keeping e2b-it/e4b-it baseline compatibility untouched).",
   "baseline_runtime_sha256": "2496b65dcdb7ca7e70b7a517e9239c19ab75413afd4fd0de7b9951fc45c5f9e4",
-  "baseline_training_semantics_sha256": "2a4ac838de1c37a7dbead0dd625c58e9d8140ba80ed81a77c20d494e60fb6aa8",
-  "approved_source_semantics_sha256": "2a4ac838de1c37a7dbead0dd625c58e9d8140ba80ed81a77c20d494e60fb6aa8",
-  "source_semantics_sha256": "2a4ac838de1c37a7dbead0dd625c58e9d8140ba80ed81a77c20d494e60fb6aa8",
+  "baseline_training_semantics_sha256": "8d5084871168e9e7e7e6a2d1bbf41651101408147badc27ca9d1ae560df886f7",
+  "approved_source_semantics_sha256": "8d5084871168e9e7e7e6a2d1bbf41651101408147badc27ca9d1ae560df886f7",
+  "source_semantics_sha256": "8d5084871168e9e7e7e6a2d1bbf41651101408147badc27ca9d1ae560df886f7",
   "reviewed_changed_files": {
     "__main__.py": {
       "after": "9acf221ea73a468b91bf2ed56d2258895361b8b013a2bb5bb6f26f5179874db1"
@@ -22,7 +22,7 @@
       "after": "fa9cd778e6e79447718de4f12d648ae38c5804789c39201ac4018ff75a7c45b5"
     },
     "data/context_tasks.py": {
-      "after": "7813417b3205ddd834b598eb8881799f1ba0d194bebc127fc1b8c213ec0f60cc"
+      "after": "3af631f89e33866aad3334013ff7a05cf346b056d6d116a1672183e6f27164d4"
     },
     "data/curriculum.py": {
       "after": "a94619cc9421e827f2e51129eeea241ea33a8adbff77f2ac950d1db5117cb0a8"
@@ -37,7 +37,7 @@
       "after": "554eacdc9d5514120ed6fc079e5723058e01befa06725bee699ae2ab670ff7e8"
     },
     "evaluation/context.py": {
-      "after": "2f6f12991f9eda114ec44fe8df2b24dd26c39a3b49e20d9e3458a2f817feeb1a"
+      "after": "e700b60f4743cb4a73e440b1b8356c6b0c45579de320ce89746900679e6d54d6"
     },
     "evaluation/external_runner.py": {
       "after": "30189d442841a238155b3a9935765d2315a0db445c99d3f692a3c588fe1a50d9"

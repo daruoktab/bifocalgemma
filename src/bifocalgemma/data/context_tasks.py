@@ -1673,6 +1673,7 @@ def tokenize_context_task(
     target = target_body_ids + (eot_token_id,)
 
     context_split: DisjointContextSplit | None = None
+    enc: tuple[int, ...] = ()
     if spec.encoder is not None and use_disjoint:
         if local_window_lines is not None:
             context_split = split_disjoint_context(row, local_window_lines=local_window_lines)
@@ -1711,39 +1712,76 @@ def tokenize_context_task(
                     task_type=task_type,
                     raw_context_tokens=raw_ctx_tokens,
                 )
-            enc_tok_budget = max(0, encoder_limit - 16)
-            cur_budget = dec_ctx_budget
-            prefix_ids = ()
-            for _ in range(4):
-                context_split = dynamic_sliding_bifocal_split(
-                    row,
-                    decoder_context_token_budget=cur_budget,
-                    encoder_token_budget=enc_tok_budget,
-                    decoder_tokenizer=decoder,
-                    encoder_tokenizer=encoder if not decoder_local_only else decoder,
-                )
-                prompt_content = task_prompt(
-                    row,
-                    paired=True,
-                    disjoint_context=True,
-                    decoder_local_only=decoder_local_only,
-                    context_split=context_split,
-                )
-                prefix = _apply_decoder_chat_template(decoder, prompt_content)
-                prefix_ids = tuple(decoder.encode(prefix, add_special_tokens=False))
-                overflow = (len(prefix_ids) + len(target) - 1) - decoder_limit
-                if overflow <= 0 or cur_budget <= 0:
-                    break
-                cur_budget = max(0, cur_budget - overflow - 16)
-        assert context_split is not None
-        enc_context = "" if decoder_local_only else context_split.encoder_context
-        if enc_context.strip() == "":
-            enc: tuple[int, ...] = ()
-        else:
-            enc = tuple(encoder.encode(enc_context, add_special_tokens=True))
+            # When a rare training target exceeds the static public reserved_out budget
+            # (e.g. a 5,700-token completion), cap the initial fovea budget so overflow
+            # shifts cleanly to the encoder on iteration 0 while preserving 100% parity
+            # on normal rows (where len(target) <= reserved_out).
+            max_dec_ctx_for_target = max(0, decoder_limit - len(target) - base_prefix_tokens - 16)
+            init_dec_budget = min(dec_ctx_budget, max_dec_ctx_for_target)
+            init_enc_budget = max(0, encoder_limit - 16)
             enc_bos = getattr(encoder, "bos_token_id", None)
-            if enc and enc_bos is not None and enc[0] != enc_bos:
-                enc = (enc_bos, *enc)
+            prefix_ids = ()
+            for use_line_numbers in (True, False):
+                cur_dec_budget = init_dec_budget
+                cur_enc_budget = init_enc_budget
+                for _ in range(8):
+                    context_split = dynamic_sliding_bifocal_split(
+                        row,
+                        decoder_context_token_budget=cur_dec_budget,
+                        encoder_token_budget=cur_enc_budget,
+                        decoder_tokenizer=decoder,
+                        encoder_tokenizer=encoder if not decoder_local_only else decoder,
+                        number_lines=use_line_numbers,
+                    )
+                    prompt_content = task_prompt(
+                        row,
+                        paired=True,
+                        disjoint_context=True,
+                        decoder_local_only=decoder_local_only,
+                        context_split=context_split,
+                    )
+                    prefix = _apply_decoder_chat_template(decoder, prompt_content)
+                    prefix_ids = tuple(decoder.encode(prefix, add_special_tokens=False))
+                    enc_context = "" if decoder_local_only else context_split.encoder_context
+                    if enc_context.strip() == "":
+                        enc = ()
+                    else:
+                        enc = tuple(encoder.encode(enc_context, add_special_tokens=True))
+                        if enc and enc_bos is not None and enc[0] != enc_bos:
+                            enc = (enc_bos, *enc)
+                    dec_overflow = (len(prefix_ids) + len(target) - 1) - decoder_limit
+                    enc_overflow = len(enc) - encoder_limit
+                    if dec_overflow <= 0 and enc_overflow <= 0:
+                        break
+                    if dec_overflow > 0 and cur_dec_budget > 0:
+                        actual_dec_ctx = max(0, len(prefix_ids) - base_prefix_tokens)
+                        cur_dec_budget = max(
+                            0, min(cur_dec_budget, actual_dec_ctx) - dec_overflow - 16
+                        )
+                        continue
+                    if enc_overflow > 0 and cur_enc_budget > 0:
+                        cur_enc_budget = max(
+                            0, min(cur_enc_budget, len(enc)) - enc_overflow - 16
+                        )
+                        continue
+                    break
+                assert context_split is not None
+                if (
+                    len(enc) <= encoder_limit
+                    and len(prefix_ids) + len(target) - 1 <= decoder_limit
+                    and (not use_line_numbers or context_split.dropped_block_count == 0)
+                ):
+                    break
+        assert context_split is not None
+        if local_window_lines is not None:
+            enc_context = "" if decoder_local_only else context_split.encoder_context
+            if enc_context.strip() == "":
+                enc = ()
+            else:
+                enc = tuple(encoder.encode(enc_context, add_special_tokens=True))
+                enc_bos = getattr(encoder, "bos_token_id", None)
+                if enc and enc_bos is not None and enc[0] != enc_bos:
+                    enc = (enc_bos, *enc)
     else:
         if decoder_local_only:
             enc = ()
